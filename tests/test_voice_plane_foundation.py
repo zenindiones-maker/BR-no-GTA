@@ -22,6 +22,9 @@ from app.services.voice_provider_service import (
     CHATTERBOX_PTBR_PROFILE,
     QWEN_OWNER_INTERACTIVE,
     QWEN_OWNER_LONG_FORM,
+    PrivateVoiceRuntimeProvider,
+    PrivateVoiceRuntimeResponse,
+    VoiceProviderUnavailable,
     VoiceRouteRequest,
     select_voice_provider,
 )
@@ -210,3 +213,131 @@ def test_upstream_provenance_is_pinned_and_cloudflare_uses_agents_voice():
     assert config["nemotron_voicechat"]["model_id"] == "nvidia/NVIDIA-NemotronLabs-VoiceChat-11B"
     assert config["nemotron_voicechat"]["production_eligible"] is False
     assert config["symphony"]["second_scheduler"] is False
+
+
+def _owner_synthesis_request():
+    return VoiceSynthesisRequest(
+        voice_identity_id="BR_OWNER_V1",
+        text="Prova curta da voz real.",
+        language="pt-BR",
+        usage="AUDITION",
+        rate=1.0,
+        style="OWNER_REFERENCE",
+        segment_id="owner-proof-1",
+        correlation_id="corr-owner-proof-1",
+    )
+
+
+def _ready_owner_profile():
+    return {
+        "schema": "VoiceIdentityProfile/v1",
+        "voice_identity_id": "BR_OWNER_V1",
+        "owner_class": "OWNER",
+        "language": "pt-BR",
+        "source_audio_refs": ["private://voice/BR_OWNER_V1/reference-001"],
+        "source_audio_sha256s": ["a" * 64],
+        "source_transcript_sha256s": ["b" * 64],
+        "consent_status": "APPROVED",
+        "consent_timestamp": "2026-09-28T19:00:00Z",
+        "clone_provider": "qwen3-tts",
+        "clone_model": QWEN_OWNER_INTERACTIVE.model_id,
+        "clone_model_revision": QWEN_OWNER_INTERACTIVE.model_revision,
+        "voice_prompt_ref": "private://voice/BR_OWNER_V1/qwen-prompt-001",
+        "voice_prompt_sha256": "c" * 64,
+        "quality_status": "READY",
+        "created_at": "2026-09-28T19:00:00Z",
+        "updated_at": "2026-09-28T19:00:00Z",
+    }
+
+
+def test_private_voice_runtime_fails_closed_before_transport_without_materialized_owner(monkeypatch, tmp_path):
+    monkeypatch.setenv("BR_VOICE_RUNTIME_TOKEN", "runtime-token")
+    calls = []
+    provider = PrivateVoiceRuntimeProvider(
+        profile=QWEN_OWNER_INTERACTIVE,
+        base_url="http://127.0.0.1:18081",
+        identity_resolver=lambda _identity: None,
+        transport=lambda *_args: calls.append(_args),
+    )
+    with pytest.raises(VoiceProviderUnavailable, match="OWNER_VOICE_NOT_MATERIALIZED"):
+        provider.synthesize(_owner_synthesis_request(), tmp_path / "owner.wav")
+    assert calls == []
+    assert not (tmp_path / "owner.wav").exists()
+
+
+def test_private_voice_runtime_requires_matching_owner_clone_receipt(monkeypatch, tmp_path):
+    monkeypatch.setenv("BR_VOICE_RUNTIME_TOKEN", "runtime-token")
+    captured = {}
+    profile = _ready_owner_profile()
+
+    def transport(_url, payload, _headers):
+        captured["payload"] = payload
+        binding = payload["voice_identity_binding"]
+        return PrivateVoiceRuntimeResponse(
+            audio=b"owner-voice-wav",
+            receipt={
+                "schema": "OwnerVoiceSynthesisReceipt/v1",
+                "voice_identity_id": "BR_OWNER_V1",
+                "profile_sha256": binding["profile_sha256"],
+                "voice_prompt_sha256": binding["voice_prompt_sha256"],
+                "reference_set_sha256": binding["reference_set_sha256"],
+                "provider": "qwen3-tts",
+                "model": QWEN_OWNER_INTERACTIVE.model_id,
+                "model_revision": QWEN_OWNER_INTERACTIVE.model_revision,
+                "request_id": "owner-proof-request-1",
+                "audio_sha256": "",
+                "usage": "AUDITION",
+            },
+        )
+
+    provider = PrivateVoiceRuntimeProvider(
+        profile=QWEN_OWNER_INTERACTIVE,
+        base_url="http://127.0.0.1:18081",
+        identity_resolver=lambda identity: profile if identity == "BR_OWNER_V1" else None,
+        transport=transport,
+    )
+    result = provider.synthesize(_owner_synthesis_request(), tmp_path / "owner.wav")
+    binding = captured["payload"]["voice_identity_binding"]
+    assert binding["voice_identity_id"] == "BR_OWNER_V1"
+    assert binding["voice_prompt_ref"].startswith("private://")
+    assert binding["voice_prompt_sha256"] == "c" * 64
+    assert len(binding["profile_sha256"]) == 64
+    assert len(binding["reference_set_sha256"]) == 64
+    assert result["receipt"]["schema"] == "OwnerVoiceSynthesisReceipt/v1"
+    assert result["receipt"]["voice_prompt_sha256"] == "c" * 64
+    assert result["receipt"]["reference_set_sha256"] == binding["reference_set_sha256"]
+    assert result["receipt"]["audio_sha256"] == result["audio_sha256"]
+
+
+def test_private_voice_runtime_rejects_receipt_that_does_not_prove_bound_prompt(monkeypatch, tmp_path):
+    monkeypatch.setenv("BR_VOICE_RUNTIME_TOKEN", "runtime-token")
+    profile = _ready_owner_profile()
+
+    def transport(_url, payload, _headers):
+        binding = payload["voice_identity_binding"]
+        return PrivateVoiceRuntimeResponse(
+            audio=b"wrong-voice-wav",
+            receipt={
+                "schema": "OwnerVoiceSynthesisReceipt/v1",
+                "voice_identity_id": "BR_OWNER_V1",
+                "profile_sha256": binding["profile_sha256"],
+                "voice_prompt_sha256": "d" * 64,
+                "reference_set_sha256": binding["reference_set_sha256"],
+                "provider": "qwen3-tts",
+                "model": QWEN_OWNER_INTERACTIVE.model_id,
+                "model_revision": QWEN_OWNER_INTERACTIVE.model_revision,
+                "request_id": "owner-proof-request-2",
+                "audio_sha256": "",
+                "usage": "AUDITION",
+            },
+        )
+
+    provider = PrivateVoiceRuntimeProvider(
+        profile=QWEN_OWNER_INTERACTIVE,
+        base_url="http://127.0.0.1:18081",
+        identity_resolver=lambda _identity: profile,
+        transport=transport,
+    )
+    with pytest.raises(VoiceProviderUnavailable, match="OWNER_VOICE_RECEIPT_MISMATCH"):
+        provider.synthesize(_owner_synthesis_request(), tmp_path / "owner.wav")
+    assert not (tmp_path / "owner.wav").exists()
