@@ -9,12 +9,12 @@
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
-    "retry_of_run": 36371030184,
-    "reason": "Real durable execution-model proof from latest complete checkpoint after idempotent replay, semantic progress dedupe, stable logical successor identity and transactional dispatch hardening",
+    "retry_of_run": 36372603032,
+    "reason": "Resume the same durable human mission from the latest complete checkpoint after proving and fixing the pre-semantic physical-attempt recovery gap; preserve completed 24.636-minute editorial progress and continue only the minimal affected subgraph to MASTER_FINAL -> PRIVATE HD review -> Telegram.",
     "preserve_longform_recovery": true,
     "preserve_web_fabric": true,
     "preserve_audiovisual_contracts": true,
-    "candidate_head": "2f0949b4ea0e7312509ac60f3ffaf1765b518c1a",
+    "candidate_head": "71a39bf120a90ff039a065c612b0ac2a6c1295b9",
     "baseline_source_selected": 2,
     "baseline_source_acquired": 0,
     "baseline_provenance": "INSUFFICIENT",
@@ -61,21 +61,23 @@
     },
     "durable_continuation": {
       "schema": "DurableProductionContinuationRequest/v1",
-      "resume_run_id": 36371030184,
+      "resume_run_id": 36372445498,
       "durable_mission_key": "mission-5c239dbac2eb4abd29b1",
-      "continuation_count": 180,
-      "continuation_id": "mission-5c239dbac2eb4abd29b1:276:36371030184",
-      "expected_state_version": 276,
+      "continuation_count": 181,
+      "continuation_id": "continuation:e7432ba1094affa2379443336b2d3cd1",
+      "expected_state_version": 277,
       "continuation_authority_schema": "ContinuationAuthorization/v1",
-      "checkpoint_artifact_id": 10948239530,
-      "checkpoint_artifact_digest": "sha256:4905542122526ec5bece5bd2c3b1b968b2f731477e4726e51b76bb5a01e281c0",
+      "checkpoint_artifact_id": 10949557836,
+      "checkpoint_artifact_digest": "sha256:76665472595132c86af52b658a0b867dfad271c70adccb11d31d810ef47f1748",
       "predecessor_status": "RUNNABLE",
       "predecessor_next_transition": "RESOLVE_REQUIREMENT",
       "predecessor_artifact_expired": false,
       "continuation_transition": "RESOLVE_REQUIREMENT",
       "continuation_strategy": "MINIMAL_AFFECTED_SUBGRAPH",
-      "continuation_route_id": "continuation-route:c1a7561edbe893ffdd72b579"
+      "continuation_route_id": "continuation-route:693129864afc9cb10990dec8",
+      "successor_intent_id": "successor-intent:e7432ba1094affa2379443336b2d3cd1",
+      "effective_input_digest": "sha256:dc7854f8483034e99d175d55619a29aadf514f3e1eadfc6a9a28e49b369e65de"
     }
   },
-  "requested_from_head": "2f0949b4ea0e7312509ac60f3ffaf1765b518c1a"
+  "requested_from_head": "71a39bf120a90ff039a065c612b0ac2a6c1295b9"
 }
