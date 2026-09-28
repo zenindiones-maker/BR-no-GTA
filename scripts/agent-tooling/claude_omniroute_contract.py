@@ -33,6 +33,7 @@ def build_gateway_env(*, provider: str, model: str, base_url: str = DEFAULT_BASE
         "ANTHROPIC_BASE_URL": root,
         "ANTHROPIC_AUTH_TOKEN": str(auth_token or DEFAULT_LOCAL_TOKEN),
         "ANTHROPIC_MODEL": selected_model,
+        "ANTHROPIC_CUSTOM_MODEL_OPTION": selected_model,
         "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "190000",
     }
 
