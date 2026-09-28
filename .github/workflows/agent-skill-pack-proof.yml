@@ -38,9 +38,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: pip
 
-      - name: Install focused test dependency
-        run: python -m pip install pytest
+      - name: Install BR runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
 
       - name: Run agent skill pack contract tests
         run: pytest -q tests/test_agent_skill_pack_contracts.py
