@@ -103,6 +103,9 @@ def test_typed_requirement_roundtrip_retains_all_mandatory_semantics():
     )
     assert typed == reloaded
     assert typed.digest() == reloaded.digest()
+    assert isinstance(typed.to_dict()["required_effects"], list)
+    assert isinstance(typed.to_dict()["required_surfaces"], list)
+    assert isinstance(typed.to_dict()["required_output_contract_ids"], list)
     assert contract_information_retention_rate(typed, reloaded) == 100.0
 
 

@@ -153,7 +153,9 @@ def test_semantic_proposal_with_invented_capability_is_rejected_then_replanned_o
     def inference(prompt, _context):
         calls.append(prompt)
         if len(calls) == 1:
-            assert "CONTEXT=" in prompt
+            assert "CONTEXT_FORMAT=" in prompt
+            assert "UNTRUSTED_SUBORDINATE_DATA_BEGIN" in prompt
+            assert "UNTRUSTED_SUBORDINATE_DATA_END" in prompt
             return _proposal(candidate_id="capability.that.does.not.exist")
         assert "The previous proposal was rejected by DeepSeek Harness validation." in prompt
         assert "capability.that.does.not.exist" in prompt

@@ -89,7 +89,22 @@ class TypedTaskRequirement:
             raise ValueError("typed output contract requires expected_output")
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        # TypedTaskRequirement/v1 is a JSON contract. Keep the frozen dataclass
+        # tuple-backed internally, but expose sequence fields as JSON-native
+        # arrays so MissionTaskProposal -> requirement -> JSON -> reload has one
+        # canonical representation.
+        for field_name in (
+            "required_operations",
+            "required_effects",
+            "required_surfaces",
+            "required_output_contract_ids",
+            "acceptance_criteria",
+            "proposal_candidate_hints",
+            "dependencies",
+        ):
+            data[field_name] = list(data[field_name])
+        return data
 
     def digest(self) -> str:
         raw = json.dumps(
