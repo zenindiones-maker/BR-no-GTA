@@ -122,6 +122,11 @@ jobs:
           tail -100 /tmp/omniroute-claude.log || true
           exit 1
 
+      - name: Install Harness runtime dependencies
+        run: |
+          set -euo pipefail
+          python3 -m pip install -r requirements.txt
+
       - name: Resolve Harness-governed replan
         run: |
           set -euo pipefail
