@@ -189,7 +189,8 @@ def test_harness_executes_agenttube_capability_through_canonical_boundary():
     )
 
     assert evidence.status == "EXECUTED"
-    assert evidence.authority == "DEEPSEEK_HARNESS"
+    assert evidence.authority == "deepseek_harness"
+    assert evidence.result["authority"] == "DEEPSEEK_HARNESS"
     assert evidence.result["schema"] == "AgentTubeCapabilityResult/v1"
     assert evidence.result["returned_to_harness"] is True
     assert evidence.result["second_control_plane"] == 0
