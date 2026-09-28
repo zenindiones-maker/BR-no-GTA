@@ -242,3 +242,38 @@ def test_editorial_generation_and_review_are_distinct_typed_contracts():
     assert OUTPUT_CONTRACT_SCRIPT_REVIEW_RESULT_V1 in (
         reviewer.output_contract_ids
     )
+
+
+def test_editorial_review_legacy_role_canonicalizes_without_poisoning_production_plan():
+    from app.services.capability_execution_contract_service import (
+        infer_functional_role,
+        infer_required_output_contract_ids,
+    )
+
+    review = {
+        "task_id": "task-02",
+        "task_class": "youtube-script-review",
+        "functional_role": "REVIEW",
+        "action": "EDITORIAL",
+        "objective": "Review the script and improve editorial strategy",
+        "required_capability_description": "YouTube script review",
+        "expected_output": "ScriptReviewResult",
+    }
+    production_plan = {
+        "task_id": "production-plan",
+        "task_class": "production-plan",
+        "action": "EDITORIAL",
+        "objective": "Create ProductionPlan with scene breakdown and asset list",
+        "required_capability_description": (
+            "ProductionPlan matching ScriptSpec with assets scoped for "
+            "private HD review"
+        ),
+        "expected_output": "ProductionPlan_artifact_ref + scene_breakdown",
+    }
+
+    assert infer_functional_role(review) == "EDITORIAL_REVIEW"
+    assert infer_required_output_contract_ids(review) == (
+        OUTPUT_CONTRACT_SCRIPT_REVIEW_RESULT_V1,
+    )
+    assert infer_functional_role(production_plan) == "GENERAL"
+    assert infer_required_output_contract_ids(production_plan) == ()

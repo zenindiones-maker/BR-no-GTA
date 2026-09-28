@@ -137,7 +137,7 @@ def _editorial_contract_role(requirement: dict[str, Any]) -> str | None:
     task_class = str(
         requirement.get("task_class") or ""
     ).strip().casefold()
-    text = " ".join(
+    intent_text = " ".join(
         str(requirement.get(key) or "").strip().casefold()
         for key in (
             "task_id",
@@ -145,38 +145,59 @@ def _editorial_contract_role(requirement: dict[str, Any]) -> str | None:
             "objective",
             "query",
             "required_capability_description",
-            "expected_output",
         )
     )
     script_markers = (
         "script",
-        "scriptspec",
-        "script spec",
-        "contentitem",
-        "content item",
         "roteiro",
     )
-    has_script_contract = any(marker in text for marker in script_markers)
-    if not has_script_contract:
-        return None
-    review_markers = ("review", "reviewer", "revis", "critique")
-    if "review" in task_class or any(
-        marker in text for marker in review_markers
+    has_script_intent = any(
+        marker in intent_text for marker in script_markers
+    )
+
+    # Review is a distinct transformation contract. Incidental mentions such
+    # as "private HD review" in a production-plan task must not turn the
+    # producer/planner into a script reviewer.
+    strong_review_markers = (
+        "script review",
+        "review script",
+        "review the script",
+        "review the pt-br script",
+        "review roteiro",
+        "revisar o roteiro",
+        "revisão do roteiro",
+        "revisao do roteiro",
+        "critique the script",
+    )
+    if (
+        has_script_intent
+        and (
+            "review" in task_class
+            or any(marker in intent_text for marker in strong_review_markers)
+        )
     ):
         return "EDITORIAL_REVIEW"
+
+    generation_task_classes = {
+        "editorial",
+        "editorial-script",
+        "script-generation",
+        "script-writing",
+    }
     generation_markers = (
-        "produce",
-        "generate",
-        "create",
-        "write",
-        "natural pt-br script",
-        "ready for production planning",
-        "produzir",
-        "gerar",
-        "escrever",
+        "produce a natural",
+        "produce natural",
+        "generate script",
+        "generate the script",
+        "write script",
+        "write the script",
+        "produzir roteiro",
+        "gerar roteiro",
+        "escrever roteiro",
     )
-    if task_class == "editorial" or any(
-        marker in text for marker in generation_markers
+    if has_script_intent and (
+        task_class in generation_task_classes
+        or any(marker in intent_text for marker in generation_markers)
     ):
         return "EDITORIAL_GENERATION"
     return None
@@ -208,9 +229,14 @@ def infer_functional_role(requirement: dict[str, Any]) -> str:
             # IMPLEMENT is a legacy planner label. Canonical mutating work is
             # APPLY; keep the alias bounded to contracts that really mutate.
             return "APPLY"
+    editorial_role = _editorial_contract_role(requirement)
+    if explicit == "REVIEW" and editorial_role == "EDITORIAL_REVIEW":
+        # REVIEW is a legacy planner label. For an actual editorial/script
+        # review, canonicalize it to the domain-specific hard role so the
+        # resolver and Registry compare like with like.
+        return editorial_role
     if explicit and explicit != "GENERAL":
         return explicit
-    editorial_role = _editorial_contract_role(requirement)
     if editorial_role:
         return editorial_role
     expected_output = str(
