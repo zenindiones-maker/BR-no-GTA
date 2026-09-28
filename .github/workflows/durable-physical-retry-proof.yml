@@ -9,6 +9,7 @@ on:
       - '.github/workflows/real-multi-agent-production.yml'
       - 'tests/test_production_durable_resume_service.py'
       - 'tests/test_production_durable_resume_workflow.py'
+      - 'tests/test_harness_mission_supervisor_service.py'
       - '.github/workflows/durable-physical-retry-proof.yml'
   workflow_dispatch:
 
@@ -35,4 +36,7 @@ jobs:
           python -m pip install -q -r requirements.txt pytest
       - name: Prove durable physical retry contracts
         run: |
-          pytest -q             tests/test_production_durable_resume_service.py             tests/test_production_durable_resume_workflow.py
+          pytest -q \
+            tests/test_production_durable_resume_service.py \
+            tests/test_production_durable_resume_workflow.py \
+            tests/test_harness_mission_supervisor_service.py
