@@ -73,3 +73,18 @@ def test_file_driven_resume_exports_stable_durable_mission_key():
     ).read_text(encoding="utf-8")
     assert "BR_DURABLE_MISSION_KEY:" in text
     assert '"BR_DURABLE_MISSION_KEY": mission' in text
+
+
+
+def test_checkpoint_reconciliation_uses_completed_editorial_progress():
+    text=Path(
+        ".github/workflows/real-multi-agent-production.yml"
+    ).read_text(encoding="utf-8")
+    assert "editorial_progress_snapshot(" in text
+    assert "COMPLETED_RESULTS_PRESERVED=PASS" in text
+    assert "DURABLE_EDITORIAL_PROGRESS_RECONCILED=PASS" in text
+    assert "EDITORIAL_SUPPORTED_DURATION_MINUTES=" in text
+    assert (
+        'if row.get("status") != "PARTIAL_FAILED": continue'
+        not in text
+    )

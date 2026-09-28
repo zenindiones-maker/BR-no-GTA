@@ -51,6 +51,8 @@ from scripts.real_multi_agent_production import (
     _novelty_gate,
     _payload_for_task,
     _partition_longform_fresh_candidates,
+    _result_payload,
+    _observe_execution,
     _target_duration_seconds,
     _web_acquisition_slots,
     _web_source_statement,
@@ -1637,3 +1639,49 @@ def test_durable_resume_identity_fails_closed_on_lineage_drift(
             artifact_dir=tmp_path,
             goal_id="goal-durable",
         )
+
+
+
+def test_durable_replay_rehydrates_canonical_result_payload():
+    payload = {
+        "official_sources": [{
+            "url": "https://www.rockstargames.com/VI",
+            "title": "Grand Theft Auto VI",
+            "content_excerpt": "Official current GTA VI evidence.",
+        }]
+    }
+    execution = {
+        "schema": "TaskResultEnvelope/v1",
+        "status": "COMPLETED",
+        "result_payload": payload,
+    }
+    assert _result_payload(execution) == payload
+
+    state = {"claims": [], "task_outputs": {}}
+    task = SimpleNamespace(
+        task_id="topic_research",
+        capability_id="gta6.research.fresh-cloud",
+    )
+    _observe_execution(task=task, execution=execution, state=state)
+
+    assert len(state["claims"]) == 1
+    assert state["claims"][0]["source"] == (
+        "https://www.rockstargames.com/VI"
+    )
+    assert state["claims"][0]["verification_basis"] == "OFFICIAL_PRIMARY"
+
+
+def test_durable_replay_unwraps_nested_fact_check_result_payload():
+    execution = {
+        "status": "COMPLETED",
+        "result_payload": {
+            "capability_id": "gta6.fact-check",
+            "status": "EXECUTED",
+            "active": True,
+            "result": {
+                "verdict": "SUPPORTED",
+                "source_refs": ["https://www.rockstargames.com/VI"],
+            },
+        },
+    }
+    assert _result_payload(execution)["verdict"] == "SUPPORTED"

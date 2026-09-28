@@ -121,12 +121,36 @@ class HarnessMissionState:
         before = float(mission_metric_before or 0.0)
         after = float(mission_metric_after or 0.0)
         delta = after - before
-        measurable = bool(delta > 0.001 or new_information or artifact_created or artifact_consumed)
+        ledger = list(self.state.get("progress_ledger") or ())
+        seen_created = {
+            str(item.get("artifact_created") or "")
+            for item in ledger
+            if str(item.get("artifact_created") or "")
+        }
+        seen_consumed = {
+            str(item.get("artifact_consumed") or "")
+            for item in ledger
+            if str(item.get("artifact_consumed") or "")
+        }
+        artifact_created_novel = bool(
+            artifact_created and artifact_created not in seen_created
+        )
+        artifact_consumed_novel = bool(
+            artifact_consumed and artifact_consumed not in seen_consumed
+        )
+        measurable = bool(
+            delta > 0.001
+            or new_information
+            or artifact_created_novel
+            or artifact_consumed_novel
+        )
         row = {
             "objective_satisfied": bool(objective_satisfied),
             "new_information": bool(new_information),
             "artifact_created": artifact_created,
             "artifact_consumed": artifact_consumed,
+            "artifact_created_novel": artifact_created_novel,
+            "artifact_consumed_novel": artifact_consumed_novel,
             "mission_metric_before": mission_metric_before,
             "mission_metric_after": mission_metric_after,
             "progress_delta": delta,
@@ -137,7 +161,6 @@ class HarnessMissionState:
             "strategy": strategy,
             "measurable_progress": measurable,
         }
-        ledger = list(self.state.get("progress_ledger") or ())
         ledger.append(row)
         self.state["progress_ledger"] = ledger[-100:]
         if failure_signature:

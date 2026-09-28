@@ -74,6 +74,109 @@ def _latest_editorial_partial(
     return path,row
 
 
+def editorial_progress_snapshot(
+    *,
+    artifact_dir: str|Path,
+    planning_wpm: float,
+)->dict[str,Any]:
+    if float(planning_wpm)<=0:
+        raise DurableResumePolicyError("planning_wpm must be positive")
+    root=Path(artifact_dir)
+    result_root=root/"hermes"/"task-results"
+    observations=[]
+    partials=[]
+    if result_root.is_dir():
+        for path in sorted(
+            result_root.glob("editorial_script-*.json"),
+            key=_editorial_index,
+        ):
+            index=_editorial_index(path)
+            if index<0:
+                continue
+            row=_read(path)
+            if str(row.get("task_id") or "")!="editorial_script":
+                continue
+            if str(row.get("capability_id") or "")!="editorial.process":
+                continue
+            status=str(row.get("status") or "")
+            payload=row.get("result_payload") or row.get("result") or {}
+            if not isinstance(payload,dict):
+                continue
+            minutes=None
+            word_count=None
+            failure_class=None
+            if status=="PARTIAL_FAILED":
+                evidence=payload.get("failure_evidence") or {}
+                if not isinstance(evidence,dict):
+                    evidence={}
+                qa=evidence.get("global_editorial_qa") or {}
+                if not isinstance(qa,dict):
+                    qa={}
+                raw_minutes=qa.get("content_supported_duration_minutes")
+                if raw_minutes is None:
+                    match=re.search(
+                        r'content_supported_duration_minutes["=: ]+([0-9.]+)',
+                        json.dumps(evidence,ensure_ascii=False),
+                    )
+                    raw_minutes=float(match.group(1)) if match else None
+                if raw_minutes is not None:
+                    minutes=float(raw_minutes)
+                failure_class=str(
+                    payload.get("failure_class")
+                    or evidence.get("failure_class")
+                    or "INSUFFICIENT_EVIDENCE"
+                )
+            elif status=="COMPLETED":
+                script=payload.get("script") or {}
+                if not isinstance(script,dict):
+                    script={}
+                content=str(script.get("content") or "")
+                word_count=len(re.findall(r"[A-Za-zÀ-ÿ0-9]+",content))
+                if word_count>0:
+                    minutes=float(word_count)/float(planning_wpm)
+            if minutes is None:
+                continue
+            observation={
+                "task_id":"editorial_script",
+                "task_result_ref":f"artifact:task-results/{path.name}",
+                "task_result_index":index,
+                "status":status,
+                "minutes":round(float(minutes),6),
+                "word_count":word_count,
+                "failure_class":failure_class,
+                "content_sha256":row.get("content_sha256"),
+            }
+            observations.append(observation)
+            if status=="PARTIAL_FAILED":
+                partials.append({
+                    "task_id":"editorial_script",
+                    "task_result_ref":observation["task_result_ref"],
+                    "minutes":observation["minutes"],
+                    "failure_class":failure_class,
+                })
+    current=max(
+        observations,
+        key=lambda item:(
+            float(item.get("minutes") or 0.0),
+            int(item.get("task_result_index") or -1),
+        ),
+        default={},
+    )
+    return {
+        "schema":"EditorialDurableProgress/v1",
+        "observations":observations,
+        "partial_results":partials[-8:],
+        "current":current,
+        "current_supported_duration_minutes":float(
+            current.get("minutes") or 0.0
+        ),
+        "completed_result_preserved":any(
+            str(item.get("status") or "")=="COMPLETED"
+            for item in observations
+        ),
+    }
+
+
 def _missing_requirements(row: dict[str,Any])->list[str]:
     payload=row.get("result_payload") or row.get("result") or {}
     evidence=payload.get("failure_evidence") or {}

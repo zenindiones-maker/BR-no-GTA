@@ -7,6 +7,7 @@ from app.services.production_durable_resume_service import (
     _canonical_sha,
     build_fresh_evidence_lineage,
     ensure_latest_editorial_execution_need,
+    editorial_progress_snapshot,
     load_pending_execution_need,
     plan_nonterminal_continuation,
 )
@@ -323,3 +324,57 @@ def test_legacy_v1_checkpoint_uses_bounded_migration(tmp_path):
     )
     assert lineage["producer_recovery_mission_id"]==producer
     assert lineage["legacy_recovery_contract_migrated"] is True
+
+
+
+def test_editorial_progress_preserves_completed_longform_over_stale_partial(tmp_path):
+    result_root=tmp_path/"hermes"/"task-results"
+    result_root.mkdir(parents=True)
+    (result_root/"editorial_script-3.json").write_text(
+        json.dumps({
+            "schema":"TaskResultEnvelope/v1",
+            "mission_id":"mission-a",
+            "task_id":"editorial_script",
+            "capability_id":"editorial.process",
+            "status":"PARTIAL_FAILED",
+            "result_payload":{
+                "failure_evidence":{
+                    "failure_class":"INSUFFICIENT_EVIDENCE",
+                    "global_editorial_qa":{
+                        "content_supported_duration_minutes":15.409,
+                        "target_duration_minutes":20.0,
+                    },
+                },
+            },
+        }),
+        encoding="utf-8",
+    )
+    words=" ".join(["evidencia"]*3252)
+    (result_root/"editorial_script-4.json").write_text(
+        json.dumps({
+            "schema":"TaskResultEnvelope/v1",
+            "mission_id":"mission-a",
+            "task_id":"editorial_script",
+            "capability_id":"editorial.process",
+            "status":"COMPLETED",
+            "result_payload":{
+                "script":{"content":words},
+                "content_item":{"estimated_duration_seconds":1200.0},
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    progress=editorial_progress_snapshot(
+        artifact_dir=tmp_path,
+        planning_wpm=132.0,
+    )
+
+    assert progress["completed_result_preserved"] is True
+    assert progress["current"]["task_result_ref"] == (
+        "artifact:task-results/editorial_script-4.json"
+    )
+    assert progress["current"]["status"] == "COMPLETED"
+    assert progress["current"]["word_count"] == 3252
+    assert progress["current_supported_duration_minutes"] > 24.6
+    assert progress["partial_results"][-1]["minutes"] == 15.409

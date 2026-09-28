@@ -142,7 +142,11 @@ def _walk(value: Any):
 
 
 def _result_payload(execution: dict[str, Any]) -> Any:
-    value: Any = execution.get("result")
+    value: Any = (
+        execution.get("result_payload")
+        if "result_payload" in execution
+        else execution.get("result")
+    )
     for _ in range(4):
         if not isinstance(value, dict):
             break

@@ -845,22 +845,18 @@ jobs:
               HarnessMissionState,
               HarnessMissionSupervisor,
           )
-          partials=[]
-          for path in sorted((root/"hermes/task-results").glob("*.json")) if (root/"hermes/task-results").is_dir() else []:
-              try: row=json.loads(path.read_text())
-              except Exception: continue
-              if row.get("status") != "PARTIAL_FAILED": continue
-              result=(row.get("result_payload") or row.get("result") or {})
-              evidence=result.get("failure_evidence") or {}
-              qa=evidence.get("global_editorial_qa") or {}
-              minutes=qa.get("content_supported_duration_minutes")
-              if minutes is None:
-                  text=json.dumps(evidence,ensure_ascii=False)
-                  import re
-                  m=re.search(r'content_supported_duration_minutes["=: ]+([0-9.]+)',text)
-                  minutes=float(m.group(1)) if m else None
-              partials.append({"task_id":row.get("task_id"),"task_result_ref":f"artifact:task-results/{path.name}","minutes":minutes,"failure_class":"INSUFFICIENT_EVIDENCE"})
-          latest=partials[-1] if partials else {}
+          from app.services.production_durable_resume_service import (
+              editorial_progress_snapshot,
+          )
+          from scripts.real_multi_agent_production import (
+              VOICE_B_EFFECTIVE_PLANNING_WPM,
+          )
+          editorial_progress=editorial_progress_snapshot(
+              artifact_dir=root,
+              planning_wpm=VOICE_B_EFFECTIVE_PLANNING_WPM,
+          )
+          partials=list(editorial_progress["partial_results"])
+          latest=dict(editorial_progress["current"] or {})
           task_mission_ids=[]
           for path in sorted((root/"hermes/task-results").glob("*.json")) if (root/"hermes/task-results").is_dir() else []:
               try: row=json.loads(path.read_text())
@@ -884,14 +880,32 @@ jobs:
           )
           previous_ledger=list(mission.state.get("progress_ledger") or ())
           previous_minutes=float((previous_ledger[-1].get("mission_metric_after") if previous_ledger else 0.0) or 0.0)
-          current_minutes=float(latest.get("minutes") or previous_minutes or 0.0)
-          failure_signature=(f"{latest.get('task_id')}:{latest.get('failure_class')}:{round(current_minutes,3)}" if latest else None)
+          observed_minutes=float(
+              editorial_progress.get(
+                  "current_supported_duration_minutes"
+              ) or 0.0
+          )
+          current_minutes=max(previous_minutes,observed_minutes)
+          failure_signature=(
+              f"{latest.get('task_id')}:{latest.get('failure_class')}:{round(current_minutes,3)}"
+              if latest and latest.get("failure_class")
+              else None
+          )
           mission.state["partial_results"]=partials[-8:]
           mission.state["artifact_lineage"].update({
               "product":"artifact:product.json" if product else None,
               "master_qa":"artifact:master-qa.json" if master else None,
               "final":"artifact:delivery/final.json" if final else None,
+              "editorial_progress":latest.get("task_result_ref") if latest else None,
           })
+          if editorial_progress.get("completed_result_preserved"):
+              print("COMPLETED_RESULTS_PRESERVED=PASS")
+          if latest:
+              print(
+                  "EDITORIAL_SUPPORTED_DURATION_MINUTES="
+                  +str(round(current_minutes,3))
+              )
+              print("DURABLE_EDITORIAL_PROGRESS_RECONCILED=PASS")
           mission.record_progress(
               objective_satisfied=report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING",
               new_information=current_minutes > previous_minutes + 0.001,

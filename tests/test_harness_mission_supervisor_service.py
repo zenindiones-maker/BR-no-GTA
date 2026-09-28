@@ -80,3 +80,38 @@ def test_terminal_requires_no_governed_continuation(tmp_path):
     )
     assert decision.action == "FAILED_TERMINAL"
     assert state.snapshot()["mission_status"] == "FAILED_TERMINAL"
+
+
+
+def test_repeated_identical_artifact_with_zero_delta_forces_replan(tmp_path):
+    state, supervisor = _supervisor(tmp_path)
+    common = dict(
+        objective_satisfied=False,
+        new_information=False,
+        artifact_created="artifact:task-results/editorial_script-3.json",
+        artifact_consumed=None,
+        mission_metric_before=15.409,
+        mission_metric_after=15.409,
+        remaining_requirements=("reach 20 supported minutes",),
+        failure_signature="editorial_script:INSUFFICIENT_EVIDENCE:15.409",
+        strategy="MINIMAL_AFFECTED_SUBGRAPH",
+    )
+    first = state.record_progress(**common)
+    assert first["measurable_progress"] is True
+    assert first["artifact_created_novel"] is True
+
+    second = state.record_progress(**common)
+    assert second["measurable_progress"] is False
+    assert second["artifact_created_novel"] is False
+
+    decision = supervisor.evaluate(
+        goal_satisfied=False,
+        remaining_requirements=("reach 20 supported minutes",),
+        eligible_capability_ids=("harness.semantic.requirement.resolve",),
+        budget_available=True,
+        authorized_action_available=True,
+        failure_signature="editorial_script:INSUFFICIENT_EVIDENCE:15.409",
+        strategy="MINIMAL_AFFECTED_SUBGRAPH",
+    )
+    assert decision.action == "REPLAN"
+    assert decision.same_route_forbidden is True
