@@ -165,6 +165,38 @@ def test_bridge_consumes_canonical_task_contracts_and_returns_typed_result():
     assert result["external_side_effect_performed"] is False
 
 
+def test_harness_executes_agenttube_capability_through_canonical_boundary():
+    from app.services.agenttube_capability_bridge import execute_agenttube_capability
+    from app.services.harness_authorization_service import issue_harness_authorization
+    from app.services.harness_capability_service import execute_capability
+
+    capability_id = "youtube.content-strategy"
+    authorization = issue_harness_authorization(
+        authorized_action="EXECUTION",
+        subject=f"capability:{capability_id}",
+    )
+    payload = _task(capability_id)
+    payload["input"] = {
+        "evidence_refs": ["evidence:official-1"],
+        "candidate_topics": ["Extended Look scene analysis"],
+    }
+
+    evidence = execute_capability(
+        capability_id=capability_id,
+        authorization=authorization,
+        payload=payload,
+        executor=execute_agenttube_capability,
+    )
+
+    assert evidence.status == "EXECUTED"
+    assert evidence.authority == "DEEPSEEK_HARNESS"
+    assert evidence.result["schema"] == "AgentTubeCapabilityResult/v1"
+    assert evidence.result["returned_to_harness"] is True
+    assert evidence.result["second_control_plane"] == 0
+    assert evidence.result["duplicate_task_framework"] == 0
+    assert evidence.result["duplicate_learning_plane"] == 0
+
+
 def test_script_policy_preserves_br_narration_and_longform_contract():
     from app.services.agenttube_capability_bridge import execute_agenttube_capability
 
