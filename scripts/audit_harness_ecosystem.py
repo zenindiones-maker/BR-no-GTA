@@ -4,7 +4,9 @@ import argparse
 import ast
 import importlib
 import json
+import os
 import re
+import subprocess
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
@@ -680,9 +682,242 @@ def _identity_inventory(capabilities: list[dict[str, Any]]) -> list[dict[str, An
     )
 
 
+EXPECTED_SOURCE_BRANCH = "work/gate6f-analytics-learning"
+
+
+def _executed_commit_sha() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT,
+            text=True,
+        ).strip()
+    except Exception:
+        return str(os.getenv("GITHUB_SHA") or "UNKNOWN").strip()
+
+
+def _masteragent_direct_entrypoint_safe() -> bool:
+    source = (ROOT / "app" / "services" / "gta6_master_agent.py")
+    server = (
+        ROOT / "app" / "integrations" / "deepseek_harness" / "server.py"
+    )
+    if not source.is_file() or not server.is_file():
+        return False
+    master_text = source.read_text(encoding="utf-8")
+    server_text = server.read_text(encoding="utf-8")
+    direct_markers = (
+        "@mcp.tool",
+        "FastMCP(",
+        "argparse.ArgumentParser",
+        'if __name__ == "__main__"',
+    )
+    if any(marker in master_text for marker in direct_markers):
+        return False
+    wrapper_requirements = (
+        "def _execute_master_cycle_under_harness",
+        "select_harness_ai_provider",
+        "issue_harness_authorization",
+        "GTA6MasterAgent(ai_provider=provider)",
+        "agent.execute_authorized",
+    )
+    return all(marker in server_text for marker in wrapper_requirements)
+
+
+def _runtime_identity_inventory() -> list[dict[str, Any]]:
+    """Canonical operational runtime identities derived from current sources.
+
+    This is a projection of the existing Registry, DSH config and Python-agent
+    audit policy. It does not create a second routing/authority registry.
+    """
+    sha = _executed_commit_sha()
+    native_rows = _dsh_declared_agents()
+    native = next(
+        (row for row in native_rows if row.get("agent_id") == "gta6-master"),
+        None,
+    )
+    if native is None:
+        raise RuntimeError("canonical native gta6-master DSH identity missing")
+
+    brain = GLOBAL_CAPABILITY_REGISTRY.get("gta6.brain.decide")
+    hermes = GLOBAL_CAPABILITY_REGISTRY.get("collaboration.hermes.execute")
+    office = GLOBAL_CAPABILITY_REGISTRY.get("agent-office.execute")
+    if brain is None or hermes is None or office is None:
+        raise RuntimeError("canonical execution-plane Registry identity missing")
+
+    common = {
+        "EXPECTED_SOURCE_BRANCH": EXPECTED_SOURCE_BRANCH,
+        "EXECUTED_COMMIT_SHA": sha,
+    }
+    rows = [
+        {
+            **common,
+            "RUNTIME_ID": "deepseek-harness",
+            "RUNTIME_KIND": "CONTROL_PLANE",
+            "IMPLEMENTATION": (
+                "BR Harness routing/policy/authorization + MCP boundary"
+            ),
+            "ENTRYPOINT": "app.integrations.deepseek_harness.server",
+            "AUTHORITY_ROLE": "SOLE_CONTROL_PLANE_AND_AUTHORIZATION_AUTHORITY",
+            "CONTROL_PLANE": True,
+            "CAPABILITY_IDS": [],
+            "EXECUTION_KIND": "ORCHESTRATOR",
+            "FUNCTIONAL_ROLE": "AUTHORITY",
+            "SIDE_EFFECT_BOUNDARY": "HARNESS_POLICY_AND_AUTHORIZATION",
+            "PROVIDER_ROUTE": "HARNESS_PROVIDER_ROUTING",
+            "AUTHORIZATION_REQUIRED": True,
+            "EXTERNAL_EXPOSURE": "HARNESS_MCP_SURFACE",
+            "CONFIG_SOURCE": (
+                "app/services/global_capability_registry.py + "
+                "app/services/harness_routing_policy_service.py"
+            ),
+        },
+        {
+            **common,
+            "RUNTIME_ID": "gta6-master",
+            "RUNTIME_KIND": "HARNESS_NATIVE_DOMAIN_AGENT",
+            "IMPLEMENTATION": str(native["driver"]),
+            "ENTRYPOINT": (
+                f"agent-loop:{native.get('session_id') or 'gta6-master-session'}"
+            ),
+            "AUTHORITY_ROLE": "SUBORDINATE_DOMAIN_OPERATOR",
+            "CONTROL_PLANE": False,
+            "CAPABILITY_IDS": [],
+            "EXECUTION_KIND": "SEMANTIC_REASONER",
+            "FUNCTIONAL_ROLE": "GTA6_DOMAIN_OPERATOR",
+            "SIDE_EFFECT_BOUNDARY": "HARNESS_MCP_TOOLS_ONLY",
+            "PROVIDER_ROUTE": (
+                f"DSH_CONFIG:{native.get('provider')}/{native.get('model')}"
+            ),
+            "AUTHORIZATION_REQUIRED": True,
+            "EXTERNAL_EXPOSURE": "DSH_SESSION_WITH_HARNESS_MCP_BOUNDARY",
+            "CONFIG_SOURCE": str(native["source"]),
+        },
+        {
+            **common,
+            "RUNTIME_ID": "gta6-master-agent",
+            "RUNTIME_KIND": "PYTHON_SUBORDINATE_AGENT",
+            "IMPLEMENTATION": "app.services.gta6_master_agent.GTA6MasterAgent",
+            "ENTRYPOINT": (
+                "app.integrations.deepseek_harness.server."
+                "_execute_master_cycle_under_harness"
+            ),
+            "AUTHORITY_ROLE": "SUBORDINATE_DECISION_EXECUTION_SERVICE",
+            "CONTROL_PLANE": False,
+            "CAPABILITY_IDS": [],
+            "EXECUTION_KIND": "SUBORDINATE_SERVICE",
+            "FUNCTIONAL_ROLE": "GTA6_DECISION_EXECUTION",
+            "SIDE_EFFECT_BOUNDARY": "HARNESS_AUTHORIZATION_REQUIRED",
+            "PROVIDER_ROUTE": "HARNESS_ROUTED_AI_PROVIDER_REQUIRED",
+            "AUTHORIZATION_REQUIRED": True,
+            "EXTERNAL_EXPOSURE": "INDIRECT_HARNESS_MCP_WRAPPER_ONLY",
+            "CONFIG_SOURCE": "app/services/gta6_master_agent.py",
+        },
+        {
+            **common,
+            "RUNTIME_ID": "gta6-brain",
+            "RUNTIME_KIND": "DOMAIN_SPECIALIST",
+            "IMPLEMENTATION": str(brain.implementation),
+            "ENTRYPOINT": str(brain.executor_binding),
+            "AUTHORITY_ROLE": "RECOMMENDATION_ONLY",
+            "CONTROL_PLANE": False,
+            "CAPABILITY_IDS": [brain.capability_id],
+            "EXECUTION_KIND": str(brain.resolved_execution_kind),
+            "FUNCTIONAL_ROLE": "GTA6_DOMAIN_DECISION",
+            "SIDE_EFFECT_BOUNDARY": "NO_ACTION_AUTHORITY",
+            "PROVIDER_ROUTE": "HARNESS_SELECTED_AI_PROVIDER",
+            "AUTHORIZATION_REQUIRED": True,
+            "EXTERNAL_EXPOSURE": "CAPABILITY_REGISTRY_ONLY",
+            "CONFIG_SOURCE": "app/services/global_capability_registry.py",
+        },
+        {
+            **common,
+            "RUNTIME_ID": "hermes-runtime",
+            "RUNTIME_KIND": "HERMES_COORDINATOR",
+            "IMPLEMENTATION": str(hermes.implementation),
+            "ENTRYPOINT": str(hermes.executor_binding),
+            "AUTHORITY_ROLE": "COORDINATION_ONLY",
+            "CONTROL_PLANE": False,
+            "CAPABILITY_IDS": [hermes.capability_id],
+            "EXECUTION_KIND": str(hermes.resolved_execution_kind),
+            "FUNCTIONAL_ROLE": "COORDINATION",
+            "SIDE_EFFECT_BOUNDARY": str(hermes.side_effect_class),
+            "PROVIDER_ROUTE": "SUBORDINATE_RUNTIME_DEPENDENCY",
+            "AUTHORIZATION_REQUIRED": True,
+            "EXTERNAL_EXPOSURE": "CAPABILITY_REGISTRY_ONLY",
+            "CONFIG_SOURCE": (
+                "app/services/global_capability_registry.py + "
+                "integrations/hermes_agent/UPSTREAM.lock"
+            ),
+        },
+        {
+            **common,
+            "RUNTIME_ID": "agent-office-coordinator",
+            "RUNTIME_KIND": "BOUNDED_EXECUTOR",
+            "IMPLEMENTATION": str(office.implementation),
+            "ENTRYPOINT": str(office.executor_binding),
+            "AUTHORITY_ROLE": "BOUNDED_EXECUTION_ONLY",
+            "CONTROL_PLANE": False,
+            "CAPABILITY_IDS": [office.capability_id],
+            "EXECUTION_KIND": str(office.resolved_execution_kind),
+            "FUNCTIONAL_ROLE": "ORCHESTRATOR",
+            "SIDE_EFFECT_BOUNDARY": str(office.side_effect_class),
+            "PROVIDER_ROUTE": "HARNESS_SELECTED_WORKERS",
+            "AUTHORIZATION_REQUIRED": True,
+            "EXTERNAL_EXPOSURE": "CAPABILITY_REGISTRY_ONLY",
+            "CONFIG_SOURCE": (
+                "app/services/global_capability_registry.py + "
+                "integrations/munder_difflin/UPSTREAM.lock"
+            ),
+        },
+    ]
+    required_fields = (
+        "RUNTIME_ID",
+        "RUNTIME_KIND",
+        "IMPLEMENTATION",
+        "ENTRYPOINT",
+        "AUTHORITY_ROLE",
+        "CONTROL_PLANE",
+        "CAPABILITY_IDS",
+        "EXECUTION_KIND",
+        "FUNCTIONAL_ROLE",
+        "SIDE_EFFECT_BOUNDARY",
+        "PROVIDER_ROUTE",
+        "AUTHORIZATION_REQUIRED",
+        "EXTERNAL_EXPOSURE",
+        "CONFIG_SOURCE",
+        "EXPECTED_SOURCE_BRANCH",
+        "EXECUTED_COMMIT_SHA",
+    )
+    for row in rows:
+        missing = [
+            field
+            for field in required_fields
+            if field not in row
+            or (
+                field not in {"CAPABILITY_IDS", "CONTROL_PLANE"}
+                and row[field] in (None, "")
+            )
+        ]
+        if missing:
+            raise ValueError(
+                f"runtime identity {row.get('RUNTIME_ID')} missing {missing}"
+            )
+    return rows
+
+
 def audit() -> dict[str, Any]:
     capabilities = _capability_rows()
     identities = _identity_inventory(capabilities)
+    runtime_identities = _runtime_identity_inventory()
+    control_planes = [
+        row for row in runtime_identities if row["CONTROL_PLANE"] is True
+    ]
+    runtime_ids = [row["RUNTIME_ID"] for row in runtime_identities]
+    all_runtime_identities_unambiguous = (
+        len(runtime_ids) == len(set(runtime_ids))
+        and len(control_planes) == 1
+        and control_planes[0]["RUNTIME_ID"] == "deepseek-harness"
+    )
     capability_counts = Counter(row["STATUS"] for row in capabilities)
     identity_counts = Counter(row["STATUS"] for row in identities)
 
@@ -745,8 +980,49 @@ def audit() -> dict[str, Any]:
     ]
 
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "authority": "DEEPSEEK_HARNESS",
+        "CONTROL_PLANE_COUNT": len(control_planes),
+        "CONTROL_PLANE_ID": (
+            control_planes[0]["RUNTIME_ID"]
+            if len(control_planes) == 1
+            else None
+        ),
+        "NATIVE_DSH_AGENT_COUNT": sum(
+            row["RUNTIME_KIND"] == "HARNESS_NATIVE_DOMAIN_AGENT"
+            for row in runtime_identities
+        ),
+        "PYTHON_SUBORDINATE_AGENT_COUNT": sum(
+            row["RUNTIME_KIND"] == "PYTHON_SUBORDINATE_AGENT"
+            for row in runtime_identities
+        ),
+        "HERMES_COORDINATOR_COUNT": sum(
+            row["RUNTIME_KIND"] == "HERMES_COORDINATOR"
+            for row in runtime_identities
+        ),
+        "BOUNDED_EXECUTOR_COUNT": sum(
+            row["RUNTIME_KIND"] == "BOUNDED_EXECUTOR"
+            for row in runtime_identities
+        ),
+        "DOMAIN_SPECIALIST_COUNT": sum(
+            row["RUNTIME_KIND"] == "DOMAIN_SPECIALIST"
+            for row in runtime_identities
+        ),
+        "ALL_RUNTIME_IDENTITIES_UNAMBIGUOUS": (
+            all_runtime_identities_unambiguous
+        ),
+        "NO_PARALLEL_CONTROL_PLANE": len(control_planes) == 1,
+        "NO_UNAUTHORIZED_DIRECT_ENTRYPOINT": (
+            _masteragent_direct_entrypoint_safe()
+        ),
+        "NO_DIRECT_MASTERAGENT_CONTROL_PLANE": (
+            next(
+                row
+                for row in runtime_identities
+                if row["RUNTIME_ID"] == "gta6-master-agent"
+            )["CONTROL_PLANE"]
+            is False
+        ),
         "inventory_scope": {
             "global_registry": True,
             "local_dsh_skills": True,
@@ -844,6 +1120,7 @@ def audit() -> dict[str, Any]:
         ],
         "capabilities": capabilities,
         "identities": identities,
+        "runtime_identities": runtime_identities,
         "local_dsh_skills": _dsh_skills(),
         "python_agent_classes": _python_agent_classes(),
     }
@@ -873,6 +1150,12 @@ def main() -> int:
         "BROKEN_BINDINGS_FOUND",
         "MISSING_BOUNDARIES_FOUND",
         "MISSING_EVIDENCE_PATHS_FOUND",
+        "CONTROL_PLANE_COUNT",
+        "NATIVE_DSH_AGENT_COUNT",
+        "PYTHON_SUBORDINATE_AGENT_COUNT",
+        "HERMES_COORDINATOR_COUNT",
+        "BOUNDED_EXECUTOR_COUNT",
+        "DOMAIN_SPECIALIST_COUNT",
     ):
         print(f"{key}={result[key]}")
     print(
@@ -900,6 +1183,10 @@ def main() -> int:
         "ALL_CAPABILITIES_ROUTABLE_WHERE_AUTHORIZED",
         "NO_AGENT_WITHOUT_BOUNDARY",
         "NO_DUPLICATE_AUTHORITY",
+        "ALL_RUNTIME_IDENTITIES_UNAMBIGUOUS",
+        "NO_PARALLEL_CONTROL_PLANE",
+        "NO_UNAUTHORIZED_DIRECT_ENTRYPOINT",
+        "NO_DIRECT_MASTERAGENT_CONTROL_PLANE",
     ):
         print(f"{key}=" + ("PASS" if result[key] else "FAIL"))
     return 0 if (

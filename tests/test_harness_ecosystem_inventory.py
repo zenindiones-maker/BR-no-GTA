@@ -8,6 +8,8 @@ from app.services.harness_routing_policy_service import (
     route_harness_request,
 )
 from scripts.audit_harness_ecosystem import (
+    _masteragent_direct_entrypoint_safe,
+    _runtime_identity_inventory,
     _worker_runner_identity,
     canonical_worker_engine_ids,
 )
@@ -100,3 +102,51 @@ def test_worker_engine_classification_counts_physical_engines_not_runner_aliases
         "codex-readonly",
         "deterministic-analysis",
     )
+
+
+def test_execution_plane_runtime_identities_have_one_control_plane():
+    rows = _runtime_identity_inventory()
+    by_id = {row["RUNTIME_ID"]: row for row in rows}
+
+    assert len(by_id) == len(rows)
+    assert set(by_id) == {
+        "deepseek-harness",
+        "gta6-master",
+        "gta6-master-agent",
+        "gta6-brain",
+        "hermes-runtime",
+        "agent-office-coordinator",
+    }
+    control_planes = [
+        row for row in rows if row["CONTROL_PLANE"] is True
+    ]
+    assert [row["RUNTIME_ID"] for row in control_planes] == [
+        "deepseek-harness"
+    ]
+    assert by_id["gta6-master"]["AUTHORITY_ROLE"] == (
+        "SUBORDINATE_DOMAIN_OPERATOR"
+    )
+    assert by_id["gta6-master-agent"]["CONTROL_PLANE"] is False
+    assert by_id["gta6-master-agent"]["EXTERNAL_EXPOSURE"] == (
+        "INDIRECT_HARNESS_MCP_WRAPPER_ONLY"
+    )
+    assert by_id["gta6-brain"]["AUTHORITY_ROLE"] == "RECOMMENDATION_ONLY"
+    assert by_id["hermes-runtime"]["AUTHORITY_ROLE"] == "COORDINATION_ONLY"
+    assert by_id["agent-office-coordinator"]["AUTHORITY_ROLE"] == (
+        "BOUNDED_EXECUTION_ONLY"
+    )
+    assert all(
+        row["EXPECTED_SOURCE_BRANCH"] == "work/gate6f-analytics-learning"
+        for row in rows
+    )
+    assert len({row["EXECUTED_COMMIT_SHA"] for row in rows}) == 1
+    assert _masteragent_direct_entrypoint_safe() is True
+
+
+def test_native_gta6_agent_wording_does_not_claim_parallel_control_plane():
+    from pathlib import Path
+
+    text = Path(".dsh/cordis.patch.yml").read_text(encoding="utf-8")
+    assert "DeepSeek Harness é a única autoridade/control plane" in text
+    assert "Você é o orquestrador de uma máquina editorial GTA6." not in text
+    assert "O BR é a fonte de verdade operacional; você é o orquestrador." not in text
