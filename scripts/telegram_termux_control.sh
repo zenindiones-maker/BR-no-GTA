@@ -259,7 +259,19 @@ runtime_revision_matches() {
   [[ -s "${REVISION_FILE}" ]] || return 1
   [[ -s "${PID_FILE}" ]] || return 1
   local expected runtime_pid runtime_revision tracked_pid
-  expected="$(current_repo_revision)" || return 1
+
+  # The revision proof is a commit identity, not a working-tree cleanliness
+  # probe.  A live gateway may legitimately materialize runtime state after
+  # launch; using current_repo_revision() here can therefore turn the expected
+  # value into "<sha>-dirty" after the child has already written the immutable
+  # launch SHA.  Prefer the launch-pinned revision and fall back to HEAD when
+  # adopting an already-running gateway from a fresh control shell.
+  expected="${BR_TELEGRAM_GATEWAY_REVISION:-}"
+  if [[ -z "${expected}" ]]; then
+    expected="$(git -C "${ROOT}" rev-parse HEAD 2>/dev/null || true)"
+  fi
+  [[ -n "${expected}" ]] || return 1
+
   tracked_pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
   read -r runtime_pid runtime_revision < "${REVISION_FILE}" || return 1
   [[ "${tracked_pid}" =~ ^[0-9]+$ ]] || return 1
