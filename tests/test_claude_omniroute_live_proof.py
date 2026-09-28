@@ -283,8 +283,9 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
                 "http_status": 200,
             }
 
-        def materialize(target):
+        def materialize(target, *, base_url):
             order.append("materialize")
+            self.assertEqual(base_url, "http://127.0.0.1:20128")
             return {
                 "ok": True,
                 "connection_id": "conn-nvidia-123",
