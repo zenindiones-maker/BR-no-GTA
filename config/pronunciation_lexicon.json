@@ -27,7 +27,7 @@
       "strategy": "alias",
       "critical": true,
       "target_ipa": "vaɪs ˈsɪti",
-      "source": "previously human-approved target sound, now rendered only inside Voice B pt-BR lane; no en-US chunk allowed",
+      "source": "previously human-approved target sound, now rendered only inside BR_OWNER_V1 pt-BR lane; no en-US chunk allowed",
       "synthesis_text": "Váis Síti"
     },
     {

@@ -2,7 +2,7 @@
   "schema": "br-no-gta-ptbr-pronunciation-policy/v1",
   "version": "2026.09.20.1-brazilian-narrator-authority",
   "target_locale": "pt-BR",
-  "voice": "pt-BR-ThalitaMultilingualNeural",
+  "voice": "BR_OWNER_V1",
   "objective": "BRAZILIAN_NARRATOR_NATURALNESS",
   "official_ptbr_text_localization": "AVAILABLE",
   "official_ptbr_text_evidence": [

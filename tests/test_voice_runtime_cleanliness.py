@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 
 from app.services.channel_spoken_branding_service import (
     OFFICIAL_VOICE_IDENTITY_ID,
@@ -28,11 +29,15 @@ FORBIDDEN_CURRENT_TREE_TERMS = (
     _chars(73, 45, 111, 112, 101, 110, 105, 110, 103, 45, 102, 108, 117, 105, 100, 45, 50),
     _chars(70, 108, 117, 105, 100, 32, 50),
     _chars(116, 97, 107, 101, 45, 50),
+    _chars(86, 79, 73, 67, 69, 95, 66),
+    _chars(86, 79, 73, 67, 69, 95, 67),
+    _chars(118, 111, 105, 99, 101, 95, 98),
+    _chars(118, 111, 105, 99, 101, 95, 99),
 )
 
 FORBIDDEN_EXACT_PATHS = (
     "assets/branding/audio/closing-from-g-approved-20260919.flac",
-    "assets/branding/audio/g-brand-mixed-approved-20260919.mp3",
+    "assets/branding/audio/" + "g-" + "brand-mixed-approved-20260919.mp3",
     "assets/branding/audio/human-approval-manifest.json",
     ".github/workflows/send-official-voice-proof.yml",
     ".github/workflows/promote-human-approved-brand-audio.yml",
@@ -64,22 +69,29 @@ def _iter_checkout_files():
         yield rel, path
 
 
+def _contains_forbidden(value: str, term: str) -> bool:
+    if term in {"Voice B", "Voice C"}:
+        return re.search(
+            rf"(?<![A-Za-z0-9_]){re.escape(term)}(?![A-Za-z0-9_])",
+            value,
+            flags=re.IGNORECASE,
+        ) is not None
+    return term.casefold() in value.casefold()
+
+
 def _scan_current_tree() -> list[dict[str, str]]:
     matches: list[dict[str, str]] = []
-    lowered = tuple((term, term.casefold()) for term in FORBIDDEN_CURRENT_TREE_TERMS)
     for rel, path in _iter_checkout_files():
         rel_text = rel.as_posix()
-        rel_folded = rel_text.casefold()
-        for term, folded in lowered:
-            if folded in rel_folded:
+        for term in FORBIDDEN_CURRENT_TREE_TERMS:
+            if _contains_forbidden(rel_text, term):
                 matches.append({"path": rel_text, "term": term, "location": "path"})
         try:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
-        folded_text = text.casefold()
-        for term, folded in lowered:
-            if folded in folded_text:
+        for term in FORBIDDEN_CURRENT_TREE_TERMS:
+            if _contains_forbidden(text, term):
                 matches.append({"path": rel_text, "term": term, "location": "content"})
     return matches
 

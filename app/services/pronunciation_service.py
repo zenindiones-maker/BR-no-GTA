@@ -319,4 +319,3 @@ def build_azure_ssml(plan: SynthesisPlan, *, voice: str = DEFAULT_VOICE) -> str:
         rendered=escape(span.synthesis_text)
         pieces.append(f"<lang xml:lang={quoteattr(span.locale)}>{rendered}</lang>" if span.locale!=plan.default_locale else rendered)
     return f"<speak version=\"1.0\" xml:lang={quoteattr(plan.default_locale)}><voice name={quoteattr(voice)}>{''.join(pieces)}</voice></speak>"
-

@@ -8,7 +8,7 @@
   "official_ptbr_text_localization": "AVAILABLE",
   "official_ptbr_dub_reference": "UNCONFIRMED",
   "target_locale": "pt-BR",
-  "target_voice": "pt-BR-ThalitaMultilingualNeural",
+  "target_voice": "BR_OWNER_V1",
   "authority_order": [
     "HUMAN_APPROVED_BR_NO_GTA",
     "OFFICIAL_PTBR_ACOUSTIC_SOURCE",

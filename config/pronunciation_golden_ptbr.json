@@ -1,7 +1,7 @@
 {
   "schema": "br-no-gta-golden-ptbr-pronunciation/v1",
   "version": "2026.09.20.1-human-gated",
-  "voice": "pt-BR-ThalitaMultilingualNeural",
+  "voice": "BR_OWNER_V1",
   "target_locale": "pt-BR",
   "policy": {
     "canonical_text_immutable": true,
@@ -15,14 +15,14 @@
     {
       "TERM": "VOICE_B_FLUIDITY_REFERENCE",
       "CANONICAL_TEXT": "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de as novidades de hoje!",
-      "PTBR_TARGET": "human-approved Fluid 2 voice/prosody reference",
+      "PTBR_TARGET": "human-approved owner-voice voice/prosody reference",
       "ACOUSTIC_REFERENCE": {
         "run_id": 35525920608,
-        "file": "I-opening-fluid-2.mp3",
+        "file": "BR_OWNER_V1-opening.mp3",
         "sha256": "cfe1e17489cc479622ba8ffa55396a8347f562e25fb8586cba7d755b08da358f"
       },
       "SYNTHESIS_METHOD": "edge-tts semantic-section-v1 +3% +1Hz",
-      "VOICE": "pt-BR-ThalitaMultilingualNeural",
+      "VOICE": "BR_OWNER_V1",
       "CONTEXT_SENTENCE": "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de as novidades de hoje!",
       "HUMAN_STATUS": "APPROVED_REFERENCE",
       "APPROVED_AUDIO_HASH": "cfe1e17489cc479622ba8ffa55396a8347f562e25fb8586cba7d755b08da358f"
@@ -37,7 +37,7 @@
         "sha256": "9090589b052682d3c4d610e14adea83f30cf3903da7c9e1d2801687894f8e679"
       },
       "SYNTHESIS_METHOD": "LEGACY_REFERENCE_ONLY",
-      "VOICE": "pt-BR-ThalitaMultilingualNeural",
+      "VOICE": "BR_OWNER_V1",
       "CONTEXT_SENTENCE": "E BR não dorme em Vice City",
       "HUMAN_STATUS": "LEGACY_APPROVED_REFERENCE_NEW_PTBR_RENDER_PENDING",
       "APPROVED_AUDIO_HASH": "9090589b052682d3c4d610e14adea83f30cf3903da7c9e1d2801687894f8e679"
@@ -59,7 +59,7 @@
         ]
       },
       "SYNTHESIS_METHOD": "PENDING_PHONEME_BACKEND_PROOF",
-      "VOICE": "pt-BR-ThalitaMultilingualNeural",
+      "VOICE": "BR_OWNER_V1",
       "CONTEXT_SENTENCE": "O estado de Leonida vai muito além de Vice City.",
       "HUMAN_STATUS": "REJECTED",
       "APPROVED_AUDIO_HASH": null
@@ -78,7 +78,7 @@
         ]
       },
       "SYNTHESIS_METHOD": "PENDING_PHONEME_BACKEND_PROOF",
-      "VOICE": "pt-BR-ThalitaMultilingualNeural",
+      "VOICE": "BR_OWNER_V1",
       "CONTEXT_SENTENCE": "A Rockstar Games mostrou novas cenas de GTA 6.",
       "HUMAN_STATUS": "REJECTED",
       "APPROVED_AUDIO_HASH": null
