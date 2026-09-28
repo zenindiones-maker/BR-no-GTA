@@ -541,6 +541,7 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
                         "provider": "nvidia",
                         "model": "nvidia/nemotron-3-ultra-550b-a55b",
                         "connectionId": "conn-nvidia-123",
+                        "path": "/v1/providers/nvidia/chat/completions",
                         "status": 200,
                     }
                 ],
@@ -589,6 +590,7 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
                         "provider": "nvidia",
                         "model": "nvidia/nemotron-3-ultra-550b-a55b",
                         "connectionId": "conn-other",
+                        "path": "/v1/providers/nvidia/chat/completions",
                         "status": 200,
                     }
                 ],
