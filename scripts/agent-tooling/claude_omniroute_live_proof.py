@@ -701,7 +701,7 @@ def _resolve_dedicated_connection_evidence(
                 "ok": False,
                 "source": "RESPONSE_HEADER",
                 "connection_identity_redacted": None,
-                "failure_class": "OMNIROUTE_CONNECTION_EVIDENCE_MISMATCH",
+                "failure_class": "OMNIROUTE_CONNECTION_RECEIPT_MISMATCH",
             }
         return {
             "ok": True,
@@ -721,7 +721,6 @@ def _resolve_dedicated_connection_evidence(
             "failure_class": "OMNIROUTE_CONNECTION_EVIDENCE_MISSING",
         }
 
-    expected_path = f"/v1/providers/{provider}/chat/completions"
     matches: list[dict[str, Any]] = []
     for _ in range(20):
         rows = _fetch_logs(base_url)
@@ -735,7 +734,6 @@ def _resolve_dedicated_connection_evidence(
                 str(row.get("model") or ""),
             )
             == _canonical_dispatch_model(provider, model)
-            and str(row.get("path") or "") == expected_path
         ]
         if matches:
             break
@@ -744,7 +742,7 @@ def _resolve_dedicated_connection_evidence(
     if not matches:
         return {
             "ok": False,
-            "source": "REQUEST_LOG",
+            "source": "CALL_LOG_CORRELATION",
             "connection_identity_redacted": None,
             "failure_class": "OMNIROUTE_CONNECTION_EVIDENCE_MISSING",
         }
@@ -757,14 +755,14 @@ def _resolve_dedicated_connection_evidence(
     if connection_ids != {expected_connection_id}:
         return {
             "ok": False,
-            "source": "REQUEST_LOG",
+            "source": "CALL_LOG_CORRELATION",
             "connection_identity_redacted": None,
-            "failure_class": "OMNIROUTE_CONNECTION_EVIDENCE_MISMATCH",
+            "failure_class": "OMNIROUTE_CONNECTION_RECEIPT_MISMATCH",
         }
 
     return {
         "ok": True,
-        "source": "REQUEST_LOG",
+        "source": "CALL_LOG_CORRELATION",
         "connection_identity_redacted": _connection_identity_redacted(
             expected_connection_id
         ),
@@ -831,7 +829,7 @@ def _dedicated_canary(
         "harness_provider": str(target["harness_provider"]),
         "harness_model": str(target["harness_model"]),
         "connection_identity_redacted": _connection_identity_redacted(connection_id),
-        "connection_evidence_source": connection_evidence["source"],
+        "connection_receipt_source": connection_evidence["source"],
         "http_status": status,
         "latency_ms": latency,
         "reported_provider": actual_provider,
