@@ -45,5 +45,25 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pytest
 
+      - name: Report materialized skill digests
+        run: |
+          python - <<'PY'
+          import importlib.util
+          from pathlib import Path
+
+          root = Path.cwd()
+          path = root / 'scripts' / 'agent-tooling' / 'agent_skill_pack.py'
+          spec = importlib.util.spec_from_file_location('br_agent_skill_pack_digest', path)
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          pack = module.load_agent_skill_pack(root)
+          for entry in pack.skills:
+              if not entry.local_path:
+                  continue
+              local = root / entry.local_path
+              if local.is_dir():
+                  print(f"SKILL_DIGEST {entry.skill_id} {module.skill_tree_digest(local)}")
+          PY
+
       - name: Run agent skill pack contract tests
         run: pytest -q tests/test_agent_skill_pack_contracts.py
