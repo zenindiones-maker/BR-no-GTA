@@ -9,12 +9,12 @@
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
-    "retry_of_run": 36354116161,
-    "reason": "Resume the same nonterminal durable Production from state_version 180 after bounded TOON decision; consume only typed FreshEvidenceLineage/v1 and resolve the editorial_script evidence gap through MINIMAL_AFFECTED_SUBGRAPH without padding",
+    "retry_of_run": 36358009997,
+    "reason": "Resume the same nonterminal durable Production from state_version 200 on the current head after fixing semantic resume to skip already completed durable tasks; preserve accepted partial editorial work and typed FreshEvidenceLineage/v1, resolve only the remaining editorial_script evidence gaps through MINIMAL_AFFECTED_SUBGRAPH, no padding and no blind retry",
     "preserve_longform_recovery": true,
     "preserve_web_fabric": true,
     "preserve_audiovisual_contracts": true,
-    "candidate_head": "87450cc95afbb4327ff76e55b9ef4ebb616b889a",
+    "candidate_head": "31e31ad722171f900fae9770950c228778de2d07",
     "baseline_source_selected": 2,
     "baseline_source_acquired": 0,
     "baseline_provenance": "INSUFFICIENT",
@@ -61,21 +61,21 @@
     },
     "durable_continuation": {
       "schema": "DurableProductionContinuationRequest/v1",
-      "resume_run_id": 36354116161,
+      "resume_run_id": 36358009997,
       "durable_mission_key": "mission-ad890d7d732e9be79838",
-      "continuation_count": 156,
-      "continuation_id": "mission-ad890d7d732e9be79838:180:36354116161",
-      "expected_state_version": 180,
+      "continuation_count": 161,
+      "continuation_id": "mission-ad890d7d732e9be79838:200:36358009997",
+      "expected_state_version": 200,
       "continuation_authority_schema": "ContinuationAuthorization/v1",
-      "checkpoint_artifact_id": 10943630303,
-      "checkpoint_artifact_digest": "sha256:fe4453b06a88f5134006fdb0da5a43782a76f4df383593e36534714bf8d4a18f",
+      "checkpoint_artifact_id": 10944847037,
+      "checkpoint_artifact_digest": "sha256:cf3042243e38c35e4b61eee8b502687f69cf1a3ff4e0c557b9a38aae4308d300",
       "predecessor_status": "RUNNABLE",
       "predecessor_next_transition": "RESOLVE_REQUIREMENT",
       "predecessor_artifact_expired": false,
       "continuation_transition": "RESOLVE_REQUIREMENT",
       "continuation_strategy": "MINIMAL_AFFECTED_SUBGRAPH",
-      "continuation_route_id": "continuation-route:c345ede88ff3b845821ab2a6"
+      "continuation_route_id": "continuation-route:83466ff8482bed9a22119c84"
     }
   },
-  "requested_from_head": "87450cc95afbb4327ff76e55b9ef4ebb616b889a"
+  "requested_from_head": "31e31ad722171f900fae9770950c228778de2d07"
 }
