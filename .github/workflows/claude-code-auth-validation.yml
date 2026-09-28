@@ -47,7 +47,5 @@ jobs:
           set -euo pipefail
           claude --version | grep '^2\.1\.283'
           claude --help >/dev/null
-          python3 scripts/agent-tooling/claude_omniroute_contract.py \\
-            --logical-model combo/harness-claude-0123456789abcdef \\
-            --proof-mode
+          python3 scripts/agent-tooling/claude_omniroute_contract.py --logical-model combo/harness-claude-0123456789abcdef --proof-mode
           echo "CLAUDE_CODE_GATEWAY_BOUNDARY=PASS"
