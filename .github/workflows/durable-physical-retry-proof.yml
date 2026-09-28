@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - work/gate6f-analytics-learning
+      - work/production-youtube-human-review-recovery
     paths:
       - 'app/services/production_durable_resume_service.py'
       - '.github/workflows/real-multi-agent-production.yml'
