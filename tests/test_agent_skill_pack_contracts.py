@@ -5,8 +5,11 @@ import importlib.util
 import json
 from pathlib import Path
 import re
+import shutil
 
 import pytest
+
+from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -162,3 +165,101 @@ def test_deepseek_workflow_bootstraps_provider_before_resolved_config():
     assert bootstrap_index >= 0, "native DSH workflow does not install skill pack"
     assert config_index >= 0
     assert bootstrap_index < config_index
+
+
+def test_video_edit_installation_grants_no_external_execution():
+    records = GLOBAL_CAPABILITY_REGISTRY.all()
+    assert GLOBAL_CAPABILITY_REGISTRY.get("video-edit") is None
+    assert not any(
+        "runcomfy" in str(record.capability_id).lower()
+        or "runcomfy" in str(record.provider_id or "").lower()
+        for record in records
+    )
+
+
+def test_teach_installation_grants_no_workspace_write():
+    module = _load_module()
+    entry = _entries_by_id(module.load_agent_skill_pack(ROOT))["teach"]
+    assert entry.direct_repository_mutation is False
+    assert entry.side_effect_class == "NONE"
+    assert GLOBAL_CAPABILITY_REGISTRY.get("teach") is None
+
+
+def test_caveman_cannot_transform_canonical_artifacts():
+    module = _load_module()
+    entry = _entries_by_id(module.load_agent_skill_pack(ROOT))["caveman"]
+    assert entry.direct_repository_mutation is False
+    assert entry.direct_external_side_effects is False
+    assert GLOBAL_CAPABILITY_REGISTRY.get("caveman") is None
+    assert not any(
+        getattr(record, "skill_id", None) == "caveman"
+        for record in GLOBAL_CAPABILITY_REGISTRY.all()
+    )
+
+
+def test_handoff_is_not_a_durable_checkpoint_capability():
+    assert GLOBAL_CAPABILITY_REGISTRY.get("handoff") is None
+    assert not any(
+        getattr(record, "skill_id", None) == "handoff"
+        and (
+            "durable" in str(record.capability_id).lower()
+            or "checkpoint" in str(record.capability_id).lower()
+        )
+        for record in GLOBAL_CAPABILITY_REGISTRY.all()
+    )
+
+
+def test_imported_skills_cannot_claim_harness_authority(tmp_path: Path):
+    module = _load_module()
+    raw = _load_raw_manifest()
+    raw["skills"][1]["authority"] = "DEEPSEEK_HARNESS"
+
+    root = tmp_path / "repo"
+    (root / "config").mkdir(parents=True)
+    (root / "config" / "agent_skill_pack_v1.json").write_text(
+        json.dumps(raw),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="authority must remain NONE"):
+        module.load_agent_skill_pack(root)
+
+
+def test_unpinned_source_fails_closed(tmp_path: Path):
+    module = _load_module()
+    raw = _load_raw_manifest()
+    raw["skills"][0]["source"]["commit"] = "main"
+
+    root = tmp_path / "repo"
+    (root / "config").mkdir(parents=True)
+    (root / "config" / "agent_skill_pack_v1.json").write_text(
+        json.dumps(raw),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="pinned 40-character"):
+        module.load_agent_skill_pack(root)
+
+
+def test_drifted_vendored_source_fails_closed(tmp_path: Path):
+    module = _load_module()
+    raw = _load_raw_manifest()
+    tdd = next(item for item in raw["skills"] if item["skill_id"] == "tdd")
+    raw["skills"] = [tdd]
+
+    root = tmp_path / "repo"
+    (root / "config").mkdir(parents=True)
+    (root / "config" / "agent_skill_pack_v1.json").write_text(
+        json.dumps(raw),
+        encoding="utf-8",
+    )
+    source = ROOT / tdd["local_path"]
+    destination = root / tdd["local_path"]
+    shutil.copytree(source, destination)
+    (destination / "SKILL.md").write_text(
+        (destination / "SKILL.md").read_text(encoding="utf-8") + "\nDRIFT\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="digest mismatch"):
+        module.verify_agent_skill_pack(root)
