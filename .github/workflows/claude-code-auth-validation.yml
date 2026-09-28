@@ -1,4 +1,4 @@
-name: Claude Code Auth Validation
+name: Claude Code Gateway Boundary
 
 on:
   push:
@@ -6,33 +6,35 @@ on:
       - work/gate6f-analytics-learning
     paths:
       - ".github/workflows/claude-code-auth-validation.yml"
+      - ".github/workflows/claude-code-omniroute-proof.yml"
       - "scripts/agent-tooling/bootstrap.sh"
-      - "scripts/agent-tooling/claude_auth_preflight.sh"
-      - "tests/test_claude_auth_boundary.py"
+      - "scripts/agent-tooling/claude_omniroute_contract.py"
+      - "tests/test_claude_omniroute_contract.py"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  auth-preflight:
+  gateway-boundary:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    env:
-      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-
+    timeout-minutes: 8
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - name: Prove authentication boundary contract
-        run: python3 -m unittest -q tests.test_claude_auth_boundary
+      - name: Prove Claude OmniRoute contract
+        run: python3 -m pytest -q tests/test_claude_omniroute_contract.py
 
       - name: Install pinned Claude Code
         run: bash scripts/agent-tooling/bootstrap.sh claude
 
-      - name: Validate configured Claude credential without a model call
-        run: bash scripts/agent-tooling/claude_auth_preflight.sh
+      - name: Validate pinned CLI without credentials or model call
+        run: |
+          set -euo pipefail
+          claude --version | grep '^2\.1\.283'
+          claude --help >/dev/null
+          python3 scripts/agent-tooling/claude_omniroute_contract.py             --provider opencode             --model oc/big-pickle             --zero-cost-proof
+          echo "CLAUDE_CODE_GATEWAY_BOUNDARY=PASS"
