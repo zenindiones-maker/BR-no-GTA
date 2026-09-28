@@ -176,10 +176,13 @@ def _telegram_requirement():
         _historical_363710_proposal(),
         product_contract_digest=PRODUCT_DIGEST,
     )
-    return {
+    requirement = {
         item["task_id"]: item
         for item in requirements
     }["telegram_deliver"]
+    assert requirement["action"] == "EXECUTION"
+    assert requirement["task_family"] == "EXECUTION"
+    return requirement
 
 
 def test_historical_telegram_hard_filters_analytics_before_soft_ranking(

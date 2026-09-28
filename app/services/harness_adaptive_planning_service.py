@@ -1715,7 +1715,9 @@ def proposal_requirements(
                 task.risk_side_effect_class
             ),
             "risk_side_effect_class": typed.required_side_effect_class,
-            "task_family": seed["task_family"],
+            "task_family": (
+                "EXECUTION" if telegram_delivery else seed["task_family"]
+            ),
         })
         requirements.append(requirement)
     return requirements
@@ -2223,7 +2225,22 @@ def select_capability_for_requirement(
 ) -> tuple[str, bool, tuple[str, ...], dict[str, Any]]:
     mission_class = str(context.get("mission_class") or "").strip().upper()
     declared_action = str(requirement.get("action") or "").strip().upper()
-    effective_action = _effective_requirement_action(requirement)
+    typed_requirement = (
+        str(
+            requirement.get("schema")
+            or requirement.get("typed_requirement_schema")
+            or ""
+        ).strip()
+        == "TypedTaskRequirement/v1"
+    )
+    # TypedTaskRequirement/v1 has already crossed deterministic materialization.
+    # Its action is a hard contract fact; do not reinterpret it from free-form
+    # text a second time at the resolver boundary.
+    effective_action = (
+        declared_action
+        if typed_requirement
+        else _effective_requirement_action(requirement)
+    )
     requirement = {
         **dict(requirement),
         "declared_action": str(
@@ -2255,14 +2272,6 @@ def select_capability_for_requirement(
         )
         if str(item).strip()
     ]
-    typed_requirement = (
-        str(
-            requirement.get("schema")
-            or requirement.get("typed_requirement_schema")
-            or ""
-        ).strip()
-        == "TypedTaskRequirement/v1"
-    )
     discovery_intent = " ".join(
         str(value or "").strip()
         for value in (
