@@ -12,6 +12,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from claude_omniroute_route_plan import (
     HarnessProviderIdentity,
+    ModelMappingUnavailable,
     build_route_plan,
     map_harness_target,
     mapped_harness_provider_ids,
