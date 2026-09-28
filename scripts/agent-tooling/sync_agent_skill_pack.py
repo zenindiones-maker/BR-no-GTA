@@ -88,6 +88,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--skill", action="append", default=[])
     parser.add_argument("--check-only", action="store_true")
+    parser.add_argument("--verify-upstream", action="store_true")
     args = parser.parse_args()
 
     _assert_cloud_environment()
@@ -109,10 +110,44 @@ def main() -> None:
         if selected and skill_id not in selected:
             continue
         destination = ROOT / local_path
-        if args.check_only:
+        source = entry["source"]
+        if args.verify_upstream:
+            if not destination.is_dir():
+                raise RuntimeError(f"materialized skill is missing: {skill_id}")
+            expected = entry.get("content_digest")
+            if not expected:
+                raise RuntimeError(
+                    f"missing manifest digest for pinned upstream verification: {skill_id}"
+                )
+            local_digest = skill_tree_digest(destination)
+            checkout = tooling_root / (
+                source["repository"].replace("/", "-") + "-" + source["commit"]
+            )
+            source_root = checkout_revision(
+                source["repository"],
+                source["commit"],
+                checkout,
+            )
+            upstream_path = source_root / source["path"]
+            if not upstream_path.is_dir():
+                raise RuntimeError(
+                    f"approved upstream path is missing: {skill_id}"
+                )
+            upstream_digest = skill_tree_digest(upstream_path)
+            if local_digest != expected:
+                raise RuntimeError(
+                    f"local digest mismatch for {skill_id}: "
+                    f"expected={expected} actual={local_digest}"
+                )
+            if upstream_digest != expected:
+                raise RuntimeError(
+                    f"upstream digest mismatch for {skill_id}: "
+                    f"expected={expected} actual={upstream_digest}"
+                )
+            actual = local_digest
+        elif args.check_only:
             actual = skill_tree_digest(destination)
         else:
-            source = entry["source"]
             actual = sync_skill(
                 source["repository"],
                 source["commit"],
@@ -129,6 +164,8 @@ def main() -> None:
 
     print(json.dumps(results, indent=2, sort_keys=True))
     print("AGENT_SKILL_PACK_MATERIALIZATION=PASS")
+    if args.verify_upstream:
+        print("PINNED_UPSTREAM_CONTENT_VERIFIED=PASS")
 
 
 if __name__ == "__main__":
