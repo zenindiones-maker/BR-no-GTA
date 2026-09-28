@@ -2066,4 +2066,21 @@ _REGISTRY._records = tuple(
     )
 )
 
+from app.services.voice_capability_bridge import voice_capability_records
+
+_VOICE_CAPABILITY_RECORDS = voice_capability_records()
+for _voice_record in _VOICE_CAPABILITY_RECORDS:
+    if _REGISTRY._by_id.get(_voice_record.capability_id) is not None:
+        raise ValueError(
+            "Duplicate Voice Plane capability id: " + _voice_record.capability_id
+        )
+    _REGISTRY._by_id[_voice_record.capability_id] = _voice_record
+
+_REGISTRY._records = tuple(
+    sorted(
+        (*_REGISTRY._records, *_VOICE_CAPABILITY_RECORDS),
+        key=lambda item: item.capability_id,
+    )
+)
+
 GLOBAL_CAPABILITY_REGISTRY = _REGISTRY

@@ -1,0 +1,9 @@
+{
+  "name": "br-no-gta-cloudflare-voice-boundary",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "agents": "0.24.0"
+  }
+}

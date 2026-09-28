@@ -1,0 +1,60 @@
+{
+  "schema": "VoicePlaneUpstreamProvenance/v1",
+  "qwen3_tts": {
+    "repository": "QwenLM/Qwen3-TTS",
+    "repository_sha": "022e286b98fbec7e1e916cb940cdf532cd9f488e",
+    "package": "qwen-tts",
+    "package_version": "0.1.1",
+    "license": "Apache-2.0",
+    "interactive_model": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+    "interactive_model_revision": "5d83992",
+    "long_form_model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+    "long_form_model_revision": "fd4b254389122332181a7c3db7f27e918eec64e3",
+    "runtime_mode": "PRIVATE_ISOLATED_SELF_HOSTED",
+    "implicit_weight_download": "FORBIDDEN"
+  },
+  "chatterbox": {
+    "repository": "resemble-ai/chatterbox",
+    "repository_sha": "5de7a54aa4e5e2baadb0182dde554908b48b85c2",
+    "package": "chatterbox-tts",
+    "package_version": "0.1.7",
+    "license": "MIT",
+    "model": "ResembleAI/Chatterbox-Multilingual-pt-br",
+    "model_revision": "b3952f1",
+    "checkpoint_sha256": "074aaf65255eb9cb960288f7cc72e09d3b5008f6e0b14868c0d4e5b0bd7cbb6c",
+    "upstream_dependency_note": "resemble-perth is floating master in upstream pyproject; canonical runtime promotion requires an independently pinned build recipe",
+    "runtime_mode": "PRIVATE_ISOLATED_SELF_HOSTED"
+  },
+  "cloudflare_agents": {
+    "repository": "cloudflare/agents",
+    "repository_sha": "11f87b5332f6cf4dfff71d8249621b28f539280f",
+    "package": "agents",
+    "package_version": "0.24.0",
+    "license": "MIT",
+    "imports": [
+      "agents/voice",
+      "agents/voice/client",
+      "agents/voice/react"
+    ],
+    "deprecated_wrapper_used": false,
+    "role": "TRANSPORT_ONLY"
+  },
+  "nemotron_voicechat": {
+    "model_id": "nvidia/NVIDIA-NemotronLabs-VoiceChat-11B",
+    "model_revision": "443794e",
+    "license": "openmdw-1.1",
+    "language": "en",
+    "production_eligible": false,
+    "status": "EXPERIMENTAL_READY"
+  },
+  "symphony": {
+    "repository": "openai/symphony",
+    "repository_sha": "be10a1b79df723d6d7612b5651c8522704dafb2e",
+    "license": "Apache-2.0",
+    "integration_mode": "ARCHITECTURAL_REFERENCE_ONLY",
+    "second_scheduler": false
+  },
+  "authority": "DEEPSEEK_HARNESS",
+  "official_voice_promotion": "HUMAN_REVIEW_REQUIRED",
+  "raw_voice_in_git": false
+}

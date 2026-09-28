@@ -75,6 +75,8 @@ def test_authorized_telegram_voice_converges_to_harness_and_send_voice(tmp_path)
         harness_turn=harness_turn,
         tts_provider=FakeTTS(),
         work_dir=tmp_path,
+        audio_normalizer=lambda source, target: (target.write_bytes(source.read_bytes()), target)[1],
+        audio_encoder=lambda source, target: (target.write_bytes(source.read_bytes()), target)[1],
     )
     assert captured["transcript"] == "onde está o vídeo?"
     assert result["authority"] == "deepseek_harness"
@@ -104,5 +106,7 @@ def test_unauthorized_telegram_voice_is_rejected_before_file_download(tmp_path):
             harness_turn=lambda *_a, **_k: {},
             tts_provider=FakeTTS(),
             work_dir=tmp_path,
+            audio_normalizer=lambda source, target: target,
+            audio_encoder=lambda source, target: target,
         )
     assert not (tmp_path / "voice.ogg").exists()
