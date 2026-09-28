@@ -113,6 +113,11 @@ def test_product_contract_digest_is_stable_and_changes_with_policy():
         "duration": {
             **contract["duration"],
             "minimum_final_duration_seconds": 1260,
+            "target_final_duration_seconds": {
+                **contract["duration"]["target_final_duration_seconds"],
+                "minimum": 1260,
+            },
+            "minimum_supported_editorial_duration_minutes": 21.0,
         },
     }
     assert mission_product_contract_digest(changed) != first
@@ -134,6 +139,16 @@ def test_historical_8_12_min_proposal_is_rejected():
         item.startswith("PRODUCT_DURATION_CONTRACT_VIOLATION:")
         for item in validation["violations"]
     )
+
+
+def test_missing_duration_for_editorial_proposal_is_rejected():
+    contract = materialize_br_no_gta_mission_product_contract()
+    validation = validate_mission_plan_product_contract(
+        _proposal_with_duration("source-grounded editorial quality"),
+        contract,
+    )
+    assert validation["valid"] is False
+    assert "PRODUCT_DURATION_CONTRACT_MISSING" in validation["violations"]
 
 
 def test_20_25_min_proposal_is_accepted():

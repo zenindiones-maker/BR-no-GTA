@@ -21,15 +21,15 @@ BR_NO_GTA_SEMANTIC_PLANNING_BOUNDARY = (
 _MAX_PLANNER_CONTRACT_BYTES = 8192
 
 _DURATION_RANGE_RE = re.compile(
-    r"(?<!\\d)(\\d+(?:[.,]\\d+)?)\\s*"
-    r"(?:-|–|—|a|até|to)\\s*"
-    r"(\\d+(?:[.,]\\d+)?)\\s*"
-    r"(?:min(?:uto)?s?|minutes?)\\b",
+    r"(?<!\d)(\d+(?:[.,]\d+)?)\s*"
+    r"(?:-|–|—|a|até|to)\s*"
+    r"(\d+(?:[.,]\d+)?)\s*"
+    r"(?:min(?:uto)?s?|minutes?)\b",
     re.IGNORECASE,
 )
 _DURATION_SINGLE_RE = re.compile(
-    r"(?<!\\d)(\\d+(?:[.,]\\d+)?)\\s*"
-    r"(?:min(?:uto)?s?|minutes?)\\b",
+    r"(?<!\d)(\d+(?:[.,]\d+)?)\s*"
+    r"(?:min(?:uto)?s?|minutes?)\b",
     re.IGNORECASE,
 )
 
@@ -230,9 +230,36 @@ def mission_plan_product_contract_violations(
     target_min = float(target["minimum"])
     target_max = float(target["maximum"])
     violations: list[str] = []
+    duration_mention_count = 0
+    proposal_mapping = (
+        proposal.to_dict() if hasattr(proposal, "to_dict") else proposal
+    )
+    duration_required = False
+    if isinstance(proposal_mapping, dict):
+        for task in proposal_mapping.get("tasks") or ():
+            if not isinstance(task, dict):
+                continue
+            task_text = " ".join(
+                str(task.get(key) or "")
+                for key in ("task_class", "objective", "expected_output")
+            ).casefold()
+            if any(
+                marker in task_text
+                for marker in (
+                    "editorial",
+                    "script",
+                    "content",
+                    "production-plan",
+                    "production plan",
+                )
+            ):
+                duration_required = True
+                break
 
     for path, text in _proposal_text_fragments(proposal):
-        for low_minutes, high_minutes in _duration_mentions_minutes(text):
+        mentions = _duration_mentions_minutes(text)
+        duration_mention_count += len(mentions)
+        for low_minutes, high_minutes in mentions:
             low_seconds = low_minutes * 60.0
             high_seconds = high_minutes * 60.0
             if low_seconds < target_min or high_seconds > target_max:
@@ -259,6 +286,8 @@ def mission_plan_product_contract_violations(
                 "PRODUCT_ARTIFICIAL_PADDING_CONTRACT_VIOLATION:"
                 f"path={path}"
             )
+    if duration_required and duration_mention_count == 0:
+        violations.append("PRODUCT_DURATION_CONTRACT_MISSING")
     return tuple(dict.fromkeys(violations))
 
 
