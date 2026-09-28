@@ -13,7 +13,7 @@ from xml.sax.saxutils import escape, quoteattr
 
 PRONUNCIATION_LAYER_VERSION = "br-no-gta-pronunciation/v6-all-ptbr"
 DEFAULT_LOCALE = "pt-BR"
-DEFAULT_VOICE = "pt-BR-ThalitaMultilingualNeural"
+DEFAULT_VOICE = "BR_OWNER_V1"
 LEXICON_PATH = Path(__file__).resolve().parents[2] / "config" / "pronunciation_lexicon.json"
 _TRIVIA_RE = re.compile(r"^[\s.,!?;:—–-]*$")
 _AUTODETECT_ACRONYM_RE = re.compile(r"\b[A-Z][A-Z0-9]{1,5}\b")
@@ -148,7 +148,7 @@ def _match_explicit(text: str, explicit_spans: list[dict[str, Any]] | None) -> l
         requested_locale=str(item.get("locale") or "").strip()
         if not requested_locale:
             raise PronunciationError("explicit pronunciation span locale required")
-        # Human policy: Voice B narration is one continuous pt-BR lane.
+        # Human policy: Owner narration is one continuous pt-BR lane.
         # Explicit metadata may select a synthesis alias, never a foreign-language chunk.
         locale=DEFAULT_LOCALE
         out.append({
@@ -269,8 +269,6 @@ def synthesis_plan_from_dict(payload: dict[str, Any]) -> SynthesisPlan:
 def provider_capabilities(provider_id: str, *, provider_version: str | None = None, voice: str = DEFAULT_VOICE) -> ProviderCapabilities:
     normalized=provider_id.strip().lower()
     multilingual="multilingual" in voice.lower()
-    if normalized=="edge-tts":
-        return ProviderCapabilities("edge-tts",provider_version,False,multilingual,False,False,False,multilingual,True,"auto-detect-per-isolated-chunk")
     if normalized in {"azure-speech","azure-cognitive-speech"}:
         return ProviderCapabilities("azure-speech",provider_version,True,True,True,not multilingual,not multilingual,multilingual,True,"ssml-lang")
     return ProviderCapabilities(provider_id,provider_version,False,False,False,False,False,False,False,"none")
@@ -322,205 +320,3 @@ def build_azure_ssml(plan: SynthesisPlan, *, voice: str = DEFAULT_VOICE) -> str:
         pieces.append(f"<lang xml:lang={quoteattr(span.locale)}>{rendered}</lang>" if span.locale!=plan.default_locale else rendered)
     return f"<speak version=\"1.0\" xml:lang={quoteattr(plan.default_locale)}><voice name={quoteattr(voice)}>{''.join(pieces)}</voice></speak>"
 
-def _edge_synthesis_groups(plan: SynthesisPlan) -> list[dict[str, Any]]:
-    """
-    Preserve natural sentence prosody by avoiding TTS resets at same-locale alias
-    boundaries. Edge only needs a separate request when the locale actually changes.
-    """
-    groups: list[dict[str, Any]] = []
-    for index, span in enumerate(plan.spans):
-        if groups and groups[-1]["locale"] == span.locale:
-            groups[-1]["synthesis_text"] += span.synthesis_text
-            groups[-1]["span_indexes"].append(index)
-            if span.pronunciation_identity:
-                groups[-1]["pronunciation_identities"].append(span.pronunciation_identity)
-            continue
-        groups.append({
-            "locale": span.locale,
-            "synthesis_text": span.synthesis_text,
-            "span_indexes": [index],
-            "pronunciation_identities": (
-                [span.pronunciation_identity] if span.pronunciation_identity else []
-            ),
-        })
-    return groups
-
-
-_EDGE_INTER_GROUP_LEADING_PAD_SECONDS = 0.100
-_EDGE_INTER_GROUP_TRAILING_PAD_SECONDS = 0.140
-_EDGE_INTER_GROUP_CROSSFADE_SECONDS = 0.060
-
-
-def _edge_trim_window(
-    word_boundaries: list[dict[str, Any]],
-    duration: float,
-    *,
-    trim_leading: bool,
-    trim_trailing: bool,
-) -> tuple[float, float]:
-    if not word_boundaries:
-        return 0.0, duration
-    first=min(float(item["offset_seconds"]) for item in word_boundaries)
-    last=max(
-        float(item["offset_seconds"])+float(item["duration_seconds"])
-        for item in word_boundaries
-    )
-    start=(
-        max(0.0, first-_EDGE_INTER_GROUP_LEADING_PAD_SECONDS)
-        if trim_leading else 0.0
-    )
-    end=(
-        min(duration, last+_EDGE_INTER_GROUP_TRAILING_PAD_SECONDS)
-        if trim_trailing else duration
-    )
-    if end<=start:
-        raise PronunciationError("invalid pronunciation chunk trim window")
-    return start,end
-
-
-def _probe_duration(path: Path) -> float:
-    result=subprocess.run(["ffprobe","-v","error","-show_entries","format=duration","-of","default=nw=1:nk=1",str(path)],capture_output=True,text=True,timeout=120)
-    if result.returncode!=0:
-        raise PronunciationError("ffprobe failed for pronunciation chunk")
-    try:
-        value=float(result.stdout.strip())
-    except (TypeError,ValueError) as exc:
-        raise PronunciationError("pronunciation chunk duration invalid") from exc
-    if value<=0:
-        raise PronunciationError("pronunciation chunk duration must be positive")
-    return value
-
-async def synthesize_edge_plan(plan: SynthesisPlan, *, voice: str, rate: str, pitch: str = "+0Hz", output: Path) -> dict[str, Any]:
-    import edge_tts
-    caps=provider_capabilities("edge-tts",provider_version="7.2.8",voice=voice)
-    validate_provider_plan(plan,caps)
-    output.parent.mkdir(parents=True,exist_ok=True)
-    started=time.monotonic()
-    rows=[]
-    with tempfile.TemporaryDirectory(prefix="pronunciation-",dir=str(output.parent)) as tmp:
-        root=Path(tmp)
-        groups=_edge_synthesis_groups(plan)
-        trim_windows=[]
-        local_timings=[]
-        for index,group in enumerate(groups):
-            chunk=root/f"{index:03d}.mp3"
-            communicator=edge_tts.Communicate(
-                text=group["synthesis_text"],
-                voice=voice,
-                rate=rate,
-                pitch=pitch,
-                volume="+0%",
-                boundary="WordBoundary",
-            )
-            local=[]
-            with chunk.open("wb") as stream:
-                async for event in communicator.stream():
-                    if event.get("type")=="audio":
-                        stream.write(event.get("data") or b"")
-                    elif event.get("type")=="WordBoundary":
-                        local.append({
-                            "type":"word","text":str(event.get("text") or ""),
-                            "offset_seconds":float(event.get("offset") or 0)/10_000_000.0,
-                            "duration_seconds":float(event.get("duration") or 0)/10_000_000.0,
-                        })
-            if not chunk.is_file() or chunk.stat().st_size<=0:
-                raise PronunciationError("Edge TTS returned empty pronunciation chunk")
-            raw_duration=_probe_duration(chunk)
-            trim_start,trim_end=_edge_trim_window(
-                local,
-                raw_duration,
-                trim_leading=index>0,
-                trim_trailing=index<len(groups)-1,
-            )
-            effective_duration=trim_end-trim_start
-            trim_windows.append((trim_start,trim_end))
-            local_timings.append(local)
-            rows.append({
-                "index":index,
-                "locale":group["locale"],
-                "span_indexes":list(group["span_indexes"]),
-                "pronunciation_identities":list(group["pronunciation_identities"]),
-                "raw_duration_seconds":raw_duration,
-                "trim_start_seconds":trim_start,
-                "trim_end_seconds":trim_end,
-                "duration_seconds":effective_duration,
-                "trimmed_padding_seconds":raw_duration-effective_duration,
-                "bytes":chunk.stat().st_size,
-            })
-
-        join_durations=[]
-        for index in range(1,len(rows)):
-            join_durations.append(min(
-                _EDGE_INTER_GROUP_CROSSFADE_SECONDS,
-                float(rows[index-1]["duration_seconds"])/4.0,
-                float(rows[index]["duration_seconds"])/4.0,
-            ))
-
-        timing=[]
-        cumulative=0.0
-        for index,(row,local,(trim_start,trim_end)) in enumerate(zip(rows,local_timings,trim_windows)):
-            if index>0:
-                cumulative=max(0.0,cumulative-join_durations[index-1])
-            group_start=cumulative
-            for item in local:
-                shifted=max(0.0,float(item["offset_seconds"])-trim_start)
-                timing.append({
-                    **item,
-                    "offset_seconds":group_start+shifted,
-                })
-            row["output_start_seconds"]=group_start
-            cumulative=group_start+float(row["duration_seconds"])
-
-        ffmpeg_command=[
-            "ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
-        ]
-        for idx in range(len(groups)):
-            ffmpeg_command.extend(["-i",str(root/f"{idx:03d}.mp3")])
-        filters=[]
-        for idx,(trim_start,trim_end) in enumerate(trim_windows):
-            filters.append(
-                f"[{idx}:a]atrim=start={trim_start:.6f}:end={trim_end:.6f},"
-                f"asetpts=PTS-STARTPTS[a{idx}]"
-            )
-        if len(groups)==1:
-            filters.append("[a0]anull[outa]")
-        else:
-            current="[a0]"
-            for idx in range(1,len(groups)):
-                target="[outa]" if idx==len(groups)-1 else f"[x{idx}]"
-                filters.append(
-                    f"{current}[a{idx}]acrossfade=d={join_durations[idx-1]:.6f}:"
-                    f"c1=tri:c2=tri{target}"
-                )
-                current=target
-        ffmpeg_command.extend([
-            "-filter_complex",";".join(filters),
-            "-map","[outa]",
-            "-c:a","libmp3lame","-b:a","64k",str(output),
-        ])
-        result=subprocess.run(
-            ffmpeg_command,
-            capture_output=True,
-            text=True,
-            timeout=600,
-        )
-        if result.returncode!=0:
-            raise PronunciationError("pronunciation chunk concat failed")
-    if not output.is_file() or output.stat().st_size<=0:
-        raise PronunciationError("pronunciation synthesis output missing")
-    return {
-        "status":"PASS","output":str(output),"bytes_written":output.stat().st_size,
-        "wall_clock_seconds":time.monotonic()-started,"external_calls":len(groups),
-        "span_count":len(plan.spans),"synthesis_group_count":len(groups),
-        "foreign_span_count":plan.foreign_span_count,
-        "timing":timing,"chunks":rows,"provider_capabilities":caps.to_dict(),
-        "canonical_text_preserved":plan.canonical_text_preserved,
-        "join_policy":"same-locale-coalesced-safe-margin-acrossfade",
-        "inserted_silence_seconds":0.0,
-        "trimmed_padding_seconds":sum(float(item["trimmed_padding_seconds"]) for item in rows),
-        "inter_group_leading_pad_seconds":_EDGE_INTER_GROUP_LEADING_PAD_SECONDS,
-        "inter_group_trailing_pad_seconds":_EDGE_INTER_GROUP_TRAILING_PAD_SECONDS,
-        "crossfade_seconds_per_join":join_durations,
-        "crossfade_seconds_total":sum(join_durations),
-        "prosody_continuity_policy":"same-locale aliases stay in one PT-BR request; only Vice City may isolate en-US, with safe word margins and silence-only crossfade",
-    }
