@@ -25,8 +25,10 @@
   "owner_voice_status": "SELECTED_AWAITING_PRIVATE_REFERENCE_MATERIALIZATION",
   "human_ab_review": "NOT_REQUIRED_FOR_OWNER_SELECTION",
   "promotion_allowed": true,
-  "legacy_voice_b_runtime_enabled": false,
-  "legacy_voice_b_fallback_allowed": false,
   "raw_voice_in_git": false,
-  "raw_prompt_in_public_artifacts": false
+  "raw_prompt_in_public_artifacts": false,
+  "voice_policy": "OWNER_VOICE_ONLY",
+  "active_voice_identities": [
+    "BR_OWNER_V1"
+  ]
 }
