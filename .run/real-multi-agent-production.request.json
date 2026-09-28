@@ -9,12 +9,12 @@
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
-    "retry_of_run": 36369645613,
-    "reason": "Resume durable mission from the latest complete checkpoint after fixing compound ProductionPlan normalization and deterministic production-planning execution contract",
+    "retry_of_run": 36371030184,
+    "reason": "Real durable execution-model proof from latest complete checkpoint after idempotent replay, semantic progress dedupe, stable logical successor identity and transactional dispatch hardening",
     "preserve_longform_recovery": true,
     "preserve_web_fabric": true,
     "preserve_audiovisual_contracts": true,
-    "candidate_head": "909579ee51a2e66a6209ae5c290db2625c6ef075",
+    "candidate_head": "2f0949b4ea0e7312509ac60f3ffaf1765b518c1a",
     "baseline_source_selected": 2,
     "baseline_source_acquired": 0,
     "baseline_provenance": "INSUFFICIENT",
@@ -61,21 +61,21 @@
     },
     "durable_continuation": {
       "schema": "DurableProductionContinuationRequest/v1",
-      "resume_run_id": 36369645613,
+      "resume_run_id": 36371030184,
       "durable_mission_key": "mission-5c239dbac2eb4abd29b1",
-      "continuation_count": 175,
-      "continuation_id": "mission-5c239dbac2eb4abd29b1:256:36369645613",
-      "expected_state_version": 256,
+      "continuation_count": 180,
+      "continuation_id": "mission-5c239dbac2eb4abd29b1:276:36371030184",
+      "expected_state_version": 276,
       "continuation_authority_schema": "ContinuationAuthorization/v1",
-      "checkpoint_artifact_id": 10948643338,
-      "checkpoint_artifact_digest": "sha256:14786e40d2739b785267996ed62f793a1f9eedbfcecd37583ab0b1e16f228b3f",
+      "checkpoint_artifact_id": 10948239530,
+      "checkpoint_artifact_digest": "sha256:4905542122526ec5bece5bd2c3b1b968b2f731477e4726e51b76bb5a01e281c0",
       "predecessor_status": "RUNNABLE",
       "predecessor_next_transition": "RESOLVE_REQUIREMENT",
       "predecessor_artifact_expired": false,
       "continuation_transition": "RESOLVE_REQUIREMENT",
       "continuation_strategy": "MINIMAL_AFFECTED_SUBGRAPH",
-      "continuation_route_id": "continuation-route:2eaeaa0e4b1262b26c47dda1"
+      "continuation_route_id": "continuation-route:c1a7561edbe893ffdd72b579"
     }
   },
-  "requested_from_head": "909579ee51a2e66a6209ae5c290db2625c6ef075"
+  "requested_from_head": "2f0949b4ea0e7312509ac60f3ffaf1765b518c1a"
 }
