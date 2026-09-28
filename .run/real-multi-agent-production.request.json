@@ -9,12 +9,12 @@
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
-    "retry_of_run": 36358009997,
-    "reason": "Safety-containment resume from the last known-good durable checkpoint after fixing semantic child mission/task identity preservation; discard stale continuation artifacts that created noncanonical editorial-script aliases",
+    "retry_of_run": 36368587267,
+    "reason": "Resume last complete durable checkpoint after fixing canonical TaskResult result_payload replay, duplicate-artifact false progress, and completed editorial progress reconciliation",
     "preserve_longform_recovery": true,
     "preserve_web_fabric": true,
     "preserve_audiovisual_contracts": true,
-    "candidate_head": "31e31ad722171f900fae9770950c228778de2d07",
+    "candidate_head": "2d8a09db530bc8fcee9de8b0e1e48d345a0e274f",
     "baseline_source_selected": 2,
     "baseline_source_acquired": 0,
     "baseline_provenance": "INSUFFICIENT",
@@ -61,21 +61,21 @@
     },
     "durable_continuation": {
       "schema": "DurableProductionContinuationRequest/v1",
-      "resume_run_id": 36358009997,
-      "durable_mission_key": "mission-ad890d7d732e9be79838",
-      "continuation_count": 161,
-      "continuation_id": "mission-ad890d7d732e9be79838:200:36358009997",
-      "expected_state_version": 200,
+      "resume_run_id": 36368587267,
+      "durable_mission_key": "mission-5c239dbac2eb4abd29b1",
+      "continuation_count": 173,
+      "continuation_id": "mission-5c239dbac2eb4abd29b1:248:36368587267",
+      "expected_state_version": 248,
       "continuation_authority_schema": "ContinuationAuthorization/v1",
-      "checkpoint_artifact_id": 10944847037,
-      "checkpoint_artifact_digest": "sha256:cf3042243e38c35e4b61eee8b502687f69cf1a3ff4e0c557b9a38aae4308d300",
+      "checkpoint_artifact_id": 10948251559,
+      "checkpoint_artifact_digest": "sha256:86f4e520c28cd4ad7d0130d7300af5ccbbe06253555a3ef57d04715afcf0734b",
       "predecessor_status": "RUNNABLE",
       "predecessor_next_transition": "RESOLVE_REQUIREMENT",
       "predecessor_artifact_expired": false,
       "continuation_transition": "RESOLVE_REQUIREMENT",
       "continuation_strategy": "MINIMAL_AFFECTED_SUBGRAPH",
-      "continuation_route_id": "continuation-route:83466ff8482bed9a22119c84"
+      "continuation_route_id": "continuation-route:0292636de4bbc45c1c31fa72"
     }
   },
-  "requested_from_head": "31e31ad722171f900fae9770950c228778de2d07"
+  "requested_from_head": "2d8a09db530bc8fcee9de8b0e1e48d345a0e274f"
 }
