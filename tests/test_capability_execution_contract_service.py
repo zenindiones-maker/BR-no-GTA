@@ -515,3 +515,31 @@ def test_fact_check_dependency_does_not_inflate_native_executor_to_artifact_io()
     record = GLOBAL_CAPABILITY_REGISTRY.get("gta6.fact-check")
     assert record is not None
     assert capability_execution_contract_rejection(record, ()) is None
+
+
+
+def test_production_planning_is_deterministic_artifact_transform():
+    requirement = {
+        "task_id": "production-plan",
+        "task_class": "production-planning",
+        "action": "EDITORIAL",
+        "objective": "prepare the audiovisual production plan",
+        "query": "prepare a production plan",
+        "required_capability_description": "prepare a production plan",
+        "dependencies": [],
+        "expected_output": (
+            "persisted ProductionPlan + production-plan artifact ref"
+        ),
+        "acceptance_criteria": ["typed production plan"],
+    }
+    ops = derive_required_operations(requirement)
+    assert set(ops) == {
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    }
+    assert CAN_SEMANTIC_REASONING not in ops
+    assert infer_required_execution_kind(requirement, ops) is None
+
+    record = GLOBAL_CAPABILITY_REGISTRY.get("production.plan")
+    assert record is not None
+    assert capability_execution_contract_rejection(record, ops) is None

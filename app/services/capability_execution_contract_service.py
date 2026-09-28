@@ -338,6 +338,16 @@ def derive_required_operations(requirement: dict[str, Any]) -> tuple[str, ...]:
         # refs merely because the mission task has dependencies.
         return ()
 
+    if task_class in {"production-planning", "production-plan"}:
+        # ProductionPlan materialization is a deterministic artifact transform.
+        # The semantic planner may describe the task, but the task executor does
+        # not need model reasoning: it consumes a typed ContentItem/ScriptSpec
+        # lineage and persists a typed ProductionPlan.
+        return tuple(sorted({
+            CAN_CONSUME_ARTIFACT_REFS,
+            CAN_PRODUCE_ARTIFACT_REFS,
+        }))
+
     text = _blob(requirement)
     normalized_text = text.replace("-", " ").replace("_", " ")
     operations: set[str] = {CAN_PRODUCE_ARTIFACT_REFS}
