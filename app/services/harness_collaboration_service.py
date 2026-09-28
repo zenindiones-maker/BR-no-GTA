@@ -1564,6 +1564,9 @@ def plan_mission_from_human_goal(
     planning_evidence["context_retrieval"] = dict(
         adaptive_context.get("context_retrieval_evidence") or {}
     )
+    planning_evidence["product_contract_digest"] = (
+        adaptive_context.get("product_contract_digest")
+    )
 
     if not requirements:
         if not health.get("semantic_reasoning_available") and semantic_inference is None:

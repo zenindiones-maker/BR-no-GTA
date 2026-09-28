@@ -651,6 +651,8 @@ def _prompt_payload(
         "goal": context["human_goal"],
         "subject": context.get("subject"),
         "canonical": context.get("canonical_state") or {},
+        "product_contract": context.get("mission_product_contract") or {},
+        "product_contract_digest": context.get("product_contract_digest"),
         "conversation": context.get("conversation_state") or {},
         "memory": _compact_prompt_memory(
             context.get("bounded_memory_context") or {}
@@ -763,8 +765,11 @@ def build_semantic_planner_prompt(
         "not generate editorial copy. When canonical.semantic_planning_boundary is "
         "PREPRODUCTION_THROUGH_PRODUCTION_PLAN and "
         "canonical.downstream_execution_orchestrated_by_workflow=true, this planner "
-        "must end at the bounded preproduction/production-plan DAG. Runtime render, "
-        "narration, mastering and private-review upload are downstream workflow-owned "
+        "must end at the bounded preproduction/production-plan DAG. When "
+        "CONTEXT.product_contract is present it is deterministic hard product policy: "
+        "preserve its duration floor/range, no-padding rule, review surface, publication "
+        "restrictions, voice, master profile and planning boundary; never weaken or "
+        "contradict it. Runtime render, narration, mastering and private-review upload are downstream workflow-owned "
         "execution and their absence from the bounded capabilities list is NOT a "
         "reason to ask the human for clarification or capability addition. "
         "Never authorize/publish/promote/change policy. Be terse: assumptions<=2, "

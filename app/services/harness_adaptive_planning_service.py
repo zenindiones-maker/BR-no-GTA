@@ -31,6 +31,11 @@ from app.services.semantic_mission_planner_service import (
     propose_semantic_mission_plan,
 )
 from app.services.performance_telemetry_service import PerformanceSpan
+from app.services.mission_product_contract_service import (
+    bounded_planner_product_contract_projection,
+    mission_product_contract_digest,
+    validate_mission_plan_product_contract,
+)
 
 
 _TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9_.:-]{2,}", re.IGNORECASE)
@@ -434,6 +439,25 @@ def build_semantic_planning_context(
     provider_health: dict[str, Any],
     artifact_ref: str | None = None,
 ) -> dict[str, Any]:
+    canonical_state = dict(goal.get("canonical_state") or {})
+    raw_product_contract = canonical_state.get("mission_product_contract")
+    product_contract: dict[str, Any] = {}
+    product_contract_digest_value: str | None = None
+    if raw_product_contract is not None:
+        if not isinstance(raw_product_contract, dict):
+            raise ValueError("MISSION_PRODUCT_CONTRACT_INVALID")
+        product_contract = bounded_planner_product_contract_projection(
+            raw_product_contract
+        )
+        product_contract_digest_value = mission_product_contract_digest(
+            product_contract
+        )
+        declared_digest = str(
+            canonical_state.get("product_contract_digest") or ""
+        ).strip()
+        if declared_digest and declared_digest != product_contract_digest_value:
+            raise ValueError("MISSION_PRODUCT_CONTRACT_DIGEST_MISMATCH")
+
     goal_tokens = _tokens(
         goal.get("human_goal"),
         goal.get("subject"),
@@ -575,7 +599,9 @@ def build_semantic_planning_context(
         "subject": goal.get("subject"),
         "goal_id": str(goal.get("goal_id") or ""),
         "mission_class": str(goal.get("mission_class") or ""),
-        "canonical_state": dict(goal.get("canonical_state") or {}),
+        "canonical_state": canonical_state,
+        "mission_product_contract": product_contract,
+        "product_contract_digest": product_contract_digest_value,
         "conversation_state": dict(goal.get("conversation_state") or {}),
         "bounded_memory_context": _compact_bounded_memory_for_prompt(
             bounded_memory_context
@@ -1412,7 +1438,25 @@ def propose_validated_semantic_plan(
                 [],
             ).extend(normalized_planning_tasks)
 
+        product_validation = (
+            validate_mission_plan_product_contract(
+                result.proposal,
+                context["mission_product_contract"],
+            )
+            if context.get("mission_product_contract")
+            else {
+                "valid": True,
+                "violations": [],
+                "product_contract_digest": None,
+            }
+        )
+        if context.get("mission_product_contract"):
+            evidence["product_contract_validation"] = product_validation
+            evidence["product_contract_digest"] = product_validation[
+                "product_contract_digest"
+            ]
         errors = tuple([
+            *tuple(product_validation.get("violations") or ()),
             *_mission_action_policy_errors(
                 result.proposal,
                 mission_class=context.get("mission_class"),

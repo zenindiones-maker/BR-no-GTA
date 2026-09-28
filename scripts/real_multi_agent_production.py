@@ -67,6 +67,10 @@ from app.services.script_spec_service import generate_script_spec
 from app.services.production_durable_resume_service import (
     load_pending_execution_need,
 )
+from app.services.mission_product_contract_service import (
+    materialize_br_no_gta_mission_product_contract,
+    mission_product_contract_digest,
+)
 
 
 ROCKSTAR_PREFIX = "https://www.rockstargames.com/"
@@ -90,6 +94,12 @@ DELIVERY_CAPABILITIES = frozenset({
     "video.edit.vedit",
 })
 CODEX_CHECKPOINT = 35850473901
+BR_NO_GTA_MISSION_PRODUCT_CONTRACT = (
+    materialize_br_no_gta_mission_product_contract()
+)
+BR_NO_GTA_MISSION_PRODUCT_CONTRACT_DIGEST = mission_product_contract_digest(
+    BR_NO_GTA_MISSION_PRODUCT_CONTRACT
+)
 
 # Human-approved Voice B (+0%) calibration evidence:
 # run 35399181943 / artifact 10568953094 measured about 145-163 spoken
@@ -310,15 +320,13 @@ def _approved_topic_from_research(result: dict[str, Any]) -> dict[str, Any] | No
 
 
 def _target_duration_seconds(claim_count: int) -> float:
-    """Professional final-video target; never lower than the 20-minute contract.
-
-    Sparse evidence is handled by bounded research/editorial expansion and the
-    existing fail-closed content-duration/novelty gates. It is never converted
-    into a shorter final-review target or padded artificially.
-    """
+    """Professional target derived from the canonical mission product contract."""
+    target = BR_NO_GTA_MISSION_PRODUCT_CONTRACT["duration"][
+        "target_final_duration_seconds"
+    ]
     if claim_count >= 12:
-        return 1500.0
-    return 1200.0
+        return float(target["maximum"])
+    return float(target["minimum"])
 
 
 def _longform_retry_target_seconds(current_target_seconds: Any) -> float:
@@ -329,11 +337,16 @@ def _longform_retry_target_seconds(current_target_seconds: Any) -> float:
     bounded recovery retry therefore falls back only to the already-canonical
     professional minimum of 20 minutes; it never permits a short final video.
     """
+    minimum = float(
+        BR_NO_GTA_MISSION_PRODUCT_CONTRACT["duration"][
+            "minimum_final_duration_seconds"
+        ]
+    )
     try:
         current = float(current_target_seconds)
     except (TypeError, ValueError):
-        current = 1200.0
-    return 1200.0 if current > 1200.0 else max(1200.0, current)
+        current = minimum
+    return minimum if current > minimum else max(minimum, current)
 
 
 def _governed_web_acquisition_status(
@@ -2833,21 +2846,53 @@ def run(
         subject="real multi-agent GTA6 audiovisual production",
         source_surface="work",
         canonical_state={
-            "youtube_publication_public": "FORBIDDEN",
-            "youtube_publication_unlisted": "FORBIDDEN",
-            "youtube_private_hd_review": "ALLOWED",
-            "telegram_primary_human_interface": True,
-            "burned_subtitles": False,
-            "voice": "pt-BR-ThalitaMultilingualNeural",
-            "master": "1920x1080@30 H264 AAC",
+            "mission_product_contract": BR_NO_GTA_MISSION_PRODUCT_CONTRACT,
+            "product_contract_digest": BR_NO_GTA_MISSION_PRODUCT_CONTRACT_DIGEST,
+            "youtube_publication_public": (
+                "ALLOWED"
+                if BR_NO_GTA_MISSION_PRODUCT_CONTRACT["publication"][
+                    "public_release_allowed"
+                ]
+                else "FORBIDDEN"
+            ),
+            "youtube_publication_unlisted": (
+                "ALLOWED"
+                if BR_NO_GTA_MISSION_PRODUCT_CONTRACT["publication"][
+                    "unlisted_release_allowed"
+                ]
+                else "FORBIDDEN"
+            ),
+            "youtube_private_hd_review": (
+                "ALLOWED"
+                if BR_NO_GTA_MISSION_PRODUCT_CONTRACT["human_review"][
+                    "youtube_private_hd_review_required"
+                ]
+                else "FORBIDDEN"
+            ),
+            "telegram_primary_human_interface": (
+                BR_NO_GTA_MISSION_PRODUCT_CONTRACT["human_review"][
+                    "primary_interface"
+                ] == "telegram"
+            ),
+            "burned_subtitles": BR_NO_GTA_MISSION_PRODUCT_CONTRACT[
+                "subtitles"
+            ]["burned_subtitles"],
+            "voice": BR_NO_GTA_MISSION_PRODUCT_CONTRACT["narration"]["voice"],
+            "master": BR_NO_GTA_MISSION_PRODUCT_CONTRACT["master_profile"],
             "codex_external_checkpoint": CODEX_CHECKPOINT,
             "human_goal_execution_authorized": bool(
                 human_execution_authorized
             ),
             "semantic_planning_boundary": (
-                "PREPRODUCTION_THROUGH_PRODUCTION_PLAN"
+                BR_NO_GTA_MISSION_PRODUCT_CONTRACT["semantic_planning"][
+                    "boundary"
+                ]
             ),
-            "downstream_execution_orchestrated_by_workflow": True,
+            "downstream_execution_orchestrated_by_workflow": (
+                BR_NO_GTA_MISSION_PRODUCT_CONTRACT["semantic_planning"][
+                    "downstream_execution_orchestrated_by_workflow"
+                ]
+            ),
             "governed_web_fabric_preflight_required": True,
             "durable_parent_mission_id": str(
                 os.getenv("BR_MISSION_ID") or ""
