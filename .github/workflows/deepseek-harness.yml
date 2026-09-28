@@ -4,11 +4,22 @@ on:
   push:
     branches:
       - work/gate6f-analytics-learning
+      - work/superpowers-skill-pack
     paths:
       - '.github/workflows/deepseek-harness.yml'
       - '.run001/deepseek-harness-native-agent.request.json'
       - '.dsh/cordis.patch.yml'
       - '.dsh/plugins/**'
+      - '.dsh/skills/tdd/**'
+      - '.dsh/skills/teach/**'
+      - '.dsh/skills/handoff/**'
+      - '.dsh/skills/caveman/**'
+      - '.dsh/skills/video-edit/**'
+      - 'config/agent_skill_pack_v1.json'
+      - 'scripts/agent-tooling/agent_skill_pack.py'
+      - 'scripts/agent-tooling/bootstrap_dsh_skill_pack.sh'
+      - 'scripts/agent-tooling/prove_superpowers_provider.mjs'
+      - 'tests/test_agent_skill_pack_contracts.py'
       - 'app/integrations/deepseek_harness/**'
       - 'app/services/gta6_brain.py'
       - 'app/services/gta6_brain_harness_service.py'
@@ -101,6 +112,20 @@ jobs:
             plugin --profile headless list \
             | tee runtime/deepseek-harness-native/plugins.txt
 
+      - name: Install pinned Superpowers DSH skill provider
+        run: |
+          set -euo pipefail
+          bash scripts/agent-tooling/bootstrap_dsh_skill_pack.sh headless \
+            | tee runtime/deepseek-harness-native/superpowers-plugin-install.txt
+
+      - name: Prove Superpowers DSH provider contract
+        run: |
+          set -euo pipefail
+          node scripts/agent-tooling/prove_superpowers_provider.mjs
+          grep -q '"status": "PASS"' runtime/deepseek-harness-native/skill-pack/superpowers-provider.json
+          echo 'SUPERPOWERS_PROVIDER_LOADED=PASS'
+          echo 'SUPERPOWERS_BOOTSTRAP_GLOBAL=OFF'
+
       - name: Resolve canonical BR Harness configuration
         run: |
           set -euo pipefail
@@ -114,6 +139,7 @@ jobs:
           grep -q 'gta6-master-session' runtime/deepseek-harness-native/resolved-config.txt
           grep -q 'gemini-3-flash' runtime/deepseek-harness-native/resolved-config.txt
           grep -q 'mcp-br' runtime/deepseek-harness-native/resolved-config.txt
+          grep -q 'superpowers-dsh' runtime/deepseek-harness-native/resolved-config.txt
           test "$(grep -c 'gta6-master-session' runtime/deepseek-harness-native/resolved-config.txt)" -ge 1
           if grep -q '/data/data/com.termux' .dsh/plugins/gta6-master-activation.mjs; then
             echo 'DSH_PLUGIN_PORTABILITY=FAIL'
@@ -185,7 +211,7 @@ jobs:
       - name: Run native Harness and GTA6 Brain boundary tests
         run: |
           set -euo pipefail
-          pytest -q             tests/test_deepseek_harness.py             tests/test_gta6_brain.py             tests/test_gta6_brain_harness_boundary.py             tests/test_gta6_master_agent.py             tests/test_mission_product_contract_service.py             tests/test_typed_task_requirement_service.py             tests/test_capability_resolution_contract_service.py
+          pytest -q             tests/test_agent_skill_pack_contracts.py             tests/test_deepseek_harness.py             tests/test_gta6_brain.py             tests/test_gta6_brain_harness_boundary.py             tests/test_gta6_master_agent.py             tests/test_mission_product_contract_service.py             tests/test_typed_task_requirement_service.py             tests/test_capability_resolution_contract_service.py
 
       - name: Record native-agent proof scope honestly
         run: |
