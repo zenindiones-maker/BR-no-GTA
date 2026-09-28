@@ -100,6 +100,12 @@ jobs:
           assert d['CONTENT_DIGEST_VERIFIED'] is True
           assert d['HARNESS_AUTHORITY_PRESERVED'] is True
           assert d['NO_DIRECT_EXECUTION_BYPASS'] is True
+          assert d['NO_DIRECT_EXTERNAL_SIDE_EFFECT'] is True
+          assert d['EXISTING_DSH_SKILLS_UNCHANGED'] is True
+          skill_ids={x['SKILL_ID'] for x in d['agent_skill_pack']}
+          assert skill_ids == {
+              'superpowers','tdd','teach','caveman','handoff','video-edit'
+          }
           assert len(d['agent_skill_pack']) == 6
           assert all(x['AUTHORITY']=='NONE' for x in d['agent_skill_pack'])
           assert all(x['PROMOTED_TO_CAPABILITY'] is False for x in d['agent_skill_pack'])
@@ -156,6 +162,13 @@ jobs:
           print('PINNED_PROVENANCE=PASS')
           print('CONTENT_DIGEST_VERIFIED=PASS')
           print('SYSTEM_AGENT_INVENTORY_COHERENT=PASS')
+          print('TDD_DISCOVERED=PASS')
+          print('TEACH_DISCOVERED=PASS')
+          print('CAVEMAN_DISCOVERED=PASS')
+          print('HANDOFF_DISCOVERED=PASS')
+          print('VIDEO_EDIT_DISCOVERED=PASS')
+          print('NO_DIRECT_EXTERNAL_SIDE_EFFECT=PASS')
+          print('EXISTING_DSH_SKILLS_UNCHANGED=PASS')
           PY
 
       - name: Run focused registry and collaboration tests

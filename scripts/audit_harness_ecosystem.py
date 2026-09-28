@@ -984,6 +984,16 @@ def audit() -> dict[str, Any]:
     identities = _identity_inventory(capabilities)
     runtime_identities = _runtime_identity_inventory()
     agent_skill_pack = _agent_skill_pack_inventory()
+    local_dsh_skills = _dsh_skills()
+    local_dsh_folder_ids = {row["folder_id"] for row in local_dsh_skills}
+    required_existing_dsh_skills = {
+        "gta6-editorial",
+        "gta6-fact-check",
+        "gta6-production",
+        "gta6-research",
+        "gta6-youtube",
+        "human-presentation-action-first",
+    }
     control_planes = [
         row for row in runtime_identities if row["CONTROL_PLANE"] is True
     ]
@@ -1122,6 +1132,16 @@ def audit() -> dict[str, Any]:
             and control_planes[0]["RUNTIME_ID"] == "deepseek-harness"
             and all(row["AUTHORITY"] == "NONE" for row in agent_skill_pack)
         ),
+        "NO_DIRECT_EXTERNAL_SIDE_EFFECT": (
+            len(agent_skill_pack) == 6
+            and all(
+                not row["DIRECT_EXTERNAL_SIDE_EFFECTS"]
+                for row in agent_skill_pack
+            )
+        ),
+        "EXISTING_DSH_SKILLS_UNCHANGED": (
+            required_existing_dsh_skills <= local_dsh_folder_ids
+        ),
         "NO_DIRECT_EXECUTION_BYPASS": (
             all(
                 not row["PROMOTED_TO_CAPABILITY"]
@@ -1178,7 +1198,7 @@ def audit() -> dict[str, Any]:
         "AGENT_INVENTORY_COMPLETE": (
             len(observed_addy) == 24
             and len(observed_higgsfield) == 4
-            and len(_dsh_skills()) >= 6
+            and len(local_dsh_skills) >= 6
             and "addy-agent-skills" in agent_ids
             and "codex" in worker_ids
             and "gta6-master-agent" in agent_ids
@@ -1230,7 +1250,7 @@ def audit() -> dict[str, Any]:
         "identities": identities,
         "runtime_identities": runtime_identities,
         "agent_skill_pack": agent_skill_pack,
-        "local_dsh_skills": _dsh_skills(),
+        "local_dsh_skills": local_dsh_skills,
         "python_agent_classes": _python_agent_classes(),
     }
 
@@ -1301,6 +1321,8 @@ def main() -> int:
         "CONTENT_DIGEST_VERIFIED",
         "HARNESS_AUTHORITY_PRESERVED",
         "NO_DIRECT_EXECUTION_BYPASS",
+        "NO_DIRECT_EXTERNAL_SIDE_EFFECT",
+        "EXISTING_DSH_SKILLS_UNCHANGED",
     ):
         print(f"{key}=" + ("PASS" if result[key] else "FAIL"))
     return 0 if (
