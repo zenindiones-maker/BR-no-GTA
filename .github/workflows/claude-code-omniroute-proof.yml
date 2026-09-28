@@ -37,6 +37,7 @@ jobs:
       ANTHROPIC_BASE_URL: http://127.0.0.1:20128
       ANTHROPIC_AUTH_TOKEN: omniroute-no-auth
       ANTHROPIC_MODEL: ${{ inputs.model || 'oc/big-pickle' }}
+      ANTHROPIC_CUSTOM_MODEL_OPTION: ${{ inputs.model || 'oc/big-pickle' }}
       CLAUDE_CODE_AUTO_COMPACT_WINDOW: "190000"
 
     steps:
