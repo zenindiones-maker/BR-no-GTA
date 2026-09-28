@@ -538,7 +538,11 @@ def test_production_planning_is_deterministic_artifact_transform():
         CAN_PRODUCE_ARTIFACT_REFS,
     }
     assert CAN_SEMANTIC_REASONING not in ops
-    assert infer_required_execution_kind(requirement, ops) is None
+    requirement_with_ops = {
+        **requirement,
+        "required_operations": list(ops),
+    }
+    assert infer_required_execution_kind(requirement_with_ops) is None
 
     record = GLOBAL_CAPABILITY_REGISTRY.get("production.plan")
     assert record is not None
