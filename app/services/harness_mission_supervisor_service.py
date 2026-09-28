@@ -128,6 +128,42 @@ class HarnessMissionState:
         )
         tmp.replace(self.path)
 
+    def persist_operational_metadata(
+        self,
+        **metadata: Any,
+    ) -> None:
+        for key, value in metadata.items():
+            self.state[str(key)] = value
+        self._persist(logical_change=False)
+
+    def persist_supervisor_decision(
+        self,
+        decision: "SupervisorDecision",
+        *,
+        state_version_before_evaluate: int,
+        extra: dict[str, Any] | None = None,
+    ) -> bool:
+        normalized = {
+            "action": decision.action,
+            "reason": decision.reason,
+            "next_transition": decision.next_transition,
+            "same_route_forbidden": decision.same_route_forbidden,
+            "effective_input_digest": decision.effective_input_digest,
+            "route_identity": decision.route_identity,
+            **dict(extra or {}),
+        }
+        existing = dict(self.state.get("supervisor_decision") or {})
+        changed = existing != normalized
+        self.state["supervisor_decision"] = normalized
+        evaluate_advanced = (
+            int(self.state.get("state_version") or 0)
+            > int(state_version_before_evaluate)
+        )
+        self._persist(
+            logical_change=bool(changed and not evaluate_advanced)
+        )
+        return changed
+
     def snapshot(self) -> dict[str, Any]:
         return json.loads(json.dumps(self.state))
 

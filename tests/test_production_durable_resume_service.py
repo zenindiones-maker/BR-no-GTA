@@ -6,6 +6,9 @@ from app.services.production_durable_resume_service import (
     DurableResumePolicyError,
     _canonical_sha,
     build_effective_input_identity,
+    build_production_progress_contract,
+    build_semantic_route_identity,
+    derive_production_requirement_state,
     build_fresh_evidence_lineage,
     ensure_latest_editorial_execution_need,
     editorial_progress_snapshot,
@@ -574,3 +577,104 @@ def test_successor_intent_is_independent_of_checkpoint_digest():
     assert a.successor_intent_id==b.successor_intent_id
     assert a.continuation_id==b.continuation_id
     assert a.effective_input_digest==b.effective_input_digest
+
+
+
+def _write_completed_editorial(root, *, name="editorial_script-4.json"):
+    result_root=root/"hermes"/"task-results"
+    result_root.mkdir(parents=True,exist_ok=True)
+    row={
+        "schema":"TaskResultEnvelope/v1",
+        "mission_id":"mission-"+"a"*20,
+        "task_id":"editorial_script",
+        "capability_id":"editorial.process",
+        "status":"COMPLETED",
+        "result_payload":{
+            "script":{
+                "content":" ".join(["evidencia"]*3066),
+            },
+            "provider_routing":{
+                "selected_provider":"nvidia_nim",
+                "selected_model":"nvidia/nemotron-3-ultra-550b-a55b",
+            },
+            "provider_attempts":[{
+                "provider":"nvidia_nim",
+                "model":"nvidia/nemotron-3-ultra-550b-a55b",
+                "status":"EXECUTED",
+            }],
+        },
+        "evidence_refs":[
+            "artifact:task-results/fact_verification-1.json",
+            "https://www.rockstargames.com/VI",
+        ],
+        "source_task_ids":["fact_verification"],
+        "output_artifact_refs":["script:1","production-plan:1"],
+    }
+    path=result_root/name
+    path.write_text(json.dumps(row),encoding="utf-8")
+    return path,row
+
+
+def test_completed_24_636_editorial_yields_concrete_downstream_requirement(tmp_path):
+    _path,row=_write_completed_editorial(tmp_path)
+    progress=editorial_progress_snapshot(
+        artifact_dir=tmp_path,
+        planning_wpm=124.45,
+    )
+    state=derive_production_requirement_state(
+        artifact_dir=tmp_path,
+        editorial_progress=progress,
+    )
+    assert state["supported_duration_minutes"]>=24.636-0.01
+    assert state["resolved_requirements"]==["EDITORIAL_COMPLETE"]
+    assert state["next_requirement"]=="PRODUCT_ASSEMBLY_REQUIRED"
+    assert "EDITORIAL_COMPLETE" not in state["remaining_requirements"]
+    assert "CONTINUE_ORIGINAL_PRODUCTION" not in state["remaining_requirements"]
+
+
+def test_real_production_contract_uses_task_result_semantic_digest(tmp_path):
+    _path,row=_write_completed_editorial(tmp_path)
+    progress=editorial_progress_snapshot(
+        artifact_dir=tmp_path,
+        planning_wpm=124.45,
+    )
+    contract=build_production_progress_contract(
+        artifact_dir=tmp_path,
+        editorial_progress=progress,
+        mission_state={"resolved_requirements":[]},
+        task_rows=[row],
+        physical_attempt_id="github-actions:100:1",
+    )
+    digest=task_result_semantic_digest(row)
+    assert contract["artifact_created_digest"]==digest
+    assert contract["task_result_identity"]==digest
+    assert contract["logical_task_id"]=="editorial_script"
+    assert contract["physical_attempt_id"]=="github-actions:100:1"
+    assert contract["next_requirement"]=="PRODUCT_ASSEMBLY_REQUIRED"
+    assert contract["effective_input_digest"].startswith("sha256:")
+    assert contract["route_identity"].startswith("route:sha256:")
+    assert "github-actions:100" not in contract["route_identity"]
+
+
+def test_different_path_same_semantic_task_result_is_same_identity(tmp_path):
+    _,row=_write_completed_editorial(tmp_path,name="editorial_script-4.json")
+    _,same=_write_completed_editorial(tmp_path,name="editorial_script-5.json")
+    assert task_result_semantic_digest(row)==task_result_semantic_digest(same)
+
+
+def test_semantic_route_identity_is_stable_across_physical_runs():
+    a=build_semantic_route_identity(
+        logical_task_id="product_assembly",
+        capability_id="production.plan",
+        strategy="MINIMAL_AFFECTED_SUBGRAPH",
+        planner_identity="production-requirement-router/v2",
+    )
+    b=build_semantic_route_identity(
+        logical_task_id="product_assembly",
+        capability_id="production.plan",
+        strategy="MINIMAL_AFFECTED_SUBGRAPH",
+        planner_identity="production-requirement-router/v2",
+    )
+    assert a==b
+    assert "github-actions" not in a
+    assert "continuation:" not in a

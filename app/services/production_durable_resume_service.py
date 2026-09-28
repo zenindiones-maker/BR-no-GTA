@@ -7,19 +7,43 @@ from pathlib import Path
 import re
 from typing import Any
 
-from app.services.harness_mission_execution_router import (
-    persist_harness_execution_need,
-)
-from app.services.task_result_envelope_service import (
-    load_task_result_envelope,
-)
-
 TERMINAL_MISSION_STATES=frozenset({
     "DELIVERABLE_READY","COMPLETED","FAILED_TERMINAL",
     "WAITING_HUMAN","WAITING_EXTERNAL",
 })
 CONTINUATION_AUTHORITY_SCHEMA="ContinuationAuthorization/v1"
 RESUME_SCOPE="MINIMAL_AFFECTED_SUBGRAPH"
+PRODUCTION_POLICY_VERSION="durable-production/v2"
+PRODUCTION_REQUIREMENT_SEQUENCE=(
+    "EDITORIAL_COMPLETE",
+    "PRODUCT_ASSEMBLY_REQUIRED",
+    "RENDERJOB_REQUIRED",
+    "MASTER_RENDER_REQUIRED",
+    "MASTER_QA_REQUIRED",
+    "PRIVATE_HD_REVIEW_REQUIRED",
+    "TELEGRAM_DELIVERY_REQUIRED",
+    "HUMAN_REVIEW_REQUIRED",
+)
+PRODUCTION_REQUIREMENT_ROUTE={
+    "EDITORIAL_COMPLETE":"editorial.process",
+    "PRODUCT_ASSEMBLY_REQUIRED":"production.plan",
+    "RENDERJOB_REQUIRED":"production.render.execute",
+    "MASTER_RENDER_REQUIRED":"production.render.execute",
+    "MASTER_QA_REQUIRED":"qa.preflight",
+    "PRIVATE_HD_REVIEW_REQUIRED":"youtube.private-review",
+    "TELEGRAM_DELIVERY_REQUIRED":"telegram.review.deliver",
+    "HUMAN_REVIEW_REQUIRED":"human.review",
+}
+PRODUCTION_REQUIREMENT_NODE={
+    "EDITORIAL_COMPLETE":"editorial_script",
+    "PRODUCT_ASSEMBLY_REQUIRED":"product_assembly",
+    "RENDERJOB_REQUIRED":"render_job",
+    "MASTER_RENDER_REQUIRED":"master_render",
+    "MASTER_QA_REQUIRED":"master_qa",
+    "PRIVATE_HD_REVIEW_REQUIRED":"private_hd_review",
+    "TELEGRAM_DELIVERY_REQUIRED":"telegram_delivery",
+    "HUMAN_REVIEW_REQUIRED":"human_review_pending",
+}
 
 
 class DurableResumePolicyError(RuntimeError):
@@ -102,6 +126,331 @@ def build_effective_input_identity(
     }
     digest="sha256:"+_canonical_sha(canonical)
     return {**canonical,"effective_input_digest":digest}
+
+
+def build_semantic_route_identity(
+    *,
+    logical_task_id: str,
+    capability_id: str,
+    provider_id: str|None=None,
+    model_id: str|None=None,
+    strategy: str|None=None,
+    planner_identity: str|None=None,
+    policy_version: str=PRODUCTION_POLICY_VERSION,
+)->str:
+    """Stable semantic route identity; physical run/attempt ids are excluded."""
+    canonical={
+        "schema":"SemanticRouteIdentity/v1",
+        "logical_task_id":str(logical_task_id),
+        "capability_id":str(capability_id),
+        "provider_id":str(provider_id or ""),
+        "model_id":str(model_id or ""),
+        "strategy":str(strategy or ""),
+        "planner_identity":str(planner_identity or ""),
+        "policy_version":str(policy_version),
+    }
+    return "route:sha256:"+_canonical_sha(canonical)
+
+
+def _artifact_json_digest(path: Path)->str|None:
+    if not path.is_file():
+        return None
+    return "sha256:"+_canonical_sha(_read(path))
+
+
+def _task_result_from_ref(
+    *,
+    artifact_dir: str|Path,
+    task_result_ref: str|None,
+)->dict[str,Any]:
+    ref=str(task_result_ref or "").strip()
+    prefix="artifact:task-results/"
+    if not ref.startswith(prefix):
+        return {}
+    path=Path(artifact_dir)/"hermes"/"task-results"/ref[len(prefix):]
+    return _read(path) if path.is_file() else {}
+
+
+def derive_production_requirement_state(
+    *,
+    artifact_dir: str|Path,
+    editorial_progress: dict[str,Any],
+)->dict[str,Any]:
+    root=Path(artifact_dir)
+    current=dict(editorial_progress.get("current") or {})
+    supported=float(
+        editorial_progress.get("current_supported_duration_minutes") or 0.0
+    )
+    product=_read(root/"product.json") if (root/"product.json").is_file() else {}
+    master=_read(root/"master-qa.json") if (
+        root/"master-qa.json"
+    ).is_file() else {}
+    final=_read(root/"delivery"/"final.json") if (
+        root/"delivery"/"final.json"
+    ).is_file() else {}
+    processing=dict(final.get("youtube_processing") or {})
+    render_job=(root/"delivery"/"render-job-handoff"/"render-job.json")
+    rendered=(
+        any(path.is_file() for path in (root/"render-output").rglob("*.mp4"))
+        if (root/"render-output").is_dir()
+        else False
+    )
+    raw={
+        "EDITORIAL_COMPLETE":(
+            str(current.get("status") or "")=="COMPLETED"
+            and supported>=20.0
+        ),
+        "PRODUCT_ASSEMBLY_REQUIRED":bool(
+            product
+            and str((product.get("script") or {}).get("content") or "").strip()
+        ),
+        "RENDERJOB_REQUIRED":render_job.is_file(),
+        "MASTER_RENDER_REQUIRED":rendered,
+        "MASTER_QA_REQUIRED":(
+            master.get("status")=="PASS"
+            and master.get("MASTER_FINAL_QA_BEFORE_UPLOAD")=="PASS"
+        ),
+        "PRIVATE_HD_REVIEW_REQUIRED":(
+            final.get("YOUTUBE_PRIVACY_STATUS")=="private"
+            and final.get("YOUTUBE_PROCESSING_STATUS")=="READY"
+            and processing.get("privacy_status")=="private"
+            and processing.get("upload_status")=="processed"
+            and processing.get("processing_status")=="succeeded"
+            and processing.get("definition")=="hd"
+        ),
+        "TELEGRAM_DELIVERY_REQUIRED":(
+            final.get("TELEGRAM_DELIVERY_STATUS")=="PASS"
+        ),
+        "HUMAN_REVIEW_REQUIRED":(
+            final.get("HUMAN_REVIEW_STATUS")=="PENDING"
+        ),
+    }
+    satisfied={}
+    predecessors_satisfied=True
+    for requirement in PRODUCTION_REQUIREMENT_SEQUENCE:
+        value=bool(raw[requirement] and predecessors_satisfied)
+        satisfied[requirement]=value
+        predecessors_satisfied=value
+    resolved=[
+        item for item in PRODUCTION_REQUIREMENT_SEQUENCE
+        if satisfied[item]
+    ]
+    remaining=[
+        item for item in PRODUCTION_REQUIREMENT_SEQUENCE
+        if not satisfied[item]
+    ]
+    return {
+        "schema":"ProductionRequirementState/v1",
+        "supported_duration_minutes":supported,
+        "satisfied":satisfied,
+        "resolved_requirements":resolved,
+        "remaining_requirements":remaining,
+        "next_requirement":remaining[0] if remaining else None,
+        "goal_satisfied":not remaining,
+    }
+
+
+def build_production_progress_contract(
+    *,
+    artifact_dir: str|Path,
+    editorial_progress: dict[str,Any],
+    mission_state: dict[str,Any],
+    task_rows=(),
+    physical_attempt_id: str,
+    execution_failure: dict[str,Any]|None=None,
+    strategy: str=RESUME_SCOPE,
+    policy_version: str=PRODUCTION_POLICY_VERSION,
+)->dict[str,Any]:
+    root=Path(artifact_dir)
+    execution_failure=dict(execution_failure or {})
+    completed_rows=[
+        dict(row) for row in task_rows
+        if isinstance(row,dict)
+        and str(row.get("status") or "")=="COMPLETED"
+    ]
+    completed_task_ids=sorted({
+        str(row.get("task_id") or "").strip()
+        for row in completed_rows
+        if str(row.get("task_id") or "").strip()
+    })
+    dependency_digests=sorted({
+        task_result_semantic_digest(row) for row in completed_rows
+    })
+    evidence_refs=sorted({
+        str(ref).strip()
+        for row in completed_rows
+        for ref in (row.get("evidence_refs") or ())
+        if str(ref).strip()
+    })
+    requirements=derive_production_requirement_state(
+        artifact_dir=root,
+        editorial_progress=editorial_progress,
+    )
+    current=dict(editorial_progress.get("current") or {})
+    current_result=_task_result_from_ref(
+        artifact_dir=root,
+        task_result_ref=current.get("task_result_ref"),
+    )
+    editorial_digest=(
+        task_result_semantic_digest(current_result)
+        if current_result else None
+    )
+
+    existing_resolved={
+        str(item)
+        for item in (mission_state.get("resolved_requirements") or ())
+        if str(item)
+    }
+    newly_resolved=[
+        item for item in requirements["resolved_requirements"]
+        if item not in existing_resolved
+    ]
+    next_requirement=requirements["next_requirement"]
+    event_requirement=(
+        newly_resolved[-1]
+        if newly_resolved
+        else next_requirement
+        or "MISSION_COMPLETE"
+    )
+    logical_task_id=str(
+        execution_failure.get("logical_task_id")
+        or PRODUCTION_REQUIREMENT_NODE.get(
+            event_requirement,"production_runtime"
+        )
+    )
+    capability_id=PRODUCTION_REQUIREMENT_ROUTE.get(
+        event_requirement,"production.runtime"
+    )
+
+    route_provider=""
+    route_model=""
+    if event_requirement=="EDITORIAL_COMPLETE" and current_result:
+        payload=dict(current_result.get("result_payload") or {})
+        routing=dict(payload.get("provider_routing") or {})
+        attempts=[
+            dict(item) for item in (payload.get("provider_attempts") or ())
+            if isinstance(item,dict)
+        ]
+        route_provider=str(
+            routing.get("selected_provider")
+            or (attempts[-1].get("provider") if attempts else "")
+            or ""
+        )
+        route_model=str(
+            routing.get("selected_model")
+            or (attempts[-1].get("model") if attempts else "")
+            or ""
+        )
+    route_identity=build_semantic_route_identity(
+        logical_task_id=logical_task_id,
+        capability_id=capability_id,
+        provider_id=route_provider or None,
+        model_id=route_model or None,
+        strategy=strategy,
+        planner_identity="production-requirement-router/v2",
+        policy_version=policy_version,
+    )
+
+    artifact_ref_by_requirement={
+        "EDITORIAL_COMPLETE":current.get("task_result_ref"),
+        "PRODUCT_ASSEMBLY_REQUIRED":"artifact:product.json",
+        "RENDERJOB_REQUIRED":"artifact:delivery/render-job-handoff/render-job.json",
+        "MASTER_RENDER_REQUIRED":"artifact:master-qa.json",
+        "MASTER_QA_REQUIRED":"artifact:master-qa.json",
+        "PRIVATE_HD_REVIEW_REQUIRED":"artifact:delivery/final.json",
+        "TELEGRAM_DELIVERY_REQUIRED":"artifact:delivery/final.json",
+        "HUMAN_REVIEW_REQUIRED":"artifact:delivery/final.json",
+    }
+    digest_by_requirement={
+        "EDITORIAL_COMPLETE":editorial_digest,
+        "PRODUCT_ASSEMBLY_REQUIRED":_artifact_json_digest(root/"product.json"),
+        "RENDERJOB_REQUIRED":_artifact_json_digest(
+            root/"delivery"/"render-job-handoff"/"render-job.json"
+        ),
+        "MASTER_RENDER_REQUIRED":_artifact_json_digest(root/"master-qa.json"),
+        "MASTER_QA_REQUIRED":_artifact_json_digest(root/"master-qa.json"),
+        "PRIVATE_HD_REVIEW_REQUIRED":_artifact_json_digest(
+            root/"delivery"/"final.json"
+        ),
+        "TELEGRAM_DELIVERY_REQUIRED":_artifact_json_digest(
+            root/"delivery"/"final.json"
+        ),
+        "HUMAN_REVIEW_REQUIRED":_artifact_json_digest(
+            root/"delivery"/"final.json"
+        ),
+    }
+    artifact_created=(
+        artifact_ref_by_requirement.get(newly_resolved[-1])
+        if newly_resolved else None
+    )
+    artifact_created_digest=(
+        digest_by_requirement.get(newly_resolved[-1])
+        if newly_resolved else None
+    )
+    if editorial_digest and editorial_digest not in dependency_digests:
+        dependency_digests.append(editorial_digest)
+        dependency_digests.sort()
+
+    effective=build_effective_input_identity(
+        logical_task_id=(
+            next_requirement or "MISSION_COMPLETE"
+        ),
+        dependency_result_digests=dependency_digests,
+        evidence_refs=evidence_refs,
+        route_identity=route_identity,
+        strategy=strategy,
+        policy_version=policy_version,
+    )
+    failure_class=str(
+        execution_failure.get("failure_class") or ""
+    ).strip()
+    failure_signature=str(
+        execution_failure.get("failure_signature") or ""
+    ).strip() or (
+        f"{logical_task_id}:{failure_class}"
+        if failure_class else (
+            f"production:{next_requirement}"
+            if next_requirement else ""
+        )
+    )
+    if artifact_created_digest:
+        task_result_identity=artifact_created_digest
+    elif failure_signature:
+        task_result_identity="sha256:"+_canonical_sha({
+            "logical_task_id":logical_task_id,
+            "failure_signature":failure_signature,
+            "effective_input_digest":effective["effective_input_digest"],
+            "route_identity":route_identity,
+        })
+    else:
+        task_result_identity=None
+    return {
+        "schema":"ProductionProgressContract/v1",
+        "goal_satisfied":requirements["goal_satisfied"],
+        "supported_duration_minutes":requirements[
+            "supported_duration_minutes"
+        ],
+        "remaining_requirements":requirements["remaining_requirements"],
+        "resolved_requirements":requirements["resolved_requirements"],
+        "next_requirement":next_requirement,
+        "logical_task_id":logical_task_id,
+        "capability_id":capability_id,
+        "task_result_identity":task_result_identity,
+        "artifact_created":artifact_created,
+        "artifact_created_digest":artifact_created_digest,
+        "artifact_consumed":None,
+        "artifact_consumed_digest":None,
+        "evidence_refs":evidence_refs,
+        "completed_task_ids":completed_task_ids,
+        "effective_input_digest":effective["effective_input_digest"],
+        "effective_input_identity":effective,
+        "route_identity":route_identity,
+        "physical_attempt_id":str(physical_attempt_id),
+        "failure_signature":failure_signature or None,
+        "strategy":strategy,
+        "newly_resolved_requirements":newly_resolved,
+        "requirement_state":requirements,
+    }
 
 
 def _latest_editorial_partial(
@@ -427,6 +776,9 @@ def ensure_latest_editorial_execution_need(
     }
     if failed_route:
         need["failed_capability_id"]=failed_route
+    from app.services.harness_mission_execution_router import (
+        persist_harness_execution_need,
+    )
     persisted=persist_harness_execution_need(
         mission_plan={"mission_id":mission_id},
         need=need,
@@ -606,6 +958,9 @@ def build_fresh_evidence_lineage(
 
     consumer_path,_=latest
     consumer_ref=f"artifact:task-results/{consumer_path.name}"
+    from app.services.task_result_envelope_service import (
+        load_task_result_envelope,
+    )
     try:
         consumer=load_task_result_envelope(
             artifact_dir=root/"hermes",

@@ -168,3 +168,35 @@ def test_final_reconciliation_proves_monotonic_and_effective_input_contracts():
         "EDITORIAL_TASK_NOT_REOPENED_WITHOUT_INVALIDATION=PASS",
     ):
         assert marker in text
+
+
+
+def test_production_report_uses_semantic_progress_contract_and_concrete_requirements():
+    text=Path(
+        ".github/workflows/real-multi-agent-production.yml"
+    ).read_text(encoding="utf-8")
+    block=text.split(
+        "- name: Build final operational production report",1
+    )[1].split(
+        "- name: Prepare governed non-terminal durable checkpoint",1
+    )[0]
+    assert "build_production_progress_contract" in block
+    assert 'artifact_created_digest=progress_contract[' in block
+    assert 'task_result_identity=task_result_identity' in block
+    assert 'resolved_requirements=resolved_requirements' in block
+    assert 'effective_input_digest=effective_input_digest' in block
+    assert 'route_identity=route_identity' in block
+    assert 'physical_attempt_id=physical_attempt_id' in block
+    assert "CONCRETE_REMAINING_REQUIREMENTS=PASS" in block
+    assert "CONTINUE_ORIGINAL_PRODUCTION" not in block
+
+
+def test_rehydrate_logical_continuation_imports_regex_dependency():
+    text=Path(
+        ".github/workflows/real-multi-agent-production.yml"
+    ).read_text(encoding="utf-8")
+    block=text.split(
+        "- name: Rehydrate durable mission checkpoint",1
+    )[1].split("- name: Install production dependencies",1)[0]
+    assert "import json, os, re" in block
+    assert "re.fullmatch" in block

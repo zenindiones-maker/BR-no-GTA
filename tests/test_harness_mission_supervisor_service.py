@@ -112,6 +112,7 @@ def test_repeated_identical_artifact_with_zero_delta_forces_replan(tmp_path):
         authorized_action_available=True,
         failure_signature="editorial_script:INSUFFICIENT_EVIDENCE:15.409",
         strategy="MINIMAL_AFFECTED_SUBGRAPH",
+        replay_detected=bool(second.get("replayed")),
     )
     assert decision.action == "REPLAN"
     assert decision.same_route_forbidden is True
@@ -266,3 +267,89 @@ def test_same_effective_input_route_and_replay_forces_replan(tmp_path):
     )
     assert decision.action=="REPLAN"
     assert decision.same_route_forbidden is True
+
+
+
+def test_checkpoint_rewrite_does_not_advance_state_version(tmp_path):
+    state,_=_supervisor(tmp_path)
+    before=state.snapshot()
+    state.persist_operational_metadata(
+        checkpoint_artifact_digest="sha256:"+"a"*64,
+        source_run_id=123,
+    )
+    after=state.snapshot()
+    assert after["state_version"]==before["state_version"]
+    assert after["storage_revision"]==before["storage_revision"]+1
+
+
+def test_identical_supervisor_decision_does_not_advance_state_version(tmp_path):
+    state,supervisor=_supervisor(tmp_path)
+    before=int(state.snapshot()["state_version"])
+    decision=supervisor.evaluate(
+        goal_satisfied=False,
+        remaining_requirements=("PRODUCT_ASSEMBLY_REQUIRED",),
+        eligible_capability_ids=("harness.semantic.requirement.resolve",),
+        budget_available=True,
+        authorized_action_available=True,
+        failure_signature="production:PRODUCT_ASSEMBLY_REQUIRED",
+        strategy="MINIMAL_AFFECTED_SUBGRAPH",
+        effective_input_digest="sha256:"+"a"*64,
+        route_identity="route:sha256:"+"b"*64,
+    )
+    state.persist_supervisor_decision(
+        decision,
+        state_version_before_evaluate=before,
+        extra={
+            "failure_signature":"production:PRODUCT_ASSEMBLY_REQUIRED",
+            "strategy":"MINIMAL_AFFECTED_SUBGRAPH",
+        },
+    )
+    once=state.snapshot()
+    version_before=int(once["state_version"])
+    same=supervisor.evaluate(
+        goal_satisfied=False,
+        remaining_requirements=("PRODUCT_ASSEMBLY_REQUIRED",),
+        eligible_capability_ids=("harness.semantic.requirement.resolve",),
+        budget_available=True,
+        authorized_action_available=True,
+        failure_signature="production:PRODUCT_ASSEMBLY_REQUIRED",
+        strategy="MINIMAL_AFFECTED_SUBGRAPH",
+        effective_input_digest="sha256:"+"a"*64,
+        route_identity="route:sha256:"+"b"*64,
+    )
+    state.persist_supervisor_decision(
+        same,
+        state_version_before_evaluate=version_before,
+        extra={
+            "failure_signature":"production:PRODUCT_ASSEMBLY_REQUIRED",
+            "strategy":"MINIMAL_AFFECTED_SUBGRAPH",
+        },
+    )
+    after=state.snapshot()
+    assert after["state_version"]==once["state_version"]
+    assert after["storage_revision"]>once["storage_revision"]
+
+
+def test_real_logical_change_advances_state_version_once(tmp_path):
+    state,supervisor=_supervisor(tmp_path)
+    before=int(state.snapshot()["state_version"])
+    decision=supervisor.evaluate(
+        goal_satisfied=False,
+        remaining_requirements=("PRODUCT_ASSEMBLY_REQUIRED",),
+        eligible_capability_ids=("harness.semantic.requirement.resolve",),
+        budget_available=True,
+        authorized_action_available=True,
+        failure_signature="production:PRODUCT_ASSEMBLY_REQUIRED",
+        strategy="MINIMAL_AFFECTED_SUBGRAPH",
+        effective_input_digest="sha256:"+"a"*64,
+        route_identity="route:sha256:"+"b"*64,
+    )
+    state.persist_supervisor_decision(
+        decision,
+        state_version_before_evaluate=before,
+        extra={
+            "failure_signature":"production:PRODUCT_ASSEMBLY_REQUIRED",
+            "strategy":"MINIMAL_AFFECTED_SUBGRAPH",
+        },
+    )
+    assert state.snapshot()["state_version"]==before+1

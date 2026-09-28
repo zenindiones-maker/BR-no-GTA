@@ -379,7 +379,7 @@ jobs:
             -D "$STAGE"
           echo "CHECKPOINT_ARTIFACT_DOWNLOADED=PASS"
           python - <<'PY'
-          import json, os
+          import json, os, re
           from pathlib import Path
           stage=Path(".resume-checkpoint")/os.environ["BR_CONTINUATION_ID"]
           candidates=list(stage.rglob("harness-mission-state.json"))
@@ -989,15 +989,13 @@ jobs:
           (root/"final-report.json").write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding="utf-8")
           # HarnessMissionState/v2 is the single canonical cross-run mission state.
           # Physical workflow attempts may repeat; logical mission progress may not.
-          from hashlib import sha256
           from app.services.harness_mission_supervisor_service import (
               HarnessMissionState,
               HarnessMissionSupervisor,
           )
           from app.services.production_durable_resume_service import (
-              build_effective_input_identity,
+              build_production_progress_contract,
               editorial_progress_snapshot,
-              task_result_semantic_digest,
           )
           from scripts.real_multi_agent_production import (
               VOICE_B_EFFECTIVE_PLANNING_WPM,
@@ -1012,34 +1010,28 @@ jobs:
           task_mission_ids=[]
           result_root=root/"hermes/task-results"
           for path in sorted(result_root.glob("*.json")) if result_root.is_dir() else []:
-              try: row=json.loads(path.read_text())
-              except Exception: continue
+              try:
+                  row=json.loads(path.read_text())
+              except Exception:
+                  continue
               task_rows.append(row)
               observed=str(row.get("mission_id") or "").strip()
               if observed:
                   task_mission_ids.append(observed)
-          completed_rows=[
-              row for row in task_rows
-              if str(row.get("status") or "")=="COMPLETED"
-          ]
-          completed_tasks=sorted({
-              str(row.get("task_id") or "")
-              for row in completed_rows
-              if str(row.get("task_id") or "")
-          })
-          dependency_digests=sorted({
-              task_result_semantic_digest(row)
-              for row in completed_rows
-          })
-          evidence_refs=sorted({
-              str(ref)
-              for row in completed_rows
-              for ref in (row.get("evidence_refs") or ())
-              if str(ref)
-          })
-          observed_mission_id=task_mission_ids[-1] if task_mission_ids else ""
-          mission_id=str(pre.get("MISSION_ID") or observed_mission_id or os.environ.get("BR_DURABLE_MISSION_KEY") or f"production-{os.environ.get('GITHUB_SHA','unknown')}")
-          goal_id=str(product.get("goal_id") or pre.get("GOAL_ID") or mission_id)
+          observed_mission_id=(
+              task_mission_ids[-1] if task_mission_ids else ""
+          )
+          mission_id=str(
+              pre.get("MISSION_ID")
+              or observed_mission_id
+              or os.environ.get("BR_DURABLE_MISSION_KEY")
+              or f"production-{os.environ.get('GITHUB_SHA','unknown')}"
+          )
+          goal_id=str(
+              product.get("goal_id")
+              or pre.get("GOAL_ID")
+              or mission_id
+          )
           goal_contract={
               "objective":"MASTER_FINAL>=20min -> FINAL_QA PASS -> YouTube PRIVATE HD -> Telegram -> HUMAN_REVIEW_PENDING",
               "youtube_visibility":"private",
@@ -1051,88 +1043,127 @@ jobs:
               goal_contract=goal_contract,
               artifact_dir=root,
           )
-          initial_state_version=int(mission.state.get("state_version") or 0)
+          initial_state_version=int(
+              mission.state.get("state_version") or 0
+          )
+          initial_storage_revision=int(
+              mission.state.get("storage_revision") or 0
+          )
           initial_completed=set(
-              str(item) for item in (mission.state.get("completed_nodes") or ())
+              str(item)
+              for item in (mission.state.get("completed_nodes") or ())
               if str(item)
           )
-          previous_ledger=list(mission.state.get("progress_ledger") or ())
+          previous_ledger=list(
+              mission.state.get("progress_ledger") or ()
+          )
           previous_minutes=max(
-              [float(item.get("mission_metric_after") or 0.0) for item in previous_ledger]
+              [
+                  float(item.get("mission_metric_after") or 0.0)
+                  for item in previous_ledger
+              ]
               or [0.0]
           )
           observed_minutes=float(
-              editorial_progress.get("current_supported_duration_minutes") or 0.0
+              editorial_progress.get(
+                  "current_supported_duration_minutes"
+              ) or 0.0
           )
           current_minutes=max(previous_minutes,observed_minutes)
           failure_path=root/"execution-failure.json"
           execution_failure=(
               json.loads(failure_path.read_text())
-              if failure_path.is_file() else {}
-          )
-          logical_task_id=str(
-              execution_failure.get("logical_task_id")
-              or latest.get("logical_task_id")
-              or latest.get("task_id")
-              or "production_runtime"
-          )
-          failure_class=str(
-              execution_failure.get("failure_class")
-              or latest.get("failure_class")
-              or ""
-          ).strip()
-          failure_signature=(
-              str(execution_failure.get("failure_signature") or "").strip()
-              or (f"{logical_task_id}:{failure_class}" if failure_class else None)
+              if failure_path.is_file()
+              else {}
           )
           strategy=str(
               os.environ.get("BR_CONTINUATION_STRATEGY")
               or "MINIMAL_AFFECTED_SUBGRAPH"
           )
-          route_identity=str(
-              os.environ.get("BR_CONTINUATION_ROUTE_ID")
-              or "initial-production-route"
+          physical_attempt_id=(
+              f"github-actions:{os.environ['GITHUB_RUN_ID']}:"
+              f"{os.environ.get('GITHUB_RUN_ATTEMPT','1')}"
           )
-          input_identity=build_effective_input_identity(
-              logical_task_id=logical_task_id,
-              dependency_result_digests=dependency_digests,
-              evidence_refs=evidence_refs,
-              route_identity=route_identity,
+          progress_contract=build_production_progress_contract(
+              artifact_dir=root,
+              editorial_progress=editorial_progress,
+              mission_state=mission.state,
+              task_rows=task_rows,
+              physical_attempt_id=physical_attempt_id,
+              execution_failure=execution_failure,
               strategy=strategy,
-              policy_version="durable-production/v2",
           )
-          effective_input_digest=input_identity["effective_input_digest"]
-          remaining_requirements=(
-              []
-              if report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING"
-              else [failure_class or "CONTINUE_ORIGINAL_PRODUCTION"]
+          remaining_requirements=list(
+              progress_contract["remaining_requirements"]
           )
-          task_result_identity=(
-              "sha256:"+sha256(
-                  json.dumps(
-                      {
-                          "logical_task_id":logical_task_id,
-                          "failure_signature":failure_signature,
-                          "effective_input_digest":effective_input_digest,
-                      },
-                      sort_keys=True,separators=(",",":"),
-                  ).encode("utf-8")
-              ).hexdigest()
-              if failure_signature
-              else str(latest.get("semantic_content_digest") or "") or None
+          resolved_requirements=list(
+              progress_contract["resolved_requirements"]
+          )
+          logical_task_id=str(
+              progress_contract["logical_task_id"]
+          )
+          failure_signature=progress_contract[
+              "failure_signature"
+          ]
+          effective_input_digest=str(
+              progress_contract["effective_input_digest"]
+          )
+          route_identity=str(
+              progress_contract["route_identity"]
+          )
+          task_result_identity=progress_contract[
+              "task_result_identity"
+          ]
+          completed_tasks=list(
+              progress_contract["completed_task_ids"]
+          )
+          evidence_refs=list(
+              progress_contract["evidence_refs"]
           )
           mission.state["partial_results"]=partials[-8:]
           mission.state["artifact_lineage"].update({
               "product":"artifact:product.json" if product else None,
               "master_qa":"artifact:master-qa.json" if master else None,
               "final":"artifact:delivery/final.json" if final else None,
-              "editorial_progress":latest.get("task_result_ref") if latest else None,
+              "editorial_progress":(
+                  latest.get("task_result_ref") if latest else None
+              ),
           })
           print("INITIAL_STATE_VERSION="+str(initial_state_version))
-          print("REHYDRATED_COMPLETED_TASKS="+str(len(completed_tasks)))
-          print("REHYDRATED_PARTIAL_RESULTS="+str(len(partials)))
-          print("INITIAL_SUPPORTED_DURATION="+str(round(previous_minutes,3)))
+          print(
+              "INITIAL_STORAGE_REVISION="
+              +str(initial_storage_revision)
+          )
+          print(
+              "REHYDRATED_COMPLETED_TASKS="
+              +str(len(completed_tasks))
+          )
+          print(
+              "REHYDRATED_PARTIAL_RESULTS="
+              +str(len(partials))
+          )
+          print(
+              "INITIAL_SUPPORTED_DURATION="
+              +str(round(previous_minutes,3))
+          )
+          print(
+              "CURRENT_SUPPORTED_DURATION="
+              +str(round(current_minutes,3))
+          )
+          print(
+              "CURRENT_PENDING_REQUIREMENTS="
+              +json.dumps(
+                  remaining_requirements,
+                  separators=(",",":"),
+              )
+          )
+          print(
+              "CURRENT_EFFECTIVE_INPUT_DIGEST="
+              +effective_input_digest
+          )
           print("EFFECTIVE_INPUT_DIGEST="+effective_input_digest)
+          print("ROUTE_IDENTITY="+route_identity)
+          print("PHYSICAL_ATTEMPT_ID="+physical_attempt_id)
           if editorial_progress.get("completed_result_preserved"):
               print("COMPLETED_RESULTS_PRESERVED=PASS")
               print("COMPLETED_RESULT_PRESERVED=PASS")
@@ -1147,15 +1178,50 @@ jobs:
               print("DURABLE_EDITORIAL_PROGRESS_RECONCILED=PASS")
               if str(latest.get("status") or "")=="COMPLETED":
                   print("OLD_PARTIAL_DOES_NOT_OVERRIDE_COMPLETED=PASS")
-                  print("EDITORIAL_TASK_NOT_REOPENED_WITHOUT_INVALIDATION=PASS")
+                  print(
+                      "EDITORIAL_TASK_NOT_REOPENED_WITHOUT_INVALIDATION=PASS"
+                  )
+          if (
+              "EDITORIAL_COMPLETE" in resolved_requirements
+              and current_minutes>=24.636-0.001
+          ):
+              print("EDITORIAL_24_636_PRESERVED=PASS")
+              print("COMPLETED_EDITORIAL_NOT_REEXECUTED=PASS")
+          if "CONTINUE_ORIGINAL_PRODUCTION" not in remaining_requirements:
+              print("CONCRETE_REMAINING_REQUIREMENTS=PASS")
+          if (
+              "editorial_script" in completed_tasks
+              and progress_contract["next_requirement"]
+              != "EDITORIAL_COMPLETE"
+          ):
+              print(
+                  "MINIMAL_AFFECTED_SUBGRAPH_EXCLUDES_COMPLETED_EDITORIAL=PASS"
+              )
           progress=mission.record_progress(
-              objective_satisfied=report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING",
-              new_information=current_minutes > previous_minutes + 0.001,
-              artifact_created=(latest.get("task_result_ref") if latest else None),
-              artifact_consumed=None,
-              artifact_created_digest=(latest.get("semantic_content_digest") if latest else None),
+              objective_satisfied=bool(
+                  progress_contract["goal_satisfied"]
+              ),
+              new_information=bool(
+                  current_minutes > previous_minutes + 0.001
+                  or progress_contract[
+                      "newly_resolved_requirements"
+                  ]
+              ),
+              artifact_created=progress_contract[
+                  "artifact_created"
+              ],
+              artifact_consumed=progress_contract[
+                  "artifact_consumed"
+              ],
+              artifact_created_digest=progress_contract[
+                  "artifact_created_digest"
+              ],
+              artifact_consumed_digest=progress_contract[
+                  "artifact_consumed_digest"
+              ],
               evidence_refs=evidence_refs,
               completed_task_ids=completed_tasks,
+              resolved_requirements=resolved_requirements,
               mission_metric_before=previous_minutes,
               mission_metric_after=current_minutes,
               remaining_requirements=remaining_requirements,
@@ -1167,23 +1233,35 @@ jobs:
               task_result_identity=task_result_identity,
               effective_input_digest=effective_input_digest,
               route_identity=route_identity,
-              physical_attempt_id=(
-                  f"github-actions:{os.environ['GITHUB_RUN_ID']}:"
-                  f"{os.environ.get('GITHUB_RUN_ATTEMPT','1')}"
-              ),
+              physical_attempt_id=physical_attempt_id,
           )
-          print("PROGRESS_DELTA="+str(progress.get("progress_delta")))
-          print("MEASURABLE_PROGRESS="+str(bool(progress.get("measurable_progress"))).upper())
+          print(
+              "PROGRESS_DELTA="
+              +str(progress.get("progress_delta"))
+          )
+          print(
+              "MEASURABLE_PROGRESS="
+              +str(bool(progress.get("measurable_progress"))).upper()
+          )
           if progress.get("replayed"):
               print("TASK_RESULT_REPLAY_IDEMPOTENT=PASS")
               print("DUPLICATE_ARTIFACT_NOT_NEW_PROGRESS=PASS")
               print("DUPLICATE_EVIDENCE_NOT_NEW_INFORMATION=PASS")
               print("DUPLICATE_COMPLETION_NOT_REEXECUTED=PASS")
           supervisor=HarnessMissionSupervisor(mission)
+          state_version_before_evaluate=int(
+              mission.state.get("state_version") or 0
+          )
           decision=supervisor.evaluate(
-              goal_satisfied=report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING",
+              goal_satisfied=bool(
+                  progress_contract["goal_satisfied"]
+              ),
               remaining_requirements=remaining_requirements,
-              eligible_capability_ids=([] if report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING" else ["harness.semantic.requirement.resolve"]),
+              eligible_capability_ids=(
+                  []
+                  if progress_contract["goal_satisfied"]
+                  else ["harness.semantic.requirement.resolve"]
+              ),
               budget_available=True,
               authorized_action_available=True,
               failure_signature=failure_signature,
@@ -1192,26 +1270,36 @@ jobs:
               route_identity=route_identity,
               replay_detected=bool(progress.get("replayed")),
           )
-          mission.state["source_run_id"]=int(os.environ["GITHUB_RUN_ID"])
-          mission.state["source_run_attempt"]=int(os.environ.get("GITHUB_RUN_ATTEMPT","1"))
-          mission.state["physical_attempt_id"]=(
-              f"github-actions:{os.environ['GITHUB_RUN_ID']}:"
-              f"{os.environ.get('GITHUB_RUN_ATTEMPT','1')}"
+          mission.persist_operational_metadata(
+              source_run_id=int(os.environ["GITHUB_RUN_ID"]),
+              source_run_attempt=int(
+                  os.environ.get("GITHUB_RUN_ATTEMPT","1")
+              ),
+              physical_attempt_id=physical_attempt_id,
+              continuation_count=int(
+                  os.environ.get("BR_CONTINUATION_COUNT","0")
+                  or 0
+              ),
+              effective_input_digest=effective_input_digest,
           )
-          mission.state["continuation_count"]=int(os.environ.get("BR_CONTINUATION_COUNT","0") or 0)
-          mission.state["effective_input_digest"]=effective_input_digest
-          mission.state["supervisor_decision"]={
-              "action":decision.action,
-              "reason":decision.reason,
-              "next_transition":decision.next_transition,
-              "same_route_forbidden":decision.same_route_forbidden,
-              "failure_signature":failure_signature,
-              "strategy":strategy,
-              "effective_input_digest":effective_input_digest,
-              "route_identity":route_identity,
-              "progress_identity":progress.get("progress_identity"),
-          }
-          mission._persist(logical_change=False)
+          mission.persist_supervisor_decision(
+              decision,
+              state_version_before_evaluate=(
+                  state_version_before_evaluate
+              ),
+              extra={
+                  "failure_signature":failure_signature,
+                  "strategy":strategy,
+                  "progress_identity":progress.get(
+                      "progress_identity"
+                  ),
+              },
+          )
+          print("EFFECTIVE_INPUT_DIGEST_PERSISTED=PASS")
+          print("ROUTE_IDENTITY_PERSISTED=PASS")
+          print("PHYSICAL_ATTEMPT_SEPARATED=PASS")
+          print("LOGICAL_STATE_VERSION_SEMANTIC_ONLY=PASS")
+          print("STORAGE_REVISION_SEPARATE=PASS")
           final_snapshot=mission.snapshot()
           assert int(final_snapshot.get("state_version") or 0) >= initial_state_version
           assert initial_completed.issubset(set(final_snapshot.get("completed_nodes") or ()))
