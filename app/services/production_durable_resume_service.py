@@ -1303,6 +1303,47 @@ def successor_dispatch_decision(
 
 
 
+
+EFFECTFUL_PRODUCTION_STEP_NAMES=(
+    "Execute natural goal through Harness-selected agents",
+    "Deliver human-readable editorial package to Telegram",
+    "Create canonical professional RenderJob from new product",
+    "Publish canonical RenderJob handoff checkpoint",
+    "Dispatch professional render",
+    "Wait only for canonical render",
+    "Reconcile render checkpoint",
+    "Download QA-passed MASTER_FINAL and narration checkpoint",
+    "Validate MASTER_FINAL before any YouTube review upload",
+    "Deliver requested narration master to Telegram without recompression",
+    "Create PRIVATE-only YouTube review record after QA",
+    "Dispatch canonical YouTube PRIVATE HD review upload",
+    "Wait only for private HD review readiness",
+    "Reconcile PRIVATE HD review and Telegram link delivery",
+)
+
+
+def physical_attempt_retry_safe(
+    *,
+    step_conclusions: dict[str,Any],
+    successor_dispatch_receipt_present: bool,
+)->bool:
+    """Allow only a physical retry proven to have had no semantic/effectful work."""
+    if successor_dispatch_receipt_present:
+        return False
+    normalized={
+        str(name):str(value or "").strip().lower()
+        for name,value in dict(step_conclusions or {}).items()
+    }
+    semantic=EFFECTFUL_PRODUCTION_STEP_NAMES[0]
+    if normalized.get(semantic)!="skipped":
+        return False
+    for name in EFFECTFUL_PRODUCTION_STEP_NAMES:
+        observed=normalized.get(name,"")
+        if observed not in {"","skipped"}:
+            return False
+    return True
+
+
 def continuation_claim_decision(
     *,
     current_run_id: int,
