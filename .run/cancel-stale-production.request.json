@@ -1,7 +1,7 @@
 {
   "schema": "cancel-stale-production/v1",
-  "run_id": 36368587267,
-  "expected_head_sha": "a70bb3fcdd0d6040e45f6767a94e9e61311906fb",
-  "reason": "contain zero-progress durable successor storm before causal TaskResult replay and progress-ledger fix",
+  "run_id": 36368806929,
+  "expected_head_sha": "460c94f576dc80072843cbbd3635e5e9311ab27b",
+  "reason": "cancel successor emitted before zero-progress storm containment completed; preserve checkpoint for causal replay fix",
   "requested_by": "durable-resume-causal-containment"
 }
