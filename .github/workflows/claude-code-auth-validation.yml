@@ -32,9 +32,9 @@ jobs:
       - name: Prove Claude OmniRoute contract
         run: |
           set -euo pipefail
-          python3 -m unittest -q tests.test_claude_omniroute_contract
-          python3 -m unittest -q tests.test_claude_omniroute_replan
           python3 -m unittest -q tests.test_claude_omniroute_route_plan
+          python3 -m unittest -q tests.test_claude_omniroute_replan
+          python3 -m unittest -q tests.test_claude_omniroute_contract
 
       - name: Install pinned Claude Code
         run: bash scripts/agent-tooling/bootstrap.sh claude
