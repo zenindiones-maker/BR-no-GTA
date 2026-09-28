@@ -89,9 +89,10 @@ class ClaudeOmniRouteContractTests(unittest.TestCase):
         self.assertIn("git status --porcelain", text)
         self.assertIn("Probe OmniRoute Anthropic Messages endpoint", text)
         self.assertIn("/v1/messages", text)
-        self.assertIn("anthropic-version: 2023-06-01", text)
+        self.assertIn('"anthropic-version": "2023-06-01"', text)
         self.assertIn("ClaudeCodeOmniRouteProof/v1", text)
         self.assertIn("if: ${{ always() }}", text)
+        self.assertIn("if-no-files-found: warn", text)
 
     def test_legacy_auth_workflow_no_longer_requires_anthropic_secret(self):
         text = AUTH_WORKFLOW.read_text(encoding="utf-8")
