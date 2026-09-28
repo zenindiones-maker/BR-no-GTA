@@ -126,7 +126,7 @@ def test_all_role_packet_builders_share_lineage_without_signature_failure():
         assert packet["context"]["artifact_refs"]["script"] == "db:scripts:8"
 
 
-def test_production_packet_survives_verbose_realistic_scene_plan_under_12k():
+def test_production_packet_survives_verbose_realistic_scene_plan_under_hard_budget():
     script = "HOOK\n" + ("Verified factual paragraph with Jason Lucia Vice City. " * 900)
     plan = _plan()
     plan["scenes"] = [
@@ -165,9 +165,51 @@ def test_production_packet_survives_verbose_realistic_scene_plan_under_12k():
         },
         full_context_chars=80_000,
     )
-    assert result["metrics"]["packet_chars"] <= 12_000
-    assert result["metrics"]["target_packet_chars"] == 12_000
+    assert result["metrics"]["packet_chars"] < MAX_SEMANTIC_CONTEXT_CHARS
+    assert result["metrics"]["packet_chars"] <= ROLE_TARGET_PACKET_CHARS["production-management"]
     packet = result["context"]
-    assert "narration" not in json.dumps(packet["scenes"], ensure_ascii=False)
-    assert "visual_description" not in json.dumps(packet["scenes"], ensure_ascii=False)
     assert packet["artifact_refs"]["production_plan"] == "db:production_plans:10"
+    assert packet["script_projection"]["is_complete"] is False
+    assert packet["script_projection"]["canonical_artifact_ref"] == "db:scripts:8"
+
+
+def test_production_packet_carries_execution_context_required_by_professional_reviewer():
+    script = (
+        "HOOK\nUm golpe fácil dá errado. "
+        + ("A Rockstar confirmou fatos e o roteiro separa fato de interpretação. " * 110)
+    )
+    plan = _plan()
+    for index, scene in enumerate(plan["scenes"], start=1):
+        scene["narration"] = f"Narração concreta da cena {index}: " + ("fato e análise. " * 10)
+        scene["visual_description"] = f"Captura oficial específica para a cena {index}."
+        scene["media_search_terms"] = [f"GTA VI Rockstar official scene {index}"]
+        scene["evidence_refs"] = ["claim:claim-1"] if index % 3 == 0 else []
+
+    result = build_production_packet(
+        goal_id="goal-1",
+        content_item_id=7,
+        script_id=8,
+        production_plan_id=10,
+        script_text=script,
+        production_plan=plan,
+        claims=_claims(),
+        strategy_output={"audience": "BR", "angle": "verified", "promise": "facts"},
+        full_context_chars=38_000,
+    )
+    packet = result["context"]
+
+    assert packet["script_projection"]["is_complete"] is True
+    assert packet["script_projection"]["text"] == script
+    assert packet["claim_scene_map"]["claim-1"] == [
+        index for index in range(1, 31) if index % 3 == 0
+    ]
+    assert all("evidence_refs" in scene for scene in packet["scenes"])
+    assert all("media_search_terms" in scene for scene in packet["scenes"])
+    assert all("visual_description" in scene for scene in packet["scenes"])
+    assert packet["media_acquisition"]["asset_materialization"] == "PENDING_GOVERNED_ACQUISITION"
+    assert packet["media_acquisition"]["fallback_policy"] == "OFFICIAL_OR_RIGHTS_CLEARED_ONLY"
+    assert packet["audio_plan"]["voice_identity"] == "BR_OWNER_V1"
+    assert packet["audio_plan"]["unlicensed_music_allowed"] is False
+    assert packet["audio_plan"]["gta_vi_album_tracks_cleared_for_use"] is False
+    assert packet["audio_plan"]["narration_priority"] == "VOICE_DOMINANT"
+    assert result["metrics"]["packet_chars"] < MAX_SEMANTIC_CONTEXT_CHARS
