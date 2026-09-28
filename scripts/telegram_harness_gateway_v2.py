@@ -26,6 +26,7 @@ from app.services.telegram_conversation_service import (
 from app.services.telegram_ingress_policy_service import (
     HUMAN_SURFACE,
     PRIVATE_TELEGRAM_HUMAN_SURFACE,
+    bootstrap_first_allowed_chat,
     enroll_allowed_chat,
     parse_governed_telegram_ingress,
 )
@@ -60,6 +61,7 @@ from app.services.telegram_review_feedback_service import (
     is_render_review_feedback_message,
     record_render_review_feedback,
 )
+from scripts.owner_voice_reference_handoff import main as handoff_owner_voice_references
 from scripts.telegram_harness_gateway import (
     STATE_FILE,
     TelegramApi,
@@ -902,6 +904,32 @@ def main() -> int:
                 if (
                     not ingress.authorized_chat
                     and chat_type in {"group", "supergroup"}
+                ):
+                    state, bootstrapped = bootstrap_first_allowed_chat(
+                        state,
+                        chat_id=chat_id,
+                        authorized_user_id=allowed_user_id,
+                        sender_user_id=user_id,
+                    )
+                    if bootstrapped:
+                        _save_state(state)
+                        ingress = parse_governed_telegram_ingress(
+                            update,
+                            allowed_user_id=allowed_user_id,
+                            state=state,
+                        )
+                        if ingress is None or not ingress.authorized_chat:
+                            raise RuntimeError("TELEGRAM_FIRST_CHAT_BOOTSTRAP_FAILED")
+                        print(
+                            "TELEGRAM_CHAT_ENROLLED=PASS "
+                            f"USER_ID={user_id} CHAT_ID={chat_id} "
+                            f"CHAT_TYPE={chat_type} MODE=FIRST_AUTHORIZED_GROUP_BOOTSTRAP",
+                            flush=True,
+                        )
+
+                if (
+                    not ingress.authorized_chat
+                    and chat_type in {"group", "supergroup"}
                     and text.split("@", 1)[0].casefold() == "/allow_here"
                 ):
                     state = enroll_allowed_chat(
@@ -988,6 +1016,24 @@ def main() -> int:
                             f"TELEGRAM_INGRESS=FAIL USER_ID={user_id} ERROR={type(exc).__name__}",
                             flush=True,
                         )
+                    if (
+                        attachment is not None
+                        and str(attachment.get("media_kind") or "").lower() in {"voice", "audio"}
+                        and learned is not None
+                    ):
+                        try:
+                            handoff_code = handoff_owner_voice_references()
+                            print(
+                                "OWNER_VOICE_REFERENCE_HANDOFF_AFTER_INGEST="
+                                + ("PASS" if handoff_code == 0 else f"DEFERRED_{handoff_code}"),
+                                flush=True,
+                            )
+                        except Exception as exc:
+                            print(
+                                "OWNER_VOICE_REFERENCE_HANDOFF_AFTER_INGEST=FAIL "
+                                f"FAILURE_CLASS={type(exc).__name__}",
+                                flush=True,
+                            )
                     _send_final_human_response(
                         api=api,
                         chat_id=chat_id,

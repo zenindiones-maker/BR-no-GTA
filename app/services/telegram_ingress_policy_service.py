@@ -54,6 +54,32 @@ def configured_allowed_chat_ids(state: Mapping[str, Any]) -> set[int]:
     return allowed
 
 
+def bootstrap_first_allowed_chat(
+    state: dict[str, Any],
+    *,
+    chat_id: int,
+    authorized_user_id: int,
+    sender_user_id: int,
+) -> tuple[dict[str, Any], bool]:
+    """Enroll exactly one first group for the already-authorized human.
+
+    This is a migration/bootstrap path only.  Once any group/supergroup is
+    configured, normal explicit /allow_here enrollment remains required for
+    additional chats.  Other Telegram senders never gain authority.
+    """
+    if int(sender_user_id) != int(authorized_user_id):
+        raise PermissionError("only the paired Telegram human may bootstrap a chat")
+    if configured_allowed_chat_ids(state):
+        return state, False
+    enrolled = enroll_allowed_chat(
+        state,
+        chat_id=int(chat_id),
+        authorized_user_id=int(authorized_user_id),
+        sender_user_id=int(sender_user_id),
+    )
+    return enrolled, True
+
+
 def parse_governed_telegram_ingress(
     update: Mapping[str, Any],
     *,

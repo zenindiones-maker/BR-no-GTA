@@ -152,3 +152,53 @@ def test_telegram_attachment_extractor_preserves_voice_and_audio_identity():
     assert audio["telegram_file_id"] == "audio-file-id"
     assert audio["telegram_file_unique_id"] == "audio-unique-id"
     assert audio["duration_seconds"] == 31
+
+
+def test_first_authorized_group_can_bootstrap_once_without_authorizing_other_senders():
+    from app.services.telegram_ingress_policy_service import (
+        bootstrap_first_allowed_chat,
+        configured_allowed_chat_ids,
+        parse_governed_telegram_ingress,
+    )
+
+    state: dict = {}
+    state, bootstrapped = bootstrap_first_allowed_chat(
+        state,
+        chat_id=-222,
+        authorized_user_id=111,
+        sender_user_id=111,
+    )
+    assert bootstrapped is True
+    assert configured_allowed_chat_ids(state) == {-222}
+
+    update = {
+        "message": {
+            "message_id": 77,
+            "from": {"id": 111},
+            "chat": {"id": -222, "type": "supergroup"},
+            "text": "teste",
+        }
+    }
+    ingress = parse_governed_telegram_ingress(
+        update,
+        allowed_user_id=111,
+        state=state,
+    )
+    assert ingress is not None and ingress.accepted is True
+
+    state, bootstrapped = bootstrap_first_allowed_chat(
+        state,
+        chat_id=-333,
+        authorized_user_id=111,
+        sender_user_id=111,
+    )
+    assert bootstrapped is False
+    assert configured_allowed_chat_ids(state) == {-222}
+
+    with pytest.raises(PermissionError):
+        bootstrap_first_allowed_chat(
+            {},
+            chat_id=-444,
+            authorized_user_id=111,
+            sender_user_id=999,
+        )
