@@ -26,6 +26,7 @@ STATUS_ORDER = (
     "ACTIVE_EXECUTABLE",
     "BLOCKED_EXTERNAL",
     "REGISTERED_NOT_EXECUTABLE",
+    "SKILL_ONLY",
     "DUPLICATE",
     "ORPHAN",
     "BROKEN_BINDING",
@@ -371,12 +372,20 @@ def _dsh_declared_agents() -> list[dict[str, Any]]:
     return rows
 
 
-def _dsh_skills() -> list[dict[str, Any]]:
+def _dsh_skills(
+    *,
+    governed_skill_only_ids=(),
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     root = ROOT / ".dsh" / "skills"
     if not root.is_dir():
         return rows
     records = GLOBAL_CAPABILITY_REGISTRY.all()
+    governed_skill_only = {
+        str(item).strip()
+        for item in governed_skill_only_ids
+        if str(item).strip()
+    }
     for skill_file in sorted(root.glob("*/SKILL.md")):
         relative = skill_file.relative_to(ROOT).as_posix()
         folder_id = skill_file.parent.name
@@ -404,7 +413,15 @@ def _dsh_skills() -> list[dict[str, Any]]:
                         and record.executor_binding
                         for record in matches
                     )
-                    else "ORPHAN" if not matches else "REGISTERED_NOT_EXECUTABLE"
+                    else (
+                        "SKILL_ONLY"
+                        if not matches and folder_id in governed_skill_only
+                        else (
+                            "ORPHAN"
+                            if not matches
+                            else "REGISTERED_NOT_EXECUTABLE"
+                        )
+                    )
                 ),
             }
         )
@@ -432,8 +449,17 @@ def canonical_worker_engine_ids() -> tuple[str, ...]:
     return tuple(sorted(identities))
 
 
-def _identity_inventory(capabilities: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _identity_inventory(
+    capabilities: list[dict[str, Any]],
+    *,
+    governed_skill_only_ids=(),
+) -> list[dict[str, Any]]:
     identities: dict[tuple[str, str], dict[str, Any]] = {}
+    governed_skill_only = {
+        str(item).strip()
+        for item in governed_skill_only_ids
+        if str(item).strip()
+    }
 
     def ensure(kind: str, identity: str) -> dict[str, Any]:
         key = (kind, identity)
@@ -459,6 +485,16 @@ def _identity_inventory(capabilities: list[dict[str, Any]]) -> list[dict[str, An
     def merge_status(current: str, candidate: str) -> str:
         if current == "ACTIVE_EXECUTABLE" or candidate == "ACTIVE_EXECUTABLE":
             return "ACTIVE_EXECUTABLE"
+        if (
+            current == "REGISTERED_NOT_EXECUTABLE"
+            and candidate == "SKILL_ONLY"
+        ):
+            return "SKILL_ONLY"
+        if (
+            current == "SKILL_ONLY"
+            and candidate == "REGISTERED_NOT_EXECUTABLE"
+        ):
+            return "SKILL_ONLY"
         priority = {
             "BROKEN_BINDING": 10,
             "MISSING_BOUNDARY": 9,
@@ -466,6 +502,7 @@ def _identity_inventory(capabilities: list[dict[str, Any]]) -> list[dict[str, An
             "ORPHAN": 7,
             "MISSING_TEST": 6,
             "REGISTERED_NOT_EXECUTABLE": 5,
+            "SKILL_ONLY": 5,
             "VALID_SUPPORT_COMPONENT": 4,
             "DEPRECATED": 3,
             "DUPLICATE": 2,
@@ -545,7 +582,9 @@ def _identity_inventory(capabilities: list[dict[str, Any]]) -> list[dict[str, An
                 "Materialized from pinned source on cloud runner; one selected skill per Harness-governed semantic execution"
             )
 
-    for row in _dsh_skills():
+    for row in _dsh_skills(
+        governed_skill_only_ids=governed_skill_only,
+    ):
         item = ensure("SKILL", str(row["skill_id"]))
         item["SOURCES"].append(str(row["path"]))
         item["STATUS"] = merge_status(item["STATUS"], str(row["status"]))
@@ -553,7 +592,16 @@ def _identity_inventory(capabilities: list[dict[str, Any]]) -> list[dict[str, An
             item["STATUS"] = merge_status(item["STATUS"], "BROKEN_BINDING")
             item["NOTES"].append("SKILL.md is empty")
         if not row["registry_capabilities"]:
-            item["NOTES"].append("Local DSH skill has no Registry mapping")
+            if str(row["skill_id"]) in governed_skill_only:
+                item["NOTES"].append(
+                    "Governed non-capability skill; discovery/provenance is "
+                    "governed by agent_skill_pack_v1 and no CapabilityRecord "
+                    "is intended."
+                )
+            else:
+                item["NOTES"].append(
+                    "Local DSH skill has no Registry mapping"
+                )
 
     # Native DeepSeek Harness agents declared in agent-loop config.
     for native in _dsh_declared_agents():
@@ -981,10 +1029,22 @@ def _agent_skill_pack_inventory() -> list[dict[str, Any]]:
 
 def audit() -> dict[str, Any]:
     capabilities = _capability_rows()
-    identities = _identity_inventory(capabilities)
-    runtime_identities = _runtime_identity_inventory()
     agent_skill_pack = _agent_skill_pack_inventory()
-    local_dsh_skills = _dsh_skills()
+    governed_skill_only_ids = {
+        str(row["SKILL_ID"])
+        for row in agent_skill_pack
+        if row["IDENTITY_KIND"] == "SKILL"
+        and row["DISCOVERED"]
+        and not row["PROMOTED_TO_CAPABILITY"]
+    }
+    identities = _identity_inventory(
+        capabilities,
+        governed_skill_only_ids=governed_skill_only_ids,
+    )
+    runtime_identities = _runtime_identity_inventory()
+    local_dsh_skills = _dsh_skills(
+        governed_skill_only_ids=governed_skill_only_ids,
+    )
     local_dsh_folder_ids = {row["folder_id"] for row in local_dsh_skills}
     required_existing_dsh_skills = {
         "gta6-editorial",
