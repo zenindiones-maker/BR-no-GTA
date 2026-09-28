@@ -11,28 +11,31 @@ from app.services.pronunciation_service import (
     pronunciation_lexicon_version,
 )
 
-SPOKEN_BRANDING_CONTRACT_VERSION = "br-no-gta-spoken-branding/v3"
+SPOKEN_BRANDING_CONTRACT_VERSION = "br-no-gta-spoken-branding/v4"
 OFFICIAL_INTRO_ASSET_ID = 1
-OFFICIAL_VOICE_BLIND_ID = "Voice B"
-OFFICIAL_VOICE_SHORT_NAME = "pt-BR-ThalitaMultilingualNeural"
-OFFICIAL_PROVIDER = "edge-tts"
-OFFICIAL_PROVIDER_VERSION = "7.2.8"
+OFFICIAL_VOICE_IDENTITY_ID = "BR_OWNER_V1"
+OFFICIAL_VOICE_BLIND_ID = OFFICIAL_VOICE_IDENTITY_ID
+OFFICIAL_VOICE_SHORT_NAME = OFFICIAL_VOICE_IDENTITY_ID
+OFFICIAL_PROVIDER = "private-voice-runtime"
+OFFICIAL_PROVIDER_VERSION = "1"
+LEGACY_CONTROL_VOICE_BLIND_ID = "Voice B"
+LEGACY_CONTROL_VOICE_SHORT_NAME = "pt-BR-ThalitaMultilingualNeural"
+ALLOW_LEGACY_VOICE_B_FALLBACK = False
 OFFICIAL_LANGUAGE = "pt-BR"
 OPENING_PREFIX = "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de "
 CLOSING_LINE = "E BR não dorme em Vice City"
 OFFICIAL_RATE = "+0%"
 OFFICIAL_PITCH = "+0Hz"
-SELECTED_OPENING_TAKE_ID = "take-2"
-SELECTED_CLOSING_TAKE_ID = "G-brand-mixed"
-# Backward-compatible alias: production opening is the human-selected Fluid 2 profile.
+SELECTED_OPENING_TAKE_ID = "BR_OWNER_V1-dynamic"
+SELECTED_CLOSING_TAKE_ID = "BR_OWNER_V1-dynamic"
 SELECTED_TAKE_ID = SELECTED_OPENING_TAKE_ID
-HUMAN_APPROVED_OPENING_REFERENCE = "I-opening-fluid-2.mp3"
-HUMAN_APPROVED_FINAL_END_SAMPLE_ID = "G-brand-mixed"
+HUMAN_APPROVED_OPENING_REFERENCE = None
+HUMAN_APPROVED_FINAL_END_SAMPLE_ID = None
 
 OPENING_DIRECTION = {
     "personality": [
-        "feminina","brasileira","jovem","confiante","energia_alta",
-        "sorriso_perceptivel","espontanea","nunca_formal","nunca_robotica",
+        "owner_voice","brasileira","natural","confiante","energia_alta",
+        "espontanea","nunca_formal","nunca_robotica",
     ],
     "booooa": "alongar_aproximadamente_1s_grito_de_chamada_subida_final",
     "meu_povo": "quente_acolhedor_leve_descida",
@@ -46,11 +49,15 @@ CLOSING_DIRECTION = {
     "ending": "leve_entonacao_ascendente",
 }
 
+LEGACY_TAKE_PROFILES = (
+    {"take_id":"take-2","voice":"Voice B","runtime_enabled":False},
+    {"take_id":"G-brand-mixed","voice":"Voice B","runtime_enabled":False},
+)
 TAKE_PROFILES = (
-    {"take_id":"take-2","rate":"+3%","pitch":"+1Hz","role":"human-approved-fluid2-prosody","runtime_enabled":True},
+    {"take_id":SELECTED_OPENING_TAKE_ID,"rate":"+0%","pitch":"+0Hz","role":"owner-voice-canonical","runtime_enabled":True},
 )
 PRODUCTION_OPENING_TAKE_IDS = (SELECTED_OPENING_TAKE_ID,)
-PRODUCTION_CLOSING_POLICY = "immutable-human-approved-G-brand-mixed"
+PRODUCTION_CLOSING_POLICY = "owner-voice-dynamic-private-runtime"
 
 
 class SpokenBrandingContractError(ValueError):
@@ -111,6 +118,8 @@ def get_spoken_branding_standard() -> dict[str, Any]:
         "human_approved_opening_reference": HUMAN_APPROVED_OPENING_REFERENCE,
         "human_approved_final_end_sample_id": HUMAN_APPROVED_FINAL_END_SAMPLE_ID,
         "automatic_naturality_winner": False,
+        "legacy_voice_b_runtime_enabled": False,
+        "legacy_voice_b_fallback_allowed": False,
         "cache_policy": {
             "opening": "voice+direction+theme+provider/version+take",
             "closing": "voice+direction+provider/version+take",
@@ -166,9 +175,9 @@ def build_spoken_branding_contract(*, theme: str) -> dict[str,Any]:
         "human_approved_opening_reference":HUMAN_APPROVED_OPENING_REFERENCE,
         "human_approved_final_end_sample_id":HUMAN_APPROVED_FINAL_END_SAMPLE_ID,
         "selection_rule":(
-            "production contains only the human-approved Fluid 2 opening profile (+3%, +1Hz); "
-            "the closing is the immutable human-approved G-brand-mixed asset; no alternate voice "
-            "or retired take is part of the active runtime contract"
+            "BR_OWNER_V1 is the only active voice identity; opening and closing are synthesized "
+            "through the private voice runtime. Voice B and all legacy takes are historical only "
+            "and cannot be selected or used as fallback."
         ),
         "cache_policy":{
             "fingerprint_components":[
@@ -221,10 +230,16 @@ def validate_job_spoken_branding(job: dict[str,Any]) -> dict[str,Any]:
         raise SpokenBrandingContractError("official intro ASSET_ID=1 is mandatory")
     contract=validate_spoken_branding_contract(job.get("spoken_branding"))
     narration=job.get("narration") or {}
-    if narration.get("voice")!=OFFICIAL_VOICE_SHORT_NAME:
-        raise SpokenBrandingContractError("Voice B official identity cannot be substituted")
-    if narration.get("human_quality_baseline")!=OFFICIAL_VOICE_BLIND_ID:
-        raise SpokenBrandingContractError("Voice B must remain the human quality baseline")
+    if narration.get("voice") != OFFICIAL_VOICE_SHORT_NAME:
+        raise SpokenBrandingContractError("BR_OWNER_V1 is the only active narration voice")
+    if narration.get("voice_identity_id") != OFFICIAL_VOICE_IDENTITY_ID:
+        raise SpokenBrandingContractError("BR_OWNER_V1 voice identity is mandatory")
+    legacy_values = {
+        LEGACY_CONTROL_VOICE_BLIND_ID,
+        LEGACY_CONTROL_VOICE_SHORT_NAME,
+    }
+    if narration.get("voice") in legacy_values or narration.get("voice_identity_id") in legacy_values:
+        raise SpokenBrandingContractError("legacy Voice B runtime is disabled")
     sections=job.get("script_sections") or []
     if not sections or sections[0].get("role")!="hook":
         raise SpokenBrandingContractError("editorial hook must remain present after brand opening")

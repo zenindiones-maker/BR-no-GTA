@@ -9,6 +9,7 @@ from app.services.speech.service import analyze_speech
 from app.services.telegram_ingress_policy_service import parse_governed_telegram_ingress
 from app.services.voice_egress_policy import apply_voice_egress_policy
 from app.services.voice_plane_contracts import VoiceSynthesisRequest, VoiceTurnEnvelope
+from app.services.channel_spoken_branding_service import OFFICIAL_VOICE_IDENTITY_ID
 
 
 def _voice_attachment(message: dict[str, Any]) -> dict[str, Any] | None:
@@ -156,8 +157,11 @@ def process_telegram_voice_turn(
         action_summary=str(canonical.get("spoken_summary") or "").strip() or None,
         mode="ACTION_FIRST",
     )
+    requested_voice_identity = str(canonical.get("voice_identity_id") or OFFICIAL_VOICE_IDENTITY_ID)
+    if requested_voice_identity != OFFICIAL_VOICE_IDENTITY_ID:
+        raise RuntimeError("VOICE_IDENTITY_POLICY_VIOLATION")
     request = VoiceSynthesisRequest(
-        voice_identity_id=str(canonical.get("voice_identity_id") or "voice-b-control"),
+        voice_identity_id=OFFICIAL_VOICE_IDENTITY_ID,
         text=egress.spoken_response_text,
         language="pt-BR",
         usage="INTERACTIVE",

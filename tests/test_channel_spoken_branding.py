@@ -99,21 +99,21 @@ def test_editorial_hook_is_distinct_and_required_after_brand_opening():
         validate_job_spoken_branding(job)
 
 
-def test_take_profiles_lock_human_approved_fluid2_opening_and_g_final_end():
+def test_take_profiles_use_owner_voice_and_do_not_reuse_legacy_audio():
     contract=build_spoken_branding_contract(theme=THEME)
-    assert [x["take_id"] for x in contract["take_profiles"]]==["take-2"]
-    fluid2=next(x for x in contract["take_profiles"] if x["take_id"]=="take-2")
-    assert fluid2["rate"]=="+3%"
-    assert fluid2["pitch"]=="+1Hz"
-    assert fluid2["role"]=="human-approved-fluid2-prosody"
-    assert contract["selected_take_id"]==SELECTED_OPENING_TAKE_ID=="take-2"
-    assert contract["selected_opening_take_id"]=="take-2"
-    assert contract["selected_closing_fallback_take_id"]==SELECTED_CLOSING_TAKE_ID=="G-brand-mixed"
-    assert contract["human_approved_opening_reference"]=="I-opening-fluid-2.mp3"
-    assert contract["human_approved_final_end_sample_id"]=="G-brand-mixed"
-    assert contract["production_opening_take_ids"]==["take-2"]
-    assert contract["production_closing_policy"]=="immutable-human-approved-G-brand-mixed"
+    assert [x["take_id"] for x in contract["take_profiles"]]==["BR_OWNER_V1-dynamic"]
+    owner=contract["take_profiles"][0]
+    assert owner["runtime_enabled"] is True
+    assert owner["role"]=="owner-voice-canonical"
+    assert contract["selected_take_id"]==SELECTED_OPENING_TAKE_ID=="BR_OWNER_V1-dynamic"
+    assert contract["selected_opening_take_id"]=="BR_OWNER_V1-dynamic"
+    assert contract["selected_closing_fallback_take_id"]==SELECTED_CLOSING_TAKE_ID=="BR_OWNER_V1-dynamic"
+    assert contract["human_approved_opening_reference"] is None
+    assert contract["human_approved_final_end_sample_id"] is None
+    assert contract["production_opening_take_ids"]==["BR_OWNER_V1-dynamic"]
+    assert contract["production_closing_policy"]=="owner-voice-dynamic-private-runtime"
     rule=contract["selection_rule"].lower()
-    assert "no alternate voice" in rule
-    assert "active runtime contract" in rule
+    assert "br_owner_v1" in rule
+    assert "voice b" in rule
+    assert "cannot be selected" in rule
     assert contract["cache_policy"]["closing_fixed_reusable"] is True

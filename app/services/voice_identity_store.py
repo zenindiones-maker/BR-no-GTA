@@ -56,5 +56,9 @@ def official_voice_promotion_allowed(
     *,
     consent: ConsentStatus,
     human_ab_review: bool,
+    explicit_owner_selection: bool = False,
 ) -> bool:
-    return consent is ConsentStatus.APPROVED and bool(human_ab_review)
+    return bool(
+        consent is ConsentStatus.APPROVED
+        and (human_ab_review or explicit_owner_selection)
+    )

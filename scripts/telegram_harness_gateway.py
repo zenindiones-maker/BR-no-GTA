@@ -361,6 +361,30 @@ def _classify_brand_asset(text: str, file_name: str | None) -> str | None:
 
 
 def _extract_attachment(message: dict[str, Any]) -> dict[str, Any] | None:
+    voice = message.get("voice")
+    if isinstance(voice, dict):
+        return {
+            "media_kind": "voice",
+            "telegram_file_id": voice.get("file_id"),
+            "telegram_file_unique_id": voice.get("file_unique_id"),
+            "file_name": None,
+            "mime_type": voice.get("mime_type") or "audio/ogg",
+            "file_size": voice.get("file_size"),
+            "duration_seconds": voice.get("duration"),
+        }
+
+    audio = message.get("audio")
+    if isinstance(audio, dict):
+        return {
+            "media_kind": "audio",
+            "telegram_file_id": audio.get("file_id"),
+            "telegram_file_unique_id": audio.get("file_unique_id"),
+            "file_name": audio.get("file_name"),
+            "mime_type": audio.get("mime_type") or "audio/mpeg",
+            "file_size": audio.get("file_size"),
+            "duration_seconds": audio.get("duration"),
+        }
+
     document = message.get("document")
     if isinstance(document, dict):
         return {

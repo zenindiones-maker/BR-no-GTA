@@ -622,34 +622,36 @@ NARRATION_GENERATE_PTBR_RECORD = CapabilityRecord(
     capability_id="narration.generate.pt-BR",
     capability_type="CAPABILITY",
     domain="narration",
-    implementation="Harness-governed deterministic PT-BR narration bundle materialization",
-    input_contract="approved PT-BR script sections + exact Harness EXECUTION lineage",
-    output_contract="versioned narration-bundle with A1 master, segment manifest, native timing, voice profile and QA",
+    implementation="Harness-governed owner-voice PT-BR narration bundle materialization",
+    input_contract="approved PT-BR script sections + BR_OWNER_V1 private identity + exact Harness EXECUTION lineage",
+    output_contract="versioned narration-bundle with A1 master, segment manifest, voice identity lineage and QA",
     requirements=(
         "persisted Harness EXECUTION authorization",
         "Harness Routing/Policy decision",
-        "edge-tts 7.2.8 zero-cost provider",
+        "BR_OWNER_V1 approved owner consent",
+        "private voice runtime + materialized identity profile",
         "FFmpeg/ffprobe master QA",
     ),
     maturity=FUNCTIONAL,
     availability=AVAILABLE,
     allowed_actions=("EXECUTION",),
-    policy_tags=("narration", "voice", "pt-br", "a1", "cache", "timing", "zero-cost"),
+    policy_tags=("narration", "voice", "pt-br", "a1", "cache", "timing", "owner-voice-only"),
     security_boundary=(
-        "DeepSeek Harness remains sole authority; narration materializes only the approved script, "
-        "does not make editorial decisions, cannot publish, and exposes no parallel control plane."
+        "DeepSeek Harness remains sole authority; narration materializes only the approved script "
+        "with BR_OWNER_V1. Legacy Voice B/Edge TTS fallback is forbidden; no editorial or publication authority."
     ),
-    cost_class="FREE_NO_BILLING",
-    quota_class="REMOTE_TTS_BOUNDED_CONCURRENCY",
+    cost_class="SELF_HOSTED_COMPUTE",
+    quota_class="PRIVATE_VOICE_RUNTIME_BOUNDED",
     latency_class="REMOTE_ASYNC_SEGMENTED",
     quality_class="CONTENT_ADDRESSED_SEGMENTS_MASTER_EBU_R128_QA",
-    evidence_contract="narration-manifest.json + narration-qa.json + speech-timing.json + voice-speed-profile.json",
+    evidence_contract="narration-manifest.json + narration-qa.json + speech-timing.json + voice identity evidence",
     fallback_eligibility=False,
     executor_binding="app.services.narration_pipeline.execute_narration_capability",
-    version="2",
-    provider_id="edge-tts",
+    version="3",
+    provider_id="internal-voice-plane",
     agent_id="audiovisual-worker",
-    side_effects=("narration bundle artifact", "content-addressed segment cache", "voice speed evidence"),
+    side_effects=("narration bundle artifact", "content-addressed segment cache", "voice identity evidence"),
+    health_policy="VOICE_RUNTIME_AND_IDENTITY_REQUIRED",
 )
 
 GTA6_KNOWLEDGE_RETRIEVE_RECORD = CapabilityRecord(
