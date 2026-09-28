@@ -249,6 +249,48 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
             commands,
         )
 
+    def test_nvidia_cli_provider_test_unsupported_defers_to_dedicated_canary(self):
+        module = load_module()
+        target = plan()["candidate_targets"][0]
+        add_payload = json.dumps({
+            "connection": {
+                "id": "conn-nvidia-unsupported",
+                "provider": "nvidia",
+                "name": module._provider_connection_name(target),
+            }
+        })
+        unsupported_payload = json.dumps({
+            "connection": {
+                "id": "conn-nvidia-unsupported",
+                "provider": "nvidia",
+            },
+            "valid": False,
+            "skipped": True,
+            "error": "Provider test not supported",
+        })
+
+        def fake_run(command, *, env=None):
+            if command[:3] == ["omniroute", "providers", "add"]:
+                return CompletedProcess(command, 0, add_payload, "")
+            if command[:3] == ["omniroute", "providers", "validate"]:
+                return CompletedProcess(command, 0, '{"results":[]}', "")
+            if command[:3] == ["omniroute", "providers", "test"]:
+                return CompletedProcess(command, 1, unsupported_payload, "")
+            return CompletedProcess(command, 0, "{}", "")
+
+        with mock.patch.object(module, "_run", side_effect=fake_run):
+            materialized = module._materialize_provider(
+                target,
+                base_url="http://127.0.0.1:20128",
+            )
+
+        self.assertTrue(materialized["ok"])
+        self.assertEqual(
+            materialized["provider_test_status"],
+            "UNSUPPORTED_SKIPPED_TO_DEDICATED_CANARY",
+        )
+        self.assertIsNone(materialized["failure_class"])
+
     def test_provider_materialization_reconciles_unique_connection_from_active_server_api(self):
         module = load_module()
         target = plan()["candidate_targets"][0]
