@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-import pytest
+import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE = ROOT / "scripts" / "agent-tooling" / "claude_omniroute_contract.py"
@@ -34,11 +34,11 @@ def test_build_env_pins_loopback_gateway_and_model():
 
 def test_rejects_autonomous_routing_and_v1_suffix():
     module = load_module()
-    with pytest.raises(ValueError):
+    with unittest.TestCase().assertRaises(ValueError):
         module.build_gateway_env(provider="auto", model="oc/big-pickle")
-    with pytest.raises(ValueError):
+    with unittest.TestCase().assertRaises(ValueError):
         module.build_gateway_env(provider="opencode", model="auto")
-    with pytest.raises(ValueError):
+    with unittest.TestCase().assertRaises(ValueError):
         module.build_gateway_env(
             provider="opencode",
             model="oc/big-pickle",
@@ -51,7 +51,7 @@ def test_zero_cost_proof_allows_only_current_proven_route():
     assert module.validate_zero_cost_proof_selection(
         "opencode", "oc/big-pickle"
     ) == ("opencode", "oc/big-pickle")
-    with pytest.raises(ValueError):
+    with unittest.TestCase().assertRaises(ValueError):
         module.validate_zero_cost_proof_selection("nvidia_nim", "z-ai/glm-5.3")
 
 
