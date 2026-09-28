@@ -1050,18 +1050,15 @@ def _semantic_task_contract_rejection(
         " ".join(str(item) for item in (getattr(record, "policy_tags", ()) or ())),
     ]).casefold()
 
-    # Named primary artifacts in a review objective describe INPUTS, while
-    # the same markers on generation/planning tasks are part of the semantic
-    # output contract. Keep both cases distinct: reviewers may consume a
-    # ScriptSpec without producing one, but a script-generation task cannot be
-    # silently routed to a review-only capability.
+    # Output identity must come from the declared output contract, never from
+    # free-form objective/need text. Those broader fields may legitimately name
+    # INPUT artifacts (for example a ProductionPlan consuming ScriptSpec).
+    # Treating such input mentions as required outputs poisoned hard eligibility.
     task_class = str(requirement.get("task_class") or "").strip().casefold()
     expected_output_text = str(
         requirement.get("expected_output") or ""
     ).strip().casefold()
-    artifact_contract_text = (
-        expected_output_text if "review" in task_class else task_text
-    )
+    artifact_contract_text = expected_output_text
     named_artifacts = {
         "scriptspec": ("scriptspec", "script spec"),
         "contentitem": ("contentitem", "content item"),
@@ -1670,14 +1667,20 @@ def proposal_requirements(
             if telegram_delivery
             else infer_functional_role(seed)
         )
+        # A typed external Telegram delivery is an EXECUTION requirement.
+        # Preserve the planner's declared EXECUTION action and do not let generic
+        # semantic-family markers such as the word "workflow" rewrite it to
+        # DEVELOPMENT before hard resolution.
+        typed_action = "EXECUTION" if telegram_delivery else str(seed["action"])
         required_execution_kind = infer_required_execution_kind({
             **seed,
+            "action": typed_action,
             "functional_role": functional_role,
             "required_operations": list(required_operations),
         })
         typed = TypedTaskRequirement(
             task_id=task.task_id,
-            action=str(seed["action"]),
+            action=typed_action,
             task_class=task.task_class,
             functional_role=functional_role,
             required_execution_kind=required_execution_kind,
