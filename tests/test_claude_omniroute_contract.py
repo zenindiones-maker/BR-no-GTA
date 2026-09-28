@@ -9,6 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 MODULE = ROOT / "scripts" / "agent-tooling" / "claude_omniroute_contract.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "claude-code-omniroute-proof.yml"
+RUNTIME = ROOT / "scripts" / "agent-tooling" / "claude_omniroute_live_proof.py"
 AUTH_WORKFLOW = ROOT / ".github" / "workflows" / "claude-code-auth-validation.yml"
 
 LOGICAL_ROUTE = "combo/harness-claude-0123456789abcdef"
@@ -91,7 +92,7 @@ class ClaudeOmniRouteContractTests(unittest.TestCase):
         self.assertNotIn("omniroute-no-auth", result.stdout)
 
     def test_live_workflow_materializes_bounded_route_and_never_exposes_physical_model_to_claude(self):
-        text = WORKFLOW.read_text(encoding="utf-8")
+        text = WORKFLOW.read_text(encoding="utf-8") + "\n" + RUNTIME.read_text(encoding="utf-8")
         self.assertIn("ANTHROPIC_BASE_URL: http://127.0.0.1:20128", text)
         self.assertIn("REQUIRE_API_KEY: \"false\"", text)
         self.assertIn("OMNIROUTE_ENDPOINT_AUTH_MODE: PROOF_LOOPBACK_SENTINEL", text)
@@ -102,6 +103,8 @@ class ClaudeOmniRouteContractTests(unittest.TestCase):
         self.assertIn("Resolve Harness-governed replan", text)
         self.assertIn("HARNESS_OMNIROUTE_ROUTE_PLAN=PASS", text)
         self.assertIn("ProviderDirectCanary/v1", text)
+        self.assertIn("CREDENTIAL_NOT_MATERIALIZED", text)
+        self.assertIn("NVIDIA_API_KEY_PRESENT=true", text)
         self.assertIn("OmniRouteProviderCanary/v1", text)
         self.assertIn("omniroute providers add", text)
         self.assertIn("--credential-env", text)
