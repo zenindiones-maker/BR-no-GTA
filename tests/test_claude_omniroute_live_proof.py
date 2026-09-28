@@ -459,6 +459,100 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
         )
         self.assertIsNone(evidence["reported_connection_identity_redacted"])
 
+    def test_dedicated_success_uses_correlated_call_log_when_success_header_omits_connection(self):
+        module = load_module()
+        target = plan()["candidate_targets"][0]
+        response_headers = {
+            "X-OmniRoute-Provider": "nvidia",
+            "X-OmniRoute-Model": "nvidia/nemotron-3-ultra-550b-a55b",
+            "X-Correlation-Id": "corr-dedicated-1",
+        }
+        with (
+            mock.patch.object(
+                module,
+                "_http_json",
+                return_value=(
+                    200,
+                    9.5,
+                    '{"choices":[{"message":{"content":"OMNIROUTE_PROVIDER_CANARY_OK"}}]}',
+                    {"choices": [{"message": {"content": "OMNIROUTE_PROVIDER_CANARY_OK"}}]},
+                    response_headers,
+                ),
+            ),
+            mock.patch.object(
+                module,
+                "_fetch_logs",
+                return_value=[
+                    {
+                        "correlationId": "corr-dedicated-1",
+                        "provider": "nvidia",
+                        "model": "nvidia/nemotron-3-ultra-550b-a55b",
+                        "connectionId": "conn-nvidia-123",
+                        "status": 200,
+                    }
+                ],
+            ),
+        ):
+            evidence = module._dedicated_canary(
+                target,
+                "http://127.0.0.1:20128",
+                connection_id="conn-nvidia-123",
+            )
+
+        self.assertEqual(evidence["status"], "PASS")
+        self.assertIsNone(evidence["failure_class"])
+        self.assertEqual(evidence["connection_receipt_source"], "CALL_LOG_CORRELATION")
+        self.assertEqual(
+            evidence["reported_connection_identity_redacted"],
+            module._connection_identity_redacted("conn-nvidia-123"),
+        )
+
+    def test_dedicated_success_fails_closed_when_correlated_log_uses_other_connection(self):
+        module = load_module()
+        target = plan()["candidate_targets"][0]
+        response_headers = {
+            "X-OmniRoute-Provider": "nvidia",
+            "X-OmniRoute-Model": "nvidia/nemotron-3-ultra-550b-a55b",
+            "X-Correlation-Id": "corr-dedicated-2",
+        }
+        with (
+            mock.patch.object(
+                module,
+                "_http_json",
+                return_value=(
+                    200,
+                    9.5,
+                    '{"choices":[{"message":{"content":"OMNIROUTE_PROVIDER_CANARY_OK"}}]}',
+                    {"choices": [{"message": {"content": "OMNIROUTE_PROVIDER_CANARY_OK"}}]},
+                    response_headers,
+                ),
+            ),
+            mock.patch.object(
+                module,
+                "_fetch_logs",
+                return_value=[
+                    {
+                        "correlationId": "corr-dedicated-2",
+                        "provider": "nvidia",
+                        "model": "nvidia/nemotron-3-ultra-550b-a55b",
+                        "connectionId": "conn-other",
+                        "status": 200,
+                    }
+                ],
+            ),
+        ):
+            evidence = module._dedicated_canary(
+                target,
+                "http://127.0.0.1:20128",
+                connection_id="conn-nvidia-123",
+            )
+
+        self.assertEqual(evidence["status"], "FAIL")
+        self.assertEqual(
+            evidence["failure_class"],
+            "OMNIROUTE_CONNECTION_RECEIPT_MISMATCH",
+        )
+
     def test_direct_pass_materializes_provider_before_dedicated_canary_and_catalog(self):
         module = load_module()
         one = plan()
