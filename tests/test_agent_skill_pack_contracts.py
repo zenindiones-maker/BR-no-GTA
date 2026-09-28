@@ -125,3 +125,40 @@ def test_teach_and_handoff_remain_explicit():
         assert entry.invocation_policy.startswith("EXPLICIT")
         text = (ROOT / entry.local_path / "SKILL.md").read_text(encoding="utf-8")
         assert "disable-model-invocation: true" in text
+
+
+def test_superpowers_bootstrap_reads_pinned_manifest():
+    bootstrap = ROOT / "scripts" / "agent-tooling" / "bootstrap_dsh_skill_pack.sh"
+    assert bootstrap.is_file(), "superpowers DSH bootstrap not implemented"
+    text = bootstrap.read_text(encoding="utf-8")
+    assert "agent_skill_pack_v1.json" in text
+    assert "superpowers-dsh@latest" not in text
+    assert "github:LayneChai/superpowers-dsh" not in text
+
+
+def test_superpowers_bootstrap_never_installs_caveman_runtime():
+    bootstrap = ROOT / "scripts" / "agent-tooling" / "bootstrap_dsh_skill_pack.sh"
+    assert bootstrap.is_file(), "superpowers DSH bootstrap not implemented"
+    text = bootstrap.read_text(encoding="utf-8").lower()
+    assert "@caveman-ai/cli" not in text
+    assert "@caveman-ai/middleware" not in text
+    assert "caveman setup" not in text
+
+
+def test_superpowers_provider_proof_requires_bootstrap_off():
+    proof = ROOT / "scripts" / "agent-tooling" / "prove_superpowers_provider.mjs"
+    assert proof.is_file(), "superpowers provider proof not implemented"
+    text = proof.read_text(encoding="utf-8")
+    assert "bootstrap_global: false" in text
+    assert 'authority: "NONE"' in text or "authority: 'NONE'" in text
+
+
+def test_deepseek_workflow_bootstraps_provider_before_resolved_config():
+    workflow = (ROOT / ".github" / "workflows" / "deepseek-harness.yml").read_text(
+        encoding="utf-8"
+    )
+    bootstrap_index = workflow.find("bootstrap_dsh_skill_pack.sh")
+    config_index = workflow.find("Resolve canonical BR Harness configuration")
+    assert bootstrap_index >= 0, "native DSH workflow does not install skill pack"
+    assert config_index >= 0
+    assert bootstrap_index < config_index
