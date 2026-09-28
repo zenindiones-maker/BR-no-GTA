@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
 import hashlib
 import html
@@ -2674,11 +2674,104 @@ def _claim_task(board, mapping: dict[str, str], profile_by_task: dict[str, Any],
     return run_id
 
 
-def _preproduction_plan(plan) -> CollaborationPlan:
-    selected = tuple(
+def _durable_resume_identity(
+    *,
+    artifact_dir: Path,
+    goal_id: str,
+) -> dict[str, str] | None:
+    if not str(os.getenv("BR_RESUME_RUN_ID") or "").strip():
+        return None
+    path = artifact_dir / "durable-pending-execution-need.json"
+    if not path.is_file():
+        return None
+    row = json.loads(path.read_text(encoding="utf-8"))
+    if row.get("schema") != "DurablePendingExecutionNeed/v1":
+        raise RuntimeError("DURABLE_RESUME_IDENTITY_SCHEMA_INVALID")
+    if str(row.get("resume_scope") or "") != "MINIMAL_AFFECTED_SUBGRAPH":
+        raise RuntimeError("DURABLE_RESUME_SCOPE_INVALID")
+    mission_id = str(row.get("mission_id") or "").strip()
+    task_id = str(row.get("task_id") or "").strip()
+    need_ref = str(row.get("need_ref") or "").strip()
+    need = dict(row.get("need") or {})
+    if not mission_id or not task_id or not need_ref:
+        raise RuntimeError("DURABLE_RESUME_IDENTITY_INCOMPLETE")
+    if (
+        str(need.get("mission_id") or "") != mission_id
+        or str(need.get("causal_task_id") or "") != task_id
+    ):
+        raise RuntimeError("DURABLE_RESUME_IDENTITY_LINEAGE_DRIFT")
+    return {
+        "mission_id": mission_id,
+        "human_goal_id": goal_id,
+        "lineage_id": need_ref,
+        "task_id": task_id,
+        "need_ref": need_ref,
+    }
+
+
+def _durable_root_task_aliases(
+    *,
+    artifact_dir: Path,
+    mission_id: str,
+) -> dict[str, str]:
+    result_dir = artifact_dir / "hermes" / "capability-results"
+    if not result_dir.is_dir():
+        return {}
+    aliases: dict[str, str] = {}
+    for path in sorted(result_dir.glob("*.json")):
+        try:
+            row = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if str(row.get("mission_id") or "") != mission_id:
+            continue
+        if str(row.get("status") or "") not in {"COMPLETED", "PARTIAL_FAILED"}:
+            continue
+        task_id = str(row.get("task_id") or "").strip()
+        capability_id = str(row.get("capability_id") or "").strip()
+        if not task_id or not capability_id:
+            continue
+        if "harness-need" in task_id:
+            continue
+        previous = aliases.get(capability_id)
+        if previous is not None and previous != task_id:
+            raise RuntimeError(
+                "DURABLE_TASK_CAPABILITY_ALIAS_CONFLICT:"
+                f"{capability_id}:{previous}:{task_id}"
+            )
+        aliases[capability_id] = task_id
+    return aliases
+
+
+def _preproduction_plan(
+    plan,
+    *,
+    durable_task_aliases: dict[str, str] | None = None,
+) -> CollaborationPlan:
+    raw_selected = tuple(
         task
         for task in plan.collaboration_plan.tasks
         if task.capability_id not in DELIVERY_CAPABILITIES
+    )
+    aliases = dict(durable_task_aliases or {})
+    task_id_map = {
+        task.task_id: aliases.get(task.capability_id, task.task_id)
+        for task in raw_selected
+    }
+    if len(set(task_id_map.values())) != len(task_id_map):
+        raise RuntimeError("DURABLE_TASK_IDENTITY_COLLISION")
+    selected = tuple(
+        replace(
+            task,
+            task_id=task_id_map[task.task_id],
+            dependencies=tuple(
+                task_id_map.get(dependency, dependency)
+                for dependency in task.dependencies
+            ),
+            mission_id=plan.mission_id,
+            goal_id=plan.goal.goal_id,
+        )
+        for task in raw_selected
     )
     selected_ids = {task.task_id for task in selected}
     for task in selected:
@@ -2688,7 +2781,11 @@ def _preproduction_plan(plan) -> CollaborationPlan:
                 f"PREPRODUCTION_TASK_DEPENDS_ON_DEFERRED_DELIVERY:{task.task_id}:{sorted(missing)}"
             )
     levels = tuple(
-        tuple(task_id for task_id in level if task_id in selected_ids)
+        tuple(
+            task_id_map.get(task_id, task_id)
+            for task_id in level
+            if task_id in task_id_map
+        )
         for level in plan.collaboration_plan.execution_levels
     )
     levels = tuple(level for level in levels if level)
@@ -2715,7 +2812,11 @@ def run(
     initialize_schema()
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
-    durable_mission_key = str(os.getenv("BR_DURABLE_MISSION_KEY") or "").strip()
+    durable_mission_key = str(
+        os.getenv("BR_DURABLE_MISSION_KEY")
+        or os.getenv("BR_MISSION_ID")
+        or ""
+    ).strip()
     goal_id = (
         f"goal-real-production-{durable_mission_key}"
         if durable_mission_key
@@ -2759,14 +2860,69 @@ def run(
         },
     )
 
+    resume_identity = _durable_resume_identity(
+        artifact_dir=artifact_dir,
+        goal_id=goal.goal_id,
+    )
     planning_started = time.perf_counter()
-    plan = plan_mission_from_human_goal(goal)
+    plan = plan_mission_from_human_goal(
+        goal,
+        trusted_mission_identity=(
+            {
+                "mission_id": resume_identity["mission_id"],
+                "human_goal_id": resume_identity["human_goal_id"],
+                "lineage_id": resume_identity["lineage_id"],
+            }
+            if resume_identity is not None
+            else None
+        ),
+    )
     planning_ms = (time.perf_counter() - planning_started) * 1000.0
     plan_payload = plan.to_dict()
     _write(artifact_dir / "mission-plan.json", plan_payload)
 
+    durable_task_aliases = (
+        _durable_root_task_aliases(
+            artifact_dir=artifact_dir,
+            mission_id=plan.mission_id,
+        )
+        if resume_identity is not None
+        else {}
+    )
     execution_route = select_mission_execution_route(plan_payload)
-    preplan = _preproduction_plan(plan)
+    preplan = _preproduction_plan(
+        plan,
+        durable_task_aliases=durable_task_aliases,
+    )
+    if resume_identity is not None:
+        if resume_identity["task_id"] not in {
+            task.task_id for task in preplan.tasks
+        }:
+            raise RuntimeError(
+                "DURABLE_CAUSAL_TASK_IDENTITY_NOT_PRESERVED:"
+                + resume_identity["task_id"]
+            )
+        identity_evidence = {
+            "schema": "DurableSemanticResumeIdentity/v1",
+            "authority": "DEEPSEEK_HARNESS",
+            "durable_parent_mission_id": (
+                str(os.getenv("BR_MISSION_ID") or "").strip() or None
+            ),
+            "semantic_mission_id": plan.mission_id,
+            "causal_task_id": resume_identity["task_id"],
+            "need_ref": resume_identity["need_ref"],
+            "resume_scope": "MINIMAL_AFFECTED_SUBGRAPH",
+            "task_aliases_by_capability": durable_task_aliases,
+            "planner_called": True,
+            "trusted_mission_identity_reused": True,
+        }
+        _write(
+            artifact_dir / "durable-semantic-resume-identity.json",
+            identity_evidence,
+        )
+        print("DURABLE_SEMANTIC_MISSION_ID_PRESERVED=PASS")
+        print("DURABLE_TASK_IDENTITY_PRESERVED=PASS")
+        print("NO_REGENERATED_FROM_ZERO=PASS")
     if len(preplan.tasks) > 1 and not execution_route.hermes_used:
         raise RuntimeError("MULTI_TASK_PLAN_DID_NOT_SELECT_COORDINATION")
 

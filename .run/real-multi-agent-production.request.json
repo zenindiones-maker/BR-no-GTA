@@ -10,7 +10,7 @@
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
     "retry_of_run": 36358009997,
-    "reason": "Resume the same nonterminal durable Production from state_version 200 on the current head after fixing semantic resume to skip already completed durable tasks; preserve accepted partial editorial work and typed FreshEvidenceLineage/v1, resolve only the remaining editorial_script evidence gaps through MINIMAL_AFFECTED_SUBGRAPH, no padding and no blind retry",
+    "reason": "Safety-containment resume from the last known-good durable checkpoint after fixing semantic child mission/task identity preservation; discard stale continuation artifacts that created noncanonical editorial-script aliases",
     "preserve_longform_recovery": true,
     "preserve_web_fabric": true,
     "preserve_audiovisual_contracts": true,

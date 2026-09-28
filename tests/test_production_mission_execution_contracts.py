@@ -1,5 +1,7 @@
+import json
 from types import SimpleNamespace
 
+from app.services.harness_collaboration_service import RoutedCollaborationTask
 from app.services.capability_execution_contract_service import (
     CAN_CONSUME_ARTIFACT_REFS,
     CAN_PRODUCE_ARTIFACT_REFS,
@@ -33,6 +35,9 @@ from scripts.real_multi_agent_production import (
     VOICE_B_EFFECTIVE_PLANNING_WPM,
     _bounded_youtube_semantic_context,
     _complete_replayed_task,
+    _durable_resume_identity,
+    _durable_root_task_aliases,
+    _preproduction_plan,
     _classify_web_failure,
     _fresh_research_candidates,
     _governed_web_acquisition_status,
@@ -1471,3 +1476,164 @@ def test_production_loop_hard_skips_replayed_completed_tasks_before_claim():
 
     assert replay_guard < replay_complete < claim < fact_check_recovery
     assert "DURABLE_COMPLETED_TASK_REPLAYED=PASS" in source
+
+
+
+def _routed_resume_task(task_id, capability_id, dependencies=()):
+    return RoutedCollaborationTask(
+        task_id=task_id,
+        capability_id=capability_id,
+        action="EXECUTION",
+        objective=f"execute {capability_id}",
+        dependencies=tuple(dependencies),
+        input_refs=(),
+        expected_output="typed result",
+        routing_id=f"routing:{task_id}",
+        candidate_capability_ids=(capability_id,),
+        selected_executor_binding=f"executor:{capability_id}",
+        selected_agent_id=capability_id,
+        selected_skill_id=None,
+        evidence_expectations=("typed evidence",),
+        mission_id="mission-child",
+        goal_id="goal-durable",
+    )
+
+
+def test_durable_resume_reuses_child_mission_and_canonical_task_ids(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("BR_RESUME_RUN_ID", "123")
+    pending = {
+        "schema": "DurablePendingExecutionNeed/v1",
+        "mission_id": "mission-child",
+        "task_id": "editorial_script",
+        "need_ref": "artifact:harness-execution-need:abc",
+        "resume_scope": "MINIMAL_AFFECTED_SUBGRAPH",
+        "need": {
+            "schema": "HarnessExecutionNeed/v1",
+            "mission_id": "mission-child",
+            "causal_task_id": "editorial_script",
+        },
+    }
+    (tmp_path / "durable-pending-execution-need.json").write_text(
+        json.dumps(pending),
+        encoding="utf-8",
+    )
+    result_dir = tmp_path / "hermes" / "capability-results"
+    result_dir.mkdir(parents=True)
+    rows = (
+        ("topic_research", "gta6.research", "COMPLETED"),
+        ("knowledge_enrichment", "gta6.knowledge.retrieve", "COMPLETED"),
+        ("fact_verification", "gta6.fact-check", "COMPLETED"),
+        ("editorial_script", "editorial.process", "PARTIAL_FAILED"),
+        (
+            "editorial_script-harness-need-deadbeef",
+            "gta6.research",
+            "COMPLETED",
+        ),
+    )
+    for index, (task_id, capability_id, status) in enumerate(rows, start=1):
+        (result_dir / f"row-{index}.json").write_text(
+            json.dumps({
+                "mission_id": "mission-child",
+                "task_id": task_id,
+                "capability_id": capability_id,
+                "status": status,
+            }),
+            encoding="utf-8",
+        )
+
+    identity = _durable_resume_identity(
+        artifact_dir=tmp_path,
+        goal_id="goal-durable",
+    )
+    assert identity is not None
+    assert identity["mission_id"] == "mission-child"
+    assert identity["task_id"] == "editorial_script"
+
+    aliases = _durable_root_task_aliases(
+        artifact_dir=tmp_path,
+        mission_id="mission-child",
+    )
+    assert aliases == {
+        "gta6.research": "topic_research",
+        "gta6.knowledge.retrieve": "knowledge_enrichment",
+        "gta6.fact-check": "fact_verification",
+        "editorial.process": "editorial_script",
+    }
+
+    plan = SimpleNamespace(
+        mission_id="mission-child",
+        goal=SimpleNamespace(goal_id="goal-durable"),
+        collaboration_plan=SimpleNamespace(
+            tasks=(
+                _routed_resume_task("topic-research", "gta6.research"),
+                _routed_resume_task(
+                    "knowledge-enrichment",
+                    "gta6.knowledge.retrieve",
+                    ("topic-research",),
+                ),
+                _routed_resume_task(
+                    "fact-verification",
+                    "gta6.fact-check",
+                    ("knowledge-enrichment",),
+                ),
+                _routed_resume_task(
+                    "editorial-script",
+                    "editorial.process",
+                    ("fact-verification",),
+                ),
+            ),
+            execution_levels=(
+                ("topic-research",),
+                ("knowledge-enrichment",),
+                ("fact-verification",),
+                ("editorial-script",),
+            ),
+        ),
+    )
+    preplan = _preproduction_plan(
+        plan,
+        durable_task_aliases=aliases,
+    )
+    assert [task.task_id for task in preplan.tasks] == [
+        "topic_research",
+        "knowledge_enrichment",
+        "fact_verification",
+        "editorial_script",
+    ]
+    assert preplan.tasks[-1].dependencies == ("fact_verification",)
+    assert preplan.execution_levels[-1] == ("editorial_script",)
+    assert preplan.mission_id == "mission-child"
+
+
+def test_durable_resume_identity_fails_closed_on_lineage_drift(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("BR_RESUME_RUN_ID", "123")
+    (tmp_path / "durable-pending-execution-need.json").write_text(
+        json.dumps({
+            "schema": "DurablePendingExecutionNeed/v1",
+            "mission_id": "mission-child",
+            "task_id": "editorial_script",
+            "need_ref": "artifact:harness-execution-need:abc",
+            "resume_scope": "MINIMAL_AFFECTED_SUBGRAPH",
+            "need": {
+                "mission_id": "mission-other",
+                "causal_task_id": "editorial_script",
+            },
+        }),
+        encoding="utf-8",
+    )
+    import pytest
+
+    with pytest.raises(
+        RuntimeError,
+        match="DURABLE_RESUME_IDENTITY_LINEAGE_DRIFT",
+    ):
+        _durable_resume_identity(
+            artifact_dir=tmp_path,
+            goal_id="goal-durable",
+        )

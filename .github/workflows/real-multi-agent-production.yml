@@ -71,6 +71,7 @@ env:
   BR_PERFORMANCE_TRACE_ID: "real-production:${{ github.run_id }}:${{ github.run_attempt }}"
   BR_HERMES_UPSTREAM_ROOT: ${{ github.workspace }}/.runtime/hermes-agent
   BR_MISSION_ID: ${{ inputs.durable_mission_key || '' }}
+  BR_DURABLE_MISSION_KEY: ${{ inputs.durable_mission_key || '' }}
   BR_RESUME_RUN_ID: ${{ inputs.resume_run_id || '' }}
   BR_CONTINUATION_COUNT: ${{ inputs.continuation_count || '0' }}
   BR_CONTINUATION_ID: ${{ inputs.continuation_id || '' }}
@@ -167,6 +168,7 @@ jobs:
 
           values={
               "BR_MISSION_ID": mission,
+              "BR_DURABLE_MISSION_KEY": mission,
               "BR_RESUME_RUN_ID": run,
               "BR_CONTINUATION_COUNT": count,
               "BR_CONTINUATION_ID": cid,
@@ -934,6 +936,7 @@ jobs:
           PY
 
       - name: Prepare governed non-terminal durable checkpoint
+        id: durable_checkpoint
         if: ${{ always() && !cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1004,7 +1007,7 @@ jobs:
           retention-days: 30
 
       - name: Continue non-terminal durable mission
-        if: ${{ always() && !cancelled() }}
+        if: ${{ always() && !cancelled() && steps.durable_checkpoint.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
