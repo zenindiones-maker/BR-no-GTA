@@ -23,6 +23,11 @@ class RequestFixture:
 
 
 class ClaudeOmniRouteReplanTests(unittest.TestCase):
+    def test_runtime_import_path_includes_repository_root(self):
+        module = load_module()
+        self.assertEqual(module.REPO_ROOT, ROOT)
+        self.assertIn(str(ROOT), module.sys.path)
+
     def test_replan_request_excludes_failed_opencode_pair_and_uses_mapped_providers(self):
         module = load_module()
         values = module.replan_request_values()
