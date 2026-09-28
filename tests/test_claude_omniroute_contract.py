@@ -87,6 +87,11 @@ class ClaudeOmniRouteContractTests(unittest.TestCase):
         self.assertNotIn("secrets.ANTHROPIC_API_KEY", text)
         self.assertNotIn("secrets.CLAUDE_CODE_OAUTH_TOKEN", text)
         self.assertIn("git status --porcelain", text)
+        self.assertIn("Probe OmniRoute Anthropic Messages endpoint", text)
+        self.assertIn("/v1/messages", text)
+        self.assertIn("anthropic-version: 2023-06-01", text)
+        self.assertIn("ClaudeCodeOmniRouteProof/v1", text)
+        self.assertIn("if: ${{ always() }}", text)
 
     def test_legacy_auth_workflow_no_longer_requires_anthropic_secret(self):
         text = AUTH_WORKFLOW.read_text(encoding="utf-8")
