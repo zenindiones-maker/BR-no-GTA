@@ -7,6 +7,7 @@ from app.services.voice_enrollment_service import (
     VoiceReferenceMetrics,
     VoiceReferenceRecord,
     assess_voice_reference,
+    discover_telegram_voice_reference_candidates,
     evaluate_owner_enrollment,
     select_primary_voice_reference,
 )
@@ -158,3 +159,51 @@ def test_qwen_and_chatterbox_do_not_claim_reference_fusion():
     assert CHATTERBOX_PTBR_PROFILE.supports_reference_fusion is False
     assert CHATTERBOX_PTBR_PROFILE.supports_reusable_clone_prompt is False
     assert CHATTERBOX_PTBR_PROFILE.watermark_policy == "PERTH_WATERMARK_MANDATORY_PRESERVE"
+
+
+def test_persisted_telegram_voice_reference_discovery_is_remote_verified_and_deterministic():
+    rows = [
+        {
+            "id": 20,
+            "telegram_message_id": 220,
+            "input_kind": "voice",
+            "telegram_file_id": "secret-runtime-file-id-b",
+            "telegram_file_unique_id": "uniq-b",
+            "duration_seconds": 19,
+            "remote_verified": True,
+        },
+        {
+            "id": 10,
+            "telegram_message_id": 210,
+            "input_kind": "audio",
+            "telegram_file_id": "secret-runtime-file-id-a",
+            "telegram_file_unique_id": "uniq-a",
+            "duration_seconds": 31,
+            "remote_verified": True,
+        },
+        {
+            "id": 30,
+            "telegram_message_id": 230,
+            "input_kind": "voice",
+            "telegram_file_id": "unverified",
+            "telegram_file_unique_id": "uniq-c",
+            "duration_seconds": 12,
+            "remote_verified": False,
+        },
+        {
+            "id": 40,
+            "telegram_message_id": 240,
+            "input_kind": "photo",
+            "telegram_file_id": "photo",
+            "telegram_file_unique_id": "uniq-photo",
+            "remote_verified": True,
+        },
+    ]
+    refs = discover_telegram_voice_reference_candidates(rows)
+    assert [item.telegram_input_id for item in refs] == [10, 20]
+    assert [item.media_kind for item in refs] == ["audio", "voice"]
+    assert all(item.source == "TELEGRAM" for item in refs)
+    evidence = [item.to_redacted_evidence() for item in refs]
+    assert all("telegram_file_id" not in item for item in evidence)
+    assert all("telegram_file_unique_id" not in item for item in evidence)
+    assert all(item["private_asset_ref"].startswith("private://telegram/") for item in evidence)

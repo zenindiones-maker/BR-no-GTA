@@ -80,3 +80,13 @@ def test_brand_audio_runtime_does_not_regenerate_review_takes():
     assert 'BUNDLE_VERSION="brand-audio-bundle/v3"' in source
     assert "_materialize_approved_closing" in source
     assert '"G-brand-mixed"' in source
+
+
+def test_legacy_voice_b_pronunciation_workflow_is_not_an_active_synthesis_surface():
+    from pathlib import Path
+    workflow = Path(".github/workflows/pronunciation-proof.yml").read_text(encoding="utf-8")
+    assert "Generate real Voice B pronunciation proof" not in workflow
+    assert "edge-tts==7.2.8" not in workflow
+    assert "pt-BR-ThalitaMultilingualNeural" not in workflow
+    assert "BR_OWNER_V1" in workflow
+    assert "legacy_voice_b_fallback_allowed" in workflow
