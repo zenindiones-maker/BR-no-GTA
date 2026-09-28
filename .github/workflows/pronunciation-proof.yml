@@ -69,7 +69,6 @@ jobs:
           import json
           from pathlib import Path
           from app.services.channel_spoken_branding_service import (
-              ALLOW_LEGACY_VOICE_B_FALLBACK,
               OFFICIAL_PROVIDER,
               OFFICIAL_VOICE_IDENTITY_ID,
           )
@@ -80,11 +79,9 @@ jobs:
           checks={
               "OFFICIAL_OWNER_IDENTITY": OFFICIAL_VOICE_IDENTITY_ID == "BR_OWNER_V1",
               "PRIVATE_VOICE_RUNTIME": OFFICIAL_PROVIDER == "private-voice-runtime",
-              "LEGACY_VOICE_B_FALLBACK_DISABLED": ALLOW_LEGACY_VOICE_B_FALLBACK is False,
               "CONFIG_OWNER_IDENTITY": state.get("official_voice") == "BR_OWNER_V1",
               "TELEGRAM_REFERENCE_SOURCE": state.get("reference_source") == "TELEGRAM",
-              "LEGACY_RUNTIME_DISABLED": state.get("legacy_voice_b_runtime_enabled") is False,
-              "legacy_voice_b_fallback_allowed": state.get("legacy_voice_b_fallback_allowed") is False,
+              "ACTIVE_IDENTITY_SET": state.get("active_voice_identities") == ["BR_OWNER_V1"],
           }
           if not all(checks.values()):
               raise SystemExit("OWNER_VOICE_PRONUNCIATION_POLICY=FAIL")
@@ -98,8 +95,6 @@ jobs:
               "declared_reference_count":int(state.get("declared_reference_count") or 0),
               "materialized_reference_count":int(state.get("materialized_reference_count") or 0),
               "runtime_activation_status":runtime_status,
-              "legacy_voice_b_runtime_enabled":False,
-              "legacy_voice_b_fallback_allowed":False,
               "real_owner_voice_audio_generated":False,
               "reason":(
                   "OWNER_REFERENCE_MATERIALIZATION_PENDING"
@@ -114,7 +109,6 @@ jobs:
           )
           print("OWNER_VOICE_PRONUNCIATION_POLICY=PASS")
           print("OFFICIAL_VOICE=BR_OWNER_V1")
-          print("VOICE_B_RUNTIME=DISABLED")
           print("OWNER_VOICE_RUNTIME_STATUS="+runtime_status)
           PY
 
