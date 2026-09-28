@@ -72,8 +72,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p runtime/claude-omniroute
-          npm view "omniroute@$OMNIROUTE_VERSION" dist.integrity --json > /tmp/omniroute-integrity.json
-          npm install -g "omniroute@$OMNIROUTE_VERSION"
+          npm view omniroute@3.8.50 dist.integrity --json > /tmp/omniroute-integrity.json
+          npm install -g omniroute@3.8.50
           omniroute --version | grep '3\.8\.50'
           python3 - <<'PY'
           import json, os
