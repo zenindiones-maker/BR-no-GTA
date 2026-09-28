@@ -33,6 +33,31 @@
 - id: tool-web
   disabled: true
 
+# Harness authority boundary: the native gta6-master may reason with skills,
+# goals and read-only discovery, but direct mutation/execution surfaces stay
+# disabled. External or repository side effects must go through BR MCP
+# capabilities and Harness authorization.
+- id: tool-bash
+  disabled: true
+
+- id: tool-pwsh
+  disabled: true
+
+- id: tool-jobs
+  disabled: true
+
+- id: tool-fs
+  disabled: true
+
+- id: tool-subagent
+  disabled: true
+
+- id: tool-subagent-fork
+  disabled: true
+
+- id: tool-workflow
+  disabled: true
+
 - id: system-prompt
   config:
     persona: |
