@@ -7,6 +7,7 @@ on:
       - work/superpowers-skill-pack
     paths:
       - '.github/workflows/system-agent-inventory.yml'
+      - '.dsh/cordis.patch.yml'
       - '.run001/system-agent-inventory.request.json'
       - 'scripts/audit_harness_ecosystem.py'
       - 'scripts/agent-tooling/**'

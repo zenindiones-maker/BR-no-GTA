@@ -7,6 +7,7 @@ on:
       - work/gate6f-analytics-learning
     paths:
       - '.github/workflows/agent-skill-pack-proof.yml'
+      - '.dsh/cordis.patch.yml'
       - 'config/agent_skill_pack_v1.json'
       - 'scripts/agent-tooling/agent_skill_pack.py'
       - 'scripts/agent-tooling/sync_agent_skill_pack.py'

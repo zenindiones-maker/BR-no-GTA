@@ -44,6 +44,13 @@ const provider = new skillFilesystem.FileSystemSkillProvider(
 );
 
 const required = ["tdd", "teach", "caveman", "handoff", "video-edit"].sort();
+const expectedInvocation = {
+  tdd: { modelInvocable: true, userInvocable: true },
+  teach: { modelInvocable: false, userInvocable: true },
+  caveman: { modelInvocable: true, userInvocable: true },
+  handoff: { modelInvocable: false, userInvocable: true },
+  "video-edit": { modelInvocable: true, userInvocable: true },
+};
 const listed = await provider.list({
   cwd: process.cwd(),
   signal: abortController.signal,
@@ -103,14 +110,27 @@ for (const skillId of required) {
     );
   }
 
+  const modelInvocable = definition.invocation?.modelInvocable !== false;
+  const userInvocable = definition.invocation?.userInvocable !== false;
+  const expected = expectedInvocation[skillId];
+  if (
+    modelInvocable !== expected.modelInvocable ||
+    userInvocable !== expected.userInvocable
+  ) {
+    throw new Error(
+      `Invocation policy mismatch for ${skillId}: ` +
+        `model=${modelInvocable} user=${userInvocable}`,
+    );
+  }
+
   proofs.push({
     skill_id: skillId,
     provider: candidate.provider,
     source: candidate.source,
     rank: candidate.rank,
     path: resolvedPath,
-    model_invocable: definition.invocation?.modelInvocable !== false,
-    user_invocable: definition.invocation?.userInvocable !== false,
+    model_invocable: modelInvocable,
+    user_invocable: userInvocable,
     content_non_empty: true,
   });
 }
@@ -157,3 +177,4 @@ for (const skillId of discovered) {
   console.log(`${skillId.toUpperCase().replaceAll("-", "_")}_DSH_DISCOVERED=PASS`);
 }
 console.log("REQUESTED_LOCAL_SKILLS_DSH_DISCOVERY=PASS");
+console.log("SKILL_INVOCATION_POLICY_NATIVE=PASS");
