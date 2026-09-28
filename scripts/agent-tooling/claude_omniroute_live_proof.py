@@ -683,6 +683,95 @@ def _materialize_provider(
     }
 
 
+def _resolve_dedicated_connection_evidence(
+    *,
+    response_headers: dict[str, str],
+    base_url: str,
+    expected_connection_id: str,
+    provider: str,
+    model: str,
+) -> dict[str, Any]:
+    selected_connection = _header(
+        response_headers,
+        "X-OmniRoute-Selected-Connection-Id",
+    )
+    if selected_connection:
+        if selected_connection != expected_connection_id:
+            return {
+                "ok": False,
+                "source": "RESPONSE_HEADER",
+                "connection_identity_redacted": None,
+                "failure_class": "OMNIROUTE_CONNECTION_EVIDENCE_MISMATCH",
+            }
+        return {
+            "ok": True,
+            "source": "RESPONSE_HEADER",
+            "connection_identity_redacted": _connection_identity_redacted(
+                selected_connection
+            ),
+            "failure_class": None,
+        }
+
+    correlation_id = _header(response_headers, "X-Correlation-Id")
+    if not correlation_id:
+        return {
+            "ok": False,
+            "source": None,
+            "connection_identity_redacted": None,
+            "failure_class": "OMNIROUTE_CONNECTION_EVIDENCE_MISSING",
+        }
+
+    expected_path = f"/v1/providers/{provider}/chat/completions"
+    matches: list[dict[str, Any]] = []
+    for _ in range(20):
+        rows = _fetch_logs(base_url)
+        matches = [
+            row
+            for row in rows
+            if str(row.get("correlationId") or "") == correlation_id
+            and str(row.get("provider") or "") == provider
+            and _canonical_dispatch_model(
+                provider,
+                str(row.get("model") or ""),
+            )
+            == _canonical_dispatch_model(provider, model)
+            and str(row.get("path") or "") == expected_path
+        ]
+        if matches:
+            break
+        time.sleep(0.1)
+
+    if not matches:
+        return {
+            "ok": False,
+            "source": "REQUEST_LOG",
+            "connection_identity_redacted": None,
+            "failure_class": "OMNIROUTE_CONNECTION_EVIDENCE_MISSING",
+        }
+
+    connection_ids = {
+        str(row.get("connectionId") or "").strip()
+        for row in matches
+        if str(row.get("connectionId") or "").strip()
+    }
+    if connection_ids != {expected_connection_id}:
+        return {
+            "ok": False,
+            "source": "REQUEST_LOG",
+            "connection_identity_redacted": None,
+            "failure_class": "OMNIROUTE_CONNECTION_EVIDENCE_MISMATCH",
+        }
+
+    return {
+        "ok": True,
+        "source": "REQUEST_LOG",
+        "connection_identity_redacted": _connection_identity_redacted(
+            expected_connection_id
+        ),
+        "failure_class": None,
+    }
+
+
 def _dedicated_canary(
     target: dict[str, Any],
     base_url: str,
@@ -705,18 +794,35 @@ def _dedicated_canary(
     text = _assistant_text(payload)
     actual_provider = _header(headers, "X-OmniRoute-Provider")
     actual_model = _header(headers, "X-OmniRoute-Model")
-    selected_connection = _header(headers, "X-OmniRoute-Selected-Connection-Id")
+    connection_evidence = _resolve_dedicated_connection_evidence(
+        response_headers=headers,
+        base_url=base_url,
+        expected_connection_id=connection_id,
+        provider=provider,
+        model=model,
+    )
     canonical_actual_model = _canonical_dispatch_model(
         str(actual_provider or provider),
         str(actual_model or ""),
     )
     canonical_expected_model = _canonical_dispatch_model(provider, model)
-    exact = (
+    route_exact = (
         actual_provider == provider
         and canonical_actual_model == canonical_expected_model
-        and selected_connection == connection_id
     )
-    passed = 200 <= status < 300 and bool(text) and exact
+    passed = (
+        200 <= status < 300
+        and bool(text)
+        and route_exact
+        and bool(connection_evidence["ok"])
+    )
+    failure_class = None
+    if not passed:
+        failure_class = (
+            connection_evidence["failure_class"]
+            if route_exact and not connection_evidence["ok"]
+            else "OMNIROUTE_PROVIDER_ADAPTER_FAILURE"
+        )
     return {
         "schema": "OmniRouteProviderCanary/v1",
         "candidate_id": str(target["candidate_id"]),
@@ -725,19 +831,18 @@ def _dedicated_canary(
         "harness_provider": str(target["harness_provider"]),
         "harness_model": str(target["harness_model"]),
         "connection_identity_redacted": _connection_identity_redacted(connection_id),
+        "connection_evidence_source": connection_evidence["source"],
         "http_status": status,
         "latency_ms": latency,
         "reported_provider": actual_provider,
         "reported_model": actual_model,
-        "reported_connection_identity_redacted": (
-            _connection_identity_redacted(selected_connection)
-            if selected_connection
-            else None
-        ),
+        "reported_connection_identity_redacted": connection_evidence[
+            "connection_identity_redacted"
+        ],
         "response_nonempty": bool(text),
         "response_sha256": hashlib.sha256(raw.encode()).hexdigest(),
         "status": "PASS" if passed else "FAIL",
-        "failure_class": None if passed else "OMNIROUTE_PROVIDER_ADAPTER_FAILURE",
+        "failure_class": failure_class,
     }
 
 
