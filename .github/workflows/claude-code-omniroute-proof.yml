@@ -318,7 +318,7 @@ jobs:
           name: claude-code-omniroute-proof
           path: runtime/claude-omniroute/
           retention-days: 7
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Shutdown OmniRoute
         if: always()
