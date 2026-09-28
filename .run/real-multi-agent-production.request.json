@@ -10,11 +10,11 @@
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
     "retry_of_run": 36372603032,
-    "reason": "Resume the same durable human mission from the latest complete checkpoint after proving and fixing the pre-semantic physical-attempt recovery gap; preserve completed 24.636-minute editorial progress and continue only the minimal affected subgraph to MASTER_FINAL -> PRIVATE HD review -> Telegram.",
+    "reason": "Resume the same durable human mission after receipt-grounded proof that run 36372603032 failed before semantic/effectful execution and did not materialize a successor intent or dispatch receipt; preserve the completed 24.636-minute editorial result and continue only the minimal affected subgraph to MASTER_FINAL -> YouTube PRIVATE HD -> Telegram -> HUMAN_REVIEW_PENDING.",
     "preserve_longform_recovery": true,
     "preserve_web_fabric": true,
     "preserve_audiovisual_contracts": true,
-    "candidate_head": "71a39bf120a90ff039a065c612b0ac2a6c1295b9",
+    "candidate_head": "9c2a13ad80eb213102adfc73a12d8b427c4da74b",
     "baseline_source_selected": 2,
     "baseline_source_acquired": 0,
     "baseline_provenance": "INSUFFICIENT",
@@ -77,7 +77,23 @@
       "continuation_route_id": "continuation-route:693129864afc9cb10990dec8",
       "successor_intent_id": "successor-intent:e7432ba1094affa2379443336b2d3cd1",
       "effective_input_digest": "sha256:dc7854f8483034e99d175d55619a29aadf514f3e1eadfc6a9a28e49b369e65de"
+    },
+    "physical_retry_proof": {
+      "schema": "DurablePhysicalRetryProof/v1",
+      "source_run_id": 36372603032,
+      "source_transaction_artifact_id": 10949314245,
+      "source_transaction_artifact_digest": "sha256:ff49e3bdee5f1e39bfe9202eeb1c7ff9331976135da87d6a5149ac6ff2cd03a1",
+      "source_transaction_files": [
+        "continuation-claim.json"
+      ],
+      "semantic_execution_started": false,
+      "successor_intent_present": false,
+      "successor_dispatch_receipt_present": false,
+      "contract_proof_run_id": 36424565889,
+      "contract_proof_head": "9c2a13ad80eb213102adfc73a12d8b427c4da74b",
+      "ci_run_id": 36424566454,
+      "ci_status": "SUCCESS"
     }
   },
-  "requested_from_head": "71a39bf120a90ff039a065c612b0ac2a6c1295b9"
+  "requested_from_head": "9c2a13ad80eb213102adfc73a12d8b427c4da74b"
 }
