@@ -176,6 +176,50 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
         raw = '{"status":"one"}\n{"status":"two"}\n'
         self.assertIsNone(module._parse_json_object(raw))
 
+    def test_unsupported_nvidia_cli_provider_test_defers_to_dedicated_canary(self):
+        module = load_module()
+        result = CompletedProcess(
+            ["omniroute", "providers", "test", "conn-nvidia-123", "--json"],
+            1,
+            json.dumps({
+                "connection": {
+                    "id": "conn-nvidia-123",
+                    "provider": "nvidia",
+                    "name": "harness-nvidia",
+                },
+                "valid": False,
+                "unsupported": True,
+                "skipped": True,
+                "error": "Provider test not supported",
+            }),
+            "",
+        )
+        outcome = module._classify_provider_test_result(result)
+        self.assertEqual(outcome["status"], "UNSUPPORTED")
+        self.assertFalse(outcome["supported"])
+        self.assertIsNone(outcome["failure_class"])
+        self.assertEqual(
+            outcome["next_validation"],
+            "DEDICATED_PROVIDER_CANARY",
+        )
+
+    def test_supported_invalid_provider_test_remains_fail_closed(self):
+        module = load_module()
+        result = CompletedProcess(
+            ["omniroute", "providers", "test", "conn-nvidia-123", "--json"],
+            1,
+            json.dumps({
+                "valid": False,
+                "skipped": False,
+                "error": "Invalid API key",
+                "statusCode": 401,
+            }),
+            "",
+        )
+        outcome = module._classify_provider_test_result(result)
+        self.assertEqual(outcome["status"], "FAIL")
+        self.assertEqual(outcome["failure_class"], "OMNIROUTE_PROVIDER_TEST_FAILURE")
+
     def test_provider_materialization_captures_exact_connection_id_and_tests_it(self):
         module = load_module()
         target = plan()["candidate_targets"][0]
