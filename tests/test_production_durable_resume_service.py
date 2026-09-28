@@ -585,67 +585,90 @@ def test_successor_intent_is_independent_of_checkpoint_digest():
 
 
 def _write_completed_editorial(root, *, name="editorial_script-4.json"):
-    result_root=root/"hermes"/"task-results"
-    result_root.mkdir(parents=True,exist_ok=True)
-    row={
-        "schema":"TaskResultEnvelope/v1",
-        "mission_id":"mission-"+"a"*20,
-        "task_id":"editorial_script",
-        "capability_id":"editorial.process",
-        "status":"COMPLETED",
-        "result_payload":{
-            "script":{
-                "content":" ".join(["evidencia"]*3066),
-            },
-            "provider_routing":{
-                "selected_provider":"nvidia_nim",
-                "selected_model":"nvidia/nemotron-3-ultra-550b-a55b",
-            },
-            "provider_attempts":[{
-                "provider":"nvidia_nim",
-                "model":"nvidia/nemotron-3-ultra-550b-a55b",
-                "status":"EXECUTED",
-            }],
+    index=int(name.rsplit("-",1)[1].split(".",1)[0])
+    result={
+        "script":{"content":" ".join(["evidencia"]*3066)},
+        "provider_routing":{
+            "selected_provider":"nvidia_nim",
+            "selected_model":"nvidia/nemotron-3-ultra-550b-a55b",
         },
+        "provider_attempts":[{
+            "provider":"nvidia_nim",
+            "model":"nvidia/nemotron-3-ultra-550b-a55b",
+            "status":"EXECUTED",
+        }],
         "evidence_refs":[
             "artifact:task-results/fact_verification-1.json",
+            "artifact:task-results/topic_research-1.json",
             "https://www.rockstargames.com/VI",
         ],
-        "source_task_ids":["fact_verification"],
-        "output_artifact_refs":["script:1","production-plan:1"],
+        "artifact_refs":["script:1","production-plan:1"],
     }
-    path=result_root/name
-    path.write_text(json.dumps(row),encoding="utf-8")
-    return path,row
+    envelope=build_task_result_envelope(
+        mission_id="mission-"+"a"*20,
+        task_id="editorial_script",
+        capability_id="editorial.process",
+        agent_id="editorial-agent",
+        skill_id=None,
+        executor_binding="editorial.binding",
+        status="COMPLETED",
+        started_at="2026-09-28T10:00:00Z",
+        completed_at="2026-09-28T10:01:00Z",
+        elapsed_ms=60000,
+        result=result,
+        source_task_ids=("fact_verification","topic_research"),
+        authorization_id="auth-editorial",
+    )
+    row=persist_task_result_envelope(
+        envelope,artifact_dir=root/"hermes",index=index,
+    )
+    return root/"hermes"/"task-results"/name,row
+
+
+def _persist_completed_dependency(
+    root,
+    *,
+    task_id,
+    capability_id,
+    source_task_ids=(),
+):
+    envelope=build_task_result_envelope(
+        mission_id="mission-"+"a"*20,
+        task_id=task_id,
+        capability_id=capability_id,
+        agent_id=task_id+"-agent",
+        skill_id=None,
+        executor_binding=capability_id+".binding",
+        status="COMPLETED",
+        started_at="2026-09-28T09:00:00Z",
+        completed_at="2026-09-28T09:00:01Z",
+        elapsed_ms=1000,
+        result={
+            "status":"EXECUTED",
+            "evidence_refs":["https://www.rockstargames.com/VI"],
+            "artifact_refs":["https://www.rockstargames.com/VI"],
+        },
+        source_task_ids=source_task_ids,
+        authorization_id="auth-"+task_id,
+    )
+    return persist_task_result_envelope(
+        envelope,artifact_dir=root/"hermes",index=1,
+    )
 
 
 def test_product_assembly_resume_uses_completed_editorial_lineage_without_replanning(tmp_path):
-    _path,row=_write_completed_editorial(tmp_path)
-    # Create the exact completed dependencies cited by the editorial result.
-    fact=dict(row)
-    fact.update({
-        "task_id":"fact_verification",
-        "capability_id":"gta6.fact-check",
-        "result_payload":{"status":"EXECUTED"},
-        "evidence_refs":["https://www.rockstargames.com/VI"],
-        "source_task_ids":["topic_research"],
-        "output_artifact_refs":["https://www.rockstargames.com/VI"],
-    })
-    research=dict(row)
-    research.update({
-        "task_id":"topic_research",
-        "capability_id":"gta6.research",
-        "result_payload":{"status":"EXECUTED"},
-        "evidence_refs":["https://www.rockstargames.com/VI"],
-        "source_task_ids":[],
-        "output_artifact_refs":["https://www.rockstargames.com/VI"],
-    })
-    (tmp_path/"hermes"/"task-results"/"fact_verification-1.json").write_text(
-        json.dumps(fact),encoding="utf-8"
+    _persist_completed_dependency(
+        tmp_path,
+        task_id="topic_research",
+        capability_id="gta6.research",
     )
-    (tmp_path/"hermes"/"task-results"/"topic_research-1.json").write_text(
-        json.dumps(research),encoding="utf-8"
+    _persist_completed_dependency(
+        tmp_path,
+        task_id="fact_verification",
+        capability_id="gta6.fact-check",
+        source_task_ids=("topic_research",),
     )
+    _write_completed_editorial(tmp_path)
     progress=editorial_progress_snapshot(
         artifact_dir=tmp_path,
         planning_wpm=124.45,
