@@ -1,0 +1,27 @@
+{
+  "schema": "OwnerVoiceEnrollmentState/v1",
+  "voice_identity_id": "BR_OWNER_V1",
+  "owner_class": "OWNER",
+  "language": "pt-BR",
+  "consent_status": "APPROVED",
+  "consent_basis": "explicit owner instruction in governed human conversation",
+  "consent_timestamp": "2026-09-28",
+  "declared_reference_count": 3,
+  "materialized_reference_count": 0,
+  "reference_materialization_status": "PENDING_PRIVATE_REFERENCE_MATERIALIZATION",
+  "selection_policy": "QUALITY_FIRST_DETERMINISTIC_SHA_TIEBREAK",
+  "minimum_aggregate_clean_speech_seconds": 30,
+  "recommended_clean_speech_seconds": [
+    60,
+    120
+  ],
+  "qwen_reference_policy": "SINGLE_PRIMARY_REFERENCE_NO_UNPROVEN_FUSION",
+  "chatterbox_reference_policy": "SINGLE_AUDIO_PROMPT_NO_UNPROVEN_FUSION",
+  "official_voice": "Voice B",
+  "official_voice_identity": "pt-BR-ThalitaMultilingualNeural",
+  "owner_voice_status": "ENROLLMENT_CONSENTED_REFERENCE_BYTES_PENDING",
+  "human_ab_review": "PENDING",
+  "promotion_allowed": false,
+  "raw_voice_in_git": false,
+  "raw_prompt_in_public_artifacts": false
+}

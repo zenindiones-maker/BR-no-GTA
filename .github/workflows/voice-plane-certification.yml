@@ -10,6 +10,7 @@ on:
       - "app/services/realtime_voice_harness_gateway.py"
       - "app/services/global_capability_registry.py"
       - "config/voice_plane_upstreams_v1.json"
+      - "config/voice_owner_enrollment_v1.json"
       - "integrations/cloudflare-voice/**"
       - "tests/test_voice_plane_foundation.py"
       - "tests/test_telegram_voice_plane.py"

@@ -11,7 +11,11 @@
     "long_form_model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
     "long_form_model_revision": "fd4b254389122332181a7c3db7f27e918eec64e3",
     "runtime_mode": "PRIVATE_ISOLATED_SELF_HOSTED",
-    "implicit_weight_download": "FORBIDDEN"
+    "implicit_weight_download": "FORBIDDEN",
+    "reference_batch_supported": true,
+    "reference_fusion_supported": false,
+    "reusable_clone_prompt_supported": true,
+    "reference_policy": "select one deterministic identity-grade primary reference; other clips remain QA/pronunciation/audition evidence unless upstream documents identity fusion"
   },
   "chatterbox": {
     "repository": "resemble-ai/chatterbox",
@@ -23,7 +27,12 @@
     "model_revision": "b3952f1",
     "checkpoint_sha256": "074aaf65255eb9cb960288f7cc72e09d3b5008f6e0b14868c0d4e5b0bd7cbb6c",
     "upstream_dependency_note": "resemble-perth is floating master in upstream pyproject; canonical runtime promotion requires an independently pinned build recipe",
-    "runtime_mode": "PRIVATE_ISOLATED_SELF_HOSTED"
+    "runtime_mode": "PRIVATE_ISOLATED_SELF_HOSTED",
+    "reference_batch_supported": false,
+    "reference_fusion_supported": false,
+    "reusable_clone_prompt_supported": false,
+    "watermark_policy": "PERTH_WATERMARK_MANDATORY_PRESERVE",
+    "reference_policy": "single audio_prompt_path per generation; no undocumented multi-reference fusion"
   },
   "cloudflare_agents": {
     "repository": "cloudflare/agents",

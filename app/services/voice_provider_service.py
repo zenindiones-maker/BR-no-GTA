@@ -27,6 +27,9 @@ class VoiceProviderProfile:
     usage_kinds: tuple[str, ...]
     latency_rank: int
     watermark_policy: str
+    supports_reference_batch: bool = False
+    supports_reference_fusion: bool = False
+    supports_reusable_clone_prompt: bool = False
 
 
 QWEN_OWNER_INTERACTIVE = VoiceProviderProfile(
@@ -45,6 +48,9 @@ QWEN_OWNER_INTERACTIVE = VoiceProviderProfile(
     usage_kinds=("INTERACTIVE", "AUDITION", "PRONUNCIATION_TEST"),
     latency_rank=10,
     watermark_policy="NONE_DECLARED_BY_PROFILE",
+    supports_reference_batch=True,
+    supports_reference_fusion=False,
+    supports_reusable_clone_prompt=True,
 )
 
 QWEN_OWNER_LONG_FORM = VoiceProviderProfile(
@@ -63,6 +69,9 @@ QWEN_OWNER_LONG_FORM = VoiceProviderProfile(
     usage_kinds=("LONG_FORM", "AUDITION", "PRONUNCIATION_TEST"),
     latency_rank=30,
     watermark_policy="NONE_DECLARED_BY_PROFILE",
+    supports_reference_batch=True,
+    supports_reference_fusion=False,
+    supports_reusable_clone_prompt=True,
 )
 
 CHATTERBOX_PTBR_PROFILE = VoiceProviderProfile(
@@ -80,7 +89,10 @@ CHATTERBOX_PTBR_PROFILE = VoiceProviderProfile(
     cost_class="SELF_HOSTED_COMPUTE",
     usage_kinds=("INTERACTIVE", "LONG_FORM", "AUDITION", "PRONUNCIATION_TEST"),
     latency_rank=40,
-    watermark_policy="PERTH_WATERMARK_PRESERVE_IF_EMITTED",
+    watermark_policy="PERTH_WATERMARK_MANDATORY_PRESERVE",
+    supports_reference_batch=False,
+    supports_reference_fusion=False,
+    supports_reusable_clone_prompt=False,
 )
 
 
