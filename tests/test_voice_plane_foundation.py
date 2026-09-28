@@ -4,7 +4,13 @@ import json
 from pathlib import Path
 import pytest
 
-from app.services.channel_spoken_branding_service import OFFICIAL_VOICE_BLIND_ID
+from app.services.channel_spoken_branding_service import (
+    ALLOW_LEGACY_VOICE_B_FALLBACK,
+    LEGACY_CONTROL_VOICE_BLIND_ID,
+    OFFICIAL_PROVIDER,
+    OFFICIAL_VOICE_BLIND_ID,
+    OFFICIAL_VOICE_IDENTITY_ID,
+)
 from app.services.voice_plane_contracts import (
     ConsentStatus,
     VoiceEnrollmentMetrics,
@@ -31,8 +37,14 @@ from app.services.voice_egress_policy import apply_voice_egress_policy
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_official_voice_b_remains_control_until_human_promotion():
-    assert OFFICIAL_VOICE_BLIND_ID == "Voice B"
+def test_owner_voice_is_now_canonical_and_voice_b_is_historical_control_only():
+    assert OFFICIAL_VOICE_IDENTITY_ID == "BR_OWNER_V1"
+    assert OFFICIAL_VOICE_BLIND_ID == "BR_OWNER_V1"
+    assert OFFICIAL_PROVIDER == "private-voice-runtime"
+    assert LEGACY_CONTROL_VOICE_BLIND_ID == "Voice B"
+    assert ALLOW_LEGACY_VOICE_B_FALLBACK is False
+    # Consent selects the owner identity, but reusable clone synthesis still
+    # requires the private clone profile and its own certification evidence.
     assert official_voice_promotion_allowed(consent=ConsentStatus.PENDING, human_ab_review=False) is False
     assert official_voice_promotion_allowed(consent=ConsentStatus.APPROVED, human_ab_review=False) is False
     assert official_voice_promotion_allowed(consent=ConsentStatus.APPROVED, human_ab_review=True) is True
