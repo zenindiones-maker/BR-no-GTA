@@ -1,7 +1,12 @@
 from __future__ import annotations
 import argparse,asyncio,json,shutil,subprocess,time,unicodedata
 from pathlib import Path
-from app.services.channel_spoken_branding_service import TAKE_PROFILES, canonical_opening_text
+from app.services.channel_spoken_branding_service import (
+    ALLOW_LEGACY_VOICE_B_FALLBACK,
+    OFFICIAL_VOICE_IDENTITY_ID,
+    TAKE_PROFILES,
+    canonical_opening_text,
+)
 from app.services.human_review_quality_gate import validate_pronunciation_readiness
 from app.services.pronunciation_service import (
     DEFAULT_VOICE,build_azure_ssml,pronunciation_cache_identity,
@@ -58,6 +63,8 @@ async def _literal_edge_baseline(text:str, output:Path)->dict:
     return {"wall_clock_seconds":time.monotonic()-started,"external_calls":1,"probe":_probe(output)}
 
 def main()->int:
+    if OFFICIAL_VOICE_IDENTITY_ID == "BR_OWNER_V1" and not ALLOW_LEGACY_VOICE_B_FALLBACK:
+        raise RuntimeError("LEGACY_VOICE_B_PRONUNCIATION_RUNTIME_DISABLED")
     ap=argparse.ArgumentParser(); ap.add_argument("--output-dir",type=Path,required=True); args=ap.parse_args()
     args.output_dir.mkdir(parents=True,exist_ok=True); samples_dir=args.output_dir/"samples"; samples_dir.mkdir(parents=True,exist_ok=True)
     baseline_text="E BR não dorme em Vice City"

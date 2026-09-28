@@ -50,6 +50,12 @@ jobs:
           set -euo pipefail
           python -m pip install -r requirements.txt pytest
 
+      - name: Initialize pronunciation evidence
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/pronunciation-proof
+          printf '%s\n' '{"schema":"OwnerVoicePronunciationPolicyProof/v1","status":"STARTED","official_voice_identity":"BR_OWNER_V1","raw_voice_recorded":false}' > runtime/pronunciation-proof/proof-state.json
+
       - name: Focused pronunciation and owner-voice tests
         run: |
           set -euo pipefail
