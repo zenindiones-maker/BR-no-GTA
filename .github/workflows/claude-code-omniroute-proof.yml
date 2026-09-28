@@ -1,0 +1,178 @@
+name: Claude Code OmniRoute Zero-Cost Proof
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".github/workflows/claude-code-omniroute-proof.yml"
+      - "scripts/agent-tooling/bootstrap.sh"
+      - "scripts/agent-tooling/claude_omniroute_contract.py"
+      - "tests/test_claude_omniroute_contract.py"
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "Harness-selected provider"
+        required: true
+        default: "opencode"
+      model:
+        description: "Harness-selected model"
+        required: true
+        default: "oc/big-pickle"
+      source_sha:
+        description: "Exact source revision"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  claude-omniroute-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      HARNESS_SELECTED_PROVIDER: ${{ inputs.provider || 'opencode' }}
+      HARNESS_SELECTED_MODEL: ${{ inputs.model || 'oc/big-pickle' }}
+      ANTHROPIC_BASE_URL: http://127.0.0.1:20128
+      ANTHROPIC_AUTH_TOKEN: omniroute-no-auth
+      ANTHROPIC_MODEL: ${{ inputs.model || 'oc/big-pickle' }}
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: "190000"
+
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Assert exact dispatched source revision
+        if: ${{ inputs.source_sha != '' }}
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Prove static Claude OmniRoute boundary
+        run: |
+          set -euo pipefail
+          python3 -m pytest -q tests/test_claude_omniroute_contract.py
+          python3 scripts/agent-tooling/claude_omniroute_contract.py             --provider "$HARNESS_SELECTED_PROVIDER"             --model "$HARNESS_SELECTED_MODEL"             --base-url "$ANTHROPIC_BASE_URL"             --zero-cost-proof
+
+      - name: Install pinned Claude Code
+        run: bash scripts/agent-tooling/bootstrap.sh claude
+
+      - name: Install pinned OmniRoute
+        run: |
+          set -euo pipefail
+          npm install -g omniroute@3.8.50
+          omniroute --version
+
+      - name: Start loopback-only OmniRoute
+        run: |
+          set -euo pipefail
+          OMNIROUTE_SERVER_HOST=127.0.0.1 nohup omniroute serve >/tmp/omniroute-claude.log 2>&1 &
+          echo $! >/tmp/omniroute-claude.pid
+          for i in {1..40}; do
+            if curl --connect-timeout 2 --max-time 5 -fsS http://127.0.0.1:20128/api/monitoring/health >/tmp/omniroute-claude-health.json 2>/dev/null; then
+              python3 - <<'PY'
+          import subprocess
+          rows = subprocess.check_output(["ss", "-H", "-ltn", "sport = :20128"], text=True).splitlines()
+          assert rows
+          addresses = [row.split()[3] for row in rows]
+          assert all(address in {"127.0.0.1:20128", "[::1]:20128"} for address in addresses), addresses
+          PY
+              echo "OMNIROUTE_LOOPBACK_ONLY=PASS"
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/omniroute-claude.log || true
+          exit 1
+
+      - name: Execute Claude Code through governed OmniRoute
+        env:
+          CLAUDE_CONFIG_DIR: ${{ runner.temp }}/claude-omniroute-config
+        run: |
+          set -euo pipefail
+          test "$HARNESS_SELECTED_PROVIDER" = "opencode"
+          test "$HARNESS_SELECTED_MODEL" = "oc/big-pickle"
+          test "$ANTHROPIC_MODEL" = "$HARNESS_SELECTED_MODEL"
+          test "$ANTHROPIC_BASE_URL" = "http://127.0.0.1:20128"
+          case "$ANTHROPIC_BASE_URL" in */v1|*/v1/) exit 4;; esac
+          unset ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN
+          mkdir -p runtime/claude-omniroute
+          BEFORE="$(git status --porcelain)"
+          PROMPT='Return exactly this marker and nothing else: CLAUDE_OMNIROUTE_RUNTIME_OK'
+          set +e
+          timeout 180 claude -p "$PROMPT"             --model "$HARNESS_SELECTED_MODEL"             --output-format json             --max-turns 1             --tools ""             --disallowedTools "mcp__*"             --permission-prompts none             --no-session-persistence             --restricted             --bare             >runtime/claude-omniroute/stdout.json             2>runtime/claude-omniroute/stderr.txt
+          RC=$?
+          set -e
+          AFTER="$(git status --porcelain)"
+          test "$BEFORE" = "$AFTER"
+          RC="$RC" python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+
+          root = Path("runtime/claude-omniroute")
+          stdout = (root / "stdout.json").read_text(encoding="utf-8", errors="replace")
+          stderr = (root / "stderr.txt").read_text(encoding="utf-8", errors="replace")
+          rc = int(os.environ["RC"])
+          try:
+              payload = json.loads(stdout)
+          except json.JSONDecodeError as exc:
+              raise SystemExit(f"invalid Claude Code JSON output: {exc}")
+          result = payload.get("result")
+          if rc != 0 or not isinstance(result, str) or not result.strip():
+              safe = "\n".join(
+                  line[:400]
+                  for line in stderr.splitlines()
+                  if not any(term in line.lower() for term in ("authorization:", "bearer ", "api_key", "token="))
+              )
+              raise SystemExit(f"Claude Code OmniRoute execution failed rc={rc}: {safe[-2000:]}")
+          evidence = {
+              "schema": "ClaudeCodeOmniRouteProof/v1",
+              "status": "EXECUTED",
+              "authority": "DEEPSEEK_HARNESS",
+              "executor": "claude-code",
+              "claude_code_version": "2.1.283",
+              "gateway": "omniroute",
+              "omniroute_version": "3.8.50",
+              "provider": os.environ["HARNESS_SELECTED_PROVIDER"],
+              "model": os.environ["HARNESS_SELECTED_MODEL"],
+              "base_url": os.environ["ANTHROPIC_BASE_URL"],
+              "auth_class": "LOCAL_LOOPBACK_SENTINEL",
+              "model_discovery": False,
+              "fallback_occurred": False,
+              "tools_exposed": 0,
+              "repository_mutation": False,
+              "result": result.strip(),
+              "stdout_sha256": hashlib.sha256(stdout.encode()).hexdigest(),
+              "stderr_sha256": hashlib.sha256(stderr.encode()).hexdigest(),
+          }
+          (root / "result.json").write_text(json.dumps(evidence, sort_keys=True), encoding="utf-8")
+          print("CLAUDE_CODE_OMNIROUTE_RUNTIME_PROOF=PASS")
+          print("CLAUDE_CODE_OMNIROUTE_PROVIDER=" + evidence["provider"])
+          print("CLAUDE_CODE_OMNIROUTE_MODEL=" + evidence["model"])
+          PY
+
+      - name: Upload proof evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-code-omniroute-proof
+          path: runtime/claude-omniroute/result.json
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Shutdown OmniRoute
+        if: always()
+        run: |
+          if [ -f /tmp/omniroute-claude.pid ]; then
+            kill "$(cat /tmp/omniroute-claude.pid)" 2>/dev/null || true
+          fi
