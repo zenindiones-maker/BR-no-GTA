@@ -5,7 +5,7 @@ import pytest
 
 from app.services.pronunciation_service import (
     DEFAULT_VOICE, PRONUNCIATION_LAYER_VERSION, PronunciationError,
-    SynthesisPlan, SynthesisSpan, _edge_synthesis_groups, _edge_trim_window,
+    SynthesisPlan, SynthesisSpan,
     build_azure_ssml, canonical_lexicon_entries, load_pronunciation_lexicon,
     pronunciation_cache_identity, provider_capabilities, resolve_synthesis_plan,
     synthesis_plan_cache_payload, validate_provider_plan,
@@ -36,10 +36,8 @@ def test_names_and_brands_stay_in_ptbr_lane():
     assert plan.foreign_span_count==0
     assert plan.detected_span_count==0
     assert all(span.locale=="pt-BR" for span in plan.spans)
-    groups=_edge_synthesis_groups(plan)
-    assert len(groups)==1
-    assert groups[0]["locale"]=="pt-BR"
-    assert groups[0]["synthesis_text"]==text.replace("Lucia","Lucía").replace("Leonida","Leônida")
+    assert all(span.locale=="pt-BR" for span in plan.spans)
+    assert plan.rendered_text==text.replace("Lucia","Lucía").replace("Leonida","Leônida")
 
 def test_unknown_acronyms_do_not_force_language_switches():
     plan=resolve_synthesis_plan("RTX, NVIDIA e AMD entram na conversa.")
@@ -67,9 +65,8 @@ def test_vice_city_stays_inside_ptbr_voice_lane():
 def test_ptbr_vice_city_never_creates_a_language_boundary():
     text="Hoje vamos entrar em Vice City e depois voltar aos detalhes da Rockstar."
     plan=resolve_synthesis_plan(text)
-    groups=_edge_synthesis_groups(plan)
-    assert [item["locale"] for item in groups]==["pt-BR"]
-    assert "Váis Síti" in groups[0]["synthesis_text"]
+    assert all(span.locale=="pt-BR" for span in plan.spans)
+    assert "Váis Síti" in plan.rendered_text
 
 def test_gta6_alias_preserves_ptbr_prosody_and_canonical_text():
     text="Hoje vamos falar de GTA 6 sem quebrar a fluidez."
@@ -79,7 +76,7 @@ def test_gta6_alias_preserves_ptbr_prosody_and_canonical_text():
     assert gta.synthesis_text=="gê tê á seis"
     assert gta.locale=="pt-BR"
     assert plan.foreign_span_count==0
-    assert len(_edge_synthesis_groups(plan))==1
+    assert all(span.locale=="pt-BR" for span in plan.spans)
     assert plan.canonical_text==text and plan.canonical_text_preserved
 
 def test_leonida_alias_is_synthesis_only_and_stays_in_continuous_ptbr_context():
@@ -92,11 +89,9 @@ def test_leonida_alias_is_synthesis_only_and_stays_in_continuous_ptbr_context():
     assert plan.canonical_text==text
     assert plan.canonical_text_preserved is True
     assert plan.foreign_span_count==0
-    groups=_edge_synthesis_groups(plan)
-    assert len(groups)==1
-    assert groups[0]["locale"]=="pt-BR"
-    assert "Leônida" in groups[0]["synthesis_text"]
-    assert groups[0]["synthesis_text"]!="Leônida"
+    assert all(span.locale=="pt-BR" for span in plan.spans)
+    assert "Leônida" in plan.rendered_text
+    assert plan.rendered_text!="Leônida"
 
 def test_bad_explicit_span_fails_closed():
     with pytest.raises(PronunciationError):
@@ -107,27 +102,26 @@ def test_azure_ssml_has_no_foreign_language_wrappers():
     assert '<lang xml:lang="en-US">' not in ssml
     assert "Váis Síti" in ssml
 
-def test_edge_capabilities_are_truthful():
-    caps=provider_capabilities("edge-tts",provider_version="7.2.8",voice=DEFAULT_VOICE)
-    assert caps.supports_ssml is False
-    assert caps.supports_isolated_multilingual_chunks is True
-    assert caps.supports_same_voice_multilingual is True
-
-def test_edge_fails_closed_if_phoneme_requested_but_unsupported():
+def test_uncertified_provider_fails_closed_if_phoneme_requested():
     plan=SynthesisPlan(
         canonical_text="Vice City",default_locale="pt-BR",voice=DEFAULT_VOICE,
         resolver_version=PRONUNCIATION_LAYER_VERSION,lexicon_version="test",
         spans=(SynthesisSpan(0,9,"Vice City","pt-BR","phoneme","Váis Síti","explicit",target_ipa="vaɪs ˈsɪti"),),
         lexicon_hits=(),explicit_span_count=1,detected_span_count=0,resolution_wall_clock_seconds=0.0,
     )
+    capabilities=provider_capabilities(
+        "owner-private-runtime",
+        provider_version="test",
+        voice=DEFAULT_VOICE,
+    )
     with pytest.raises(PronunciationError,match="phoneme"):
-        validate_provider_plan(plan,provider_capabilities("edge-tts",provider_version="7.2.8",voice=DEFAULT_VOICE))
+        validate_provider_plan(plan,capabilities)
 
 def test_cache_identity_changes_with_lexicon_version():
     plan=resolve_synthesis_plan("Vice City")
-    first=pronunciation_cache_identity(plan,provider_id="edge-tts",provider_version="7.2.8",voice=DEFAULT_VOICE,rate="+0%")
+    first=pronunciation_cache_identity(plan,provider_id="owner-private-runtime",provider_version="1",voice=DEFAULT_VOICE,rate="+0%")
     changed=replace(plan,lexicon_version=plan.lexicon_version+".next")
-    second=pronunciation_cache_identity(changed,provider_id="edge-tts",provider_version="7.2.8",voice=DEFAULT_VOICE,rate="+0%")
+    second=pronunciation_cache_identity(changed,provider_id="owner-private-runtime",provider_version="1",voice=DEFAULT_VOICE,rate="+0%")
     assert first["sha256"]!=second["sha256"]
 
 def test_cache_payload_excludes_runtime_resolution_time():
@@ -145,17 +139,6 @@ def test_canonical_entries_include_human_approved_lucia_alias():
     assert plan.canonical_text_preserved
     assert sum(1 for span in plan.spans if span.locale!="pt-BR")==0
     assert next(span for span in plan.spans if span.pronunciation_identity=="character-lucia").locale=="pt-BR"
-
-def test_language_boundary_trim_removes_provider_padding_without_clipping_words():
-    boundaries=[{"offset_seconds":0.05,"duration_seconds":0.075},{"offset_seconds":1.3625,"duration_seconds":0.2125}]
-    start,end=_edge_trim_window(boundaries,1.92,trim_leading=False,trim_trailing=True)
-    assert start==0.0
-    assert 1.70 < end < 1.73
-    vice=[{"offset_seconds":0.0875,"duration_seconds":0.4125},{"offset_seconds":0.5,"duration_seconds":0.4}]
-    start2,end2=_edge_trim_window(vice,1.248,trim_leading=True,trim_trailing=False)
-    assert start2==0.0
-    assert end2==1.248
-
 
 def test_explicit_vice_city_en_us_metadata_is_forced_back_to_ptbr():
     text="Vice City"
