@@ -78,7 +78,7 @@ def test_channel_standard_activates_only_after_both_official_assets_exist():
     assert readiness["standard"] == "BR_NO_GTA_VIDEO_BRANDING_V2"
     assert readiness["spoken_branding"]["intro_asset_id"] == 1
     assert readiness["spoken_branding"]["spoken_opening_after_intro"] is True
-    assert readiness["spoken_branding"]["official_voice_profile"] == "Voice B"
+    assert readiness["spoken_branding"]["official_voice_profile"] == "BR_OWNER_V1"
     assert readiness["spoken_branding"]["opening_template"] == (
         "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de [tema do vídeo]!"
     )
@@ -109,7 +109,7 @@ def test_active_channel_standard_binds_exact_intro_and_watermark_into_new_produc
     assert result["status"] == "channel_standard_bound"
     assert result["channel_branding_standard_active"] is True
     assert result["channel_branding_standard"] == "BR_NO_GTA_VIDEO_BRANDING_V2"
-    assert result["spoken_branding"]["official_voice_profile"] == "Voice B"
+    assert result["spoken_branding"]["official_voice_profile"] == "BR_OWNER_V1"
     assert result["spoken_branding"]["timeline_order"][:3] == [
         "official_intro", "spoken_channel_opening", "editorial_hook"
     ]

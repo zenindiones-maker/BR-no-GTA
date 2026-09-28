@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+import hashlib
+from typing import Any, Iterable
 
 from app.services.voice_plane_contracts import ConsentStatus
 
@@ -102,6 +103,99 @@ class OwnerVoiceEnrollmentDecision:
     primary_reference_id: str | None
     accepted_reference_ids: tuple[str, ...]
     issues: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class TelegramVoiceReferenceCandidate:
+    telegram_input_id: int
+    telegram_message_id: int
+    media_kind: str
+    telegram_file_id: str
+    telegram_file_unique_id: str
+    duration_seconds: float
+    source: str = "TELEGRAM"
+
+    @property
+    def private_asset_ref(self) -> str:
+        digest = hashlib.sha256(
+            self.telegram_file_unique_id.encode("utf-8")
+        ).hexdigest()
+        return f"private://telegram/{digest}"
+
+    def to_redacted_evidence(self) -> dict[str, Any]:
+        return {
+            "schema": "TelegramVoiceReferenceCandidate/v1",
+            "telegram_input_id": self.telegram_input_id,
+            "telegram_message_id": self.telegram_message_id,
+            "media_kind": self.media_kind,
+            "duration_seconds": self.duration_seconds,
+            "source": self.source,
+            "private_asset_ref": self.private_asset_ref,
+            "remote_verified": True,
+            "raw_voice_recorded": False,
+            "telegram_file_identity_redacted": True,
+        }
+
+
+def discover_telegram_voice_reference_candidates(
+    records: Iterable[dict[str, Any]],
+) -> tuple[TelegramVoiceReferenceCandidate, ...]:
+    """Recover governed Telegram voice/audio metadata without exposing file ids.
+
+    The exact Telegram file_id remains runtime-private and is used only when a
+    cloud/private worker materializes the reference through Bot API getFile.
+    """
+    by_unique: dict[str, TelegramVoiceReferenceCandidate] = {}
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        media_kind = str(record.get("input_kind") or "").strip().lower()
+        if media_kind not in {"voice", "audio"}:
+            continue
+        if record.get("remote_verified") is not True:
+            continue
+        file_id = str(record.get("telegram_file_id") or "").strip()
+        unique_id = str(record.get("telegram_file_unique_id") or "").strip()
+        if not file_id or not unique_id:
+            continue
+        try:
+            input_id = int(record.get("id"))
+            message_id = int(record.get("telegram_message_id"))
+            duration = float(record.get("duration_seconds") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if input_id <= 0 or message_id <= 0 or duration <= 0:
+            continue
+        candidate = TelegramVoiceReferenceCandidate(
+            telegram_input_id=input_id,
+            telegram_message_id=message_id,
+            media_kind=media_kind,
+            telegram_file_id=file_id,
+            telegram_file_unique_id=unique_id,
+            duration_seconds=duration,
+        )
+        previous = by_unique.get(unique_id)
+        if previous is None or candidate.telegram_input_id < previous.telegram_input_id:
+            by_unique[unique_id] = candidate
+    return tuple(
+        sorted(
+            by_unique.values(),
+            key=lambda item: (item.telegram_input_id, item.telegram_message_id),
+        )
+    )
+
+
+def load_persisted_telegram_voice_reference_candidates(
+    *,
+    limit: int = 200,
+) -> tuple[TelegramVoiceReferenceCandidate, ...]:
+    from app.database.telegram_user_input_repository import (
+        list_recent_telegram_user_inputs,
+    )
+
+    return discover_telegram_voice_reference_candidates(
+        list_recent_telegram_user_inputs(limit=limit)
+    )
 
 
 def _is_ptbr(language: str) -> bool:
