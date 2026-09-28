@@ -7,6 +7,7 @@ on:
     paths:
       - "app/services/agenttube_capability_bridge.py"
       - "app/services/global_capability_registry.py"
+      - "app/services/harness_capability_service.py"
       - "config/third_party/agenttube_*.json"
       - "docs/third-party/agenttube-*"
       - "tests/test_agenttube_capability_bridge.py"
