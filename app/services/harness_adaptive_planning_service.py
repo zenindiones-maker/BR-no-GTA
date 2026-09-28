@@ -1291,7 +1291,15 @@ def _normalize_production_plan_output_contract(
     for task in proposal.tasks:
         task_class = str(task.task_class or "").strip().casefold()
         expected = str(task.expected_output or "").strip().casefold()
-        if task_class == "presentation" and expected.replace(" ", "") == "productionplan":
+        expected_artifact_identity = re.sub(
+            r"[^a-z0-9]+",
+            "",
+            expected,
+        )
+        if (
+            task_class == "presentation"
+            and "productionplan" in expected_artifact_identity
+        ):
             tasks.append(replace(task, task_class="production-planning"))
             normalized_task_ids.append(task.task_id)
         else:

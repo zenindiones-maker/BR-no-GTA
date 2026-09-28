@@ -672,6 +672,36 @@ def test_presentation_task_that_outputs_production_plan_is_normalized_before_sel
     assert normalized.tasks[0].task_class == "production-planning"
     assert normalized.tasks[0].expected_output == "ProductionPlan"
 
+
+def test_presentation_task_with_compound_production_plan_output_is_normalized():
+    canonical = _proposal(candidate_id="")
+    canonical["tasks"][0].update({
+        "task_id": "production-plan",
+        "objective": "prepare the audiovisual production plan",
+        "task_class": "presentation",
+        "required_capability_description": "prepare a production plan",
+        "candidate_capability_ids": [],
+        "expected_output": (
+            "persisted ProductionPlan + production-plan artifact ref"
+        ),
+        "acceptance_criteria": ["typed production plan"],
+        "action": "EXECUTION",
+    })
+    proposal = MissionPlanProposal.from_mapping(canonical, max_tasks=8)
+
+    normalized, task_ids = (
+        adaptive_service._normalize_production_plan_output_contract(
+            proposal
+        )
+    )
+
+    assert task_ids == ("production-plan",)
+    assert normalized.tasks[0].task_class == "production-planning"
+    assert "ProductionPlan" in normalized.tasks[0].expected_output
+    requirement = adaptive_service.proposal_requirements(normalized)[0]
+    assert requirement["action"] == "PRODUCTION"
+    assert requirement["task_family"] == "PRODUCTION"
+
 def test_unsupported_action_fails_closed_before_normalization():
     canonical = _proposal(candidate_id="")
     canonical["tasks"][0]["action"] = "EXECUTE"
