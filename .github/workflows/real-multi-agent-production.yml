@@ -270,36 +270,171 @@ jobs:
           set -euo pipefail
           ROOT=artifacts/real-multi-agent-production
           mkdir -p "$ROOT"
+          RETRY_OF=""
+          CLAIM_DECISION="LEGACY"
           if [[ "$BR_CONTINUATION_ID" == continuation:* ]]; then
             TITLE="Real Multi-Agent Production · $BR_CONTINUATION_ID"
             RUNS_JSON="$RUNNER_TEMP/logical-continuation-runs.json"
+            RETRY_SAFE_JSON="$RUNNER_TEMP/retry-safe-runs.json"
             gh run list --repo "$GITHUB_REPOSITORY" \
               --workflow real-multi-agent-production.yml --limit 100 \
               --json databaseId,displayTitle,status,conclusion > "$RUNS_JSON"
-            OWNER="$(python - "$RUNS_JSON" "$TITLE" <<'PY'
+            echo '[]' > "$RETRY_SAFE_JSON"
+            PRIOR_IDS="$(python - "$RUNS_JSON" "$TITLE" "$GITHUB_RUN_ID" <<'PY'
           import json,sys
           rows=json.load(open(sys.argv[1],encoding="utf-8"))
-          ids=sorted(
-              int(row["databaseId"]) for row in rows
-              if str(row.get("displayTitle") or "")==sys.argv[2]
-          )
-          print(ids[0] if ids else "")
+          title=sys.argv[2]
+          current=int(sys.argv[3])
+          for row in rows:
+              if str(row.get("displayTitle") or "")!=title:
+                  continue
+              run_id=int(row["databaseId"])
+              if run_id==current:
+                  continue
+              if str(row.get("status") or "").lower()!="completed":
+                  continue
+              if str(row.get("conclusion") or "").lower()=="success":
+                  continue
+              print(run_id)
           PY
             )"
-            test -n "$OWNER"
-            if [ "$OWNER" != "$GITHUB_RUN_ID" ]; then
+            for RID in $PRIOR_IDS; do
+              JOBS_JSON="$RUNNER_TEMP/retry-jobs-$RID.json"
+              RUN_LOG="$RUNNER_TEMP/retry-log-$RID.txt"
+              gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RID/jobs?per_page=100" \
+                > "$JOBS_JSON"
+              gh run view "$RID" --repo "$GITHUB_REPOSITORY" --log \
+                > "$RUN_LOG" 2>&1 || true
+              STEP_SAFE="$(python - "$JOBS_JSON" <<'PY'
+          import json,sys
+          data=json.load(open(sys.argv[1],encoding="utf-8"))
+          jobs=list(data.get("jobs") or [])
+          production=next(
+              (job for job in jobs if str(job.get("name") or "")=="production"),
+              None,
+          )
+          if production is None:
+              print("0")
+              raise SystemExit
+          by_name={
+              str(step.get("name") or ""):str(step.get("conclusion") or "")
+              for step in (production.get("steps") or [])
+          }
+          semantic="Execute natural goal through Harness-selected agents"
+          effectful=(
+              semantic,
+              "Deliver human-readable editorial package to Telegram",
+              "Create canonical professional RenderJob from new product",
+              "Publish canonical RenderJob handoff checkpoint",
+              "Dispatch professional render",
+              "Wait only for canonical render",
+              "Reconcile render checkpoint",
+              "Download QA-passed MASTER_FINAL and narration checkpoint",
+              "Validate MASTER_FINAL before any YouTube review upload",
+              "Deliver requested narration master to Telegram without recompression",
+              "Create PRIVATE-only YouTube review record after QA",
+              "Dispatch canonical YouTube PRIVATE HD review upload",
+              "Wait only for private HD review readiness",
+              "Reconcile PRIVATE HD review and Telegram link delivery",
+          )
+          safe=by_name.get(semantic)=="skipped"
+          for name in effectful:
+              observed=by_name.get(name)
+              if observed not in {None,"","skipped"}:
+                  safe=False
+          print("1" if safe else "0")
+          PY
+              )"
+              SUCCESSOR_SAFE=1
+              if grep -Eq \
+                'NONTERMINAL_SUCCESSOR_DISPATCHED=PASS|DUPLICATE_SUCCESSOR_INTENT_DEDUPED=PASS' \
+                "$RUN_LOG"; then
+                SUCCESSOR_SAFE=0
+              fi
+              if [ "$STEP_SAFE" = 1 ] && [ "$SUCCESSOR_SAFE" = 1 ]; then
+                python - "$RETRY_SAFE_JSON" "$RID" <<'PY'
+          import json,sys
+          path=sys.argv[1]
+          rows=json.load(open(path,encoding="utf-8"))
+          rows.append(int(sys.argv[2]))
+          open(path,"w",encoding="utf-8").write(
+              json.dumps(sorted(set(rows)))+"\n"
+          )
+          PY
+              fi
+            done
+            DECISION_JSON="$RUNNER_TEMP/logical-continuation-claim.json"
+            python - "$RUNS_JSON" "$RETRY_SAFE_JSON" "$TITLE" "$GITHUB_RUN_ID" <<'PY' \
+              > "$DECISION_JSON"
+          import json,sys
+          from app.services.production_durable_resume_service import (
+              continuation_claim_decision,
+          )
+          rows=json.load(open(sys.argv[1],encoding="utf-8"))
+          safe=json.load(open(sys.argv[2],encoding="utf-8"))
+          title=sys.argv[3]
+          current=int(sys.argv[4])
+          matching=[
+              {
+                  "run_id":int(row["databaseId"]),
+                  "status":row.get("status"),
+                  "conclusion":row.get("conclusion"),
+              }
+              for row in rows
+              if str(row.get("displayTitle") or "")==title
+          ]
+          print(json.dumps(
+              continuation_claim_decision(
+                  current_run_id=current,
+                  matching_runs=matching,
+                  retry_safe_run_ids=safe,
+              ),
+              sort_keys=True,
+          ))
+          PY
+            OWNER="$(python - "$DECISION_JSON" <<'PY'
+          import json,sys
+          print(json.load(open(sys.argv[1]))["claim_owner_run_id"])
+          PY
+            )"
+            ALLOWED="$(python - "$DECISION_JSON" <<'PY'
+          import json,sys
+          print("1" if json.load(open(sys.argv[1]))["claim_allowed"] else "0")
+          PY
+            )"
+            CLAIM_DECISION="$(python - "$DECISION_JSON" <<'PY'
+          import json,sys
+          print(json.load(open(sys.argv[1]))["decision"])
+          PY
+            )"
+            RETRY_OF="$(python - "$DECISION_JSON" <<'PY'
+          import json,sys
+          value=json.load(open(sys.argv[1])).get("retry_of_run_id")
+          print(value or "")
+          PY
+            )"
+            if [ "$ALLOWED" != 1 ]; then
               echo "SECOND_WRITER_FAILS_CLOSED=PASS"
               echo "LOGICAL_CONTINUATION_OWNER_RUN_ID=$OWNER"
+              echo "CLAIM_DECISION=$CLAIM_DECISION"
               exit 78
+            fi
+            if [ -n "$RETRY_OF" ]; then
+              echo "PHYSICAL_RETRY_OF_RUN_ID=$RETRY_OF"
+              echo "FAILED_PRE_SEMANTIC_ATTEMPT_REPLACED=PASS"
             fi
           else
             OWNER="$GITHUB_RUN_ID"
             echo "LEGACY_CONTINUATION_CLAIM_MIGRATION=PASS"
           fi
-          CLAIM_OWNER="$OWNER" python - <<'PY'
+          CLAIM_OWNER="$OWNER" \
+          CLAIM_DECISION_VALUE="$CLAIM_DECISION" \
+          RETRY_OF_RUN_ID="$RETRY_OF" \
+          python - <<'PY'
           import json,os
           from pathlib import Path
           root=Path("artifacts/real-multi-agent-production")
+          retry_of=str(os.environ.get("RETRY_OF_RUN_ID") or "").strip()
           row={
               "schema":"DurableMissionClaim/v1",
               "mission_id":os.environ.get("BR_DURABLE_MISSION_KEY") or None,
@@ -309,6 +444,8 @@ jobs:
                   f"github-actions:{os.environ['GITHUB_RUN_ID']}:"
                   f"{os.environ.get('GITHUB_RUN_ATTEMPT','1')}"
               ),
+              "physical_retry_of_run_id":int(retry_of) if retry_of else None,
+              "claim_decision":os.environ.get("CLAIM_DECISION_VALUE") or None,
               "authority":"DEEPSEEK_HARNESS",
           }
           (root/"continuation-claim.json").write_text(

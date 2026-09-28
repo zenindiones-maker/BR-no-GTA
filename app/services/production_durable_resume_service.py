@@ -1302,6 +1302,107 @@ def successor_dispatch_decision(
     }
 
 
+
+def continuation_claim_decision(
+    *,
+    current_run_id: int,
+    matching_runs=(),
+    retry_safe_run_ids=(),
+)->dict[str,Any]:
+    current=int(current_run_id)
+    if current<=0:
+        raise DurableResumePolicyError("current_run_id must be positive")
+    safe={
+        int(item) for item in retry_safe_run_ids
+        if int(item)>0
+    }
+    rows={}
+    for raw in matching_runs:
+        data=dict(raw)
+        run_id=int(
+            data.get("run_id")
+            or data.get("databaseId")
+            or 0
+        )
+        if run_id<=0:
+            continue
+        rows[run_id]={
+            "run_id":run_id,
+            "status":str(data.get("status") or "").strip().lower(),
+            "conclusion":(
+                str(data.get("conclusion") or "").strip().lower()
+                or None
+            ),
+        }
+    rows.setdefault(
+        current,
+        {
+            "run_id":current,
+            "status":"in_progress",
+            "conclusion":None,
+        },
+    )
+
+    active=sorted(
+        run_id
+        for run_id,row in rows.items()
+        if row["status"]!="completed"
+    )
+    if active and active[0]!=current:
+        return {
+            "decision":"BLOCK_ACTIVE_WRITER",
+            "claim_allowed":False,
+            "claim_owner_run_id":active[0],
+            "physical_retry":False,
+            "retry_of_run_id":None,
+        }
+
+    successful=sorted(
+        run_id
+        for run_id,row in rows.items()
+        if run_id!=current
+        and row["status"]=="completed"
+        and row["conclusion"]=="success"
+    )
+    if successful:
+        return {
+            "decision":"ALREADY_COMPLETED",
+            "claim_allowed":False,
+            "claim_owner_run_id":successful[0],
+            "physical_retry":False,
+            "retry_of_run_id":None,
+        }
+
+    terminal_failed=sorted(
+        run_id
+        for run_id,row in rows.items()
+        if run_id!=current
+        and row["status"]=="completed"
+        and row["conclusion"]!="success"
+    )
+    unsafe=[run_id for run_id in terminal_failed if run_id not in safe]
+    if unsafe:
+        return {
+            "decision":"BLOCK_UNSAFE_PRIOR_ATTEMPT",
+            "claim_allowed":False,
+            "claim_owner_run_id":unsafe[0],
+            "physical_retry":False,
+            "retry_of_run_id":None,
+        }
+
+    retry_of=terminal_failed[-1] if terminal_failed else None
+    return {
+        "decision":(
+            "CLAIM_RETRY_SAFE_PRE_SEMANTIC_FAILURE"
+            if retry_of is not None
+            else "CLAIM"
+        ),
+        "claim_allowed":True,
+        "claim_owner_run_id":current,
+        "physical_retry":retry_of is not None,
+        "retry_of_run_id":retry_of,
+    }
+
 def plan_nonterminal_continuation(
     *,
     mission_state: dict[str,Any],
