@@ -18,6 +18,7 @@ from app.services.production_durable_resume_service import (
     plan_successor_intent,
     successor_dispatch_decision,
     continuation_claim_decision,
+    workflow_log_has_emitted_marker,
     task_result_semantic_digest,
 )
 from app.services.task_result_envelope_service import (
@@ -769,3 +770,28 @@ def test_concurrent_prior_writer_blocks_replacement():
     assert decision["claim_allowed"] is False
     assert decision["claim_owner_run_id"]==100
     assert decision["decision"]=="BLOCK_ACTIVE_WRITER"
+
+
+def test_workflow_log_marker_requires_actual_emitted_payload():
+    marker="NONTERMINAL_SUCCESSOR_DISPATCHED=PASS"
+    command_only=(
+        '2026-09-28T03:10:06Z '
+        '\x1b[36;1mecho "NONTERMINAL_SUCCESSOR_DISPATCHED=PASS"\x1b[0m\n'
+    )
+    assert workflow_log_has_emitted_marker(command_only, marker) is False
+
+    actual=(
+        '2026-09-28T03:10:06Z '
+        'NONTERMINAL_SUCCESSOR_DISPATCHED=PASS\n'
+    )
+    assert workflow_log_has_emitted_marker(actual, marker) is True
+
+
+def test_workflow_log_marker_supports_gh_cli_tab_prefixed_logs():
+    marker="DUPLICATE_SUCCESSOR_INTENT_DEDUPED=PASS"
+    text=(
+        'production\tContinue non-terminal durable mission\t'
+        '2026-09-28T03:10:06Z '
+        'DUPLICATE_SUCCESSOR_INTENT_DEDUPED=PASS\n'
+    )
+    assert workflow_log_has_emitted_marker(text, marker) is True
