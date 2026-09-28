@@ -9,7 +9,7 @@ from typing import Any
 PACKET_VERSION = "youtube-role-context/v2"
 MAX_SEMANTIC_CONTEXT_CHARS = 24_000
 TARGET_PACKET_CHARS = 22_000
-ROLE_TARGET_PACKET_CHARS = {"production-management": 12_000}
+ROLE_TARGET_PACKET_CHARS = {"production-management": 23_500}
 
 
 def _canonical(value: Any) -> str:
@@ -200,45 +200,79 @@ def build_production_packet(
     strategy_output: dict[str, Any],
     full_context_chars: int,
 ) -> dict[str, Any]:
-    """Minimal causal packet for production management.
+    """Bounded but executable context for the Production Management reviewer.
 
-    Heavy canonical artifacts remain in the database and are referenced by id/hash.
-    The packet carries only the facts, script structure, scene execution skeleton,
-    media locators and QA constraints required for a production-readiness decision.
+    The canonical Script/ProductionPlan remain in the database. This projection
+    must nevertheless include enough causal information for a reviewer with no
+    direct database tool to decide whether the plan can be executed without
+    inventing script, evidence, media, audio, or rights assumptions.
     """
     scenes = [
         scene
         for scene in (production_plan.get("scenes") or ())
         if isinstance(scene, dict)
     ]
-    chapter_rows = [
-        {
-            "heading": str(row.get("heading") or "")[:80],
-            "summary": str(row.get("summary") or "")[:140],
-        }
-        for row in _chapter_summaries(script_text)[:10]
-    ]
     verified_facts = [
         {
             "claim_id": item.get("claim_id"),
-            "statement": str(item.get("statement") or "")[:240],
+            "statement": str(item.get("statement") or "")[:420],
             "verification_status": item.get("verification_status"),
             "fact_check_result": item.get("fact_check_result"),
         }
         for item in claims[:8]
         if isinstance(item, dict)
     ]
+
+    script_limit = 10_500
+    script_projection_text = script_text if len(script_text) <= script_limit else script_text[:script_limit]
+    script_projection = {
+        "text": script_projection_text,
+        "is_complete": len(script_text) <= script_limit,
+        "projected_chars": len(script_projection_text),
+        "canonical_chars": len(script_text),
+        "canonical_artifact_ref": f"db:scripts:{script_id}",
+    }
+
+    claim_scene_map: dict[str, list[int]] = {}
     scene_rows: list[dict[str, Any]] = []
     for scene in scenes:
+        order = int(scene.get("order") or 0)
+        evidence_refs = [
+            str(ref)
+            for ref in (scene.get("evidence_refs") or ())
+            if str(ref).strip()
+        ][:3]
+        for ref in evidence_refs:
+            if ref.startswith("claim:"):
+                claim_scene_map.setdefault(ref.removeprefix("claim:"), []).append(order)
+
+        searches = [
+            str(term).strip()[:90]
+            for term in (scene.get("media_search_terms") or ())
+            if str(term).strip()
+        ][:2]
+        visual_description = str(scene.get("visual_description") or "").strip()[:180]
+        requirements = [
+            str(item).strip()[:120]
+            for item in (scene.get("requirements") or ())
+            if str(item).strip()
+        ][:2]
         row = {
-            "order": scene.get("order"),
-            "block": str(scene.get("narrative_block") or "")[:55],
+            "order": order,
+            "block": str(scene.get("narrative_block") or "")[:80],
             "seconds": round(float(scene.get("duration_seconds") or 0.0), 3),
             "visual_type": scene.get("visual_type"),
-            "segment_id": scene.get("segment_id"),
+            "visual_description": visual_description or None,
+            "media_search_terms": searches,
+            "evidence_refs": evidence_refs,
+            "claim_mode": (
+                "VERIFIED_CLAIM_BOUND"
+                if evidence_refs
+                else "ANALYSIS_OR_TRANSITION_NO_NEW_FACT_CLAIM"
+            ),
             "asset_ref": scene.get("asset_ref"),
             "source_url": scene.get("source_url"),
-            "search": str((scene.get("media_search_terms") or [""])[0])[:70] or None,
+            "requirements": requirements,
         }
         scene_rows.append(
             {
@@ -247,6 +281,27 @@ def build_production_packet(
                 if value not in (None, "", [], {})
             }
         )
+
+    official_source_urls: list[str] = []
+    for claim in claims:
+        if not isinstance(claim, dict):
+            continue
+        for ref in claim.get("evidence_refs") or ():
+            value = str(ref)
+            if value.startswith("https://") and "rockstargames.com" in value:
+                official_source_urls.append(value)
+    official_source_urls = list(dict.fromkeys(official_source_urls))[:5]
+
+    audio_requirements = [
+        str(item).strip()[:180]
+        for item in (production_plan.get("audio_requirements") or ())
+        if str(item).strip()
+    ][:6]
+    visual_requirements = [
+        str(item)[:240]
+        for item in (production_plan.get("visual_requirements") or ())
+    ][:6]
+
     packet = {
         "packet_version": PACKET_VERSION,
         "role": "production-management",
@@ -275,7 +330,8 @@ def build_production_packet(
             "promise": str(strategy_output.get("promise") or "")[:320],
             "verified_facts": verified_facts,
         },
-        "script_structure": chapter_rows,
+        "script_projection": script_projection,
+        "claim_scene_map": claim_scene_map,
         "timing": {
             "estimated_duration_seconds": production_plan.get("estimated_duration_seconds"),
             "scene_count": len(scenes),
@@ -285,21 +341,39 @@ def build_production_packet(
             ),
         },
         "scenes": scene_rows,
+        "media_acquisition": {
+            "asset_materialization": "PENDING_GOVERNED_ACQUISITION",
+            "primary_official_sources": official_source_urls,
+            "fallback_policy": "OFFICIAL_OR_RIGHTS_CLEARED_ONLY",
+            "fallback_if_broll_unavailable": (
+                "Use official screenshots/title-card treatment tied to the same "
+                "verified claim; never invent or substitute unsupported footage."
+            ),
+            "search_terms_are_execution_inputs": True,
+        },
+        "audio_plan": {
+            "voice_identity": "BR_OWNER_V1",
+            "narration_priority": "VOICE_DOMINANT",
+            "sync_requirements": audio_requirements,
+            "music_and_sfx_policy": "BELOW_VOICE_AND_DUCKED_WHEN_PRESENT",
+            "unlicensed_music_allowed": False,
+            "gta_vi_album_tracks_cleared_for_use": False,
+            "album_claim_usage": (
+                "EDITORIAL_FACT_ONLY_UNLESS_SEPARATE_RIGHTS_EVIDENCE_EXISTS"
+            ),
+        },
         "qa_requirements": {
-            "audio": [
-                str(item)[:140]
-                for item in (production_plan.get("audio_requirements") or ())
-            ][:3],
-            "visual": [
-                str(item)[:140]
-                for item in (production_plan.get("visual_requirements") or ())
-            ][:3],
+            "audio": audio_requirements,
+            "visual": visual_requirements,
             "facts": "Only verified/supported claims may be stated as facts.",
             "duration_seconds": production_plan.get("estimated_duration_seconds"),
+            "unsupported_claims": 0,
+            "artificial_padding": False,
         },
         "packet_note": (
-            "Full Script/ProductionPlan remain canonical at artifact_refs; "
-            "production management receives only causal execution context."
+            "Script text is included in this bounded projection when it fits the "
+            "professional context budget. Script/ProductionPlan remain canonical "
+            "at artifact_refs and hashes; no projected field becomes authority."
         ),
     }
     return finalize_packet(packet, full_context_chars=full_context_chars)
