@@ -97,6 +97,75 @@ jobs:
           cat /tmp/omniroute-claude.log || true
           exit 1
 
+      - name: Probe OmniRoute OpenAI-compatible baseline
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/claude-omniroute
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = {
+              "model": os.environ["HARNESS_SELECTED_MODEL"],
+              "stream": False,
+              "messages": [
+                  {
+                      "role": "user",
+                      "content": "Return exactly this marker and nothing else: OMNIROUTE_OPENAI_BASELINE_OK",
+                  }
+              ],
+          }
+          Path("/tmp/omniroute-openai-probe-request.json").write_text(
+              json.dumps(payload), encoding="utf-8"
+          )
+          PY
+          set +e
+          HTTP_STATUS="$(curl -sS             -o /tmp/omniroute-openai-probe-body.json             -w '%{http_code}'             -H 'content-type: application/json'             -X POST             "$ANTHROPIC_BASE_URL/v1/providers/$HARNESS_SELECTED_PROVIDER/chat/completions"             --data-binary @/tmp/omniroute-openai-probe-request.json)"
+          CURL_RC=$?
+          set -e
+          HTTP_STATUS="$HTTP_STATUS" CURL_RC="$CURL_RC" python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          body_path = Path("/tmp/omniroute-openai-probe-body.json")
+          raw = body_path.read_text(encoding="utf-8", errors="replace") if body_path.exists() else ""
+          try:
+              payload = json.loads(raw) if raw else {}
+          except json.JSONDecodeError:
+              payload = {}
+          status = int(os.environ.get("HTTP_STATUS") or 0)
+          curl_rc = int(os.environ.get("CURL_RC") or 0)
+          choices = payload.get("choices") if isinstance(payload, dict) else None
+          text = ""
+          if isinstance(choices, list) and choices:
+              message = choices[0].get("message") if isinstance(choices[0], dict) else None
+              if isinstance(message, dict) and isinstance(message.get("content"), str):
+                  text = message["content"].strip()
+          error = payload.get("error") if isinstance(payload, dict) else None
+          evidence = {
+              "schema": "OmniRouteOpenAICompatibleProbe/v1",
+              "status": "PASS" if curl_rc == 0 and 200 <= status < 300 and bool(text) else "FAIL",
+              "http_status": status,
+              "curl_return_code": curl_rc,
+              "provider": os.environ["HARNESS_SELECTED_PROVIDER"],
+              "requested_model": os.environ["HARNESS_SELECTED_MODEL"],
+              "reported_model": payload.get("model") if isinstance(payload, dict) else None,
+              "nonempty_text": bool(text),
+              "error_type": error.get("type") if isinstance(error, dict) else None,
+              "error_code": error.get("code") if isinstance(error, dict) else None,
+              "body_sha256": hashlib.sha256(raw.encode()).hexdigest(),
+          }
+          root = Path("runtime/claude-omniroute")
+          (root / "openai-baseline-probe.json").write_text(
+              json.dumps(evidence, sort_keys=True), encoding="utf-8"
+          )
+          print("OMNIROUTE_OPENAI_BASELINE_STATUS=" + evidence["status"])
+          print("OMNIROUTE_OPENAI_BASELINE_HTTP=" + str(evidence["http_status"]))
+          PY
+
       - name: Probe OmniRoute Anthropic Messages endpoint
         run: |
           set -euo pipefail
@@ -179,8 +248,53 @@ jobs:
           )
           print("OMNIROUTE_ANTHROPIC_MESSAGES_STATUS=" + evidence["status"])
           print("OMNIROUTE_ANTHROPIC_MESSAGES_HTTP=" + str(evidence.get("http_status")))
-          if evidence["status"] != "PASS":
-              raise SystemExit("OmniRoute Anthropic Messages probe failed")
+          PY
+
+      - name: Classify OmniRoute Claude compatibility
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("runtime/claude-omniroute")
+          baseline = json.loads((root / "openai-baseline-probe.json").read_text(encoding="utf-8"))
+          messages = json.loads((root / "gateway-probe.json").read_text(encoding="utf-8"))
+          baseline_ok = baseline.get("status") == "PASS"
+          messages_ok = messages.get("status") == "PASS"
+
+          classification = {
+              "schema": "ClaudeOmniRouteCompatibilityClassification/v1",
+              "openai_baseline_status": baseline.get("status"),
+              "openai_baseline_http": baseline.get("http_status"),
+              "anthropic_messages_status": messages.get("status"),
+              "anthropic_messages_http": messages.get("http_status"),
+              "anthropic_error_type": messages.get("error_type"),
+              "anthropic_error_code": messages.get("error_code"),
+          }
+
+          if messages_ok:
+              classification["status"] = "PASS"
+              classification["classification"] = "ANTHROPIC_MESSAGES_COMPATIBLE"
+              (root / "compatibility.json").write_text(
+                  json.dumps(classification, sort_keys=True), encoding="utf-8"
+              )
+              print("CLAUDE_OMNIROUTE_COMPATIBILITY=PASS")
+              raise SystemExit(0)
+
+          classification["status"] = "FAIL"
+          if baseline_ok:
+              classification["classification"] = "ANTHROPIC_MESSAGES_INCOMPATIBLE"
+          else:
+              classification["classification"] = "SHARED_ROUTE_UNAVAILABLE"
+          (root / "compatibility.json").write_text(
+              json.dumps(classification, sort_keys=True), encoding="utf-8"
+          )
+          print("CLAUDE_OMNIROUTE_COMPATIBILITY=FAIL")
+          print("CLAUDE_OMNIROUTE_CLASSIFICATION=" + classification["classification"])
+          print("OPENAI_BASELINE_HTTP=" + str(classification["openai_baseline_http"]))
+          print("ANTHROPIC_MESSAGES_HTTP=" + str(classification["anthropic_messages_http"]))
+          raise SystemExit(1)
           PY
 
       - name: Execute Claude Code through governed OmniRoute
