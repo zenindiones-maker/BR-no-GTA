@@ -158,6 +158,24 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
             "nvidia/nemotron-3-ultra-550b-a55b",
         )
 
+    def test_official_json_envelope_is_recovered_from_diagnostic_stdout(self):
+        module = load_module()
+        payload = {
+            "connection": {
+                "id": "conn-nvidia-prefixed",
+                "provider": "nvidia",
+                "name": "harness-nvidia-prefixed",
+            }
+        }
+        raw = "OmniRoute diagnostic: provider sync scheduled\n" + json.dumps(payload) + "\n"
+        parsed = module._parse_json_object(raw)
+        self.assertEqual(parsed, payload)
+
+    def test_multiple_json_documents_are_rejected_as_ambiguous(self):
+        module = load_module()
+        raw = '{"status":"one"}\n{"status":"two"}\n'
+        self.assertIsNone(module._parse_json_object(raw))
+
     def test_provider_materialization_captures_exact_connection_id_and_tests_it(self):
         module = load_module()
         target = plan()["candidate_targets"][0]
