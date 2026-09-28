@@ -72,11 +72,14 @@ def test_owner_consent_selects_owner_voice_and_telegram_is_reference_source():
     assert state["reference_materialization_status"] == "PENDING_PRIVATE_REFERENCE_MATERIALIZATION"
     assert state["reference_source"] == "TELEGRAM"
     assert state["official_voice"] == "BR_OWNER_V1"
-    assert state["legacy_voice_b_runtime_enabled"] is False
-    assert state["legacy_voice_b_fallback_allowed"] is False
+    assert state["active_voice_identities"] == ["BR_OWNER_V1"]
+    assert state["materialized_reference_count"] == 0
+    assert state["owner_voice_status"] == "SELECTED_AWAITING_PRIVATE_REFERENCE_MATERIALIZATION"
     assert state["human_ab_review"] == "NOT_REQUIRED_FOR_OWNER_SELECTION"
     assert state["promotion_allowed"] is True
     assert state["runtime_activation_status"] == "PENDING_PRIVATE_REFERENCE_MATERIALIZATION"
+    assert "voice_prompt_ref" not in state
+    assert "voice_prompt_sha256" not in state
 
 
 def test_reference_classification_rejects_music_multi_speaker_and_bad_language():
