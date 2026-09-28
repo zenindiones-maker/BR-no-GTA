@@ -224,7 +224,7 @@ def test_editorial_generation_and_review_are_distinct_typed_contracts():
         OUTPUT_CONTRACT_EDITORIAL_SCRIPT_BUNDLE_V1
     ]
     assert review["functional_role"] == "EDITORIAL_REVIEW"
-    assert review["required_execution_kind"] == "SEMANTIC_REASONER"
+    assert review["required_execution_kind"] is None
     assert review["required_output_contract_ids"] == [
         OUTPUT_CONTRACT_SCRIPT_REVIEW_RESULT_V1
     ]

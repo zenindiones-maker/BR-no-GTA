@@ -306,7 +306,6 @@ def infer_required_execution_kind(
         "VALIDATE": EXECUTION_KIND_VALIDATOR,
         "PRESENTATION": EXECUTION_KIND_PRESENTATION,
         "EDITORIAL_GENERATION": EXECUTION_KIND_SEMANTIC_REASONER,
-        "EDITORIAL_REVIEW": EXECUTION_KIND_SEMANTIC_REASONER,
     }
     if role == "REVIEW" and _is_editorial_review_requirement(requirement):
         # Editorial/script review is a YouTube domain task, not the
