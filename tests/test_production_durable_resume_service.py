@@ -10,7 +10,10 @@ from app.services.production_durable_resume_service import (
     ensure_latest_editorial_execution_need,
     editorial_progress_snapshot,
     load_pending_execution_need,
+    finalize_continuation_request,
     plan_nonterminal_continuation,
+    plan_successor_intent,
+    successor_dispatch_decision,
     task_result_semantic_digest,
 )
 from app.services.task_result_envelope_service import (
@@ -479,3 +482,95 @@ def test_completed_editorial_supersedes_stale_partial_need(tmp_path):
     assert supersession["CAUSAL_EVIDENCE"].endswith(
         "editorial_script-4.json"
     )
+
+
+
+def test_logical_successor_identity_is_stable_across_physical_runs():
+    state=_state()
+    state["supervisor_decision"].update({
+        "effective_input_digest":"sha256:"+"b"*64,
+        "route_identity":"route-a",
+        "failure_signature":"failure-a",
+        "strategy":"MINIMAL_AFFECTED_SUBGRAPH",
+    })
+    a=plan_nonterminal_continuation(
+        mission_state=state,
+        predecessor_run_id=100,
+        checkpoint_artifact_digest=DIGEST,
+    )
+    b=plan_nonterminal_continuation(
+        mission_state=state,
+        predecessor_run_id=200,
+        checkpoint_artifact_digest=DIGEST,
+    )
+    assert a.continuation_id==b.continuation_id
+    assert a.successor_intent_id==b.successor_intent_id
+    assert a.transition_key==b.transition_key
+    assert a.continuation_route_id==b.continuation_route_id
+    assert a.physical_attempt_id!=b.physical_attempt_id
+    assert a.predecessor_run_id!=b.predecessor_run_id
+
+
+def test_replan_route_excludes_failed_equivalent_route():
+    state=_state(
+        action="REPLAN",
+        transition="REPLAN_REQUIRED",
+        repeated=True,
+    )
+    state["supervisor_decision"].update({
+        "effective_input_digest":"sha256:"+"c"*64,
+        "route_identity":"continuation-route:failed",
+        "failure_signature":"failure-a",
+        "strategy":"MINIMAL_AFFECTED_SUBGRAPH",
+    })
+    intent=plan_successor_intent(mission_state=state)
+    assert intent.route_policy=="NEW_STRATEGY"
+    assert intent.failed_route_identity=="continuation-route:failed"
+    assert intent.continuation_route_id!="continuation-route:failed"
+
+
+def test_successor_dispatch_is_idempotent_across_crash_windows():
+    intent="successor-intent:"+"d"*32
+    before=successor_dispatch_decision(
+        successor_intent_id=intent,
+        matching_run_ids=(),
+    )
+    assert before["decision"]=="DISPATCH"
+    assert before["dispatch_required"] is True
+
+    after_dispatch_before_receipt=successor_dispatch_decision(
+        successor_intent_id=intent,
+        matching_run_ids=(12345,),
+    )
+    assert after_dispatch_before_receipt["decision"]=="DEDUP_EXISTING_RUN"
+    assert after_dispatch_before_receipt["run_id"]==12345
+    assert after_dispatch_before_receipt["dispatch_required"] is False
+
+    after_receipt=successor_dispatch_decision(
+        successor_intent_id=intent,
+        matching_run_ids=(12345,),
+        receipt_run_id=12345,
+    )
+    assert after_receipt["decision"]=="ALREADY_DISPATCHED"
+    assert after_receipt["dispatch_required"] is False
+
+
+def test_successor_intent_is_independent_of_checkpoint_digest():
+    state=_state()
+    state["supervisor_decision"]["effective_input_digest"]="sha256:"+"e"*64
+    intent=plan_successor_intent(mission_state=state)
+    a=finalize_continuation_request(
+        intent=intent,
+        predecessor_run_id=1,
+        checkpoint_artifact_digest="sha256:"+"1"*64,
+        continuation_count=5,
+    )
+    b=finalize_continuation_request(
+        intent=intent,
+        predecessor_run_id=2,
+        checkpoint_artifact_digest="sha256:"+"2"*64,
+        continuation_count=6,
+    )
+    assert a.successor_intent_id==b.successor_intent_id
+    assert a.continuation_id==b.continuation_id
+    assert a.effective_input_digest==b.effective_input_digest

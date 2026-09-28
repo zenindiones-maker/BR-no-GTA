@@ -669,22 +669,53 @@ def build_fresh_evidence_lineage(
 
 
 @dataclass(frozen=True)
+class SuccessorIntent:
+    schema: str
+    authority: str
+    mission_id: str
+    expected_state_version: int
+    supervisor_action: str
+    next_transition: str
+    continuation_strategy: str
+    route_policy: str
+    effective_input_digest: str
+    transition_key: str
+    successor_intent_id: str
+    continuation_id: str
+    continuation_route_id: str
+    same_route_forbidden: bool
+    failed_route_identity: str | None
+    failure_signature: str | None
+    preserve_completed_results: bool
+    resume_scope: str
+
+    def to_dict(self)->dict[str,Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class MissionContinuationRequest:
     schema: str
     authority: str
     continuation_authority_schema: str
     mission_id: str
     predecessor_run_id: int
+    physical_attempt_id: str
     checkpoint_artifact_digest: str
     expected_state_version: int
     continuation_count: int
     continuation_id: str
+    successor_intent_id: str
+    transition_key: str
+    effective_input_digest: str
     supervisor_action: str
     next_transition: str
     continuation_strategy: str
     route_policy: str
     continuation_route_id: str
     same_route_forbidden: bool
+    failed_route_identity: str | None
+    failure_signature: str | None
     blind_retry_allowed: bool
     preserve_completed_results: bool
     resume_scope: str
@@ -694,12 +725,56 @@ class MissionContinuationRequest:
         return asdict(self)
 
 
-def plan_nonterminal_continuation(
+def _fallback_effective_input_digest(
+    mission_state: dict[str,Any],
+)->str:
+    decision=dict(mission_state.get("supervisor_decision") or {})
+    ledger=list(mission_state.get("progress_ledger") or ())
+    last=dict(ledger[-1]) if ledger else {}
+    existing=str(
+        decision.get("effective_input_digest")
+        or mission_state.get("effective_input_digest")
+        or last.get("effective_input_digest")
+        or ""
+    ).strip()
+    if re.fullmatch(r"sha256:[0-9a-f]{64}",existing):
+        return existing
+    logical={
+        "schema":"EffectiveInputMigrationIdentity/v1",
+        "mission_id":str(mission_state.get("mission_id") or ""),
+        "completed_nodes":sorted(
+            str(item) for item in (mission_state.get("completed_nodes") or ())
+            if str(item)
+        ),
+        "valid_artifact_set":sorted(
+            str(item) for item in (mission_state.get("valid_artifact_set") or ())
+            if str(item)
+        ),
+        "artifact_lineage":{
+            str(key):value
+            for key,value in sorted(
+                dict(mission_state.get("artifact_lineage") or {}).items()
+            )
+            if value
+        },
+        "mission_metric_after":last.get("mission_metric_after"),
+        "failure_signature":(
+            decision.get("failure_signature")
+            or last.get("failure_signature")
+        ),
+        "strategy":(
+            decision.get("strategy")
+            or last.get("strategy")
+            or RESUME_SCOPE
+        ),
+    }
+    return "sha256:"+_canonical_sha(logical)
+
+
+def plan_successor_intent(
     *,
     mission_state: dict[str,Any],
-    predecessor_run_id: int,
-    checkpoint_artifact_digest: str,
-)->MissionContinuationRequest|None:
+)->SuccessorIntent|None:
     if str(mission_state.get("schema") or "")!="HarnessMissionState/v2":
         raise DurableResumePolicyError(
             "HarnessMissionState/v2 is required"
@@ -712,12 +787,6 @@ def plan_nonterminal_continuation(
     mission_id=str(mission_state.get("mission_id") or "").strip()
     if not mission_id:
         raise DurableResumePolicyError("mission_id is required")
-    if not re.fullmatch(
-        r"sha256:[0-9a-f]{64}",checkpoint_artifact_digest
-    ):
-        raise DurableResumePolicyError(
-            "checkpoint artifact digest is invalid"
-        )
     action=str(decision.get("action") or "").upper()
     repeated=bool(decision.get("same_route_forbidden"))
     if (
@@ -736,40 +805,161 @@ def plan_nonterminal_continuation(
         raise DurableResumePolicyError(
             "supervisor action/transition is not a governed continuation"
         )
+
     version=int(mission_state.get("state_version") or 0)
-    count=int(mission_state.get("continuation_count") or 0)+1
-    continuation_id=(
-        f"{mission_id}:{version}:{int(predecessor_run_id)}"
-    )
-    route_seed={
+    effective_input_digest=_fallback_effective_input_digest(mission_state)
+    transition_payload={
+        "schema":"LogicalSuccessorTransition/v1",
         "mission_id":mission_id,
         "state_version":version,
-        "predecessor_run_id":int(predecessor_run_id),
-        "transition":transition,
-        "route_policy":route_policy,
-        "resume_scope":RESUME_SCOPE,
+        "next_transition":transition,
+        "continuation_strategy":RESUME_SCOPE,
+        "effective_input_digest":effective_input_digest,
     }
-    route_id=(
-        "continuation-route:"+_canonical_sha(route_seed)[:24]
+    transition_key="transition:"+_canonical_sha(transition_payload)
+    intent_seed={
+        **transition_payload,
+        "route_policy":route_policy,
+    }
+    intent_hash=_canonical_sha(intent_seed)
+    continuation_id="continuation:"+intent_hash[:32]
+    successor_intent_id="successor-intent:"+intent_hash[:32]
+    route_id="continuation-route:"+_canonical_sha({
+        "transition_key":transition_key,
+        "route_policy":route_policy,
+        "failed_route_identity":(
+            str(decision.get("route_identity") or "").strip() or None
+        ) if repeated else None,
+    })[:24]
+    failed_route=(
+        str(decision.get("route_identity") or "").strip() or None
+        if repeated else None
     )
-    return MissionContinuationRequest(
-        schema="HarnessMissionContinuationRequest/v1",
+    if repeated and failed_route and route_id==failed_route:
+        raise DurableResumePolicyError(
+            "REPLAN_FAILED_EQUIVALENT_ROUTE"
+        )
+    return SuccessorIntent(
+        schema="HarnessSuccessorIntent/v1",
         authority="DEEPSEEK_HARNESS",
-        continuation_authority_schema=CONTINUATION_AUTHORITY_SCHEMA,
         mission_id=mission_id,
-        predecessor_run_id=int(predecessor_run_id),
-        checkpoint_artifact_digest=checkpoint_artifact_digest,
         expected_state_version=version,
-        continuation_count=count,
-        continuation_id=continuation_id,
         supervisor_action=action,
         next_transition=transition,
         continuation_strategy=RESUME_SCOPE,
         route_policy=route_policy,
+        effective_input_digest=effective_input_digest,
+        transition_key=transition_key,
+        successor_intent_id=successor_intent_id,
+        continuation_id=continuation_id,
         continuation_route_id=route_id,
         same_route_forbidden=repeated,
-        blind_retry_allowed=False,
+        failed_route_identity=failed_route,
+        failure_signature=(
+            str(
+                decision.get("failure_signature")
+                or (mission_state.get("progress_ledger") or [{}])[-1].get(
+                    "failure_signature"
+                )
+                or ""
+            ).strip() or None
+        ),
         preserve_completed_results=True,
         resume_scope=RESUME_SCOPE,
+    )
+
+
+def finalize_continuation_request(
+    *,
+    intent: SuccessorIntent|dict[str,Any],
+    predecessor_run_id: int,
+    checkpoint_artifact_digest: str,
+    continuation_count: int,
+)->MissionContinuationRequest:
+    data=intent.to_dict() if isinstance(intent,SuccessorIntent) else dict(intent)
+    if data.get("schema")!="HarnessSuccessorIntent/v1":
+        raise DurableResumePolicyError("HarnessSuccessorIntent/v1 is required")
+    if not re.fullmatch(
+        r"sha256:[0-9a-f]{64}",checkpoint_artifact_digest
+    ):
+        raise DurableResumePolicyError(
+            "checkpoint artifact digest is invalid"
+        )
+    return MissionContinuationRequest(
+        schema="HarnessMissionContinuationRequest/v2",
+        authority="DEEPSEEK_HARNESS",
+        continuation_authority_schema=CONTINUATION_AUTHORITY_SCHEMA,
+        mission_id=str(data["mission_id"]),
+        predecessor_run_id=int(predecessor_run_id),
+        physical_attempt_id=f"github-actions:{int(predecessor_run_id)}",
+        checkpoint_artifact_digest=checkpoint_artifact_digest,
+        expected_state_version=int(data["expected_state_version"]),
+        continuation_count=int(continuation_count),
+        continuation_id=str(data["continuation_id"]),
+        successor_intent_id=str(data["successor_intent_id"]),
+        transition_key=str(data["transition_key"]),
+        effective_input_digest=str(data["effective_input_digest"]),
+        supervisor_action=str(data["supervisor_action"]),
+        next_transition=str(data["next_transition"]),
+        continuation_strategy=str(data["continuation_strategy"]),
+        route_policy=str(data["route_policy"]),
+        continuation_route_id=str(data["continuation_route_id"]),
+        same_route_forbidden=bool(data["same_route_forbidden"]),
+        failed_route_identity=(
+            str(data.get("failed_route_identity") or "").strip() or None
+        ),
+        failure_signature=(
+            str(data.get("failure_signature") or "").strip() or None
+        ),
+        blind_retry_allowed=False,
+        preserve_completed_results=True,
+        resume_scope=str(data["resume_scope"]),
         dispatch_required=True,
+    )
+
+
+def successor_dispatch_decision(
+    *,
+    successor_intent_id: str,
+    matching_run_ids=(),
+    receipt_run_id: int|None=None,
+)->dict[str,Any]:
+    runs=tuple(sorted({int(item) for item in matching_run_ids if int(item)>0}))
+    if receipt_run_id is not None:
+        return {
+            "decision":"ALREADY_DISPATCHED",
+            "successor_intent_id":successor_intent_id,
+            "run_id":int(receipt_run_id),
+            "dispatch_required":False,
+        }
+    if runs:
+        return {
+            "decision":"DEDUP_EXISTING_RUN",
+            "successor_intent_id":successor_intent_id,
+            "run_id":runs[0],
+            "dispatch_required":False,
+        }
+    return {
+        "decision":"DISPATCH",
+        "successor_intent_id":successor_intent_id,
+        "run_id":None,
+        "dispatch_required":True,
+    }
+
+
+def plan_nonterminal_continuation(
+    *,
+    mission_state: dict[str,Any],
+    predecessor_run_id: int,
+    checkpoint_artifact_digest: str,
+)->MissionContinuationRequest|None:
+    intent=plan_successor_intent(mission_state=mission_state)
+    if intent is None:
+        return None
+    count=int(mission_state.get("continuation_count") or 0)+1
+    return finalize_continuation_request(
+        intent=intent,
+        predecessor_run_id=predecessor_run_id,
+        checkpoint_artifact_digest=checkpoint_artifact_digest,
+        continuation_count=count,
     )
