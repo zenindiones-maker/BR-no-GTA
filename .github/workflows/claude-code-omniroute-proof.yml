@@ -62,7 +62,7 @@ jobs:
       - name: Prove static Claude OmniRoute boundary
         run: |
           set -euo pipefail
-          python3 -m pytest -q tests/test_claude_omniroute_contract.py
+          python3 -m unittest -q tests.test_claude_omniroute_contract
           python3 scripts/agent-tooling/claude_omniroute_contract.py             --provider "$HARNESS_SELECTED_PROVIDER"             --model "$HARNESS_SELECTED_MODEL"             --base-url "$ANTHROPIC_BASE_URL"             --zero-cost-proof
 
       - name: Install pinned Claude Code
