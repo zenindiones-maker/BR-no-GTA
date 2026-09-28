@@ -47,16 +47,16 @@ def replan_request_values() -> dict[str, Any]:
 
 
 def omniroute_identity(provider: str, model: str) -> dict[str, str]:
-    gateway_provider, gateway_model = map_harness_target(
+    mapping = map_harness_target(
         HarnessProviderIdentity(
             provider_id=str(provider or "").strip(),
             model_id=str(model or "").strip(),
         )
     )
     return {
-        "provider": gateway_provider.provider_id,
-        "model": gateway_model.model_id,
-        "credential_env": gateway_provider.credential_env,
+        "provider": mapping.omniroute_provider_id,
+        "model": mapping.omniroute_model_id,
+        "credential_env": mapping.credential_env,
     }
 
 
