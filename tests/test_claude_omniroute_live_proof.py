@@ -535,6 +535,117 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
             self.assertEqual(len(stale), 1)
             self.assertFalse(stale[0]["admission_blocking"])
 
+    def test_exact_connection_catalog_sync_proves_canonical_model(self):
+        module = load_module()
+        target = plan()["candidate_targets"][0]
+        calls = []
+
+        def fake_http(url, *, body, headers, timeout=180):
+            calls.append(("POST", url, body, headers))
+            return (
+                200,
+                12.5,
+                json.dumps({
+                    "ok": True,
+                    "connectionId": "conn-nvidia-123",
+                    "availableModelsCount": 1,
+                    "models": [{
+                        "id": "nvidia/nemotron-3-ultra-550b-a55b",
+                        "name": "Nemotron 3 Ultra",
+                    }],
+                }),
+                {
+                    "ok": True,
+                    "connectionId": "conn-nvidia-123",
+                    "availableModelsCount": 1,
+                    "models": [{
+                        "id": "nvidia/nemotron-3-ultra-550b-a55b",
+                        "name": "Nemotron 3 Ultra",
+                    }],
+                },
+                {},
+            )
+
+        def fake_get(url, *, timeout=30):
+            calls.append(("GET", url, None, None))
+            return (
+                200,
+                {
+                    "provider": "nvidia",
+                    "connectionId": "conn-nvidia-123",
+                    "models": [{
+                        "id": "nvidia/nemotron-3-ultra-550b-a55b",
+                        "name": "Nemotron 3 Ultra",
+                    }],
+                },
+            )
+
+        with (
+            mock.patch.object(module, "_http_json", side_effect=fake_http),
+            mock.patch.object(module, "_http_get_json", side_effect=fake_get),
+        ):
+            evidence = module._sync_exact_connection_catalog(
+                target,
+                connection_id="conn-nvidia-123",
+                base_url="http://127.0.0.1:20128",
+            )
+
+        self.assertTrue(evidence["model_available"])
+        self.assertEqual(evidence["status"], "PASS")
+        self.assertIsNone(evidence["failure_class"])
+        self.assertEqual(
+            evidence["model"],
+            "nvidia/nemotron-3-ultra-550b-a55b",
+        )
+        self.assertIn(
+            (
+                "POST",
+                "http://127.0.0.1:20128/api/providers/conn-nvidia-123/sync-models?mode=import&quiet=1",
+                {},
+                {},
+            ),
+            calls,
+        )
+        self.assertIn(
+            (
+                "GET",
+                "http://127.0.0.1:20128/api/providers/conn-nvidia-123/models?excludeCustom=true&chatOnly=true",
+                None,
+                None,
+            ),
+            calls,
+        )
+        self.assertNotIn("NVIDIA_API_KEY", json.dumps(evidence, sort_keys=True))
+
+    def test_exact_connection_catalog_miss_is_typed_omniroute_failure(self):
+        module = load_module()
+        target = plan()["candidate_targets"][0]
+        with (
+            mock.patch.object(
+                module,
+                "_http_json",
+                return_value=(200, 4.0, '{"models":[]}', {"models": []}, {}),
+            ),
+            mock.patch.object(
+                module,
+                "_http_get_json",
+                return_value=(200, {"provider": "nvidia", "models": []}),
+            ),
+        ):
+            evidence = module._sync_exact_connection_catalog(
+                target,
+                connection_id="conn-nvidia-123",
+                base_url="http://127.0.0.1:20128",
+            )
+
+        self.assertFalse(evidence["model_available"])
+        self.assertEqual(
+            evidence["failure_class"],
+            "OMNIROUTE_CATALOG_STALE_OR_MAPPING_UNAVAILABLE",
+        )
+        self.assertTrue(evidence["upstream_model_available"])
+        self.assertFalse(evidence["omniroute_model_available"])
+
     def test_direct_pass_plus_catalog_miss_is_not_credential_or_provider_failure(self):
         module = load_module()
         self.assertEqual(
