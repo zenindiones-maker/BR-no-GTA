@@ -372,6 +372,59 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
             "OMNIROUTE_PROVIDER_CONNECTION_AMBIGUOUS",
         )
 
+    def test_fetch_logs_uses_official_cli_management_auth_surface(self):
+        module = load_module()
+        rows = [{
+            "correlationId": "corr-1",
+            "connectionId": "conn-nvidia-123",
+            "provider": "nvidia",
+            "model": "nvidia/nemotron-3-ultra-550b-a55b",
+            "status": 200,
+        }]
+        calls = []
+
+        def fake_run(command, *, env=None):
+            calls.append((command, env))
+            return CompletedProcess(command, 0, json.dumps(rows), "")
+
+        with mock.patch.object(module, "_run", side_effect=fake_run):
+            actual = module._fetch_logs("http://127.0.0.1:20128")
+
+        self.assertEqual(actual, rows)
+        self.assertEqual(
+            calls[0][0],
+            [
+                "omniroute",
+                "--output",
+                "json",
+                "api",
+                "usage",
+                "get-api-usage-call-logs",
+                "--limit",
+                "500",
+            ],
+        )
+        self.assertEqual(
+            calls[0][1]["OMNIROUTE_BASE_URL"],
+            "http://127.0.0.1:20128",
+        )
+        self.assertNotIn("NVIDIA_API_KEY", calls[0][0])
+
+    def test_fetch_logs_fails_closed_when_official_cli_cannot_read_logs(self):
+        module = load_module()
+        with mock.patch.object(
+            module,
+            "_run",
+            return_value=CompletedProcess(
+                ["omniroute"],
+                4,
+                "",
+                "management auth failed",
+            ),
+        ):
+            with self.assertRaises(module.OmniRouteObservabilityUnavailable):
+                module._fetch_logs("http://127.0.0.1:20128")
+
     def test_dedicated_canary_reconciles_exact_connection_from_official_call_log(self):
         module = load_module()
         target = plan()["candidate_targets"][0]
