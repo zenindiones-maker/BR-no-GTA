@@ -20,6 +20,7 @@ from app.services.production_durable_resume_service import (
     continuation_claim_decision,
     workflow_log_has_emitted_marker,
     physical_attempt_retry_safe,
+    product_assembly_resume_lineage,
     task_result_semantic_digest,
 )
 from app.services.task_result_envelope_service import (
@@ -616,6 +617,68 @@ def _write_completed_editorial(root, *, name="editorial_script-4.json"):
     path=result_root/name
     path.write_text(json.dumps(row),encoding="utf-8")
     return path,row
+
+
+def test_product_assembly_resume_uses_completed_editorial_lineage_without_replanning(tmp_path):
+    _path,row=_write_completed_editorial(tmp_path)
+    # Create the exact completed dependencies cited by the editorial result.
+    fact=dict(row)
+    fact.update({
+        "task_id":"fact_verification",
+        "capability_id":"gta6.fact-check",
+        "result_payload":{"status":"EXECUTED"},
+        "evidence_refs":["https://www.rockstargames.com/VI"],
+        "source_task_ids":["topic_research"],
+        "output_artifact_refs":["https://www.rockstargames.com/VI"],
+    })
+    research=dict(row)
+    research.update({
+        "task_id":"topic_research",
+        "capability_id":"gta6.research",
+        "result_payload":{"status":"EXECUTED"},
+        "evidence_refs":["https://www.rockstargames.com/VI"],
+        "source_task_ids":[],
+        "output_artifact_refs":["https://www.rockstargames.com/VI"],
+    })
+    (tmp_path/"hermes"/"task-results"/"fact_verification-1.json").write_text(
+        json.dumps(fact),encoding="utf-8"
+    )
+    (tmp_path/"hermes"/"task-results"/"topic_research-1.json").write_text(
+        json.dumps(research),encoding="utf-8"
+    )
+    progress=editorial_progress_snapshot(
+        artifact_dir=tmp_path,
+        planning_wpm=124.45,
+    )
+    lineage=product_assembly_resume_lineage(
+        artifact_dir=tmp_path,
+        editorial_progress=progress,
+    )
+    assert lineage["schema"]=="ProductAssemblyResumeLineage/v1"
+    assert lineage["authority"]=="DEEPSEEK_HARNESS"
+    assert lineage["next_requirement"]=="PRODUCT_ASSEMBLY_REQUIRED"
+    assert lineage["planner_call_required"] is False
+    assert lineage["preproduction_reexecution_required"] is False
+    assert lineage["editorial_task_result_ref"]=="artifact:task-results/editorial_script-4.json"
+    assert lineage["dependency_task_result_refs"]==[
+        "artifact:task-results/fact_verification-1.json",
+        "artifact:task-results/topic_research-1.json",
+    ]
+    assert lineage["mission_id"]=="mission-"+"a"*20
+    assert lineage["content_sha256"]
+
+
+def test_product_assembly_resume_fails_closed_when_cited_dependency_missing(tmp_path):
+    _write_completed_editorial(tmp_path)
+    progress=editorial_progress_snapshot(
+        artifact_dir=tmp_path,
+        planning_wpm=124.45,
+    )
+    with pytest.raises(DurableResumePolicyError,match="cited TaskResult"):
+        product_assembly_resume_lineage(
+            artifact_dir=tmp_path,
+            editorial_progress=progress,
+        )
 
 
 def test_completed_24_636_editorial_yields_concrete_downstream_requirement(tmp_path):
