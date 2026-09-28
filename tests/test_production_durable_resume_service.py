@@ -19,6 +19,7 @@ from app.services.production_durable_resume_service import (
     successor_dispatch_decision,
     continuation_claim_decision,
     workflow_log_has_emitted_marker,
+    physical_attempt_retry_safe,
     task_result_semantic_digest,
 )
 from app.services.task_result_envelope_service import (
@@ -795,3 +796,43 @@ def test_workflow_log_marker_supports_gh_cli_tab_prefixed_logs():
         'DUPLICATE_SUCCESSOR_INTENT_DEDUPED=PASS\n'
     )
     assert workflow_log_has_emitted_marker(text, marker) is True
+
+
+def _pre_semantic_step_conclusions():
+    return {
+        "Execute natural goal through Harness-selected agents": "skipped",
+        "Deliver human-readable editorial package to Telegram": "skipped",
+        "Create canonical professional RenderJob from new product": "skipped",
+        "Publish canonical RenderJob handoff checkpoint": "skipped",
+        "Dispatch professional render": "skipped",
+        "Wait only for canonical render": "skipped",
+        "Reconcile render checkpoint": "skipped",
+        "Download QA-passed MASTER_FINAL and narration checkpoint": "skipped",
+        "Validate MASTER_FINAL before any YouTube review upload": "skipped",
+        "Deliver requested narration master to Telegram without recompression": "skipped",
+        "Create PRIVATE-only YouTube review record after QA": "skipped",
+        "Dispatch canonical YouTube PRIVATE HD review upload": "skipped",
+        "Wait only for private HD review readiness": "skipped",
+        "Reconcile PRIVATE HD review and Telegram link delivery": "skipped",
+    }
+
+
+def test_physical_retry_safety_uses_structured_steps_and_dispatch_receipt():
+    steps=_pre_semantic_step_conclusions()
+    assert physical_attempt_retry_safe(
+        step_conclusions=steps,
+        successor_dispatch_receipt_present=False,
+    ) is True
+    assert physical_attempt_retry_safe(
+        step_conclusions=steps,
+        successor_dispatch_receipt_present=True,
+    ) is False
+
+
+def test_physical_retry_safety_rejects_any_effectful_step_execution():
+    steps=_pre_semantic_step_conclusions()
+    steps["Dispatch professional render"]="success"
+    assert physical_attempt_retry_safe(
+        step_conclusions=steps,
+        successor_dispatch_receipt_present=False,
+    ) is False

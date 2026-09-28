@@ -235,3 +235,15 @@ def test_physical_retry_checks_emitted_successor_markers_not_log_substrings():
     assert "grep -Eq" not in block
     assert "NONTERMINAL_SUCCESSOR_DISPATCHED=PASS" in block
     assert "DUPLICATE_SUCCESSOR_INTENT_DEDUPED=PASS" in block
+
+
+def test_physical_retry_decision_uses_canonical_dispatch_receipt():
+    text=Path(
+        ".github/workflows/real-multi-agent-production.yml"
+    ).read_text(encoding="utf-8")
+    block=text.split(
+        "- name: Claim logical continuation exactly once",1
+    )[1].split("- uses: actions/setup-python@v5",1)[0]
+    assert "physical_attempt_retry_safe" in block
+    assert "successor-dispatch-receipt.json" in block
+    assert 'gh run view "$RID"' not in block
