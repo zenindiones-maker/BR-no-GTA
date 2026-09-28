@@ -5,11 +5,13 @@ import pytest
 from app.services.production_durable_resume_service import (
     DurableResumePolicyError,
     _canonical_sha,
+    build_effective_input_identity,
     build_fresh_evidence_lineage,
     ensure_latest_editorial_execution_need,
     editorial_progress_snapshot,
     load_pending_execution_need,
     plan_nonterminal_continuation,
+    task_result_semantic_digest,
 )
 from app.services.task_result_envelope_service import (
     build_task_result_envelope,
@@ -378,3 +380,102 @@ def test_editorial_progress_preserves_completed_longform_over_stale_partial(tmp_
     assert progress["current"]["word_count"] == 3252
     assert progress["current_supported_duration_minutes"] > 24.6
     assert progress["partial_results"][-1]["minutes"] == 15.409
+
+
+
+def test_semantic_task_result_digest_ignores_physical_attempt_fields():
+    base={
+        "mission_id":"mission-a",
+        "task_id":"editorial_script",
+        "capability_id":"editorial.process",
+        "status":"COMPLETED",
+        "result_payload":{"script":{"content":"same"}},
+        "output_artifact_refs":["script:1"],
+        "evidence_refs":["evidence:a"],
+        "source_task_ids":["research"],
+        "started_at":"A",
+        "completed_at":"B",
+        "elapsed_ms":1,
+        "authorization_lineage_ref":"authorization:one",
+    }
+    other={
+        **base,
+        "started_at":"C",
+        "completed_at":"D",
+        "elapsed_ms":999,
+        "authorization_lineage_ref":"authorization:two",
+        "content_sha256":"physical-envelope-hash",
+    }
+    assert task_result_semantic_digest(base)==task_result_semantic_digest(other)
+
+
+def test_effective_input_digest_is_independent_of_physical_run_identity():
+    a=build_effective_input_identity(
+        logical_task_id="production_runtime",
+        dependency_result_digests=("sha256:editorial",),
+        evidence_refs=("evidence:a",),
+        route_identity="route-a",
+        strategy="MINIMAL_AFFECTED_SUBGRAPH",
+        policy_version="durable-production/v1",
+    )
+    b=build_effective_input_identity(
+        logical_task_id="production_runtime",
+        dependency_result_digests=("sha256:editorial",),
+        evidence_refs=("evidence:a",),
+        route_identity="route-a",
+        strategy="MINIMAL_AFFECTED_SUBGRAPH",
+        policy_version="durable-production/v1",
+    )
+    assert a["effective_input_digest"]==b["effective_input_digest"]
+    changed=build_effective_input_identity(
+        logical_task_id="production_runtime",
+        dependency_result_digests=("sha256:editorial",),
+        evidence_refs=("evidence:a","evidence:new"),
+        route_identity="route-a",
+        strategy="MINIMAL_AFFECTED_SUBGRAPH",
+        policy_version="durable-production/v1",
+    )
+    assert changed["effective_input_digest"]!=a["effective_input_digest"]
+
+
+def test_completed_editorial_supersedes_stale_partial_need(tmp_path):
+    root,_,consumer,_,_=_fixture(tmp_path)
+    pending=ensure_latest_editorial_execution_need(
+        artifact_dir=root,force_new_strategy=False,
+    )
+    assert pending is not None
+    words=" ".join(["evidencia"]*3000)
+    envelope=build_task_result_envelope(
+        mission_id=consumer,
+        task_id="editorial_script",
+        capability_id="editorial.process",
+        agent_id="editorial-agent",
+        skill_id=None,
+        executor_binding="editorial.binding",
+        status="COMPLETED",
+        started_at="2026-09-27T12:00:00Z",
+        completed_at="2026-09-27T12:01:00Z",
+        elapsed_ms=60000,
+        result={"script":{"content":words}},
+        source_task_ids=("fact_verification",),
+        authorization_id="auth-complete",
+    )
+    persist_task_result_envelope(
+        envelope,artifact_dir=root/"hermes",index=4,
+    )
+    assert ensure_latest_editorial_execution_need(
+        artifact_dir=root,force_new_strategy=True,
+    ) is None
+    assert load_pending_execution_need(
+        artifact_dir=root,mission_id=consumer,task_id="editorial_script",
+    ) is None
+    supersession=json.loads(
+        (root/"durable-editorial-need-supersession.json").read_text()
+    )
+    assert supersession["schema"]=="DurableNeedSupersession/v1"
+    assert supersession["SUPERSEDED_RESULT_REF"].endswith(
+        "editorial_script-3.json"
+    )
+    assert supersession["CAUSAL_EVIDENCE"].endswith(
+        "editorial_script-4.json"
+    )

@@ -53,6 +53,57 @@ def _editorial_index(path: Path)->int:
     return int(match.group(1)) if match else -1
 
 
+def task_result_semantic_digest(row: dict[str,Any])->str:
+    """Identity of the logical result, excluding physical-attempt metadata."""
+    payload=row.get("result_payload") or row.get("result") or {}
+    semantic={
+        "mission_id":str(row.get("mission_id") or ""),
+        "task_id":str(row.get("task_id") or ""),
+        "capability_id":str(row.get("capability_id") or ""),
+        "status":str(row.get("status") or ""),
+        "result_payload":payload,
+        "output_artifact_refs":sorted(
+            str(item) for item in (row.get("output_artifact_refs") or ())
+            if str(item)
+        ),
+        "evidence_refs":sorted(
+            str(item) for item in (row.get("evidence_refs") or ())
+            if str(item)
+        ),
+        "source_task_ids":sorted(
+            str(item) for item in (row.get("source_task_ids") or ())
+            if str(item)
+        ),
+    }
+    return "sha256:"+_canonical_sha(semantic)
+
+
+def build_effective_input_identity(
+    *,
+    logical_task_id: str,
+    dependency_result_digests=(),
+    evidence_refs=(),
+    route_identity: str|None,
+    strategy: str|None,
+    policy_version: str,
+)->dict[str,Any]:
+    canonical={
+        "schema":"EffectiveInputIdentity/v1",
+        "logical_task_id":str(logical_task_id),
+        "dependency_result_digests":sorted(
+            str(item) for item in dependency_result_digests if str(item)
+        ),
+        "evidence_refs":sorted(
+            str(item) for item in evidence_refs if str(item)
+        ),
+        "route_identity":str(route_identity or ""),
+        "strategy":str(strategy or ""),
+        "policy_version":str(policy_version),
+    }
+    digest="sha256:"+_canonical_sha(canonical)
+    return {**canonical,"effective_input_digest":digest}
+
+
 def _latest_editorial_partial(
     root: Path,
 )->tuple[Path,dict[str,Any]]|None:
@@ -68,6 +119,30 @@ def _latest_editorial_partial(
         if str(row.get("status") or "")!="PARTIAL_FAILED":
             continue
         rows.append((index,path,row))
+    if not rows:
+        return None
+    _,path,row=max(rows,key=lambda item:item[0])
+    return path,row
+
+
+def _latest_editorial_completed(
+    root: Path,
+)->tuple[Path,dict[str,Any]]|None:
+    result_root=root/"hermes"/"task-results"
+    rows=[]
+    if not result_root.is_dir():
+        return None
+    for path in result_root.glob("editorial_script-*.json"):
+        index=_editorial_index(path)
+        if index<0:
+            continue
+        row=_read(path)
+        if (
+            str(row.get("task_id") or "")=="editorial_script"
+            and str(row.get("capability_id") or "")=="editorial.process"
+            and str(row.get("status") or "")=="COMPLETED"
+        ):
+            rows.append((index,path,row))
     if not rows:
         return None
     _,path,row=max(rows,key=lambda item:item[0])
@@ -138,6 +213,7 @@ def editorial_progress_snapshot(
                 continue
             observation={
                 "task_id":"editorial_script",
+                "logical_task_id":"editorial_script",
                 "task_result_ref":f"artifact:task-results/{path.name}",
                 "task_result_index":index,
                 "status":status,
@@ -145,6 +221,11 @@ def editorial_progress_snapshot(
                 "word_count":word_count,
                 "failure_class":failure_class,
                 "content_sha256":row.get("content_sha256"),
+                "semantic_content_digest":task_result_semantic_digest(row),
+                "evidence_refs":[
+                    str(item) for item in (row.get("evidence_refs") or ())
+                    if str(item)
+                ],
             }
             observations.append(observation)
             if status=="PARTIAL_FAILED":
@@ -272,6 +353,30 @@ def ensure_latest_editorial_execution_need(
     if latest is None:
         return None
     path,row=latest
+    completed=_latest_editorial_completed(root)
+    if completed is not None:
+        completed_path,completed_row=completed
+        if _editorial_index(completed_path) > _editorial_index(path):
+            supersession={
+                "schema":"DurableNeedSupersession/v1",
+                "task_id":"editorial_script",
+                "INVALIDATION_REASON":(
+                    "later COMPLETED TaskResult supersedes stale partial recovery need"
+                ),
+                "SUPERSEDED_RESULT_REF":f"artifact:task-results/{path.name}",
+                "CAUSAL_EVIDENCE":f"artifact:task-results/{completed_path.name}",
+                "completed_result_semantic_digest":task_result_semantic_digest(
+                    completed_row
+                ),
+            }
+            supersession["content_sha256"]=_canonical_sha(supersession)
+            (root/"durable-editorial-need-supersession.json").write_text(
+                json.dumps(
+                    supersession,ensure_ascii=False,indent=2,sort_keys=True
+                )+"\n",
+                encoding="utf-8",
+            )
+            return None
     mission_id=str(row.get("mission_id") or "").strip()
     task_id=str(row.get("task_id") or "").strip()
     if not mission_id or not task_id:
@@ -358,6 +463,10 @@ def load_pending_execution_need(
         if str(row.get("decision") or "")=="RESUME"
     }
     candidates=[]
+    completed=_latest_editorial_completed(root) if task_id=="editorial_script" else None
+    completed_index=(
+        _editorial_index(completed[0]) if completed is not None else -1
+    )
     for path in _need_files(root,mission_id,task_id):
         ref=_need_ref_from_file(path)
         if ref in resumed:
@@ -368,6 +477,8 @@ def load_pending_execution_need(
         ).name
         match=re.search(r"-(\d+)\.json$",partial)
         index=int(match.group(1)) if match else -1
+        if completed_index > index >= 0:
+            continue
         candidates.append((index,path,ref,need))
     if not candidates:
         return None
