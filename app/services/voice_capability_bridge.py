@@ -95,7 +95,7 @@ def voice_capability_records() -> tuple[CapabilityRecord, ...]:
             policy_tags=("realtime", "cloudflare", "barge-in"),
         ),
         _record(
-            capability_id="narration.generate.pt-BR",
+            capability_id="voice.synthesis.pt-BR",
             implementation="Provider-neutral private voice runtime synthesis boundary for pt-BR narration",
             input_contract="VoiceSynthesisRequest/v1 + private VoiceIdentityProfile/v1",
             output_contract="content-addressed narration audio + VoiceProviderEvidence/v1",

@@ -2083,4 +2083,33 @@ _REGISTRY._records = tuple(
     )
 )
 
+_existing_narration_voice = _REGISTRY._by_id.get("narration.generate.pt-BR")
+if _existing_narration_voice is None:
+    raise ValueError("Missing canonical narration.generate.pt-BR capability")
+_hardened_narration_voice = replace(
+    _existing_narration_voice,
+    authority="NONE",
+    memory_write="FORBIDDEN",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+    policy_tags=tuple(dict.fromkeys((*_existing_narration_voice.policy_tags, "voice-plane", "provider-neutral-candidate-boundary"))),
+    security_boundary=(
+        _existing_narration_voice.security_boundary
+        + " Voice Plane candidates remain subordinate; Voice B stays production baseline until explicit human promotion."
+    ),
+)
+_REGISTRY._by_id["narration.generate.pt-BR"] = _hardened_narration_voice
+_REGISTRY._records = tuple(
+    sorted(
+        (
+            _hardened_narration_voice
+            if record.capability_id == "narration.generate.pt-BR"
+            else record
+            for record in _REGISTRY._records
+        ),
+        key=lambda item: item.capability_id,
+    )
+)
+
 GLOBAL_CAPABILITY_REGISTRY = _REGISTRY
