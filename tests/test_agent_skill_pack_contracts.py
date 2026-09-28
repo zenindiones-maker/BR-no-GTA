@@ -30,6 +30,10 @@ def _load_raw_manifest() -> dict:
     return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
 
+def _entries_by_id(pack):
+    return {entry.skill_id: entry for entry in pack.skills}
+
+
 def test_skill_pack_manifest_has_exact_requested_skills():
     module = _load_module()
     pack = module.load_agent_skill_pack(ROOT)
@@ -72,3 +76,52 @@ def test_skill_pack_rejects_duplicate_exposed_ids(tmp_path: Path):
 
     with pytest.raises(ValueError, match="duplicate"):
         module.load_agent_skill_pack(root)
+
+
+def test_vendored_skill_files_exist_and_are_non_empty():
+    module = _load_module()
+    pack = module.load_agent_skill_pack(ROOT)
+    for entry in pack.skills:
+        if not entry.local_path:
+            continue
+        skill_file = ROOT / entry.local_path / "SKILL.md"
+        assert skill_file.is_file(), f"missing vendored skill: {entry.skill_id}"
+        assert skill_file.read_text(encoding="utf-8").strip()
+
+
+def test_vendored_skill_digests_match_manifest():
+    module = _load_module()
+    pack = module.load_agent_skill_pack(ROOT)
+    for entry in pack.skills:
+        if not entry.local_path:
+            continue
+        assert entry.content_digest, f"missing digest for {entry.skill_id}"
+        assert (
+            module.skill_tree_digest(ROOT / entry.local_path)
+            == entry.content_digest
+        )
+
+
+def test_existing_project_skills_are_not_overwritten():
+    existing = {
+        "gta6-editorial",
+        "gta6-fact-check",
+        "gta6-production",
+        "gta6-research",
+        "gta6-youtube",
+        "human-presentation-action-first",
+    }
+    skill_root = ROOT / ".dsh" / "skills"
+    assert existing <= {p.name for p in skill_root.iterdir() if p.is_dir()}
+    assert existing.isdisjoint(EXPECTED_SKILLS)
+
+
+def test_teach_and_handoff_remain_explicit():
+    module = _load_module()
+    pack = module.load_agent_skill_pack(ROOT)
+    entries = _entries_by_id(pack)
+    for skill_id in ("teach", "handoff"):
+        entry = entries[skill_id]
+        assert entry.invocation_policy.startswith("EXPLICIT")
+        text = (ROOT / entry.local_path / "SKILL.md").read_text(encoding="utf-8")
+        assert "disable-model-invocation: true" in text
