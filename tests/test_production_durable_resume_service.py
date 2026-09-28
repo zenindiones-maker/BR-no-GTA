@@ -817,15 +817,29 @@ def _pre_semantic_step_conclusions():
     }
 
 
-def test_physical_retry_safety_uses_structured_steps_and_dispatch_receipt():
+def test_physical_retry_safety_uses_structured_steps_and_transaction_artifact():
     steps=_pre_semantic_step_conclusions()
     assert physical_attempt_retry_safe(
         step_conclusions=steps,
-        successor_dispatch_receipt_present=False,
+        successor_transaction_files=("continuation-claim.json",),
     ) is True
     assert physical_attempt_retry_safe(
         step_conclusions=steps,
-        successor_dispatch_receipt_present=True,
+        successor_transaction_files=(
+            "continuation-claim.json",
+            "successor-dispatch-receipt.json",
+        ),
+    ) is False
+    assert physical_attempt_retry_safe(
+        step_conclusions=steps,
+        successor_transaction_files=(
+            "continuation-claim.json",
+            "successor-intent.json",
+        ),
+    ) is False
+    assert physical_attempt_retry_safe(
+        step_conclusions=steps,
+        successor_transaction_files=(),
     ) is False
 
 
@@ -834,5 +848,5 @@ def test_physical_retry_safety_rejects_any_effectful_step_execution():
     steps["Dispatch professional render"]="success"
     assert physical_attempt_retry_safe(
         step_conclusions=steps,
-        successor_dispatch_receipt_present=False,
+        successor_transaction_files=("continuation-claim.json",),
     ) is False
