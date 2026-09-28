@@ -47,7 +47,7 @@ class ClaudeOmniRouteRoutePlanTests(unittest.TestCase):
         self.assertEqual(provider.credential_env, "NVIDIA_API_KEY")
         self.assertEqual(
             model.model_id,
-            "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
+            "nvidia/nemotron-3-ultra-550b-a55b",
         )
         self.assertEqual(model.provider_id, "nvidia")
         self.assertIn("nvidia_nim", module.PROVIDER_IDENTITY_MAPPINGS)
@@ -187,7 +187,7 @@ class ClaudeOmniRouteRoutePlanTests(unittest.TestCase):
         evidence = module.build_dispatch_evidence(
             plan,
             selected_provider="nvidia",
-            selected_model="nvidia/nvidia/nemotron-3-ultra-550b-a55b",
+            selected_model="nvidia/nemotron-3-ultra-550b-a55b",
             attempt_index=0,
             http_status=200,
             latency_ms=12.5,
@@ -229,7 +229,7 @@ class ClaudeOmniRouteRoutePlanTests(unittest.TestCase):
             created_from_execution_need="SHARED_ROUTE_UNAVAILABLE",
         )
         exhausted = {
-            ("nvidia", "nvidia/nvidia/nemotron-3-ultra-550b-a55b")
+            ("nvidia", "nvidia/nemotron-3-ultra-550b-a55b")
         }
         with self.assertRaises(module.ProviderPoolExhausted):
             module.remaining_authorized_targets(plan, exhausted)

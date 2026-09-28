@@ -11,9 +11,11 @@ on:
       - "scripts/agent-tooling/claude_omniroute_contract.py"
       - "scripts/agent-tooling/claude_omniroute_replan.py"
       - "scripts/agent-tooling/claude_omniroute_route_plan.py"
+      - "scripts/agent-tooling/claude_omniroute_live_proof.py"
       - "tests/test_claude_omniroute_contract.py"
       - "tests/test_claude_omniroute_replan.py"
       - "tests/test_claude_omniroute_route_plan.py"
+      - "tests/test_claude_omniroute_live_proof.py"
   workflow_dispatch:
 
 permissions:
@@ -35,6 +37,7 @@ jobs:
           python3 -m unittest -q tests.test_claude_omniroute_route_plan
           python3 -m unittest -q tests.test_claude_omniroute_replan
           python3 -m unittest -q tests.test_claude_omniroute_contract
+          python3 -m unittest -q tests.test_claude_omniroute_live_proof
 
       - name: Install pinned Claude Code
         run: bash scripts/agent-tooling/bootstrap.sh claude
@@ -44,5 +47,7 @@ jobs:
           set -euo pipefail
           claude --version | grep '^2\.1\.283'
           claude --help >/dev/null
-          python3 scripts/agent-tooling/claude_omniroute_contract.py             --provider opencode             --model oc/big-pickle             --zero-cost-proof
+          python3 scripts/agent-tooling/claude_omniroute_contract.py \\
+            --logical-model combo/harness-claude-0123456789abcdef \\
+            --proof-mode
           echo "CLAUDE_CODE_GATEWAY_BOUNDARY=PASS"

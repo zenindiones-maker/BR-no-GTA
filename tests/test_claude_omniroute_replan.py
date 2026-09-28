@@ -54,7 +54,7 @@ class ClaudeOmniRouteReplanTests(unittest.TestCase):
         self.assertEqual(mapped["provider"], "nvidia")
         self.assertEqual(
             mapped["model"],
-            "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
+            "nvidia/nemotron-3-ultra-550b-a55b",
         )
         self.assertEqual(mapped["credential_env"], "NVIDIA_API_KEY")
 

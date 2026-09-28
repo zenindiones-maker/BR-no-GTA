@@ -165,6 +165,7 @@ def main() -> int:
         "OMNIROUTE_PRIMARY_PROVIDER": str(first_target["omniroute_provider"]),
         "OMNIROUTE_PRIMARY_MODEL": str(first_target["omniroute_model"]),
         "OMNIROUTE_PRIMARY_CREDENTIAL_ENV": str(first_target["credential_env"]),
+        "OMNIROUTE_COMBO_NAME": str(route_plan["omniroute_combo_name"]),
         "CLAUDE_OMNIROUTE_REPLAN_REQUIRED": "1",
     }
     if args.github_env is not None:

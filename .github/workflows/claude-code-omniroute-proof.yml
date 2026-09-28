@@ -8,17 +8,15 @@ on:
       - ".github/workflows/claude-code-omniroute-proof.yml"
       - "scripts/agent-tooling/bootstrap.sh"
       - "scripts/agent-tooling/claude_omniroute_contract.py"
+      - "scripts/agent-tooling/claude_omniroute_replan.py"
+      - "scripts/agent-tooling/claude_omniroute_route_plan.py"
+      - "scripts/agent-tooling/claude_omniroute_live_proof.py"
       - "tests/test_claude_omniroute_contract.py"
+      - "tests/test_claude_omniroute_replan.py"
+      - "tests/test_claude_omniroute_route_plan.py"
+      - "tests/test_claude_omniroute_live_proof.py"
   workflow_dispatch:
     inputs:
-      provider:
-        description: "Harness-selected provider"
-        required: true
-        default: "opencode"
-      model:
-        description: "Harness-selected model"
-        required: true
-        default: "oc/big-pickle"
       source_sha:
         description: "Exact source revision"
         required: false
@@ -30,15 +28,14 @@ permissions:
 jobs:
   claude-omniroute-proof:
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 20
     env:
-      HARNESS_SELECTED_PROVIDER: ${{ inputs.provider || 'opencode' }}
-      HARNESS_SELECTED_MODEL: ${{ inputs.model || 'oc/big-pickle' }}
       ANTHROPIC_BASE_URL: http://127.0.0.1:20128
       ANTHROPIC_AUTH_TOKEN: omniroute-no-auth
-      ANTHROPIC_MODEL: ${{ inputs.model || 'oc/big-pickle' }}
-      ANTHROPIC_CUSTOM_MODEL_OPTION: ${{ inputs.model || 'oc/big-pickle' }}
+      REQUIRE_API_KEY: "false"
+      OMNIROUTE_ENDPOINT_AUTH_MODE: PROOF_LOOPBACK_SENTINEL
       CLAUDE_CODE_AUTO_COMPACT_WINDOW: "190000"
+      OMNIROUTE_VERSION: "3.8.50"
 
     steps:
       - name: Checkout exact source
@@ -60,370 +57,180 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Prove static Claude OmniRoute boundary
+      - name: Prove static Harness OmniRoute boundary
         run: |
           set -euo pipefail
+          python3 -m unittest -q tests.test_claude_omniroute_route_plan
+          python3 -m unittest -q tests.test_claude_omniroute_replan
           python3 -m unittest -q tests.test_claude_omniroute_contract
-          python3 scripts/agent-tooling/claude_omniroute_contract.py             --provider "$HARNESS_SELECTED_PROVIDER"             --model "$HARNESS_SELECTED_MODEL"             --base-url "$ANTHROPIC_BASE_URL"             --zero-cost-proof
+          python3 -m unittest -q tests.test_claude_omniroute_live_proof
 
       - name: Install pinned Claude Code
         run: bash scripts/agent-tooling/bootstrap.sh claude
 
-      - name: Install pinned OmniRoute
+      - name: Install pinned OmniRoute with provenance
         run: |
           set -euo pipefail
-          npm install -g omniroute@3.8.50
-          omniroute --version
+          mkdir -p runtime/claude-omniroute
+          npm view "omniroute@$OMNIROUTE_VERSION" dist.integrity --json > /tmp/omniroute-integrity.json
+          npm install -g "omniroute@$OMNIROUTE_VERSION"
+          omniroute --version | grep '3\.8\.50'
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          integrity = json.loads(Path("/tmp/omniroute-integrity.json").read_text(encoding="utf-8"))
+          Path("runtime/claude-omniroute/install-provenance.json").write_text(
+              json.dumps({
+                  "schema": "OmniRouteInstallProvenance/v1",
+                  "version": os.environ["OMNIROUTE_VERSION"],
+                  "install_source": "npm-registry",
+                  "dist.integrity": integrity,
+              }, sort_keys=True),
+              encoding="utf-8",
+          )
+          print("OMNIROUTE_INSTALL_PROVENANCE=PASS")
+          PY
+
+      - name: Feature-detect headless OmniRoute
+        run: |
+          set -euo pipefail
+          omniroute providers --help >/tmp/providers-help.txt
+          omniroute doctor --help >/tmp/doctor-help.txt 2>&1 || true
+          if omniroute setup --help >/tmp/setup-help.txt 2>&1 && grep -q -- '--non-interactive' /tmp/setup-help.txt; then
+            REQUIRE_API_KEY=false omniroute setup --non-interactive >/tmp/setup.txt 2>&1
+          fi
+          echo "OMNIROUTE_HEADLESS_FEATURE_DETECTION=PASS"
 
       - name: Start loopback-only OmniRoute
         run: |
           set -euo pipefail
-          OMNIROUTE_SERVER_HOST=127.0.0.1 nohup omniroute serve >/tmp/omniroute-claude.log 2>&1 &
+          REQUIRE_API_KEY=false OMNIROUTE_SERVER_HOST=127.0.0.1 nohup omniroute serve >/tmp/omniroute-claude.log 2>&1 &
           echo $! >/tmp/omniroute-claude.pid
-          for i in {1..40}; do
-            if curl --connect-timeout 2 --max-time 5 -fsS http://127.0.0.1:20128/api/monitoring/health >/tmp/omniroute-claude-health.json 2>/dev/null; then
+          for i in {1..45}; do
+            if curl --connect-timeout 2 --max-time 5 -fsS "$ANTHROPIC_BASE_URL/api/monitoring/health" >/tmp/health.json 2>/dev/null; then
               python3 - <<'PY'
           import subprocess
           rows = subprocess.check_output(["ss", "-H", "-ltn", "sport = :20128"], text=True).splitlines()
           assert rows
-          addresses = [row.split()[3] for row in rows]
-          assert all(address in {"127.0.0.1:20128", "[::1]:20128"} for address in addresses), addresses
+          assert all(row.split()[3] in {"127.0.0.1:20128", "[::1]:20128"} for row in rows)
           PY
               echo "OMNIROUTE_LOOPBACK_ONLY=PASS"
               exit 0
             fi
             sleep 2
           done
-          cat /tmp/omniroute-claude.log || true
+          tail -100 /tmp/omniroute-claude.log || true
           exit 1
 
-      - name: Probe OmniRoute OpenAI-compatible baseline
+      - name: Resolve Harness-governed replan
         run: |
           set -euo pipefail
           mkdir -p runtime/claude-omniroute
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
+          python3 scripts/agent-tooling/claude_omniroute_replan.py \
+            --evidence-path runtime/claude-omniroute/harness-replan.json \
+            --route-plan-path runtime/claude-omniroute/route-plan.json \
+            --github-env "$GITHUB_ENV"
+          grep -q '"schema": "HarnessOmniRoutePlan/v1"' runtime/claude-omniroute/route-plan.json
+          echo "HARNESS_OMNIROUTE_ROUTE_PLAN=PASS"
 
-          payload = {
-              "model": os.environ["HARNESS_SELECTED_MODEL"],
-              "stream": False,
-              "messages": [
-                  {
-                      "role": "user",
-                      "content": "Return exactly this marker and nothing else: OMNIROUTE_OPENAI_BASELINE_OK",
-                  }
-              ],
-          }
-          Path("/tmp/omniroute-openai-probe-request.json").write_text(
-              json.dumps(payload), encoding="utf-8"
-          )
-          PY
-          set +e
-          HTTP_STATUS="$(curl -sS             -o /tmp/omniroute-openai-probe-body.json             -w '%{http_code}'             -H 'content-type: application/json'             -X POST             "$ANTHROPIC_BASE_URL/v1/providers/$HARNESS_SELECTED_PROVIDER/chat/completions"             --data-binary @/tmp/omniroute-openai-probe-request.json)"
-          CURL_RC=$?
-          set -e
-          HTTP_STATUS="$HTTP_STATUS" CURL_RC="$CURL_RC" python3 - <<'PY'
-          import hashlib
-          import json
-          import os
-          from pathlib import Path
-
-          body_path = Path("/tmp/omniroute-openai-probe-body.json")
-          raw = body_path.read_text(encoding="utf-8", errors="replace") if body_path.exists() else ""
-          try:
-              payload = json.loads(raw) if raw else {}
-          except json.JSONDecodeError:
-              payload = {}
-          status = int(os.environ.get("HTTP_STATUS") or 0)
-          curl_rc = int(os.environ.get("CURL_RC") or 0)
-          choices = payload.get("choices") if isinstance(payload, dict) else None
-          text = ""
-          if isinstance(choices, list) and choices:
-              message = choices[0].get("message") if isinstance(choices[0], dict) else None
-              if isinstance(message, dict) and isinstance(message.get("content"), str):
-                  text = message["content"].strip()
-          error = payload.get("error") if isinstance(payload, dict) else None
-          evidence = {
-              "schema": "OmniRouteOpenAICompatibleProbe/v1",
-              "status": "PASS" if curl_rc == 0 and 200 <= status < 300 and bool(text) else "FAIL",
-              "http_status": status,
-              "curl_return_code": curl_rc,
-              "provider": os.environ["HARNESS_SELECTED_PROVIDER"],
-              "requested_model": os.environ["HARNESS_SELECTED_MODEL"],
-              "reported_model": payload.get("model") if isinstance(payload, dict) else None,
-              "nonempty_text": bool(text),
-              "error_type": error.get("type") if isinstance(error, dict) else None,
-              "error_code": error.get("code") if isinstance(error, dict) else None,
-              "body_sha256": hashlib.sha256(raw.encode()).hexdigest(),
-          }
-          root = Path("runtime/claude-omniroute")
-          (root / "openai-baseline-probe.json").write_text(
-              json.dumps(evidence, sort_keys=True), encoding="utf-8"
-          )
-          print("OMNIROUTE_OPENAI_BASELINE_STATUS=" + evidence["status"])
-          print("OMNIROUTE_OPENAI_BASELINE_HTTP=" + str(evidence["http_status"]))
-          PY
-
-      - name: Probe OmniRoute Anthropic Messages endpoint
+      - name: Qualify bounded provider candidates
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
           set -euo pipefail
-          mkdir -p runtime/claude-omniroute
-          python3 - <<'PY'
-          import hashlib
-          import json
-          import os
-          from pathlib import Path
-          import urllib.error
-          import urllib.request
+          python3 scripts/agent-tooling/claude_omniroute_live_proof.py qualify \
+            --plan runtime/claude-omniroute/route-plan.json \
+            --evidence-dir runtime/claude-omniroute \
+            --base-url "$ANTHROPIC_BASE_URL" \
+            --github-env "$GITHUB_ENV"
 
-          root = Path("runtime/claude-omniroute")
-          request_body = {
-              "model": os.environ["HARNESS_SELECTED_MODEL"],
-              "max_tokens": 128,
-              "stream": False,
-              "messages": [
-                  {
-                      "role": "user",
-                      "content": "Return exactly this marker and nothing else: OMNIROUTE_ANTHROPIC_MESSAGES_OK",
-                  }
-              ],
-          }
-          req = urllib.request.Request(
-              os.environ["ANTHROPIC_BASE_URL"] + "/v1/messages",
-              data=json.dumps(request_body).encode("utf-8"),
-              headers={
-                  "content-type": "application/json",
-                  "anthropic-version": "2023-06-01",
-                  "authorization": "Bearer " + os.environ["ANTHROPIC_AUTH_TOKEN"],
-              },
-              method="POST",
-          )
-          try:
-              with urllib.request.urlopen(req, timeout=180) as response:
-                  raw = response.read().decode("utf-8", errors="replace")
-                  http_status = int(response.status)
-              payload = json.loads(raw)
-              blocks = payload.get("content") if isinstance(payload, dict) else None
-              text_parts = []
-              if isinstance(blocks, list):
-                  for block in blocks:
-                      if isinstance(block, dict) and block.get("type") == "text":
-                          value = block.get("text")
-                          if isinstance(value, str):
-                              text_parts.append(value)
-              text = "".join(text_parts).strip()
-              passed = 200 <= http_status < 300 and bool(text)
-              evidence = {
-                  "schema": "OmniRouteAnthropicMessagesProbe/v1",
-                  "status": "PASS" if passed else "FAIL",
-                  "http_status": http_status,
-                  "provider": os.environ["HARNESS_SELECTED_PROVIDER"],
-                  "requested_model": os.environ["HARNESS_SELECTED_MODEL"],
-                  "reported_model": payload.get("model") if isinstance(payload, dict) else None,
-                  "response_type": payload.get("type") if isinstance(payload, dict) else None,
-                  "nonempty_text": bool(text),
-                  "body_sha256": hashlib.sha256(raw.encode()).hexdigest(),
-              }
-          except urllib.error.HTTPError as exc:
-              raw = exc.read().decode("utf-8", errors="replace")
-              try:
-                  error_payload = json.loads(raw)
-              except json.JSONDecodeError:
-                  error_payload = {}
-              error = error_payload.get("error") if isinstance(error_payload, dict) else None
-              evidence = {
-                  "schema": "OmniRouteAnthropicMessagesProbe/v1",
-                  "status": "FAIL",
-                  "http_status": int(exc.code),
-                  "provider": os.environ["HARNESS_SELECTED_PROVIDER"],
-                  "requested_model": os.environ["HARNESS_SELECTED_MODEL"],
-                  "error_type": error.get("type") if isinstance(error, dict) else None,
-                  "error_code": error.get("code") if isinstance(error, dict) else None,
-                  "body_sha256": hashlib.sha256(raw.encode()).hexdigest(),
-              }
-          (root / "gateway-probe.json").write_text(
-              json.dumps(evidence, sort_keys=True), encoding="utf-8"
-          )
-          print("OMNIROUTE_ANTHROPIC_MESSAGES_STATUS=" + evidence["status"])
-          print("OMNIROUTE_ANTHROPIC_MESSAGES_HTTP=" + str(evidence.get("http_status")))
-          PY
-
-      - name: Classify OmniRoute Claude compatibility
+      - name: Re-probe OmniRoute Anthropic Messages through bounded route
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
+          python3 scripts/agent-tooling/claude_omniroute_live_proof.py probe \
+            --plan runtime/claude-omniroute/route-plan.json \
+            --evidence-dir runtime/claude-omniroute \
+            --base-url "$ANTHROPIC_BASE_URL" \
+            --auth-token "$ANTHROPIC_AUTH_TOKEN"
 
-          root = Path("runtime/claude-omniroute")
-          baseline = json.loads((root / "openai-baseline-probe.json").read_text(encoding="utf-8"))
-          messages = json.loads((root / "gateway-probe.json").read_text(encoding="utf-8"))
-          baseline_ok = baseline.get("status") == "PASS"
-          messages_ok = messages.get("status") == "PASS"
-
-          classification = {
-              "schema": "ClaudeOmniRouteCompatibilityClassification/v1",
-              "openai_baseline_status": baseline.get("status"),
-              "openai_baseline_http": baseline.get("http_status"),
-              "anthropic_messages_status": messages.get("status"),
-              "anthropic_messages_http": messages.get("http_status"),
-              "anthropic_error_type": messages.get("error_type"),
-              "anthropic_error_code": messages.get("error_code"),
-          }
-
-          if messages_ok:
-              classification["status"] = "PASS"
-              classification["classification"] = "ANTHROPIC_MESSAGES_COMPATIBLE"
-              (root / "compatibility.json").write_text(
-                  json.dumps(classification, sort_keys=True), encoding="utf-8"
-              )
-              print("CLAUDE_OMNIROUTE_COMPATIBILITY=PASS")
-              raise SystemExit(0)
-
-          classification["status"] = "FAIL"
-          if baseline_ok:
-              classification["classification"] = "ANTHROPIC_MESSAGES_INCOMPATIBLE"
-          else:
-              classification["classification"] = "SHARED_ROUTE_UNAVAILABLE"
-          (root / "compatibility.json").write_text(
-              json.dumps(classification, sort_keys=True), encoding="utf-8"
-          )
-          print("CLAUDE_OMNIROUTE_COMPATIBILITY=FAIL")
-          print("CLAUDE_OMNIROUTE_CLASSIFICATION=" + classification["classification"])
-          print("OPENAI_BASELINE_HTTP=" + str(classification["openai_baseline_http"]))
-          print("ANTHROPIC_MESSAGES_HTTP=" + str(classification["anthropic_messages_http"]))
-          raise SystemExit(1)
-          PY
-
-      - name: Execute Claude Code through governed OmniRoute
+      - name: Execute Claude Code through Harness logical route
         env:
           CLAUDE_CONFIG_DIR: ${{ runner.temp }}/claude-omniroute-config
         run: |
           set -euo pipefail
-          test "$HARNESS_SELECTED_PROVIDER" = "opencode"
-          test "$HARNESS_SELECTED_MODEL" = "oc/big-pickle"
-          test "$ANTHROPIC_MODEL" = "$HARNESS_SELECTED_MODEL"
-          test "$ANTHROPIC_BASE_URL" = "http://127.0.0.1:20128"
+          test "$ANTHROPIC_MODEL" = "$HARNESS_MATERIALIZED_OMNIROUTE_ROUTE"
           case "$ANTHROPIC_BASE_URL" in */v1|*/v1/) exit 4;; esac
-          unset ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN
-          mkdir -p runtime/claude-omniroute
-          BEFORE="$(git status --porcelain)"
-          PROMPT='Return exactly this marker and nothing else: CLAUDE_OMNIROUTE_RUNTIME_OK'
+          unset NVIDIA_API_KEY ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN
+          BEFORE="$(git status --porcelain --untracked-files=no)"
+          date -u +%Y-%m-%dT%H:%M:%SZ > /tmp/claude-started-at.txt
           set +e
-          timeout 180 claude -p "$PROMPT"             --model "$HARNESS_SELECTED_MODEL"             --output-format json             --max-turns 1             --tools ""             --disallowedTools "mcp__*"             --permission-prompts none             --no-session-persistence             --restricted             --bare             >runtime/claude-omniroute/stdout.json             2>runtime/claude-omniroute/stderr.txt
+          timeout 180 claude -p 'Return exactly this marker and nothing else: CLAUDE_OMNIROUTE_RUNTIME_OK' \
+            --model "$HARNESS_MATERIALIZED_OMNIROUTE_ROUTE" \
+            --output-format json \
+            --max-turns 1 \
+            --tools "" \
+            --disallowedTools "mcp__*" \
+            --permission-prompts none \
+            --no-session-persistence \
+            --restricted \
+            --bare \
+            >runtime/claude-omniroute/stdout.json \
+            2>runtime/claude-omniroute/stderr.txt
           RC=$?
           set -e
-          AFTER="$(git status --porcelain)"
+          AFTER="$(git status --porcelain --untracked-files=no)"
           test "$BEFORE" = "$AFTER"
           RC="$RC" python3 - <<'PY'
           import hashlib, json, os
           from pathlib import Path
-
           root = Path("runtime/claude-omniroute")
           stdout = (root / "stdout.json").read_text(encoding="utf-8", errors="replace")
           stderr = (root / "stderr.txt").read_text(encoding="utf-8", errors="replace")
-          rc = int(os.environ["RC"])
-          try:
-              payload = json.loads(stdout)
-          except json.JSONDecodeError as exc:
-              raise SystemExit(f"invalid Claude Code JSON output: {exc}")
+          payload = json.loads(stdout)
           result = payload.get("result")
-          if rc != 0 or not isinstance(result, str) or not result.strip():
-              import re
-
-              def redact(value):
-                  text = str(value or "")
-                  text = re.sub(
-                      r"(?i)(authorization:|bearer\\s+|api[_-]?key|token=)[^\\s,;]*",
-                      "[REDACTED]",
-                      text,
-                  )
-                  text = re.sub(
-                      r"(?i)(sk-|oma_live_)[A-Za-z0-9._-]{8,}",
-                      "[REDACTED]",
-                      text,
-                  )
-                  return text
-
-              safe_lines = [
-                  redact(line[:500])
-                  for line in stderr.splitlines()
-              ][-30:]
-              gateway_log_path = Path("/tmp/omniroute-claude.log")
-              gateway_log = (
-                  gateway_log_path.read_text(encoding="utf-8", errors="replace")
-                  if gateway_log_path.exists()
-                  else ""
-              )
-              gateway_error_lines = [
-                  redact(line[:500])
-                  for line in gateway_log.splitlines()
-                  if any(
-                      term in line.lower()
-                      for term in ("/v1/messages", "error", "failed", "oc/big-pickle")
-                  )
-              ][-30:]
-              failure = {
-                  "schema": "ClaudeCodeOmniRouteProof/v1",
-                  "status": "FAILED",
-                  "authority": "DEEPSEEK_HARNESS",
-                  "executor": "claude-code",
-                  "claude_code_version": "2.1.283",
-                  "gateway": "omniroute",
-                  "omniroute_version": "3.8.50",
-                  "provider": os.environ["HARNESS_SELECTED_PROVIDER"],
-                  "model": os.environ["HARNESS_SELECTED_MODEL"],
-                  "base_url": os.environ["ANTHROPIC_BASE_URL"],
-                  "auth_class": "LOCAL_LOOPBACK_SENTINEL",
-                  "model_discovery": False,
-                  "fallback_occurred": False,
-                  "tools_exposed": 0,
-                  "repository_mutation": False,
-                  "claude_return_code": rc,
-                  "claude_payload_type": payload.get("type") if isinstance(payload, dict) else None,
-                  "claude_payload_subtype": payload.get("subtype") if isinstance(payload, dict) else None,
-                  "claude_is_error": payload.get("is_error") if isinstance(payload, dict) else None,
-                  "claude_result": redact(payload.get("result") if isinstance(payload, dict) else "")[:2000],
-                  "model_usage": payload.get("modelUsage") if isinstance(payload, dict) else None,
-                  "stderr_diagnostics": safe_lines,
-                  "gateway_log_sha256": hashlib.sha256(gateway_log.encode()).hexdigest(),
-                  "gateway_error_lines": gateway_error_lines,
-                  "stdout_sha256": hashlib.sha256(stdout.encode()).hexdigest(),
-                  "stderr_sha256": hashlib.sha256(stderr.encode()).hexdigest(),
-              }
-              (root / "result.json").write_text(
-                  json.dumps(failure, sort_keys=True), encoding="utf-8"
-              )
-              print("CLAUDE_CODE_OMNIROUTE_RUNTIME_PROOF=FAIL")
-              print("CLAUDE_CODE_FAILURE_RESULT=" + failure["claude_result"][:1000])
-              raise SystemExit(f"Claude Code OmniRoute execution failed rc={rc}")
+          passed = int(os.environ["RC"]) == 0 and isinstance(result, str) and result.strip() == "CLAUDE_OMNIROUTE_RUNTIME_OK"
           evidence = {
               "schema": "ClaudeCodeOmniRouteProof/v1",
-              "status": "EXECUTED",
+              "status": "PASS" if passed else "FAIL",
               "authority": "DEEPSEEK_HARNESS",
               "executor": "claude-code",
               "claude_code_version": "2.1.283",
               "gateway": "omniroute",
               "omniroute_version": "3.8.50",
-              "provider": os.environ["HARNESS_SELECTED_PROVIDER"],
-              "model": os.environ["HARNESS_SELECTED_MODEL"],
+              "logical_model": os.environ["HARNESS_MATERIALIZED_OMNIROUTE_ROUTE"],
               "base_url": os.environ["ANTHROPIC_BASE_URL"],
-              "auth_class": "LOCAL_LOOPBACK_SENTINEL",
-              "model_discovery": False,
-              "fallback_occurred": False,
-              "tools_exposed": 0,
+              "auth_class": os.environ["OMNIROUTE_ENDPOINT_AUTH_MODE"],
+              "provider_credentials_exposed_to_claude": False,
               "repository_mutation": False,
-              "result": result.strip(),
+              "result_matches_marker": passed,
               "stdout_sha256": hashlib.sha256(stdout.encode()).hexdigest(),
               "stderr_sha256": hashlib.sha256(stderr.encode()).hexdigest(),
           }
           (root / "result.json").write_text(json.dumps(evidence, sort_keys=True), encoding="utf-8")
+          if not passed:
+              raise SystemExit("CLAUDE_CLIENT_FAILURE")
           print("CLAUDE_CODE_OMNIROUTE_RUNTIME_PROOF=PASS")
-          print("CLAUDE_CODE_OMNIROUTE_PROVIDER=" + evidence["provider"])
-          print("CLAUDE_CODE_OMNIROUTE_MODEL=" + evidence["model"])
+          print("REPOSITORY_MUTATION=0")
           PY
+
+      - name: Verify actual Claude routed target
+        run: |
+          set -euo pipefail
+          python3 scripts/agent-tooling/claude_omniroute_live_proof.py verify-claude-dispatch \
+            --plan runtime/claude-omniroute/route-plan.json \
+            --evidence-dir runtime/claude-omniroute \
+            --base-url "$ANTHROPIC_BASE_URL" \
+            --started-at /tmp/claude-started-at.txt \
+            --stdout runtime/claude-omniroute/stdout.json
+
+      - name: Verify secret isolation
+        if: ${{ always() }}
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: |
+          set -euo pipefail
+          python3 scripts/agent-tooling/claude_omniroute_live_proof.py scan-secrets \
+            --evidence-dir runtime/claude-omniroute
 
       - name: Upload proof evidence
         if: ${{ always() }}
@@ -435,7 +242,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Shutdown OmniRoute
-        if: always()
+        if: ${{ always() }}
         run: |
           if [ -f /tmp/omniroute-claude.pid ]; then
             kill "$(cat /tmp/omniroute-claude.pid)" 2>/dev/null || true

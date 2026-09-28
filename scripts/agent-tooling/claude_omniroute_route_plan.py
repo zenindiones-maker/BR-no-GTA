@@ -36,7 +36,6 @@ class ProviderIdentityMapping(NamedTuple):
     harness_provider_id: str
     omniroute_provider_id: str
     credential_env: str
-    model_prefix: str
 
 
 PROVIDER_IDENTITY_MAPPINGS: dict[str, ProviderIdentityMapping] = {
@@ -44,7 +43,6 @@ PROVIDER_IDENTITY_MAPPINGS: dict[str, ProviderIdentityMapping] = {
         harness_provider_id="nvidia_nim",
         omniroute_provider_id="nvidia",
         credential_env="NVIDIA_API_KEY",
-        model_prefix="nvidia/",
     ),
 }
 
@@ -66,7 +64,8 @@ def map_harness_target(
             f"MODEL_MAPPING_UNAVAILABLE:{provider_id}/{model_id}"
         )
 
-    omniroute_model = f"{mapping.model_prefix}{model_id}"
+    # Harness model IDs are canonical provider-runtime IDs. Preserve exactly.
+    omniroute_model = model_id
     return (
         OmniRouteProviderIdentity(
             provider_id=mapping.omniroute_provider_id,
