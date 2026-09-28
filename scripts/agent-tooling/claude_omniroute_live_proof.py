@@ -418,15 +418,13 @@ def _provider_list_rows(
     return [item for item in rows if isinstance(item, dict)]
 
 
-def _reconcile_provider_connection(
+def _select_exact_provider_connection(
+    payload: dict[str, Any] | list[Any] | None,
     *,
     provider: str,
     expected_name: str,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    listed = _run(["omniroute", "providers", "list", "--json"])
-    if listed.returncode != 0:
-        return None, "OMNIROUTE_PROVIDER_CONNECTION_ID_MISSING"
-    rows = _provider_list_rows(_parse_json_object(listed.stdout))
+    rows = _provider_list_rows(payload)
     matches = [
         row
         for row in rows
@@ -443,7 +441,60 @@ def _reconcile_provider_connection(
     return matches[0], None
 
 
-def _materialize_provider(target: dict[str, Any]) -> dict[str, Any]:
+def _http_get_json(url: str, *, timeout: int = 30) -> tuple[int, Any]:
+    request = urllib.request.Request(url, method="GET")
+    status = 0
+    raw = ""
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            status = int(response.status)
+            raw = response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        status = int(exc.code)
+        raw = exc.read().decode("utf-8", errors="replace")
+    try:
+        payload = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        payload = {}
+    return status, payload
+
+
+def _reconcile_provider_connection(
+    *,
+    provider: str,
+    expected_name: str,
+    base_url: str,
+) -> tuple[dict[str, Any] | None, str | None, str | None]:
+    status, payload = _http_get_json(
+        base_url.rstrip("/") + "/api/providers?limit=5000"
+    )
+    if 200 <= status < 300:
+        connection, failure = _select_exact_provider_connection(
+            payload,
+            provider=provider,
+            expected_name=expected_name,
+        )
+        if connection is not None:
+            return connection, None, "SERVER_MANAGEMENT_API"
+        if failure == "OMNIROUTE_PROVIDER_CONNECTION_AMBIGUOUS":
+            return None, failure, "SERVER_MANAGEMENT_API"
+
+    listed = _run(["omniroute", "providers", "list", "--json"])
+    if listed.returncode != 0:
+        return None, "OMNIROUTE_PROVIDER_CONNECTION_ID_MISSING", None
+    connection, failure = _select_exact_provider_connection(
+        _parse_json_object(listed.stdout),
+        provider=provider,
+        expected_name=expected_name,
+    )
+    return connection, failure, "PROVIDERS_LIST_RECONCILIATION"
+
+
+def _materialize_provider(
+    target: dict[str, Any],
+    *,
+    base_url: str,
+) -> dict[str, Any]:
     provider = str(target["omniroute_provider"]).strip()
     expected_name = _provider_connection_name(target)
     add = _run(_provider_add_command(target))
@@ -462,9 +513,10 @@ def _materialize_provider(target: dict[str, Any]) -> dict[str, Any]:
     )
     connection_id_source = "PROVIDERS_ADD_JSON"
     if connection is None:
-        connection, failure_class = _reconcile_provider_connection(
+        connection, failure_class, reconciled_source = _reconcile_provider_connection(
             provider=provider,
             expected_name=expected_name,
+            base_url=base_url,
         )
         if connection is None:
             return {
@@ -474,7 +526,7 @@ def _materialize_provider(target: dict[str, Any]) -> dict[str, Any]:
                 "connection_id_source": None,
                 "failure_class": failure_class,
             }
-        connection_id_source = "PROVIDERS_LIST_RECONCILIATION"
+        connection_id_source = reconciled_source or "PROVIDERS_LIST_RECONCILIATION"
 
     connection_id = str(connection.get("id") or "").strip()
     if not connection_id:
@@ -610,7 +662,10 @@ def qualify(
     for target in direct_passed:
         provider = str(target["omniroute_provider"])
         if provider not in provider_state:
-            provider_state[provider] = _materialize_provider(target)
+            provider_state[provider] = _materialize_provider(
+                target,
+                base_url=base_url,
+            )
 
     qualified_runtime: list[dict[str, Any]] = []
     for target in direct_passed:

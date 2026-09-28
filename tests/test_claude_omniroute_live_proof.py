@@ -171,7 +171,10 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
             return CompletedProcess(command, 0, "{}", "")
 
         with mock.patch.object(module, "_run", side_effect=fake_run):
-            materialized = module._materialize_provider(target)
+            materialized = module._materialize_provider(
+                target,
+                base_url="http://127.0.0.1:20128",
+            )
 
         self.assertTrue(materialized["ok"])
         self.assertEqual(materialized["connection_id"], "conn-nvidia-123")
@@ -184,7 +187,7 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
             commands,
         )
 
-    def test_provider_materialization_reconciles_unique_connection_when_add_output_has_no_id(self):
+    def test_provider_materialization_reconciles_unique_connection_from_active_server_api(self):
         module = load_module()
         target = plan()["candidate_targets"][0]
         expected_name = module._provider_connection_name(target)
@@ -194,49 +197,44 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
             commands.append(command)
             if command[:3] == ["omniroute", "providers", "add"]:
                 return CompletedProcess(command, 0, '{"status":"created"}', "")
-            if command[:3] == ["omniroute", "providers", "list"]:
-                return CompletedProcess(
-                    command,
-                    0,
-                    json.dumps({
-                        "connections": [{
-                            "id": "conn-nvidia-reconciled",
-                            "provider": "nvidia",
-                            "name": expected_name,
-                        }]
-                    }),
-                    "",
-                )
             return CompletedProcess(command, 0, "{}", "")
 
-        with mock.patch.object(module, "_run", side_effect=fake_run):
-            materialized = module._materialize_provider(target)
+        server_payload = {
+            "connections": [{
+                "id": "conn-nvidia-server",
+                "provider": "nvidia",
+                "name": expected_name,
+            }]
+        }
+        with (
+            mock.patch.object(module, "_run", side_effect=fake_run),
+            mock.patch.object(
+                module,
+                "_http_get_json",
+                return_value=(200, server_payload),
+            ),
+        ):
+            materialized = module._materialize_provider(
+                target,
+                base_url="http://127.0.0.1:20128",
+            )
 
         self.assertTrue(materialized["ok"])
-        self.assertEqual(
-            materialized["connection_id"],
-            "conn-nvidia-reconciled",
-        )
+        self.assertEqual(materialized["connection_id"], "conn-nvidia-server")
         self.assertEqual(
             materialized["connection_id_source"],
-            "PROVIDERS_LIST_RECONCILIATION",
+            "SERVER_MANAGEMENT_API",
         )
-        self.assertIn(
+        self.assertNotIn(
             ["omniroute", "providers", "list", "--json"],
             commands,
         )
         self.assertIn(
-            [
-                "omniroute",
-                "providers",
-                "test",
-                "conn-nvidia-reconciled",
-                "--json",
-            ],
+            ["omniroute", "providers", "test", "conn-nvidia-server", "--json"],
             commands,
         )
 
-    def test_provider_materialization_fails_closed_on_ambiguous_connection_reconciliation(self):
+    def test_provider_materialization_fails_closed_on_ambiguous_server_connection_reconciliation(self):
         module = load_module()
         target = plan()["candidate_targets"][0]
         expected_name = module._provider_connection_name(target)
@@ -244,26 +242,22 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
         def fake_run(command, *, env=None):
             if command[:3] == ["omniroute", "providers", "add"]:
                 return CompletedProcess(command, 0, '{"status":"created"}', "")
-            if command[:3] == ["omniroute", "providers", "list"]:
-                payload = {
-                    "connections": [
-                        {
-                            "id": "conn-a",
-                            "provider": "nvidia",
-                            "name": expected_name,
-                        },
-                        {
-                            "id": "conn-b",
-                            "provider": "nvidia",
-                            "name": expected_name,
-                        },
-                    ]
-                }
-                return CompletedProcess(command, 0, json.dumps(payload), "")
             return CompletedProcess(command, 0, "{}", "")
 
-        with mock.patch.object(module, "_run", side_effect=fake_run):
-            materialized = module._materialize_provider(target)
+        payload = {
+            "connections": [
+                {"id": "conn-a", "provider": "nvidia", "name": expected_name},
+                {"id": "conn-b", "provider": "nvidia", "name": expected_name},
+            ]
+        }
+        with (
+            mock.patch.object(module, "_run", side_effect=fake_run),
+            mock.patch.object(module, "_http_get_json", return_value=(200, payload)),
+        ):
+            materialized = module._materialize_provider(
+                target,
+                base_url="http://127.0.0.1:20128",
+            )
 
         self.assertFalse(materialized["ok"])
         self.assertIsNone(materialized["connection_id"])
