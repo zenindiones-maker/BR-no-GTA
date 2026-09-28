@@ -188,7 +188,11 @@ def test_production_report_uses_semantic_progress_contract_and_concrete_requirem
     assert 'route_identity=route_identity' in block
     assert 'physical_attempt_id=physical_attempt_id' in block
     assert "CONCRETE_REMAINING_REQUIREMENTS=PASS" in block
-    assert "CONTINUE_ORIGINAL_PRODUCTION" not in block
+    assert block.count("CONTINUE_ORIGINAL_PRODUCTION")==1
+    assert (
+        'if "CONTINUE_ORIGINAL_PRODUCTION" not in remaining_requirements:'
+        in block
+    )
 
 
 def test_rehydrate_logical_continuation_imports_regex_dependency():
