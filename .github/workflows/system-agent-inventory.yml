@@ -20,6 +20,7 @@ on:
       - 'app/services/gta6_master_agent.py'
       - 'app/services/gta6_brain.py'
       - '.dsh/skills/**'
+      - 'tests/test_harness_ecosystem_inventory.py'
   workflow_dispatch:
 
 permissions:

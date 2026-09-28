@@ -180,3 +180,29 @@ def test_governed_agent_skill_pack_is_inventoried_without_capability_promotion()
     assert result["CONTENT_DIGEST_VERIFIED"] is True
     assert result["HARNESS_AUTHORITY_PRESERVED"] is True
     assert result["NO_DIRECT_EXECUTION_BYPASS"] is True
+
+
+def test_governed_local_dsh_skills_are_skill_only_not_orphans():
+    result = audit()
+    governed = {"tdd", "teach", "caveman", "handoff", "video-edit"}
+    by_id = {
+        row["AGENT_OR_SKILL_ID"]: row
+        for row in result["identities"]
+    }
+
+    for skill_id in governed:
+        row = by_id[skill_id]
+        assert row["IDENTITY_KIND"] == "SKILL"
+        assert row["CAPABILITY_IDS"] == []
+        assert row["STATUS"] == "SKILL_ONLY"
+        assert any(
+            "governed non-capability skill" in note.lower()
+            for note in row["NOTES"]
+        )
+
+    assert result["ORPHANS_FOUND"] == 0
+    assert result["ALL_AGENTS_DISCOVERABLE"] is True
+    assert not any(
+        item["id"] in governed
+        for item in result["IDENTITY_INTEGRATION_BLOCKERS"]
+    )
