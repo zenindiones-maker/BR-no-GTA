@@ -579,19 +579,36 @@ def _materialize_provider(
             "failure_class": "OMNIROUTE_PROVIDER_VALIDATION_FAILURE",
         }
     test = _run(["omniroute", "providers", "test", connection_id, "--json"])
+    provider_test_status = "PASS"
     if test.returncode != 0:
-        return {
-            "ok": False,
-            "connection_id": connection_id,
-            "connection_identity_redacted": _connection_identity_redacted(connection_id),
-            "connection_id_source": connection_id_source,
-            "failure_class": "OMNIROUTE_PROVIDER_TEST_FAILURE",
-        }
+        test_payload = _parse_json_object(test.stdout)
+        unsupported = (
+            isinstance(test_payload, dict)
+            and test_payload.get("skipped") is True
+            and str(test_payload.get("error") or "").strip()
+            == "Provider test not supported"
+        )
+        if unsupported:
+            # OmniRoute 3.8.50's CLI probe table does not include NVIDIA.
+            # This is a probe-capability gap, not evidence that the connection
+            # is unhealthy. The exact connection is still required to pass the
+            # dedicated routed canary before admission to the bounded combo.
+            provider_test_status = "UNSUPPORTED_SKIPPED_TO_DEDICATED_CANARY"
+        else:
+            return {
+                "ok": False,
+                "connection_id": connection_id,
+                "connection_identity_redacted": _connection_identity_redacted(connection_id),
+                "connection_id_source": connection_id_source,
+                "provider_test_status": "FAIL",
+                "failure_class": "OMNIROUTE_PROVIDER_TEST_FAILURE",
+            }
     return {
         "ok": True,
         "connection_id": connection_id,
         "connection_identity_redacted": _connection_identity_redacted(connection_id),
         "connection_id_source": connection_id_source,
+        "provider_test_status": provider_test_status,
         "failure_class": None,
     }
 
