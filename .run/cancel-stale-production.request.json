@@ -1,7 +1,7 @@
 {
   "schema": "cancel-stale-production/v1",
-  "run_id": 36369750277,
-  "expected_head_sha": "1d2059a7a6c6c4b643eb87fcb5788a8d46464581",
-  "reason": "contain production-planning semantic contract successor storm before canonical presentation-to-production-plan normalization fix",
-  "requested_by": "durable-resume-causal-containment"
+  "run_id": 36371183882,
+  "expected_head_sha": "acada7354b9476741880a37ffd7aadb5fcdae53f",
+  "reason": "contain confirmed durable successor storm before transactional logical-continuation identity and dedupe hardening",
+  "requested_by": "durable-execution-model-proof"
 }
