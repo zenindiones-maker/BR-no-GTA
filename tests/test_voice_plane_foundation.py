@@ -5,8 +5,6 @@ from pathlib import Path
 import pytest
 
 from app.services.channel_spoken_branding_service import (
-    ALLOW_LEGACY_VOICE_B_FALLBACK,
-    LEGACY_CONTROL_VOICE_BLIND_ID,
     OFFICIAL_PROVIDER,
     OFFICIAL_VOICE_BLIND_ID,
     OFFICIAL_VOICE_IDENTITY_ID,
@@ -38,13 +36,11 @@ from app.services.voice_egress_policy import apply_voice_egress_policy
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_owner_voice_is_canonical_and_legacy_voice_b_is_runtime_disabled():
+def test_owner_voice_is_canonical_and_selected():
     assert OFFICIAL_VOICE_IDENTITY_ID == "BR_OWNER_V1"
     assert OFFICIAL_VOICE_BLIND_ID == "BR_OWNER_V1"
     assert OFFICIAL_VOICE_SHORT_NAME == "BR_OWNER_V1"
     assert OFFICIAL_PROVIDER == "private-voice-runtime"
-    assert LEGACY_CONTROL_VOICE_BLIND_ID == "Voice B"
-    assert ALLOW_LEGACY_VOICE_B_FALLBACK is False
     enrollment = json.loads(
         (ROOT / "config/voice_owner_enrollment_v1.json").read_text(encoding="utf-8")
     )
@@ -53,8 +49,7 @@ def test_owner_voice_is_canonical_and_legacy_voice_b_is_runtime_disabled():
     assert enrollment["declared_reference_count"] == 9
     assert enrollment["reference_source"] == "TELEGRAM"
     assert enrollment["official_voice"] == "BR_OWNER_V1"
-    assert enrollment["legacy_voice_b_runtime_enabled"] is False
-    assert enrollment["legacy_voice_b_fallback_allowed"] is False
+    assert enrollment["active_voice_identities"] == ["BR_OWNER_V1"]
     assert enrollment["voice_selection_basis"] == "EXPLICIT_OWNER_INSTRUCTION"
     assert official_voice_promotion_allowed(
         consent=ConsentStatus.APPROVED,
