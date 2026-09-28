@@ -13,6 +13,7 @@ from app.services.capability_execution_contract_service import (
     CAN_PRODUCE_ARTIFACT_REFS,
     CAN_SEMANTIC_REASONING,
     OUTPUT_CONTRACT_YOUTUBE_SPECIALIST_RESULT_V1,
+    OUTPUT_CONTRACT_SCRIPT_REVIEW_RESULT_V1,
 )
 
 
@@ -50,6 +51,9 @@ _SPECS = (
 def youtube_department_records() -> tuple[CapabilityRecord, ...]:
     records: list[CapabilityRecord] = []
     for capability_id, agent_id, action, tags in _SPECS:
+        is_script_review = (
+            capability_id == "youtube.department.script-review"
+        )
         records.append(
             CapabilityRecord(
                 capability_id=capability_id,
@@ -84,8 +88,18 @@ def youtube_department_records() -> tuple[CapabilityRecord, ...]:
                     CAN_PRODUCE_ARTIFACT_REFS,
                 ),
                 execution_kind="SEMANTIC_REASONER",
+                functional_roles=(
+                    ("EDITORIAL_REVIEW",)
+                    if is_script_review
+                    else ()
+                ),
                 output_contract_ids=(
-                    OUTPUT_CONTRACT_YOUTUBE_SPECIALIST_RESULT_V1,
+                    (
+                        OUTPUT_CONTRACT_YOUTUBE_SPECIALIST_RESULT_V1,
+                        OUTPUT_CONTRACT_SCRIPT_REVIEW_RESULT_V1,
+                    )
+                    if is_script_review
+                    else (OUTPUT_CONTRACT_YOUTUBE_SPECIALIST_RESULT_V1,)
                 ),
             )
         )

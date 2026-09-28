@@ -18,6 +18,8 @@ EFFECT_HUMAN_MESSAGE_DELIVERY = "HUMAN_MESSAGE_DELIVERY"
 SURFACE_TELEGRAM_GROUP = "telegram_group"
 OUTPUT_CONTRACT_TELEGRAM_DELIVERY_RECEIPT_V1 = "TelegramDeliveryReceipt/v1"
 OUTPUT_CONTRACT_YOUTUBE_SPECIALIST_RESULT_V1 = "YouTubeSpecialistResult/v1"
+OUTPUT_CONTRACT_EDITORIAL_SCRIPT_BUNDLE_V1 = "EditorialScriptBundle/v1"
+OUTPUT_CONTRACT_SCRIPT_REVIEW_RESULT_V1 = "ScriptReviewResult/v1"
 
 ALL_EXECUTION_OPERATIONS = frozenset({
     CAN_SEMANTIC_REASONING,
@@ -111,7 +113,73 @@ _CANONICAL_ROLE_OPERATIONS = {
         CAN_CONSUME_ARTIFACT_REFS,
         CAN_PRODUCE_ARTIFACT_REFS,
     }),
+    "EDITORIAL_GENERATION": frozenset({
+        CAN_SEMANTIC_REASONING,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    }),
+    "EDITORIAL_REVIEW": frozenset({
+        CAN_SEMANTIC_REASONING,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    }),
 }
+
+
+def _editorial_contract_role(requirement: dict[str, Any]) -> str | None:
+    action = str(
+        requirement.get("action")
+        or requirement.get("authorized_action")
+        or ""
+    ).strip().upper()
+    if action != "EDITORIAL":
+        return None
+    task_class = str(
+        requirement.get("task_class") or ""
+    ).strip().casefold()
+    text = " ".join(
+        str(requirement.get(key) or "").strip().casefold()
+        for key in (
+            "task_id",
+            "task_class",
+            "objective",
+            "query",
+            "required_capability_description",
+            "expected_output",
+        )
+    )
+    script_markers = (
+        "script",
+        "scriptspec",
+        "script spec",
+        "contentitem",
+        "content item",
+        "roteiro",
+    )
+    has_script_contract = any(marker in text for marker in script_markers)
+    if not has_script_contract:
+        return None
+    review_markers = ("review", "reviewer", "revis", "critique")
+    if "review" in task_class or any(
+        marker in text for marker in review_markers
+    ):
+        return "EDITORIAL_REVIEW"
+    generation_markers = (
+        "produce",
+        "generate",
+        "create",
+        "write",
+        "natural pt-br script",
+        "ready for production planning",
+        "produzir",
+        "gerar",
+        "escrever",
+    )
+    if task_class == "editorial" or any(
+        marker in text for marker in generation_markers
+    ):
+        return "EDITORIAL_GENERATION"
+    return None
 
 
 def infer_functional_role(requirement: dict[str, Any]) -> str:
@@ -142,6 +210,9 @@ def infer_functional_role(requirement: dict[str, Any]) -> str:
             return "APPLY"
     if explicit and explicit != "GENERAL":
         return explicit
+    editorial_role = _editorial_contract_role(requirement)
+    if editorial_role:
+        return editorial_role
     expected_output = str(
         requirement.get("expected_output") or ""
     ).strip()
@@ -163,40 +234,27 @@ def infer_functional_role(requirement: dict[str, Any]) -> str:
 
 
 def _is_editorial_review_requirement(requirement: dict[str, Any]) -> bool:
-    task_class = str(requirement.get("task_class") or "").strip().casefold()
-    action = str(
-        requirement.get("action")
-        or requirement.get("authorized_action")
-        or ""
-    ).strip().upper()
-    text = " ".join(
-        str(requirement.get(key) or "").strip().casefold()
-        for key in (
-            "task_class",
-            "objective",
-            "query",
-            "required_capability_description",
-            "expected_output",
+    return _editorial_contract_role(requirement) == "EDITORIAL_REVIEW"
+
+
+def infer_required_output_contract_ids(
+    requirement: dict[str, Any],
+) -> tuple[str, ...]:
+    explicit = tuple(
+        str(item).strip()
+        for item in (
+            requirement.get("required_output_contract_ids") or ()
         )
+        if str(item).strip()
     )
-    return bool(
-        "review" in task_class
-        and (
-            action == "EDITORIAL"
-            or any(
-                marker in text
-                for marker in (
-                    "youtube",
-                    "script",
-                    "roteiro",
-                    "editorial",
-                    "content",
-                    "conteudo",
-                    "conteúdo",
-                )
-            )
-        )
-    )
+    if explicit:
+        return explicit
+    role = infer_functional_role(requirement)
+    if role == "EDITORIAL_GENERATION":
+        return (OUTPUT_CONTRACT_EDITORIAL_SCRIPT_BUNDLE_V1,)
+    if role == "EDITORIAL_REVIEW":
+        return (OUTPUT_CONTRACT_SCRIPT_REVIEW_RESULT_V1,)
+    return ()
 
 
 def infer_required_execution_kind(
@@ -218,6 +276,8 @@ def infer_required_execution_kind(
         "APPLY": EXECUTION_KIND_MUTATION_EXECUTOR,
         "VALIDATE": EXECUTION_KIND_VALIDATOR,
         "PRESENTATION": EXECUTION_KIND_PRESENTATION,
+        "EDITORIAL_GENERATION": EXECUTION_KIND_SEMANTIC_REASONER,
+        "EDITORIAL_REVIEW": EXECUTION_KIND_SEMANTIC_REASONER,
     }
     if role == "REVIEW" and _is_editorial_review_requirement(requirement):
         # Editorial/script review is a YouTube domain task, not the

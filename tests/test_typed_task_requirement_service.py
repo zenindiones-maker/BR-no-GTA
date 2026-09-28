@@ -8,6 +8,8 @@ from app.services.capability_execution_contract_service import (
     CAN_CONSUME_ARTIFACT_REFS,
     CAN_PRODUCE_ARTIFACT_REFS,
     EFFECT_HUMAN_MESSAGE_DELIVERY,
+    OUTPUT_CONTRACT_EDITORIAL_SCRIPT_BUNDLE_V1,
+    OUTPUT_CONTRACT_SCRIPT_REVIEW_RESULT_V1,
     OUTPUT_CONTRACT_TELEGRAM_DELIVERY_RECEIPT_V1,
     SURFACE_TELEGRAM_GROUP,
 )
@@ -159,3 +161,84 @@ def test_dynamic_youtube_specialist_has_non_telegram_typed_output_contract():
     assert record.execution_effects == ()
     assert record.execution_surfaces == ()
     assert record.output_contract_ids == ("YouTubeSpecialistResult/v1",)
+
+
+def _single_editorial_proposal(
+    *,
+    task_class: str,
+    objective: str,
+    expected_output: str,
+    candidate: str,
+) -> MissionPlanProposal:
+    return MissionPlanProposal(
+        interpreted_goal="Bounded editorial contract proof",
+        assumptions=(),
+        required_outcomes=("typed editorial result",),
+        tasks=(
+            MissionTaskProposal(
+                task_id="editorial-contract",
+                objective=objective,
+                task_class=task_class,
+                required_capability_description=objective,
+                candidate_capability_ids=(candidate,),
+                dependencies=("fact-check",),
+                expected_output=expected_output,
+                acceptance_criteria=("typed result",),
+                risk_side_effect_class="READ_ONLY",
+                action="EDITORIAL",
+            ),
+        ),
+        rationale="Typed editorial role proof.",
+        context_usage_notes=(),
+        uncertainty=0.1,
+        needs_human_clarification=False,
+    )
+
+
+def test_editorial_generation_and_review_are_distinct_typed_contracts():
+    generation = proposal_requirements(
+        _single_editorial_proposal(
+            task_class="editorial",
+            objective=(
+                "Produce a natural PT-BR script with ScriptSpec and "
+                "ContentItem ready for production planning"
+            ),
+            expected_output="/artifacts/editorial_script.json",
+            candidate="editorial.process",
+        ),
+        product_contract_digest=PRODUCT_DIGEST,
+    )[0]
+    review = proposal_requirements(
+        _single_editorial_proposal(
+            task_class="script-review",
+            objective="Review the PT-BR script and return required changes",
+            expected_output="ScriptReviewResult",
+            candidate="youtube.department.script-review",
+        ),
+        product_contract_digest=PRODUCT_DIGEST,
+    )[0]
+
+    assert generation["functional_role"] == "EDITORIAL_GENERATION"
+    assert generation["required_execution_kind"] == "SEMANTIC_REASONER"
+    assert generation["required_output_contract_ids"] == [
+        OUTPUT_CONTRACT_EDITORIAL_SCRIPT_BUNDLE_V1
+    ]
+    assert review["functional_role"] == "EDITORIAL_REVIEW"
+    assert review["required_execution_kind"] == "SEMANTIC_REASONER"
+    assert review["required_output_contract_ids"] == [
+        OUTPUT_CONTRACT_SCRIPT_REVIEW_RESULT_V1
+    ]
+
+    generator = GLOBAL_CAPABILITY_REGISTRY.get("editorial.process")
+    reviewer = GLOBAL_CAPABILITY_REGISTRY.get(
+        "youtube.department.script-review"
+    )
+    assert generator is not None and reviewer is not None
+    assert generator.functional_roles == ("EDITORIAL_GENERATION",)
+    assert OUTPUT_CONTRACT_EDITORIAL_SCRIPT_BUNDLE_V1 in (
+        generator.output_contract_ids
+    )
+    assert reviewer.functional_roles == ("EDITORIAL_REVIEW",)
+    assert OUTPUT_CONTRACT_SCRIPT_REVIEW_RESULT_V1 in (
+        reviewer.output_contract_ids
+    )

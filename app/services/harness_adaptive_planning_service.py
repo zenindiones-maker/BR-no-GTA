@@ -23,6 +23,7 @@ from app.services.capability_execution_contract_service import (
     functional_role_rejection,
     infer_functional_role,
     infer_required_execution_kind,
+    infer_required_output_contract_ids,
     effective_candidate_requirement as execution_candidate_requirement,
     effective_side_effect_class as execution_side_effect_class,
     EFFECT_HUMAN_MESSAGE_DELIVERY,
@@ -1133,13 +1134,30 @@ def _candidate_hint_is_hard_compatible(
     }
     effective_action = _effective_requirement_action(task_requirement)
     task_requirement["action"] = effective_action
+    required_operations = derive_required_operations(task_requirement)
+    task_requirement["required_operations"] = list(required_operations)
+    required_functional_role = infer_functional_role(task_requirement)
+    required_execution_kind = infer_required_execution_kind(
+        task_requirement
+    )
+    required_output_contract_ids = infer_required_output_contract_ids(
+        task_requirement
+    )
     if not _record_domain_compatible(record, task_requirement):
         return False
     if effective_action not in record.allowed_actions:
         return False
     if _semantic_task_contract_rejection(record, task_requirement):
         return False
-    required_operations = derive_required_operations(task_requirement)
+    if functional_role_rejection(record, required_functional_role):
+        return False
+    if execution_kind_rejection(record, required_execution_kind):
+        return False
+    if capability_output_contract_rejection(
+        record,
+        required_output_contract_ids,
+    ):
+        return False
     if capability_execution_contract_rejection(record, required_operations):
         return False
     required_side_effect = execution_side_effect_class(
@@ -1647,7 +1665,11 @@ def proposal_requirements(
         required_output_contract_ids = (
             (OUTPUT_CONTRACT_TELEGRAM_DELIVERY_RECEIPT_V1,)
             if telegram_delivery
-            else ()
+            else infer_required_output_contract_ids({
+                **seed,
+                "action": str(seed["action"]),
+                "required_operations": list(required_operations),
+            })
         )
         required_domain = "telegram-outbound" if telegram_delivery else None
         required_domain_family = "telegram" if telegram_delivery else None

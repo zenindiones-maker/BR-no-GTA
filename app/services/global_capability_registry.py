@@ -28,6 +28,7 @@ from app.services.capability_execution_contract_service import (
     CAN_WRITE_REPOSITORY,
     EFFECT_HUMAN_MESSAGE_DELIVERY,
     OUTPUT_CONTRACT_TELEGRAM_DELIVERY_RECEIPT_V1,
+    OUTPUT_CONTRACT_EDITORIAL_SCRIPT_BUNDLE_V1,
     SURFACE_TELEGRAM_GROUP,
 )
 from app.services.media_analysis_cloud_service import (
@@ -1460,6 +1461,11 @@ for _capability_id, _metadata in {
             CAN_SEMANTIC_REASONING,
             CAN_CONSUME_ARTIFACT_REFS,
             CAN_PRODUCE_ARTIFACT_REFS,
+        ),
+        "execution_kind": "SEMANTIC_REASONER",
+        "functional_roles": ("EDITORIAL_GENERATION",),
+        "output_contract_ids": (
+            OUTPUT_CONTRACT_EDITORIAL_SCRIPT_BUNDLE_V1,
         ),
     },
     "production.plan": {
