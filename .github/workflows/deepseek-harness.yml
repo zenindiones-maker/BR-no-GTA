@@ -14,6 +14,15 @@ on:
       - 'app/services/gta6_brain_harness_service.py'
       - 'app/services/gta6_master_agent.py'
       - 'app/services/harness_*'
+      - 'app/services/mission_product_contract_service.py'
+      - 'app/services/typed_task_requirement_service.py'
+      - 'app/services/capability_execution_contract_service.py'
+      - 'app/services/global_capability_registry.py'
+      - 'app/services/global_capability_registry_base.py'
+      - 'app/services/youtube_department_service.py'
+      - 'app/services/production_mission_capability_adapters.py'
+      - 'tests/test_mission_product_contract_service.py'
+      - 'tests/test_typed_task_requirement_service.py'
   workflow_dispatch:
 
 permissions:
