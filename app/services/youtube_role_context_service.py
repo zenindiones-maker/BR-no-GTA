@@ -215,7 +215,7 @@ def build_production_packet(
     verified_facts = [
         {
             "claim_id": item.get("claim_id"),
-            "statement": str(item.get("statement") or "")[:420],
+            "statement": str(item.get("statement") or "")[:220],
             "verification_status": item.get("verification_status"),
             "fact_check_result": item.get("fact_check_result"),
         }
@@ -223,11 +223,15 @@ def build_production_packet(
         if isinstance(item, dict)
     ]
 
-    script_limit = 10_500
-    script_projection_text = script_text if len(script_text) <= script_limit else script_text[:script_limit]
+    script_complete_limit = 12_000
+    script_truncated_limit = 6_000
+    script_is_complete = len(script_text) <= script_complete_limit
+    script_projection_text = (
+        script_text if script_is_complete else script_text[:script_truncated_limit]
+    )
     script_projection = {
         "text": script_projection_text,
-        "is_complete": len(script_text) <= script_limit,
+        "is_complete": script_is_complete,
         "projected_chars": len(script_projection_text),
         "canonical_chars": len(script_text),
         "canonical_artifact_ref": f"db:scripts:{script_id}",
@@ -247,40 +251,27 @@ def build_production_packet(
                 claim_scene_map.setdefault(ref.removeprefix("claim:"), []).append(order)
 
         searches = [
-            str(term).strip()[:90]
+            str(term).strip()[:50]
             for term in (scene.get("media_search_terms") or ())
             if str(term).strip()
-        ][:2]
-        visual_description = str(scene.get("visual_description") or "").strip()[:180]
-        requirements = [
-            str(item).strip()[:120]
-            for item in (scene.get("requirements") or ())
-            if str(item).strip()
-        ][:2]
+        ][:1]
         row = {
             "order": order,
-            "block": str(scene.get("narrative_block") or "")[:80],
-            "seconds": round(float(scene.get("duration_seconds") or 0.0), 3),
+            "block": str(scene.get("narrative_block") or "")[:45],
+            "seconds": round(float(scene.get("duration_seconds") or 0.0), 2),
             "visual_type": scene.get("visual_type"),
-            "visual_description": visual_description or None,
+            "visual_description": str(
+                scene.get("visual_description") or ""
+            ).strip()[:20],
             "media_search_terms": searches,
-            "evidence_refs": evidence_refs,
+            "evidence_refs": evidence_refs[:2],
             "claim_mode": (
                 "VERIFIED_CLAIM_BOUND"
                 if evidence_refs
                 else "ANALYSIS_OR_TRANSITION_NO_NEW_FACT_CLAIM"
             ),
-            "asset_ref": scene.get("asset_ref"),
-            "source_url": scene.get("source_url"),
-            "requirements": requirements,
         }
-        scene_rows.append(
-            {
-                key: value
-                for key, value in row.items()
-                if value not in (None, "", [], {})
-            }
-        )
+        scene_rows.append(row)
 
     official_source_urls: list[str] = []
     for claim in claims:
@@ -298,7 +289,7 @@ def build_production_packet(
         if str(item).strip()
     ][:6]
     visual_requirements = [
-        str(item)[:240]
+        str(item)[:160]
         for item in (production_plan.get("visual_requirements") or ())
     ][:6]
 
@@ -326,8 +317,8 @@ def build_production_packet(
         },
         "title": str(production_plan.get("title") or "")[:220],
         "editorial_summary": {
-            "angle": str(strategy_output.get("angle") or "")[:420],
-            "promise": str(strategy_output.get("promise") or "")[:320],
+            "angle": str(strategy_output.get("angle") or "")[:280],
+            "promise": str(strategy_output.get("promise") or "")[:220],
             "verified_facts": verified_facts,
         },
         "script_projection": script_projection,
