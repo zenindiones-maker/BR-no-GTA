@@ -13,6 +13,7 @@ fi
 tooling_root="${BR_AGENT_TOOLING_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/br-agent-tooling}"
 mkdir -p "$tooling_root"
 tooling_root="$(cd "$tooling_root" && pwd)"
+mkdir -p "$tooling_root/bin"
 export PATH="$tooling_root/bin:$PATH"
 if [[ -n "${GITHUB_PATH:-}" ]]; then printf '%s\n' "$tooling_root/bin" >> "$GITHUB_PATH"; fi
 

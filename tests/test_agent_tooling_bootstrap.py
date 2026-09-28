@@ -17,6 +17,13 @@ def test_bootstrap_exposes_pinned_claude_code_mode():
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in text
 
 
+def test_claude_install_target_exists_before_binary_install():
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+    mkdir_index = text.index('mkdir -p "$tooling_root/bin"')
+    install_index = text.index('install -m 0755 "$tmpdir/claude" "$tooling_root/bin/claude-$version"')
+    assert mkdir_index < install_index
+
+
 def test_claude_only_mode_does_not_require_node_or_npm():
     text = BOOTSTRAP.read_text(encoding="utf-8")
     assert 'if [[ "$mode" = all || "$mode" = codex || "$mode" = higgsfield ]]; then' in text
@@ -24,5 +31,6 @@ def test_claude_only_mode_does_not_require_node_or_npm():
 
 if __name__ == "__main__":
     test_bootstrap_exposes_pinned_claude_code_mode()
+    test_claude_install_target_exists_before_binary_install()
     test_claude_only_mode_does_not_require_node_or_npm()
     print("CLAUDE_CODE_BOOTSTRAP_CONTRACT=PASS")
