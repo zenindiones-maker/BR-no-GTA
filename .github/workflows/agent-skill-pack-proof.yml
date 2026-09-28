@@ -12,6 +12,7 @@ on:
       - 'scripts/agent-tooling/sync_agent_skill_pack.py'
       - 'scripts/agent-tooling/bootstrap_dsh_skill_pack.sh'
       - 'scripts/agent-tooling/prove_superpowers_provider.mjs'
+      - 'scripts/agent-tooling/prove_dsh_local_skill_discovery.mjs'
       - '.dsh/skills/tdd/**'
       - '.dsh/skills/teach/**'
       - '.dsh/skills/handoff/**'
@@ -66,6 +67,11 @@ jobs:
               if local.is_dir():
                   print(f"SKILL_DIGEST {entry.skill_id} {module.skill_tree_digest(local)}")
           PY
+
+      - name: Verify vendored skills against exact upstream pins
+        run: |
+          set -euo pipefail
+          python scripts/agent-tooling/sync_agent_skill_pack.py --verify-upstream
 
       - name: Run agent skill pack and inventory contract tests
         run: |
