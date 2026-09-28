@@ -1,0 +1,111 @@
+name: Owner Voice Private Materialization
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".github/workflows/owner-voice-private-materialization.yml"
+      - "app/services/owner_voice_private_materialization_service.py"
+      - "app/services/owner_voice_telegram_handoff_service.py"
+      - "scripts/owner_voice_private_materialization.py"
+      - "scripts/owner_voice_reference_handoff.py"
+      - "tests/test_owner_voice_private_materialization.py"
+      - "tests/test_owner_voice_reference_handoff.py"
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Owner voice private materialization contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install focused test dependency
+        run: python -m pip install --disable-pip-version-check -q pytest
+
+      - name: Prove secure handoff and private boundary
+        run: |
+          set -euo pipefail
+          python -m pytest -q             tests/test_owner_voice_reference_handoff.py             tests/test_owner_voice_private_materialization.py
+          echo "OWNER_VOICE_PRIVATE_MATERIALIZATION_CONTRACT=PASS"
+
+  materialize:
+    name: Materialize real Telegram owner references
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      BR_OWNER_TELEGRAM_REFERENCE_INDEX: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_INDEX }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      BR_VOICE_RUNTIME_URL: ${{ secrets.BR_VOICE_RUNTIME_URL }}
+      BR_VOICE_RUNTIME_TOKEN: ${{ secrets.BR_VOICE_RUNTIME_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Secret presence preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${BR_OWNER_TELEGRAM_REFERENCE_INDEX:-}" ]]; then
+            echo "OWNER_REFERENCE_INDEX_PRESENT=true"
+          else
+            echo "OWNER_REFERENCE_INDEX_PRESENT=false"
+            exit 21
+          fi
+          if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+            echo "TELEGRAM_BOT_TOKEN_PRESENT=true"
+          else
+            echo "TELEGRAM_BOT_TOKEN_PRESENT=false"
+            exit 22
+          fi
+          if [[ -n "${BR_VOICE_RUNTIME_URL:-}" ]]; then
+            echo "BR_VOICE_RUNTIME_URL_PRESENT=true"
+          else
+            echo "BR_VOICE_RUNTIME_URL_PRESENT=false"
+          fi
+          if [[ -n "${BR_VOICE_RUNTIME_TOKEN:-}" ]]; then
+            echo "BR_VOICE_RUNTIME_TOKEN_PRESENT=true"
+          else
+            echo "BR_VOICE_RUNTIME_TOKEN_PRESENT=false"
+          fi
+
+      - name: Download real owner references outside repository
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python scripts/owner_voice_private_materialization.py
+
+      - name: Verify repository contains no downloaded owner audio
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain --untracked-files=all -- '*.wav' '*.flac' '*.ogg' '*.oga' '*.opus' '*.mp3' '*.m4a')"
+          echo "RAW_OWNER_AUDIO_IN_GIT=0"
+
+      - name: Upload redacted materialization evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: owner-voice-private-materialization-evidence
+          path: runtime/owner-voice-materialization/
+          if-no-files-found: warn
+          retention-days: 7
