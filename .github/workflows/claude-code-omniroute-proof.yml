@@ -97,6 +97,92 @@ jobs:
           cat /tmp/omniroute-claude.log || true
           exit 1
 
+      - name: Probe OmniRoute Anthropic Messages endpoint
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/claude-omniroute
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import urllib.error
+          import urllib.request
+
+          root = Path("runtime/claude-omniroute")
+          request_body = {
+              "model": os.environ["HARNESS_SELECTED_MODEL"],
+              "max_tokens": 128,
+              "stream": False,
+              "messages": [
+                  {
+                      "role": "user",
+                      "content": "Return exactly this marker and nothing else: OMNIROUTE_ANTHROPIC_MESSAGES_OK",
+                  }
+              ],
+          }
+          req = urllib.request.Request(
+              os.environ["ANTHROPIC_BASE_URL"] + "/v1/messages",
+              data=json.dumps(request_body).encode("utf-8"),
+              headers={
+                  "content-type": "application/json",
+                  "anthropic-version": "2023-06-01",
+                  "authorization": "Bearer " + os.environ["ANTHROPIC_AUTH_TOKEN"],
+              },
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=180) as response:
+                  raw = response.read().decode("utf-8", errors="replace")
+                  http_status = int(response.status)
+              payload = json.loads(raw)
+              blocks = payload.get("content") if isinstance(payload, dict) else None
+              text_parts = []
+              if isinstance(blocks, list):
+                  for block in blocks:
+                      if isinstance(block, dict) and block.get("type") == "text":
+                          value = block.get("text")
+                          if isinstance(value, str):
+                              text_parts.append(value)
+              text = "".join(text_parts).strip()
+              passed = 200 <= http_status < 300 and bool(text)
+              evidence = {
+                  "schema": "OmniRouteAnthropicMessagesProbe/v1",
+                  "status": "PASS" if passed else "FAIL",
+                  "http_status": http_status,
+                  "provider": os.environ["HARNESS_SELECTED_PROVIDER"],
+                  "requested_model": os.environ["HARNESS_SELECTED_MODEL"],
+                  "reported_model": payload.get("model") if isinstance(payload, dict) else None,
+                  "response_type": payload.get("type") if isinstance(payload, dict) else None,
+                  "nonempty_text": bool(text),
+                  "body_sha256": hashlib.sha256(raw.encode()).hexdigest(),
+              }
+          except urllib.error.HTTPError as exc:
+              raw = exc.read().decode("utf-8", errors="replace")
+              try:
+                  error_payload = json.loads(raw)
+              except json.JSONDecodeError:
+                  error_payload = {}
+              error = error_payload.get("error") if isinstance(error_payload, dict) else None
+              evidence = {
+                  "schema": "OmniRouteAnthropicMessagesProbe/v1",
+                  "status": "FAIL",
+                  "http_status": int(exc.code),
+                  "provider": os.environ["HARNESS_SELECTED_PROVIDER"],
+                  "requested_model": os.environ["HARNESS_SELECTED_MODEL"],
+                  "error_type": error.get("type") if isinstance(error, dict) else None,
+                  "error_code": error.get("code") if isinstance(error, dict) else None,
+                  "body_sha256": hashlib.sha256(raw.encode()).hexdigest(),
+              }
+          (root / "gateway-probe.json").write_text(
+              json.dumps(evidence, sort_keys=True), encoding="utf-8"
+          )
+          print("OMNIROUTE_ANTHROPIC_MESSAGES_STATUS=" + evidence["status"])
+          print("OMNIROUTE_ANTHROPIC_MESSAGES_HTTP=" + str(evidence.get("http_status")))
+          if evidence["status"] != "PASS":
+              raise SystemExit("OmniRoute Anthropic Messages probe failed")
+          PY
+
       - name: Execute Claude Code through governed OmniRoute
         env:
           CLAUDE_CONFIG_DIR: ${{ runner.temp }}/claude-omniroute-config
@@ -131,12 +217,74 @@ jobs:
               raise SystemExit(f"invalid Claude Code JSON output: {exc}")
           result = payload.get("result")
           if rc != 0 or not isinstance(result, str) or not result.strip():
-              safe = "\n".join(
-                  line[:400]
+              import re
+
+              def redact(value):
+                  text = str(value or "")
+                  text = re.sub(
+                      r"(?i)(authorization:|bearer\\s+|api[_-]?key|token=)[^\\s,;]*",
+                      "[REDACTED]",
+                      text,
+                  )
+                  text = re.sub(
+                      r"(?i)(sk-|oma_live_)[A-Za-z0-9._-]{8,}",
+                      "[REDACTED]",
+                      text,
+                  )
+                  return text
+
+              safe_lines = [
+                  redact(line[:500])
                   for line in stderr.splitlines()
-                  if not any(term in line.lower() for term in ("authorization:", "bearer ", "api_key", "token="))
+              ][-30:]
+              gateway_log_path = Path("/tmp/omniroute-claude.log")
+              gateway_log = (
+                  gateway_log_path.read_text(encoding="utf-8", errors="replace")
+                  if gateway_log_path.exists()
+                  else ""
               )
-              raise SystemExit(f"Claude Code OmniRoute execution failed rc={rc}: {safe[-2000:]}")
+              gateway_error_lines = [
+                  redact(line[:500])
+                  for line in gateway_log.splitlines()
+                  if any(
+                      term in line.lower()
+                      for term in ("/v1/messages", "error", "failed", "oc/big-pickle")
+                  )
+              ][-30:]
+              failure = {
+                  "schema": "ClaudeCodeOmniRouteProof/v1",
+                  "status": "FAILED",
+                  "authority": "DEEPSEEK_HARNESS",
+                  "executor": "claude-code",
+                  "claude_code_version": "2.1.283",
+                  "gateway": "omniroute",
+                  "omniroute_version": "3.8.50",
+                  "provider": os.environ["HARNESS_SELECTED_PROVIDER"],
+                  "model": os.environ["HARNESS_SELECTED_MODEL"],
+                  "base_url": os.environ["ANTHROPIC_BASE_URL"],
+                  "auth_class": "LOCAL_LOOPBACK_SENTINEL",
+                  "model_discovery": False,
+                  "fallback_occurred": False,
+                  "tools_exposed": 0,
+                  "repository_mutation": False,
+                  "claude_return_code": rc,
+                  "claude_payload_type": payload.get("type") if isinstance(payload, dict) else None,
+                  "claude_payload_subtype": payload.get("subtype") if isinstance(payload, dict) else None,
+                  "claude_is_error": payload.get("is_error") if isinstance(payload, dict) else None,
+                  "claude_result": redact(payload.get("result") if isinstance(payload, dict) else "")[:2000],
+                  "model_usage": payload.get("modelUsage") if isinstance(payload, dict) else None,
+                  "stderr_diagnostics": safe_lines,
+                  "gateway_log_sha256": hashlib.sha256(gateway_log.encode()).hexdigest(),
+                  "gateway_error_lines": gateway_error_lines,
+                  "stdout_sha256": hashlib.sha256(stdout.encode()).hexdigest(),
+                  "stderr_sha256": hashlib.sha256(stderr.encode()).hexdigest(),
+              }
+              (root / "result.json").write_text(
+                  json.dumps(failure, sort_keys=True), encoding="utf-8"
+              )
+              print("CLAUDE_CODE_OMNIROUTE_RUNTIME_PROOF=FAIL")
+              print("CLAUDE_CODE_FAILURE_RESULT=" + failure["claude_result"][:1000])
+              raise SystemExit(f"Claude Code OmniRoute execution failed rc={rc}")
           evidence = {
               "schema": "ClaudeCodeOmniRouteProof/v1",
               "status": "EXECUTED",
@@ -164,10 +312,11 @@ jobs:
           PY
 
       - name: Upload proof evidence
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: claude-code-omniroute-proof
-          path: runtime/claude-omniroute/result.json
+          path: runtime/claude-omniroute/
           retention-days: 7
           if-no-files-found: error
 
