@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import app.services.harness_adaptive_planning_service as adaptive_service
 from app.services.harness_adaptive_planning_service import (
     _relevant_registry_summary,
@@ -673,7 +675,9 @@ def test_presentation_task_that_outputs_production_plan_is_normalized_before_sel
     assert normalized.tasks[0].expected_output == "ProductionPlan"
 
 
-def test_presentation_task_with_compound_production_plan_output_is_normalized():
+def test_presentation_task_with_compound_production_plan_output_is_normalized(
+    monkeypatch,
+):
     canonical = _proposal(candidate_id="")
     canonical["tasks"][0].update({
         "task_id": "production-plan",
@@ -698,9 +702,53 @@ def test_presentation_task_with_compound_production_plan_output_is_normalized():
     assert task_ids == ("production-plan",)
     assert normalized.tasks[0].task_class == "production-planning"
     assert "ProductionPlan" in normalized.tasks[0].expected_output
+
     requirement = adaptive_service.proposal_requirements(normalized)[0]
-    assert requirement["action"] == "PRODUCTION"
     assert requirement["task_family"] == "PRODUCTION"
+    # The canonical production.plan Registry contract intentionally authorizes
+    # this planning phase as EDITORIAL (or legacy EXECUTION), not a new
+    # authority action named PRODUCTION.
+    assert requirement["action"] == "EDITORIAL"
+
+    monkeypatch.setattr(
+        adaptive_service,
+        "_profiled_registry_discover",
+        lambda **_: [{"capability_id": "production.plan"}],
+    )
+    monkeypatch.setattr(
+        adaptive_service,
+        "_profiled_capability_health",
+        lambda capability_id: SimpleNamespace(
+            to_dict=lambda: {
+                "capability_id": capability_id,
+                "state": "HEALTHY",
+                "reason": "focused production-plan selection proof",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        adaptive_service,
+        "_capability_failure_memory",
+        lambda capability_id, context: None,
+    )
+    monkeypatch.setattr(
+        adaptive_service,
+        "_competence_score",
+        lambda record, requirement, context: (0.0, False, None),
+    )
+
+    selected, _, avoided, evidence = select_capability_for_requirement(
+        requirement,
+        context={"mission_class": "GTA6_INTELLIGENCE"},
+        used=set(),
+    )
+    assert selected == "production.plan"
+    assert evidence["effective_action"] == "EDITORIAL"
+    assert evidence["task_family"] == "PRODUCTION"
+    assert not any(
+        item.startswith("production.plan:")
+        for item in avoided
+    )
 
 def test_unsupported_action_fails_closed_before_normalization():
     canonical = _proposal(candidate_id="")
