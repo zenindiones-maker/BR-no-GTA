@@ -1190,12 +1190,11 @@ def _fetch_logs(base_url: str) -> list[dict[str, Any]]:
         raise OmniRouteObservabilityUnavailable(
             f"official management CLI exited {result.returncode}"
         )
-    try:
-        payload = json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
+    payload = _parse_json_object(result.stdout)
+    if payload is None:
         raise OmniRouteObservabilityUnavailable(
-            "official management CLI returned invalid JSON"
-        ) from exc
+            "official management CLI returned invalid or ambiguous JSON"
+        )
     if not isinstance(payload, list) or any(
         not isinstance(item, dict) for item in payload
     ):
