@@ -41,4 +41,12 @@ jobs:
       - name: Focused AgentTube bridge tests
         run: .venv/bin/python -m pytest -q tests/test_agenttube_capability_bridge.py
       - name: Emit machine-readable certification
-        run: .venv/bin/python scripts/agenttube_capability_certification.py
+        run: PYTHONPATH="$GITHUB_WORKSPACE" .venv/bin/python scripts/agenttube_capability_certification.py
+      - name: Upload canonical AgentTube certification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agenttube-capability-certification
+          path: runtime/agenttube-certification.json
+          if-no-files-found: warn
+          retention-days: 14
