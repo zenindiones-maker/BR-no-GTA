@@ -326,6 +326,116 @@ def derive_production_requirement_state(
     }
 
 
+def product_assembly_resume_lineage(
+    *,
+    artifact_dir: str|Path,
+    editorial_progress: dict[str,Any],
+)->dict[str,Any]|None:
+    """Return canonical lineage for direct product assembly after editorial completion.
+
+    This is a durable-state decision only. It never discovers new work and never
+    treats arbitrary historical artifacts as authority: every dependency must be
+    an integrity-valid TaskResultEnvelope explicitly referenced by the completed
+    editorial result.
+    """
+    root=Path(artifact_dir)
+    requirements=derive_production_requirement_state(
+        artifact_dir=root,
+        editorial_progress=editorial_progress,
+    )
+    if requirements.get("next_requirement")!="PRODUCT_ASSEMBLY_REQUIRED":
+        return None
+
+    current=dict(editorial_progress.get("current") or {})
+    if str(current.get("status") or "")!="COMPLETED":
+        raise DurableResumePolicyError(
+            "PRODUCT_ASSEMBLY_REQUIRES_COMPLETED_EDITORIAL"
+        )
+    editorial_ref=str(current.get("task_result_ref") or "").strip()
+    if not editorial_ref.startswith("artifact:task-results/"):
+        raise DurableResumePolicyError(
+            "completed editorial TaskResult ref is invalid"
+        )
+
+    from app.services.task_result_envelope_service import (
+        load_task_result_envelope,
+    )
+    try:
+        editorial=load_task_result_envelope(
+            artifact_dir=root/"hermes",
+            task_result_ref=editorial_ref,
+        )
+    except Exception as exc:
+        raise DurableResumePolicyError(
+            "completed editorial TaskResult integrity validation failed"
+        ) from exc
+
+    mission_id=str(editorial.get("mission_id") or "").strip()
+    if (
+        not mission_id
+        or str(editorial.get("task_id") or "")!="editorial_script"
+        or str(editorial.get("capability_id") or "")!="editorial.process"
+        or str(editorial.get("status") or "")!="COMPLETED"
+    ):
+        raise DurableResumePolicyError(
+            "completed editorial TaskResult identity is invalid"
+        )
+
+    dependency_refs=sorted({
+        str(ref).strip()
+        for ref in (editorial.get("evidence_refs") or ())
+        if str(ref).strip().startswith("artifact:task-results/")
+        and str(ref).strip()!=editorial_ref
+    })
+    if not dependency_refs:
+        raise DurableResumePolicyError(
+            "completed editorial has no cited TaskResult dependencies"
+        )
+
+    dependency_rows=[]
+    for ref in dependency_refs:
+        try:
+            row=load_task_result_envelope(
+                artifact_dir=root/"hermes",
+                task_result_ref=ref,
+            )
+        except Exception as exc:
+            raise DurableResumePolicyError(
+                "completed editorial cited TaskResult is missing or invalid: "
+                +ref
+            ) from exc
+        if (
+            str(row.get("mission_id") or "")!=mission_id
+            or str(row.get("status") or "")!="COMPLETED"
+        ):
+            raise DurableResumePolicyError(
+                "completed editorial cited TaskResult lineage is invalid: "
+                +ref
+            )
+        dependency_rows.append(row)
+
+    payload={
+        "schema":"ProductAssemblyResumeLineage/v1",
+        "authority":"DEEPSEEK_HARNESS",
+        "mission_id":mission_id,
+        "next_requirement":"PRODUCT_ASSEMBLY_REQUIRED",
+        "editorial_task_result_ref":editorial_ref,
+        "editorial_task_result_sha256":str(
+            editorial.get("content_sha256") or ""
+        ),
+        "dependency_task_result_refs":dependency_refs,
+        "dependency_task_result_sha256":sorted(
+            str(row.get("content_sha256") or "")
+            for row in dependency_rows
+        ),
+        "planner_call_required":False,
+        "preproduction_reexecution_required":False,
+        "resume_scope":RESUME_SCOPE,
+    }
+    payload["content_sha256"]=_canonical_sha(payload)
+    return payload
+
+
 def build_production_progress_contract(
     *,
     artifact_dir: str|Path,
