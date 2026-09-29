@@ -1423,6 +1423,34 @@ def handle_telegram_conversation(
                     "execution_id": synthesis.get("execution_id"),
                 },
             }
+    elif plan["kind"] == "CLARIFICATION":
+        question = str(plan.get("question") or "").strip()
+        canonical = {
+            "status": "WAITING_FOR_HUMAN",
+            "answer": question or (
+                "Preciso de uma informação objetiva antes de continuar esta missão."
+            ),
+            "pending_question": question or None,
+            "authority": "DEEPSEEK_HARNESS",
+            "provider_independent_terminal_state": True,
+        }
+    elif plan["kind"] == "MISSION_PLANNING_REJECTED":
+        canonical = {
+            "status": "BLOCKED",
+            "answer": (
+                "O Harness rejeitou a proposta semântica porque ela não satisfez "
+                "os contratos da missão. Nenhuma execução ou chat genérico foi "
+                "usado como substituto."
+            ),
+            "error": {
+                "code": "MISSION_PLANNING_REJECTED",
+                "message": (
+                    "A proposta semântica não passou pela validação do DeepSeek Harness."
+                ),
+            },
+            "authority": "DEEPSEEK_HARNESS",
+            "provider_independent_terminal_state": True,
+        }
     elif plan["kind"] == "SEMANTIC_REASONING_UNAVAILABLE":
         canonical = {
             "status": "BLOCKED",
