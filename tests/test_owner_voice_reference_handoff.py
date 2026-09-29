@@ -7,6 +7,7 @@ import pytest
 
 from app.services.owner_voice_telegram_handoff_service import (
     OWNER_VOICE_REFERENCE_ENVELOPE_SECRET,
+    OwnerVoiceHandoffDebouncer,
     build_owner_voice_reference_index,
     handoff_dispatch_key,
     handoff_reference_index_to_actions,
@@ -134,3 +135,26 @@ def test_empty_reference_index_fails_closed_without_secret_or_dispatch():
             branch="work/gate6f-analytics-learning",
             runner=lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not call gh")),
         )
+
+
+def test_owner_voice_handoff_debouncer_coalesces_burst_and_retries_after_failure():
+    debouncer = OwnerVoiceHandoffDebouncer(
+        quiet_seconds=8.0,
+        retry_seconds=30.0,
+    )
+    assert debouncer.due(100.0) is False
+
+    debouncer.mark_dirty(100.0)
+    assert debouncer.due(107.99) is False
+
+    # A second voice in the burst resets the quiet window.
+    debouncer.mark_dirty(104.0)
+    assert debouncer.due(111.99) is False
+    assert debouncer.due(112.0) is True
+
+    debouncer.mark_failure(112.0)
+    assert debouncer.due(141.99) is False
+    assert debouncer.due(142.0) is True
+
+    debouncer.mark_success()
+    assert debouncer.due(999.0) is False
