@@ -1,7 +1,7 @@
 {
   "request": "continuous-operation-focused",
-  "source_head": "07de877699c268ae061592590638cd2eb13e06b9",
-  "scope": "incident-dedup-aggregate-green",
+  "source_head": "609d0c13a3fa10fa8b88b91e52946bab524fc7f8",
+  "scope": "incident-dedup-executor-integration-red",
   "regression_runs": [
     36572055458,
     36527996798,
@@ -9,5 +9,5 @@
     36433392687,
     36382274106
   ],
-  "expected": "CONTINUOUS_FOCUSED_TESTS=PASS; durable incident aggregate deduplicates same-SHA failure alerts without hiding blocker"
+  "expected": "RED: executor must settle incident aggregate after attempt settlement and before attempt artifact upload"
 }
