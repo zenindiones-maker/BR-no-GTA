@@ -1,0 +1,49 @@
+{
+  "schema": "OwnerVoiceCloneMission/v1",
+  "mission_id": "BR_OWNER_V1_TELEGRAM_PTBR_CLONE",
+  "status": "ACTIVE",
+  "objective": "Clone the human owner's voice from private Telegram voice references and synthesize new text in fluent natural Brazilian Portuguese while preserving the same speaker identity.",
+  "voice_identity_id": "BR_OWNER_V1",
+  "identity_source": {
+    "authority": "HUMAN_OWNER",
+    "transport": "TELEGRAM",
+    "allowed_reference_kinds": ["voice", "audio"],
+    "other_voice_references_allowed": false,
+    "provider_default_voice_allowed": false,
+    "provider_preset_voice_allowed": false,
+    "generic_voice_fallback_allowed": false,
+    "alternate_voice_identity_allowed": false
+  },
+  "language": {
+    "required_locale": "pt-BR",
+    "required_accent": "BRAZILIAN_PORTUGUESE",
+    "pt_PT_allowed": false,
+    "generic_Portuguese_acceptance": false,
+    "foreign_accent_acceptance": false,
+    "human_accent_review_required": true
+  },
+  "reference_selection": {
+    "policy": "QUALITY_FIRST_DETERMINISTIC",
+    "single_speaker_required": true,
+    "speech_required": true,
+    "clean_audio_required": true,
+    "preferred_conditioning_seconds_min": 6.0,
+    "preferred_conditioning_seconds_max": 10.0,
+    "latest_input_wins": false
+  },
+  "synthesis": {
+    "reference_binding_required": true,
+    "text_swap_must_preserve_voice_identity": true,
+    "same_owner_identity_for_opening_body_closing": true,
+    "production_without_bound_owner_reference": "FORBIDDEN"
+  },
+  "promotion_gates": {
+    "human_voice_identity_match": "PASS_REQUIRED",
+    "human_ptbr_fluency": "PASS_REQUIRED",
+    "human_brazilian_accent": "PASS_REQUIRED",
+    "generic_fallback": "MUST_BE_ZERO",
+    "preset_voice_used": "MUST_BE_FALSE",
+    "reference_source": "MUST_BE_TELEGRAM",
+    "production_activation": "BLOCK_UNTIL_ALL_PASS"
+  }
+}
