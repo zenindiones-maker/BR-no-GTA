@@ -1,8 +1,8 @@
 {
-  "request": "typed-semantic-provider-failure-red-v1",
-  "source_head": "7d1a14ebde6176dd8ef2874b4913f08936835324",
-  "objective": "Reproduce the real typed SemanticPlannerProviderFailure at the Telegram SYSTEM_IMPROVEMENT boundary before the causal fix.",
-  "expected_first_state": "RED_ON_TYPED_SEMANTIC_PROVIDER_FAILURE",
+  "request": "semantic-outage-boundary-red-v2",
+  "source_head": "65072af5ecfe4ef248028923aa1b6f9820a20543",
+  "objective": "Prove typed provider failure and terminal semantic outage cannot escape mission planning into generic chat.",
+  "expected_first_state": "RED_ON_TYPED_FAILURE_AND_GENERIC_CHAT_FALLTHROUGH",
   "authority": "DEEPSEEK_HARNESS",
   "publication": false
 }
