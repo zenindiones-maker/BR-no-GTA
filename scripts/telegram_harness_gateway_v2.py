@@ -61,6 +61,10 @@ from app.services.telegram_review_feedback_service import (
     is_render_review_feedback_message,
     record_render_review_feedback,
 )
+from app.services.owner_voice_telegram_handoff_service import (
+    OwnerVoiceHandoffDebouncer,
+    flush_owner_voice_handoff_if_due,
+)
 from scripts.owner_voice_reference_handoff import main as handoff_owner_voice_references
 from scripts.telegram_harness_gateway import (
     STATE_FILE,
@@ -519,7 +523,7 @@ def _attachment_reply(result: dict[str, Any]) -> str:
         f"CLAIM_ID={item.get('claim_id')}",
         f"MEMORY_ID={item.get('memory_id')}",
         f"REMOTE_GETFILE_VERIFIED={item.get('remote_verified')}",
-        f"TELEGRAM_FILE_UNIQUE_ID={item.get('telegram_file_unique_id')}",
+        "TELEGRAM_REFERENCE_IDENTITY=REDACTED",
         "MEDIA_BYTES_ON_A15=NO",
     ]
     if item.get("learning_status") == "pending_cloud_analysis":
@@ -859,6 +863,11 @@ def main() -> int:
         return 5
     print(f"TELEGRAM_ALLOWED_USER_ID={allowed_user_id}", flush=True)
 
+    owner_voice_handoff_debouncer = OwnerVoiceHandoffDebouncer(
+        quiet_seconds=8.0,
+        retry_seconds=30.0,
+    )
+
     while True:
         try:
             updates = api.call(
@@ -1021,19 +1030,11 @@ def main() -> int:
                         and str(attachment.get("media_kind") or "").lower() in {"voice", "audio"}
                         and learned is not None
                     ):
-                        try:
-                            handoff_code = handoff_owner_voice_references()
-                            print(
-                                "OWNER_VOICE_REFERENCE_HANDOFF_AFTER_INGEST="
-                                + ("PASS" if handoff_code == 0 else f"DEFERRED_{handoff_code}"),
-                                flush=True,
-                            )
-                        except Exception as exc:
-                            print(
-                                "OWNER_VOICE_REFERENCE_HANDOFF_AFTER_INGEST=FAIL "
-                                f"FAILURE_CLASS={type(exc).__name__}",
-                                flush=True,
-                            )
+                        owner_voice_handoff_debouncer.mark_dirty(time.monotonic())
+                        print(
+                            "OWNER_VOICE_REFERENCE_HANDOFF=DEBOUNCED_PENDING",
+                            flush=True,
+                        )
                     _send_final_human_response(
                         api=api,
                         chat_id=chat_id,
@@ -1200,6 +1201,24 @@ def main() -> int:
                     )
 
             _save_state(state)
+            try:
+                handoff_status = flush_owner_voice_handoff_if_due(
+                    owner_voice_handoff_debouncer,
+                    now=time.monotonic(),
+                    handoff=handoff_owner_voice_references,
+                )
+                if handoff_status != "NOT_DUE":
+                    print(
+                        "OWNER_VOICE_REFERENCE_HANDOFF_AFTER_QUIET="
+                        + handoff_status,
+                        flush=True,
+                    )
+            except Exception as exc:
+                print(
+                    "OWNER_VOICE_REFERENCE_HANDOFF_AFTER_QUIET=FAIL "
+                    f"FAILURE_CLASS={type(exc).__name__}",
+                    flush=True,
+                )
         except KeyboardInterrupt:
             print("TELEGRAM_GATEWAY=STOPPED", flush=True)
             return 0
