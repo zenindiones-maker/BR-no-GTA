@@ -1,7 +1,7 @@
 {
   "request": "continuous-operation-focused",
-  "source_head": "52ccfe69633b083af31eb0b59c310222f27102f7",
-  "scope": "due-true-scheduled-typed-task-result-regression",
+  "source_head": "6c4a4de23279f8a14556b7459b7708c4f82cc165",
+  "scope": "typed-completion-due-true-and-durable-failure-settlement",
   "regression_runs": [
     36572055458,
     36527996798,
