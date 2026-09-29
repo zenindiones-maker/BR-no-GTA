@@ -156,3 +156,28 @@ def test_unverified_attachment_fails_closed_before_any_ingress_persistence():
     with pytest.raises(ValueError, match="remotely verified"):
         ingest_telegram_input_under_harness(payload)
     assert count_memory_events() == before
+
+
+def test_voice_attachment_is_registered_as_private_owner_reference_not_generic_media():
+    payload = _text_payload("", message_id=6)
+    payload.update(
+        input_kind="voice",
+        attachment={
+            "media_kind": "voice",
+            "telegram_file_id": "voice-file-id",
+            "telegram_file_unique_id": "stable-owner-voice",
+            "mime_type": "audio/ogg",
+            "file_size": 12345,
+            "duration_seconds": 8.0,
+            "remote_verified": True,
+        },
+    )
+
+    result = ingest_telegram_input_under_harness(payload)
+    item = result["input"]
+    assert item["classification"] == "owner_voice_reference"
+    assert item["learning_status"] == "private_voice_reference_registered"
+    assert item["remote_verified"] is True
+    assert item["memory_event_id"]
+    assert item["claim_id"] is None
+    assert item["memory_id"] is None
