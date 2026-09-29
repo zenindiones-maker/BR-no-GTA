@@ -124,6 +124,30 @@ def resolve_contextual_intent(
             "explicit governed memory-candidate request",
         )
 
+    # System-improvement goals may legitimately include research as one
+    # subordinate task. Classify the mission before the narrower GTA research
+    # shortcut so the presence of "pesquisa GTA 6" cannot hijack the whole goal.
+    try:
+        preclassified_goal = build_goal_envelope(
+            human_goal=message,
+            project=str(state.get("active_project") or "BR-no-GTA"),
+            goal_id=str(state.get("active_goal_id") or "telegram-human-goal"),
+            subject=str(state.get("current_subject") or "").strip() or None,
+            source_surface="telegram",
+        )
+    except Exception:
+        preclassified_goal = None
+    if (
+        preclassified_goal is not None
+        and preclassified_goal.mission_class == "SYSTEM_IMPROVEMENT"
+    ):
+        return IntentResolution(
+            "EXECUTION_REQUEST",
+            "LAYER_3_MISSION_PLANNER",
+            "HIGH",
+            "known Harness mission class: SYSTEM_IMPROVEMENT",
+        )
+
     gta_subject = any(term in text for term in (
         "gta 6", "gta6", "gta vi", "grand theft auto vi",
         "rockstar", "vice city", "leonida", "lucia", "jason",
@@ -163,16 +187,18 @@ def resolve_contextual_intent(
 
     # Layer 3: determine whether this is a known operational goal. This uses the
     # Harness goal taxonomy, not agent/runtime keywords supplied by the human.
-    try:
-        goal = build_goal_envelope(
-            human_goal=message,
-            project=str(state.get("active_project") or "BR-no-GTA"),
-            goal_id=str(state.get("active_goal_id") or "telegram-human-goal"),
-            subject=str(state.get("current_subject") or "").strip() or None,
-            source_surface="telegram",
-        )
-    except Exception:
-        goal = None
+    goal = preclassified_goal
+    if goal is None:
+        try:
+            goal = build_goal_envelope(
+                human_goal=message,
+                project=str(state.get("active_project") or "BR-no-GTA"),
+                goal_id=str(state.get("active_goal_id") or "telegram-human-goal"),
+                subject=str(state.get("current_subject") or "").strip() or None,
+                source_surface="telegram",
+            )
+        except Exception:
+            goal = None
     if goal is not None and goal.mission_class != "OPEN_SEMANTIC":
         return IntentResolution(
             "EXECUTION_REQUEST",
