@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from scripts.owner_voice_ptbr_audition_review import (
+    build_human_review_caption,
+    build_human_review_markup,
     build_variant_qa,
     normalize_ptbr_text,
     word_error_rate,
@@ -49,3 +51,19 @@ def test_variant_qa_rejects_non_portuguese_or_unintelligible_output():
     )
     assert wrong_words["status"] == "FAIL"
     assert "HIGH_WORD_ERROR_RATE" in wrong_words["issues"]
+
+
+def test_human_review_delivery_is_clean_voice_note_ui():
+    caption = build_human_review_caption(label="B")
+    assert caption == "Teste B da sua voz em Português do Brasil. Ouça e escolha abaixo."
+    assert "CFG=" not in caption
+    assert "HUMAN_REVIEW" not in caption
+    assert "sha" not in caption.casefold()
+
+    markup = build_human_review_markup(label="B")
+    buttons = [button for row in markup["inline_keyboard"] for button in row]
+    assert {button["callback_data"] for button in buttons} == {
+        "ov1:approve:B",
+        "ov1:reject_identity:B",
+        "ov1:reject_ptbr:B",
+    }
