@@ -1,7 +1,7 @@
 {
   "request": "continuous-operation-focused",
-  "source_head": "73444ffeedf9d5b89e43cebde5e5376e15ea854c",
-  "scope": "scheduler-executor-split-exact-sha-deployment-and-durable-attempt-restore",
+  "source_head": "36d5b92e71ef287074a817363bc2e1df31b87029",
+  "scope": "scheduler-executor-split-canonical-policy-binding-durable-attempt-restore",
   "regression_runs": [
     36572055458,
     36527996798,
@@ -9,5 +9,5 @@
     36433392687,
     36382274106
   ],
-  "expected": "CONTINUOUS_FOCUSED_TESTS=PASS; SCHEDULER_EXECUTOR_BOUNDARY=PASS"
+  "expected": "CONTINUOUS_FOCUSED_TESTS=PASS; SCHEDULER_EXECUTOR_BOUNDARY=PASS; CHECKPOINT_RECOVERY=PASS"
 }
