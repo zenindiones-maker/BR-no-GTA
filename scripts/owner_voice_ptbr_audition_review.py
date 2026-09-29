@@ -84,21 +84,98 @@ def _transcription_confidence(segments) -> float:
     return (sum(values) / len(values)) if values else 0.0
 
 
-def _send_document(
+def build_human_review_caption(*, label: str) -> str:
+    normalized = str(label or "").strip().upper()
+    if normalized not in {"A", "B", "C"}:
+        raise ValueError("OWNER_PTBR_AUDITION_LABEL_INVALID")
+    return (
+        f"Teste {normalized} da sua voz em Português do Brasil. "
+        "Ouça e escolha abaixo."
+    )
+
+
+def build_human_review_markup(*, label: str) -> dict[str, Any]:
+    normalized = str(label or "").strip().upper()
+    if normalized not in {"A", "B", "C"}:
+        raise ValueError("OWNER_PTBR_AUDITION_LABEL_INVALID")
+    return {
+        "inline_keyboard": [
+            [
+                {
+                    "text": "✅ É minha voz e o PT-BR está natural",
+                    "callback_data": f"ov1:approve:{normalized}",
+                }
+            ],
+            [
+                {
+                    "text": "❌ Não é minha voz",
+                    "callback_data": f"ov1:reject_identity:{normalized}",
+                },
+                {
+                    "text": "❌ Português/sotaque ruim",
+                    "callback_data": f"ov1:reject_ptbr:{normalized}",
+                },
+            ],
+        ]
+    }
+
+
+def _convert_to_voice_note(source, target):
+    import subprocess
+    from pathlib import Path
+
+    source_path = Path(source)
+    target_path = Path(target)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-v", "error", "-i", str(source_path),
+            "-vn", "-ac", "1", "-ar", "48000",
+            "-c:a", "libopus", "-b:a", "48k", "-application", "voip",
+            str(target_path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    if not target_path.is_file() or target_path.stat().st_size <= 0:
+        raise RuntimeError("OWNER_PTBR_VOICE_NOTE_CONVERSION_FAILED")
+    return target_path
+
+
+def _send_voice(
     *,
     bot_token: str,
     chat_id: int,
     path,
     filename: str,
     caption: str,
+    reply_markup: Mapping[str, Any],
+    reply_to_message_id: int | None = None,
 ) -> int:
+    import json
     import requests
+
+    data = {
+        "chat_id": str(chat_id),
+        "caption": caption,
+        "reply_markup": json.dumps(
+            dict(reply_markup),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+        "protect_content": "true",
+    }
+    if reply_to_message_id is not None:
+        data["reply_parameters"] = json.dumps(
+            {"message_id": int(reply_to_message_id)},
+            separators=(",", ":"),
+        )
 
     with open(path, "rb") as stream:
         response = requests.post(
-            f"https://api.telegram.org/bot{bot_token}/sendDocument",
-            data={"chat_id": str(chat_id), "caption": caption},
-            files={"document": (filename, stream, "audio/wav")},
+            f"https://api.telegram.org/bot{bot_token}/sendVoice",
+            data=data,
+            files={"voice": (filename, stream, "audio/ogg")},
             timeout=120,
         )
     if response.status_code != 200:
@@ -213,20 +290,19 @@ def main() -> int:
     for row in passing:
         variant = int(row["variant"])
         label = labels[variant - 1]
-        caption = (
-            f"BR_OWNER_V1 · TESTE {label} · Português do Brasil (pt-BR)\n"
-            f"Referência: áudio real do humano no Telegram\n"
-            f"CFG={row['cfg_weight']} · automático=PASS\n"
-            "Verifique: 1) é a sua voz? 2) sotaque brasileiro natural? "
-            "3) fala fluente?\n"
-            "HUMAN_REVIEW=PENDING"
+        caption = build_human_review_caption(label=label)
+        voice_note = _convert_to_voice_note(
+            row["path"],
+            runner_temp / "br-owner-voice" / "voice-notes" / f"BR_OWNER_V1_PTBR_{label}.ogg",
         )
-        message_id = _send_document(
+        message_id = _send_voice(
             bot_token=token,
             chat_id=chat_id,
-            path=row["path"],
-            filename=f"BR_OWNER_V1_PTBR_{label}.wav",
+            path=voice_note,
+            filename=f"BR_OWNER_V1_PTBR_{label}.ogg",
             caption=caption,
+            reply_markup=build_human_review_markup(label=label),
+            reply_to_message_id=int(source_row["telegram_message_id"]),
         )
         deliveries.append({
             "variant": variant,
@@ -235,6 +311,8 @@ def main() -> int:
             "telegram_message_id": message_id,
             "automatic_qa": row["qa"],
             "human_review": "PENDING",
+            "telegram_delivery_type": "VOICE_NOTE",
+            "review_callback_prefix": "ov1",
         })
 
     receipt = {
