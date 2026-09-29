@@ -1,7 +1,7 @@
 {
   "request": "continuous-operation-focused",
-  "source_head": "75356cecd3b76ac4bcee49ebc03d1a00f8a2e2a1",
-  "scope": "incident-dedup-aggregate-red",
+  "source_head": "07de877699c268ae061592590638cd2eb13e06b9",
+  "scope": "incident-dedup-aggregate-green",
   "regression_runs": [
     36572055458,
     36527996798,
@@ -9,5 +9,5 @@
     36433392687,
     36382274106
   ],
-  "expected": "RED: continuous incident reducer is required and missing before implementation"
+  "expected": "CONTINUOUS_FOCUSED_TESTS=PASS; durable incident aggregate deduplicates same-SHA failure alerts without hiding blocker"
 }
