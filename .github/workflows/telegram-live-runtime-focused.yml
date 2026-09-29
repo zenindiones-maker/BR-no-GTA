@@ -11,6 +11,8 @@ on:
       - "app/services/telegram_transport_contract_service.py"
       - "tests/test_telegram_transport_contract.py"
       - "tests/test_telegram_bot_api_transport.py"
+      - "tests/test_telegram_conversation_control.py"
+      - ".github/workflows/telegram-live-runtime-focused.yml"
 
 permissions:
   contents: read
@@ -78,6 +80,11 @@ jobs:
             tests/test_telegram_gateway_conversation.py::test_generic_semantic_provider_boundary_leak_is_sanitized \
             tests/test_harness_ai_provider_service.py::test_provider_constructor_integrity_error_is_captured_as_evidence \
             tests/test_telegram_gateway_conversation.py::test_governed_ingress_rejects_private_and_accepts_only_authorized_groups \
+            tests/test_telegram_conversation_control.py::test_literal_natural_swarm_goal_keeps_system_improvement_mission_precedence \
+            tests/test_telegram_conversation_control.py::test_system_improvement_voice_and_audio_constraints_do_not_become_top_level_narration \
+            tests/test_telegram_conversation_control.py::test_system_improvement_youtube_research_render_thumbnail_terms_remain_subtasks \
+            tests/test_telegram_conversation_control.py::test_direct_narration_request_still_routes_to_ptbr_narration_capability \
+            tests/test_telegram_conversation_control.py::test_existing_audio_artifact_correction_stays_context_bound_under_harness \
             tests/test_telegram_conversation_control.py::test_status_reconciles_legacy_understanding_without_operational_evidence \
             tests/test_telegram_project_status.py::test_status_query_never_replaces_project_subject_and_exposes_canonical_snapshot \
             tests/test_telegram_human_egress_policy.py \
