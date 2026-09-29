@@ -129,6 +129,8 @@ def main(argv: list[str] | None = None) -> int:
             "content_sha256",
             "size_bytes",
             "normalization_state",
+            "normalization_engine",
+            "normalization_diagnostic",
             "normalized_markdown_ref",
             "canonical_memory_promoted",
             "obsidian_authority",
@@ -143,6 +145,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"OBSIDIAN_ATTACHMENT_REF={safe['obsidian_attachment_ref']}")
     print(f"CONTENT_SHA256={safe['content_sha256']}")
     print(f"NORMALIZATION_STATE={safe['normalization_state']}")
+    print(f"NORMALIZATION_ENGINE={safe['normalization_engine']}")
+    if safe.get("normalization_diagnostic"):
+        print(f"NORMALIZATION_DIAGNOSTIC={safe['normalization_diagnostic']}")
     print("TRANSPORT_SECRET_IN_OBSIDIAN=NO")
     print("CANONICAL_MEMORY_PROMOTED=NO")
     return 0
