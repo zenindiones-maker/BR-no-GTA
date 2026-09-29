@@ -4,12 +4,12 @@
   "requested_action": "MATERIALIZE_REAL_TELEGRAM_OWNER_REFERENCES",
   "requested_by": "authorized_human_owner",
   "source": "governed_human_instruction",
-  "request_revision": 16,
+  "request_revision": 17,
   "delivery_target": "TELEGRAM_OWNER_GROUP",
   "clone_backend": "CHATTERBOX_MULTILINGUAL_PT_BR_TELEGRAM_BOUND",
   "generic_voice_fallback": false,
   "fail_closed": true,
-  "phase": "REAL_TELEGRAM_OWNER_PTBR_AUDITION",
+  "phase": "RETRY_AFTER_TELEGRAM_VOICE_CAPABILITY_AND_CONTRACT_FIX",
   "target_locale": "pt-BR",
   "language_id": "pt",
   "reference_selection": "QUALITY_FIRST_DETERMINISTIC",
@@ -17,5 +17,6 @@
   "provider_preset_voice_allowed": false,
   "human_voice_identity_review": "REQUIRED",
   "human_brazilian_accent_review": "REQUIRED",
-  "human_ptbr_fluency_review": "REQUIRED"
+  "human_ptbr_fluency_review": "REQUIRED",
+  "retry_reason": "Previous materialization contract failed before runtime; retry after owner voice classification and secure handoff contract fixes."
 }
