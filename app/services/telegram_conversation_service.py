@@ -372,6 +372,21 @@ def _is_operational_artifact_reference(
     )
 
 
+def _is_direct_narration_generation_request(text: str) -> bool:
+    """Return true only when narration generation is the human's top-level goal."""
+    folded = _fold(text)
+    narration_target = re.search(
+        r"\b(narracao|voz|audio|locucao|voice[- ]?over)\b",
+        folded,
+    )
+    generation_action = re.search(
+        r"\b(gere|gera|gerar|crie|cria|criar|produza|produz|produzir|"
+        r"faca|faz|fazer|narre|narrar|sintetize|sintetizar)\b",
+        folded,
+    )
+    return bool(narration_target and generation_action)
+
+
 def plan_natural_language_action(
     message: str,
     *,
@@ -488,7 +503,28 @@ def plan_natural_language_action(
                 "artifact_ref": resolved_reference,
                 "context_bound_correction": True,
             }
-        if any(term in text for term in ("voz", "narracao", "sample", "samples", "audio")):
+        # Direct deterministic capability routing is subordinate to the
+        # Harness goal taxonomy. Mentioning voice/audio inside a composite mission
+        # is a constraint/subtask, not permission to replace the top-level goal.
+        goal_semantics = build_goal_envelope(
+            human_goal=message,
+            project=str(state.get("active_project") or "BR-no-GTA"),
+            goal_id=str(state.get("active_goal_id") or "telegram-human-goal"),
+            subject=" ".join(
+                item
+                for item in (
+                    str(state.get("current_subject") or "").strip(),
+                    str(state.get("active_task") or "").strip(),
+                    str(resolved_reference or "").strip(),
+                )
+                if item
+            ) or None,
+            source_surface="telegram",
+        )
+        if (
+            goal_semantics.mission_class != "SYSTEM_IMPROVEMENT"
+            and _is_direct_narration_generation_request(text)
+        ):
             return {
                 "kind": "CAPABILITY",
                 "authorized_action": "EXECUTION",
