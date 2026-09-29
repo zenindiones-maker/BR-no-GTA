@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from hashlib import sha256
+from html.parser import HTMLParser
 import json
 import mimetypes
 import os
@@ -140,38 +141,154 @@ def _atomic_write_text(path: Path, text: str) -> None:
     os.replace(temporary, path)
 
 
+class _SafeHtmlTextParser(HTMLParser):
+    _BLOCK_TAGS = {
+        "address", "article", "aside", "blockquote", "br", "div", "dl", "dt",
+        "dd", "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2",
+        "h3", "h4", "h5", "h6", "header", "hr", "li", "main", "nav", "ol",
+        "p", "pre", "section", "table", "tbody", "td", "tfoot", "th", "thead",
+        "tr", "ul",
+    }
+    _SUPPRESSED_TAGS = {"script", "style", "noscript", "template"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._parts: list[str] = []
+        self._suppressed_depth = 0
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        normalized = tag.casefold()
+        if normalized in self._SUPPRESSED_TAGS:
+            self._suppressed_depth += 1
+            return
+        if self._suppressed_depth:
+            return
+        if normalized == "li":
+            self._parts.append("\n- ")
+        elif normalized in self._BLOCK_TAGS:
+            self._parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        normalized = tag.casefold()
+        if normalized in self._SUPPRESSED_TAGS:
+            if self._suppressed_depth:
+                self._suppressed_depth -= 1
+            return
+        if self._suppressed_depth:
+            return
+        if normalized in self._BLOCK_TAGS:
+            self._parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if self._suppressed_depth:
+            return
+        if data:
+            self._parts.append(data)
+
+    def rendered_text(self) -> str:
+        text = "".join(self._parts)
+        text = re.sub(r"[ \t\f\v]+", " ", text)
+        text = re.sub(r" *\n *", "\n", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
+
+
+def _safe_html_text_fallback(path: Path) -> str:
+    parser = _SafeHtmlTextParser()
+    parser.feed(path.read_bytes().decode("utf-8", errors="replace"))
+    parser.close()
+    return parser.rendered_text()
+
+
+def _clip_normalized_text(
+    text: str,
+    *,
+    max_output_bytes: int,
+) -> tuple[str, bool]:
+    raw = text.encode("utf-8")
+    if len(raw) <= max_output_bytes:
+        return text, False
+    clipped = raw[:max_output_bytes].decode("utf-8", errors="ignore").rstrip()
+    return (
+        clipped
+        + "\n\n> [!warning] Conteúdo normalizado truncado; análise cloud completa necessária.",
+        True,
+    )
+
+
 def _normalize_local_text(
     path: Path,
     *,
     max_input_bytes: int,
     max_output_bytes: int,
-) -> tuple[str | None, str]:
-    if path.suffix.lower() not in _LOCAL_NORMALIZABLE_SUFFIXES:
-        return None, "CLOUD_REQUIRED"
+) -> tuple[str | None, str, str | None, str | None]:
+    suffix = path.suffix.lower()
+    if suffix not in _LOCAL_NORMALIZABLE_SUFFIXES:
+        return None, "CLOUD_REQUIRED", None, None
     if path.stat().st_size > max_input_bytes:
-        return None, "CLOUD_REQUIRED"
+        return None, "CLOUD_REQUIRED", None, None
+
+    markitdown_error: str | None = None
     try:
         from markitdown import MarkItDown
 
-        result = MarkItDown(enable_plugins=False).convert_local(path)
+        # convert_local is deliberately narrower than convert(); pass a concrete
+        # local path string so URI/network resolution is never involved.
+        result = MarkItDown(enable_plugins=False).convert_local(str(path))
         markdown = str(
             getattr(result, "markdown", None)
             or getattr(result, "text_content", None)
             or ""
         ).strip()
-    except Exception:
-        return None, "LOCAL_NORMALIZATION_FAILED"
-    if not markdown:
-        return None, "LOCAL_NORMALIZATION_EMPTY"
-    raw = markdown.encode("utf-8")
-    if len(raw) > max_output_bytes:
-        clipped = raw[:max_output_bytes].decode("utf-8", errors="ignore").rstrip()
-        return (
-            clipped
-            + "\n\n> [!warning] Conteúdo normalizado truncado; análise cloud completa necessária.",
-            "LOCAL_TEXT_NORMALIZED_TRUNCATED",
-        )
-    return markdown, "LOCAL_TEXT_NORMALIZED"
+        if markdown:
+            rendered, truncated = _clip_normalized_text(
+                markdown,
+                max_output_bytes=max_output_bytes,
+            )
+            return (
+                rendered,
+                "LOCAL_TEXT_NORMALIZED_TRUNCATED"
+                if truncated
+                else "LOCAL_TEXT_NORMALIZED",
+                "MARKITDOWN",
+                None,
+            )
+    except Exception as exc:
+        markitdown_error = type(exc).__name__
+
+    if suffix in {".html", ".htm"}:
+        try:
+            fallback = _safe_html_text_fallback(path)
+        except Exception as exc:
+            fallback_error = type(exc).__name__
+            return (
+                None,
+                "LOCAL_NORMALIZATION_FAILED",
+                None,
+                f"markitdown={markitdown_error or 'EMPTY'};html_fallback={fallback_error}",
+            )
+        if fallback:
+            rendered, truncated = _clip_normalized_text(
+                fallback,
+                max_output_bytes=max_output_bytes,
+            )
+            return (
+                rendered,
+                "LOCAL_TEXT_NORMALIZED_TRUNCATED"
+                if truncated
+                else "LOCAL_TEXT_NORMALIZED",
+                "STDLIB_HTML_FALLBACK",
+                f"markitdown={markitdown_error or 'EMPTY'}",
+            )
+
+    return (
+        None,
+        "LOCAL_NORMALIZATION_EMPTY"
+        if markitdown_error is None
+        else "LOCAL_NORMALIZATION_FAILED",
+        None,
+        f"markitdown={markitdown_error}" if markitdown_error else None,
+    )
 
 
 def _build_note(
@@ -182,6 +299,7 @@ def _build_note(
     content_sha256: str,
     size_bytes: int,
     normalization_state: str,
+    normalization_engine: str | None,
     normalized_markdown: str | None,
 ) -> str:
     file_name = str(input_record.get("file_name") or "telegram-attachment")
@@ -200,6 +318,7 @@ def _build_note(
         "remote_verified": True,
         "materialization_status": "MATERIALIZED",
         "analysis_state": normalization_state,
+        "normalization_engine": normalization_engine,
         "canonical_memory": False,
     }
     lines = ["---"]
@@ -216,6 +335,7 @@ def _build_note(
             f"- **SHA-256:** {content_sha256}",
             f"- **Tamanho:** {size_bytes} bytes",
             f"- **Estado de análise:** {normalization_state}",
+            f"- **Engine de normalização:** {normalization_engine or 'none'}",
             "- **Autoridade canônica:** nenhuma; este arquivo é evidência/artefato até análise pelo Harness.",
             "",
         ]
@@ -331,7 +451,12 @@ def execute_telegram_obsidian_attachment_capability(
             )
         os.replace(staging, target)
 
-    normalized, normalization_state = _normalize_local_text(
+    (
+        normalized,
+        normalization_state,
+        normalization_engine,
+        normalization_diagnostic,
+    ) = _normalize_local_text(
         target,
         max_input_bytes=local_normalization_max_bytes,
         max_output_bytes=normalized_output_max_bytes,
@@ -352,6 +477,7 @@ def execute_telegram_obsidian_attachment_capability(
         content_sha256=digest,
         size_bytes=actual_size,
         normalization_state=normalization_state,
+        normalization_engine=normalization_engine,
         normalized_markdown=normalized,
     )
     _atomic_write_text(note_path, note_text)
@@ -372,6 +498,8 @@ def execute_telegram_obsidian_attachment_capability(
         "content_sha256": digest,
         "size_bytes": actual_size,
         "normalization_state": normalization_state,
+        "normalization_engine": normalization_engine,
+        "normalization_diagnostic": normalization_diagnostic,
         "normalized_markdown_ref": (
             note_ref if normalized is not None else None
         ),
