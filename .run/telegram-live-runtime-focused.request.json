@@ -1,8 +1,8 @@
 {
-  "request": "telegram-transport-contract-red-green-v1",
-  "source_head": "7da65685fcc85cf7baf921446b8f38c73732e5d5",
+  "request": "telegram-transport-contract-red-green-v2",
+  "source_head": "3871e5edecb3ffe2480dee3ee30790c7fc554228",
   "objective": "Run the live Telegram focused suite including the new production transport contract before implementation.",
-  "expected_first_state": "RED_UNTIL_TRANSPORT_CONTRACT_SERVICE_EXISTS",
+  "expected_first_state": "RED_ONLY_ON_MISSING_TELEGRAM_TRANSPORT_CONTRACT_SERVICE",
   "authority": "DEEPSEEK_HARNESS",
   "publication": false
 }
