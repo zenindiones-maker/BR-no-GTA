@@ -183,7 +183,7 @@ jobs:
         working-directory: target
         run: |
           set -euo pipefail
-          python3 -m py_compile             app/services/task_result_envelope_service.py             app/services/continuous_operation_attempt_service.py             app/services/hermes_multiagent/capability_broker.py             scripts/continuous_intelligence_cycle.py             scripts/continuous_state_checkpoint.py             scripts/continuous_due_gate.py
+          python3 -m py_compile             app/services/task_result_envelope_service.py             app/services/continuous_operation_attempt_service.py             app/services/hermes_multiagent/capability_broker.py             scripts/continuous_intelligence_cycle.py             scripts/continuous_state_checkpoint.py             scripts/continuous_due_gate.py             scripts/continuous_incident_settlement.py
           echo "CONTINUOUS_CHEAP_PREFLIGHT=PASS"
 
       - name: Setup Python
@@ -211,7 +211,7 @@ jobs:
           BR_TEST_DATABASE: ${{ github.workspace }}/target/artifacts/continuous-operation/preflight.db
         run: |
           set -euo pipefail
-          python -m pytest -q             tests/test_continuous_operation_attempt.py             tests/test_continuous_operation.py             tests/test_continuous_scheduler_boundary.py             -k 'research_duration or scheduled_due_true or keyerror_is_nonretryable or failure_fingerprint or sanitizes_secret or deployment or scheduler or executor'
+          python -m pytest -q             tests/test_continuous_operation_attempt.py             tests/test_continuous_operation.py             tests/test_continuous_scheduler_boundary.py             -k 'research_duration or scheduled_due_true or keyerror_is_nonretryable or failure_fingerprint or sanitizes_secret or incident_aggregate or deployment or scheduler or executor'
           echo "PRECHECK_CONTRACT_BLOCKED=NO"
           echo "TASK_RESULT_METRICS_CONTRACT=PASS"
           echo "NO_AUDIT_ORDER_DEPENDENCY=PASS"
@@ -369,6 +369,20 @@ jobs:
           )
           PY
           echo "FAILURE_SETTLEMENT_DURABLE=PASS"
+
+      - name: Settle actionable incident dedup state
+        if: always()
+        working-directory: target
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/continuous-operation
+          python3 scripts/continuous_incident_settlement.py \
+            --current-attempt artifacts/continuous-operation/continuous-operation-attempt.json \
+            --prior-attempt artifacts/continuous-operation/prior-attempt.json \
+            --incident-output artifacts/continuous-operation/continuous-operation-incident.json \
+            | tee artifacts/continuous-operation/incident-settlement.log
+          grep -q '^ACTIONABLE_ALERT_REQUIRED=' artifacts/continuous-operation/incident-settlement.log
+          echo "INCIDENT_DEDUP_SETTLEMENT=PASS"
 
       - name: Upload canonical checkpoint transport
         if: steps.hold.outputs.held != 'true' && success()
