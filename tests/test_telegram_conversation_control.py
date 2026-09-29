@@ -1319,3 +1319,67 @@ def test_existing_audio_artifact_correction_stays_context_bound_under_harness():
     assert seen["plan"]["kind"] == "CAPABILITY_DISCOVERY"
     assert seen["plan"]["context_bound_correction"] is True
     assert seen["plan"]["artifact_ref"] == "asset:owner-audio-17"
+
+
+def test_system_improvement_semantic_planner_outage_falls_back_without_chat_reasoning(monkeypatch):
+    literal = _literal_natural_swarm_goal()
+    chat_id = 1200706
+    update_conversation_state(
+        chat_id,
+        active_project="BR-no-GTA",
+        active_goal_id="goal-system-improvement-provider-outage",
+        current_subject="desempenho e eficiência do sistema BR-no-GTA",
+    )
+    seen = {}
+
+    monkeypatch.setattr(
+        collaboration_service,
+        "semantic_provider_health",
+        lambda: {
+            "semantic_reasoning_available": True,
+            "nvidia_nim": {"state": "AVAILABLE"},
+            "opencode": {"state": "UPSTREAM_DENIED"},
+        },
+    )
+    monkeypatch.setattr(
+        collaboration_service,
+        "propose_validated_semantic_plan",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("SEMANTIC_REASONING_PROVIDER_UNAVAILABLE")
+        ),
+    )
+
+    result = handle_telegram_conversation(
+        literal,
+        telegram_chat_id=chat_id,
+        telegram_user_id=7770706,
+        telegram_chat_type="private",
+        telegram_message_id=120070601,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError(
+                "system-improvement planner outage must not fall through to ai.reasoning.text"
+            )
+        ),
+        action_executor=_capture_running_plan(seen),
+        presenter=_presenter,
+    )
+
+    plan = seen["plan"]
+    assert result["intent"] == "EXECUTION_REQUEST"
+    assert result["intent_resolution"]["layer"] == "LAYER_3_MISSION_PLANNER"
+    assert plan["kind"] == "SYSTEM_IMPROVEMENT_MISSION"
+    assert plan["mission_plan"]["goal"]["mission_class"] == "SYSTEM_IMPROVEMENT"
+    assert (
+        plan["mission_plan"]["planning_evidence"]["planning_mode"]
+        == "DETERMINISTIC_PROVIDER_FAILURE_FALLBACK"
+    )
+    assert (
+        plan["mission_plan"]["planning_evidence"]["semantic_provider_call_count"]
+        == 1
+    )
+    assert (
+        plan["mission_plan"]["planning_evidence"][
+            "semantic_provider_failure_fallback"
+        ]
+        is True
+    )
