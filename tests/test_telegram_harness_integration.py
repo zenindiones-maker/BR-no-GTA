@@ -206,11 +206,18 @@ def test_harness_connection_proof_contains_persisted_route_and_authority():
 def test_normal_chat_uses_harness_selected_provider_and_returns_provenance(monkeypatch):
     captured = {}
 
-    def fake_execute(*, prompt, authorization, routing_decision):
+    def fake_execute(
+        *,
+        prompt,
+        authorization,
+        routing_decision,
+        request_timeout_seconds=None,
+    ):
         assert "MENSAGEM_USUARIO=Qual é o estado do canal?" in prompt
         captured["provider"] = routing_decision.selected_provider
         captured["model"] = routing_decision.selected_model
         captured["fallback_allowed"] = routing_decision.fallback_allowed
+        captured["request_timeout_seconds"] = request_timeout_seconds
         return SimpleNamespace(
             provider=routing_decision.selected_provider,
             status="EXECUTED",
@@ -240,6 +247,7 @@ def test_normal_chat_uses_harness_selected_provider_and_returns_provenance(monke
     assert captured["provider"]
     assert captured["model"]
     assert captured["fallback_allowed"] is False
+    assert captured["request_timeout_seconds"] == 45.0
     assert result["fallback_occurred"] is False
     assert result["zero_cost_operation"] is True
     assert result["routing_id"]
@@ -258,6 +266,7 @@ def test_telegram_generic_semantic_routing_is_provider_agnostic_and_fail_closed(
     assert request.preferred_providers == ()
     assert request.allowed_providers == ()
     assert request.preferred_models == ()
+    assert request.prefer_low_latency is True
     assert request.fallback_allowed is False
     assert request.zero_cost_operation is True
 
