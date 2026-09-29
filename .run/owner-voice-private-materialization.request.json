@@ -4,11 +4,18 @@
   "requested_action": "MATERIALIZE_REAL_TELEGRAM_OWNER_REFERENCES",
   "requested_by": "authorized_human_owner",
   "source": "governed_human_instruction",
-  "request_revision": 15,
+  "request_revision": 16,
   "delivery_target": "TELEGRAM_OWNER_GROUP",
-  "clone_backend": "QWEN3_TTS_0_6B_BASE_EPHEMERAL",
+  "clone_backend": "CHATTERBOX_MULTILINGUAL_PT_BR_TELEGRAM_BOUND",
   "generic_voice_fallback": false,
   "fail_closed": true,
-  "validation_fix": "JOB_ENV_USES_STATIC_TMP_PATH",
-  "phase": "TDD_GREEN_TRANSCRIPT_CONDITIONED_OWNER_CLONE_FIXTURE_BOUND"
+  "phase": "REAL_TELEGRAM_OWNER_PTBR_AUDITION",
+  "target_locale": "pt-BR",
+  "language_id": "pt",
+  "reference_selection": "QUALITY_FIRST_DETERMINISTIC",
+  "provider_default_voice_allowed": false,
+  "provider_preset_voice_allowed": false,
+  "human_voice_identity_review": "REQUIRED",
+  "human_brazilian_accent_review": "REQUIRED",
+  "human_ptbr_fluency_review": "REQUIRED"
 }
