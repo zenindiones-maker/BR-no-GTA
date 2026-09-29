@@ -1160,7 +1160,35 @@ def handle_telegram_conversation(
         if contextual_resolution is not None
         else classify_conversation_intent(text, has_attachment=has_attachment)
     )
-    resolved = resolve_conversation_reference(text, state=state, recent_turns=recent_before)
+    resolved = resolve_conversation_reference(
+        text,
+        state=state,
+        recent_turns=recent_before,
+    )
+    resolved_reference = str(resolved.get("reference") or "").strip()
+    folded_text = _fold(text)
+    artifact_content_query = bool(
+        resolved_reference.startswith("obsidian:")
+        and any(
+            term in folded_text
+            for term in (
+                "esse arquivo",
+                "desse arquivo",
+                "deste arquivo",
+                "esse documento",
+                "desse documento",
+                "deste documento",
+                "arquivo que mandei",
+                "arquivo que enviei",
+                "documento que mandei",
+                "documento que enviei",
+            )
+        )
+    )
+    if artifact_content_query:
+        intent = "QUESTION"
+        contextual_resolution = None
+
     human_turn = append_conversation_turn(
         telegram_chat_id=telegram_chat_id,
         telegram_message_id=telegram_message_id,
