@@ -52,6 +52,8 @@ env:
   MODE: ${{ inputs.mode || 'scheduled' }}
   ZERO_COST_OPERATION: "TRUE"
   PYTHONPATH: .
+  BR_CONTINUOUS_TARGET_REF: ${{ inputs.target_ref || 'work/gate6f-analytics-learning' }}
+  BR_CONTINUOUS_WORKFLOW_REVISION: ${{ github.sha }}
 
 jobs:
   cycle:
@@ -76,7 +78,7 @@ jobs:
           echo "ref=$RAW_TARGET_REF" >> "$GITHUB_OUTPUT"
 
       - name: Checkout exact target implementation
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ steps.target.outputs.ref }}
           path: target
@@ -94,14 +96,78 @@ jobs:
           echo "TARGET_REF=${{ steps.target.outputs.ref }}"
           echo "TARGET_SHA=$sha"
 
+      - name: Hold known deterministic defect on identical target SHA
+        id: hold
+        working-directory: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/continuous-operation
+          description="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TARGET_SHA/status"             --jq '[.statuses[] | select(.context=="continuous-intelligence-operation")][0].description // ""')"
+          if [[ "$description" == HELD_KNOWN_DEFECT:* ]]; then
+            echo "held=true" >> "$GITHUB_OUTPUT"
+            FAILURE_DESCRIPTION="$description" python3 - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          description=os.environ["FAILURE_DESCRIPTION"]
+          _, failure_class, fingerprint = description.split(":", 2)
+          now=datetime.now(timezone.utc).isoformat()
+          payload={
+              "schema":"ContinuousOperationAttempt/v1",
+              "run_id":os.environ.get("GITHUB_RUN_ID",""),
+              "target_ref":os.environ.get("BR_CONTINUOUS_TARGET_REF",""),
+              "target_sha":os.environ["TARGET_SHA"],
+              "workflow_revision":os.environ.get("BR_CONTINUOUS_WORKFLOW_REVISION",""),
+              "trigger_kind":os.environ.get("GITHUB_EVENT_NAME",""),
+              "started_at":now,
+              "finished_at":now,
+              "status":"HELD_KNOWN_DEFECT",
+              "failure_class":failure_class,
+              "failure_fingerprint":fingerprint,
+              "retryability":"NOT_RETRYABLE_ON_SAME_EXECUTABLE_SHA",
+              "causal_task_id":None,
+              "causal_step":"PRECHECK_KNOWN_DEFECT_GATE",
+              "exception_type":None,
+              "sanitized_error":"suppressed deterministic repeat on unchanged executable SHA",
+              "evidence_refs":[],
+              "artifact_refs":[],
+              "side_effects_started":"NO",
+              "side_effects_settled":"PASS",
+              "next_allowed_transition":"CODE_FIX_REQUIRED",
+              "wake_condition":"TARGET_SHA_CHANGED_OR_EXPLICIT_RETRY_AFTER_FIX",
+          }
+          Path("artifacts/continuous-operation/continuous-operation-attempt.json").write_text(
+              json.dumps(payload, sort_keys=True, indent=2)+"\n", encoding="utf-8"
+          )
+          PY
+            echo "CONTINUOUS_OPERATION_STATE=HELD_KNOWN_DEFECT"
+            echo "HEAVY_CYCLE_EXECUTED=NO"
+          else
+            echo "held=false" >> "$GITHUB_OUTPUT"
+            echo "CONTINUOUS_OPERATION_KNOWN_DEFECT_HOLD=NOT_APPLICABLE"
+          fi
+
+      - name: Cheap source and contract preflight
+        if: steps.hold.outputs.held != 'true'
+        working-directory: target
+        run: |
+          set -euo pipefail
+          python3 -m py_compile             app/services/task_result_envelope_service.py             app/services/continuous_operation_attempt_service.py             app/services/hermes_multiagent/capability_broker.py             scripts/continuous_intelligence_cycle.py             scripts/continuous_state_checkpoint.py             scripts/continuous_due_gate.py
+          echo "CONTINUOUS_CHEAP_PREFLIGHT=PASS"
+
       - name: Setup Python
-        uses: actions/setup-python@v5
+        if: steps.hold.outputs.held != 'true'
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: target/requirements.txt
 
-      - name: Install bounded target runtime
+      - name: Install canonical target test runtime
+        if: steps.hold.outputs.held != 'true'
         working-directory: target
         run: |
           set -euo pipefail
@@ -109,11 +175,30 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pytest
           python -m pip install psutil==7.2.2 pyyaml==6.0.3 python-dotenv==1.2.2 rich==14.3.3 pathspec==1.1.1
+
+      - name: Continuous completion-contract preflight
+        if: steps.hold.outputs.held != 'true'
+        working-directory: target
+        env:
+          BR_TEST_DATABASE: ${{ github.workspace }}/target/artifacts/continuous-operation/preflight.db
+        run: |
+          set -euo pipefail
+          python -m pytest -q             tests/test_continuous_operation_attempt.py             tests/test_continuous_operation.py             -k 'research_duration or scheduled_due_true or keyerror_is_nonretryable or failure_fingerprint or sanitizes_secret'
+          echo "PRECHECK_CONTRACT_BLOCKED=NO"
+          echo "TASK_RESULT_METRICS_CONTRACT=PASS"
+          echo "NO_AUDIT_ORDER_DEPENDENCY=PASS"
+
+      - name: Bootstrap pinned Hermes runtime
+        if: steps.hold.outputs.held != 'true'
+        working-directory: target
+        run: |
+          set -euo pipefail
           python scripts/bootstrap_hermes_agent.py             --target "$GITHUB_WORKSPACE/target/.runtime/hermes-agent"             --output artifacts/continuous-operation/hermes-upstream.json
           test "$(git -C "$GITHUB_WORKSPACE/target/.runtime/hermes-agent" rev-parse HEAD)" = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
           echo "HERMES_UPSTREAM_PINNED=PASS"
 
       - name: Restore canonical continuous checkpoint
+        if: steps.hold.outputs.held != 'true'
         working-directory: target
         env:
           GH_TOKEN: ${{ github.token }}
@@ -123,7 +208,7 @@ jobs:
           python scripts/continuous_state_checkpoint.py restore             --repository "$GITHUB_REPOSITORY"             --current-run-id "$GITHUB_RUN_ID"             --destination "$BR_TEST_DATABASE"             --work-dir artifacts/continuous-operation/restore
 
       - name: Merge triggering Obsidian memory envelope
-        if: github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Obsidian Memory Inbox' && github.event.workflow_run.conclusion == 'success'
+        if: steps.hold.outputs.held != 'true' && github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Obsidian Memory Inbox' && github.event.workflow_run.conclusion == 'success'
         working-directory: target
         env:
           GH_TOKEN: ${{ github.token }}
@@ -139,6 +224,7 @@ jobs:
           echo "OBSIDIAN_EVENT_CANONICAL_MERGE=PASS"
 
       - name: Compute policy due gates
+        if: steps.hold.outputs.held != 'true'
         id: due
         working-directory: target
         env:
@@ -148,7 +234,7 @@ jobs:
           python scripts/continuous_due_gate.py --github-output "$GITHUB_OUTPUT"
 
       - name: Weekly or proof regression suite
-        if: inputs.mode == 'proof' || steps.due.outputs.weekly_due == 'true'
+        if: steps.hold.outputs.held != 'true' && (inputs.mode == 'proof' || steps.due.outputs.weekly_due == 'true')
         working-directory: target
         env:
           BR_TEST_DATABASE: ${{ github.workspace }}/target/artifacts/continuous-operation/continuous.db
@@ -158,6 +244,7 @@ jobs:
           echo "CONTINUOUS_REGRESSION_SUITE=PASS"
 
       - name: Execute one bounded continuous cycle
+        if: steps.hold.outputs.held != 'true'
         working-directory: target
         env:
           BR_TEST_DATABASE: ${{ github.workspace }}/target/artifacts/continuous-operation/continuous.db
@@ -169,6 +256,7 @@ jobs:
           python scripts/continuous_intelligence_cycle.py             --mode "$MODE"             --artifact-dir artifacts/continuous-operation             --upstream-root "$BR_HERMES_UPSTREAM_ROOT"             --target-sha "${{ steps.sha.outputs.sha }}"             --trigger-kind "$GITHUB_EVENT_NAME"
 
       - name: Validate immutable safety boundaries
+        if: steps.hold.outputs.held != 'true'
         working-directory: target
         run: |
           set -euo pipefail
@@ -197,6 +285,7 @@ jobs:
           PY
 
       - name: Save canonical continuous checkpoint
+        if: steps.hold.outputs.held != 'true' && success()
         working-directory: target
         env:
           BR_TEST_DATABASE: ${{ github.workspace }}/target/artifacts/continuous-operation/continuous.db
@@ -205,16 +294,26 @@ jobs:
           python scripts/continuous_state_checkpoint.py save             --database "$BR_TEST_DATABASE"             --output-dir artifacts/continuous-operation/state             --target-sha "${{ steps.sha.outputs.sha }}"             --run-id "$GITHUB_RUN_ID"
 
       - name: Upload canonical checkpoint transport
-        uses: actions/upload-artifact@v4
+        if: steps.hold.outputs.held != 'true' && success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: continuous-operation-state-${{ github.run_id }}
           path: target/artifacts/continuous-operation/state/
           if-no-files-found: error
           retention-days: 90
 
+      - name: Upload durable attempt settlement
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: continuous-operation-attempt-${{ github.run_id }}
+          path: target/artifacts/continuous-operation/continuous-operation-attempt.json
+          if-no-files-found: warn
+          retention-days: 90
+
       - name: Upload continuous evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: continuous-operation-${{ github.run_id }}
           path: |
@@ -227,8 +326,8 @@ jobs:
           retention-days: 30
 
       - name: Upload published Obsidian view
-        if: success()
-        uses: actions/upload-artifact@v4
+        if: steps.hold.outputs.held != 'true' && success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: obsidian-memory-export-${{ github.run_id }}
           path: target/artifacts/continuous-operation/obsidian-memory-export/
@@ -236,6 +335,7 @@ jobs:
           retention-days: 30
 
       - name: Assert autonomous Telegram silence
+        if: steps.hold.outputs.held != 'true'
         working-directory: target
         run: |
           set -euo pipefail
@@ -250,15 +350,42 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ steps.sha.outputs.sha }}
-          STATE: ${{ job.status == 'success' && 'success' || job.status == 'failure' && 'failure' || 'error' }}
+          HELD: ${{ steps.hold.outputs.held }}
+          JOB_STATE: ${{ job.status }}
         run: |
           set -euo pipefail
           python - <<'PY' >/tmp/status.json
           import json, os
+          from pathlib import Path
+
+          held=os.environ.get("HELD")=="true"
+          attempt_path=Path("target/artifacts/continuous-operation/continuous-operation-attempt.json")
+          attempt={}
+          if attempt_path.is_file():
+              attempt=json.loads(attempt_path.read_text(encoding="utf-8"))
+
+          retryability=str(attempt.get("retryability") or "")
+          failure_class=str(attempt.get("failure_class") or "")
+          fingerprint=str(attempt.get("failure_fingerprint") or "")
+          if held or retryability=="NOT_RETRYABLE_ON_SAME_EXECUTABLE_SHA":
+              state="error"
+              description=f"HELD_KNOWN_DEFECT:{failure_class}:{fingerprint}"[:140]
+          elif os.environ.get("JOB_STATE")=="success":
+              state="success"
+              description="Continuous operation settled"
+          elif os.environ.get("JOB_STATE")=="failure":
+              state="failure"
+              description=(
+                  f"Continuous failure:{failure_class or 'UNKNOWN'}:"
+                  f"{fingerprint[:16] if fingerprint else 'unsettled'}"
+              )[:140]
+          else:
+              state="error"
+              description="Continuous operation error"
           print(json.dumps({
-            "state": os.environ["STATE"],
+            "state": state,
             "context": "continuous-intelligence-operation",
-            "description": "Continuous Harness intelligence/improvement cycle",
+            "description": description,
             "target_url": "https://github.com/"+os.environ["GITHUB_REPOSITORY"]+"/actions/runs/"+os.environ["GITHUB_RUN_ID"],
           }))
           PY
