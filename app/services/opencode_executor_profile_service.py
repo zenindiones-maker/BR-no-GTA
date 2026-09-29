@@ -20,6 +20,18 @@ OPENCODE_PROFILE_RESOLVER_BINDING = (
 
 _INCIDENT_RECONCILED = False
 
+# Historical compatibility evidence: commit 9177dfc145881ab341d600edd52c84521b24a82f
+# incorrectly folded mutable promotion metadata into the checksummed v2 definition.
+# Commit 6c16d515aa612256ca4b69d709e5bfbae5dd7386 restored the immutable
+# candidate definition and moved promotion state back to persistence.  The exact
+# historical checksum remains recognizable so persisted missions can hydrate
+# without destructively rewriting their original definition record.
+LEGACY_PROMOTED_V2_SOURCE_COMMIT = "9177dfc145881ab341d600edd52c84521b24a82f"
+RESTORED_IMMUTABLE_V2_SOURCE_COMMIT = "6c16d515aa612256ca4b69d709e5bfbae5dd7386"
+LEGACY_PROMOTED_V2_CHECKSUM = (
+    "ed4e18fc8d0a9b3720a180ed14cc2c87eda207b6d62dab478296981fc4e3f4ae"
+)
+
 _PROFILES: dict[str, dict[str, Any]] = {
     "v1": {
         "executor_kind": "omniroute_http",
@@ -100,6 +112,41 @@ def executable_opencode_executor_profile(version: str) -> dict[str, Any]:
         "checksum": opencode_executor_profile_checksum(version),
         "options": dict(profile),
     }
+
+
+def classify_persisted_opencode_profile(
+    record: dict[str, Any],
+    *,
+    version: str,
+) -> str:
+    """Validate a persisted definition without rewriting historical identity.
+
+    Exact immutable definitions pass directly.  The only compatibility exception
+    is the known v2 snapshot whose checksum drift came solely from promotion
+    metadata being embedded in the source definition.  Any other same-version
+    drift remains a fail-closed schema/profile-version conflict.
+    """
+    canonical = executable_opencode_executor_profile(version)
+    if str(record.get("content_ref") or "") != canonical["content_ref"]:
+        raise RuntimeError(
+            "AGENT_PROFILE_VERSION_CONFLICT:"
+            f"{version}:CONTENT_REF_MISMATCH"
+        )
+
+    persisted_checksum = str(record.get("checksum") or "").lower()
+    if persisted_checksum == canonical["checksum"]:
+        return "EXACT"
+
+    if (
+        version == CANDIDATE_OPENCODE_EXECUTOR_VERSION
+        and persisted_checksum == LEGACY_PROMOTED_V2_CHECKSUM
+    ):
+        return "KNOWN_LEGACY_PROMOTION_METADATA_DRIFT"
+
+    raise RuntimeError(
+        "AGENT_PROFILE_VERSION_CONFLICT:"
+        f"{version}:CHECKSUM_MISMATCH"
+    )
 
 
 def _utcnow() -> str:
@@ -186,14 +233,7 @@ def resolve_active_opencode_executor_profile() -> dict[str, Any]:
         )
     version = str(active["version"])
     executable = executable_opencode_executor_profile(version)
-    if active["content_ref"] != executable["content_ref"]:
-        raise PermissionError(
-            "active OpenCode executor profile content_ref does not resolve to executable code"
-        )
-    if active["checksum"] != executable["checksum"]:
-        raise PermissionError(
-            "active OpenCode executor profile checksum does not match executable code"
-        )
+    classify_persisted_opencode_profile(active, version=version)
     return executable
 
 
