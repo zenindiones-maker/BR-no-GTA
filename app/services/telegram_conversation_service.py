@@ -18,6 +18,9 @@ from app.database.telegram_conversation_repository import (
     update_conversation_state,
     update_shared_thread_context,
 )
+from app.database.telegram_user_input_repository import (
+    list_recent_telegram_user_inputs,
+)
 from app.services.gta6_observation_service import build_gta6_observation
 from app.services.harness_learning_service import record_human_correction
 from app.services.harness_collaboration_service import (
@@ -233,6 +236,20 @@ def _artifact_from_turns(turns: list[dict[str, Any]]) -> str | None:
     return None
 
 
+def _latest_materialized_obsidian_artifact_for_chat(
+    telegram_chat_id: int,
+) -> str | None:
+    for item in list_recent_telegram_user_inputs(limit=200):
+        if int(item.get("telegram_chat_id") or 0) != int(telegram_chat_id):
+            continue
+        if str(item.get("obsidian_materialization_status") or "").upper() != "MATERIALIZED":
+            continue
+        note_ref = str(item.get("obsidian_note_ref") or "").strip()
+        if note_ref:
+            return f"obsidian:{note_ref}"
+    return None
+
+
 def resolve_conversation_reference(
     message: str,
     *,
@@ -261,6 +278,14 @@ def resolve_conversation_reference(
     ):
         if latest_artifact:
             return {"reference": latest_artifact, "basis": "active_artifact"}
+        legacy_attachment = _latest_materialized_obsidian_artifact_for_chat(
+            int(state.get("telegram_chat_id") or 0)
+        )
+        if legacy_attachment:
+            return {
+                "reference": legacy_attachment,
+                "basis": "latest_materialized_telegram_attachment",
+            }
         subject = str(state.get("current_subject") or "").strip()
         if subject:
             return {"reference": subject, "basis": "current_subject"}
