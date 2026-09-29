@@ -1,7 +1,7 @@
 {
   "request": "continuous-operation-focused",
-  "source_head": "c40e4c6a52b85015676d8f48c49ca04505516ce2",
-  "scope": "scheduler-trigger-identity-and-proof-concurrency",
+  "source_head": "75356cecd3b76ac4bcee49ebc03d1a00f8a2e2a1",
+  "scope": "incident-dedup-aggregate-red",
   "regression_runs": [
     36572055458,
     36527996798,
@@ -9,5 +9,5 @@
     36433392687,
     36382274106
   ],
-  "expected": "CONTINUOUS_FOCUSED_TESTS=PASS; PROOF_NON_COALESCIBLE=PASS; ORIGINAL_TRIGGER_KIND_PRESERVED=PASS"
+  "expected": "RED: continuous incident reducer is required and missing before implementation"
 }
