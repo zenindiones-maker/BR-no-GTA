@@ -79,6 +79,8 @@ jobs:
             tests/test_telegram_gateway_conversation.py::test_live_status_passes_no_progress_callback_to_conversation_service \
             tests/test_telegram_gateway_conversation.py::test_final_human_response_send_is_logged_only_after_api_success \
             tests/test_telegram_gateway_conversation.py::test_final_human_response_send_failure_is_explicit \
+            tests/test_telegram_gateway_conversation.py::test_reference_attachment_reply_is_human_facing_and_hides_internal_telemetry \
+            tests/test_telegram_gateway_conversation.py::test_reference_attachment_ack_does_not_claim_cloud_execution_without_dispatch \
             tests/test_telegram_gateway_conversation.py::test_semantic_provider_integrity_failure_is_human_safe \
             tests/test_telegram_gateway_conversation.py::test_generic_semantic_provider_boundary_leak_is_sanitized \
             tests/test_harness_ai_provider_service.py::test_provider_constructor_integrity_error_is_captured_as_evidence \
