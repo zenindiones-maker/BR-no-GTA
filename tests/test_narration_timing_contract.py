@@ -58,30 +58,6 @@ def _one_segment(text: str = "Rockstar Games confirmou uma informação importan
 
 
 class NarrationTimingContractTests(unittest.TestCase):
-    def test_edge_adapter_explicitly_requests_word_boundaries(self):
-        captured: dict[str, object] = {}
-
-        class FakeCommunicate:
-            def __init__(self, *, text: str, voice: str, rate: str, boundary: str):
-                captured.update({"text": text, "voice": voice, "rate": rate, "boundary": boundary})
-
-            async def stream(self):
-                yield {"type": "audio", "data": b"ID3" + b"x" * 32}
-                yield {"type": "WordBoundary", "text": "teste", "offset": 0, "duration": 3_000_000}
-
-        fake_module = types.SimpleNamespace(Communicate=FakeCommunicate)
-        with tempfile.TemporaryDirectory() as tmp, patch.dict("sys.modules", {"edge_tts": fake_module}):
-            output = Path(tmp) / "sample.mp3"
-            result = asyncio.run(EdgeTTSProvider().synthesize_segment(
-                text="teste",
-                voice="pt-BR-AntonioNeural",
-                rate="-15%",
-                output=output,
-            ))
-        self.assertEqual(captured["boundary"], "WordBoundary")
-        self.assertTrue(result.timing)
-        self.assertEqual(result.timing[0]["text"], "teste")
-
     def test_native_capability_with_valid_timing_uses_provider_native(self):
         segments = _one_segment()
         segment = segments[0]
@@ -107,7 +83,7 @@ class NarrationTimingContractTests(unittest.TestCase):
                 provider=provider,
                 cache=ContentAddressedNarrationCache(Path(tmp) / "cache"),
                 bundle_segment_root=Path(tmp) / "bundle",
-                voice="pt-BR-AntonioNeural",
+                voice="BR_OWNER_V1",
                 language="pt-BR",
                 rate="-15%",
                 concurrency=1,
@@ -131,7 +107,7 @@ class NarrationTimingContractTests(unittest.TestCase):
                 provider=provider,
                 cache=ContentAddressedNarrationCache(Path(tmp) / "cache"),
                 bundle_segment_root=Path(tmp) / "bundle",
-                voice="pt-BR-AntonioNeural",
+                voice="BR_OWNER_V1",
                 language="pt-BR",
                 rate="-15%",
                 concurrency=1,
@@ -167,7 +143,7 @@ class NarrationTimingContractTests(unittest.TestCase):
                     provider=provider,
                     cache=ContentAddressedNarrationCache(Path(tmp) / "cache"),
                     bundle_segment_root=Path(tmp) / "bundle",
-                    voice="pt-BR-AntonioNeural",
+                    voice="BR_OWNER_V1",
                     language="pt-BR",
                     rate="-15%",
                     concurrency=1,
@@ -213,7 +189,7 @@ class NarrationTimingContractTests(unittest.TestCase):
                 provider=provider,
                 cache=ContentAddressedNarrationCache(Path(tmp) / "cache"),
                 calibration_root=Path(tmp) / "pilot",
-                voice="pt-BR-AntonioNeural",
+                voice="BR_OWNER_V1",
                 language="pt-BR",
                 configured_rate="-15%",
                 target_wpm=125.0,
@@ -241,7 +217,7 @@ class NarrationTimingContractTests(unittest.TestCase):
                 provider=TimingProvider(),
                 cache=cache,
                 bundle_segment_root=root / "first",
-                voice="pt-BR-AntonioNeural",
+                voice="BR_OWNER_V1",
                 language="pt-BR",
                 rate="-15%",
                 concurrency=1,
@@ -253,7 +229,7 @@ class NarrationTimingContractTests(unittest.TestCase):
                 provider=second_provider,
                 cache=cache,
                 bundle_segment_root=root / "second",
-                voice="pt-BR-AntonioNeural",
+                voice="BR_OWNER_V1",
                 language="pt-BR",
                 rate="-15%",
                 concurrency=1,
@@ -274,7 +250,7 @@ class NarrationTimingContractTests(unittest.TestCase):
             cache = ContentAddressedNarrationCache(root / "cache")
             fingerprint = segment_fingerprint(
                 segment,
-                voice="pt-BR-AntonioNeural",
+                voice="BR_OWNER_V1",
                 language="pt-BR",
                 rate="-15%",
                 provider_id="timing-test",
@@ -287,7 +263,7 @@ class NarrationTimingContractTests(unittest.TestCase):
                 "segment_id": segment.segment_id,
                 "section_id": segment.section_id,
                 "text_sha256": segment.text_sha256,
-                "voice": "pt-BR-AntonioNeural",
+                "voice": "BR_OWNER_V1",
                 "language": "pt-BR",
                 "rate": "-15%",
                 "provider": "timing-test",
@@ -310,7 +286,7 @@ class NarrationTimingContractTests(unittest.TestCase):
                 provider=TimingProvider(),
                 cache=cache,
                 bundle_segment_root=root / "bundle",
-                voice="pt-BR-AntonioNeural",
+                voice="BR_OWNER_V1",
                 language="pt-BR",
                 rate="-15%",
                 concurrency=1,
