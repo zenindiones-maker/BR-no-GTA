@@ -194,6 +194,11 @@ def _capability_context() -> list[dict[str, Any]]:
         "telegram.",
         "production.brand-assets",
         "ai.reasoning.text",
+        "speech.",
+        "voice.",
+        "narration.",
+        "media.technical-analysis",
+        "media.analysis.cloud",
         "youtube.analytics",
         "knowledge.learn.youtube-analytics",
     )
