@@ -4,7 +4,6 @@ import asyncio
 import hashlib
 import json
 import tempfile
-import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -12,7 +11,6 @@ from unittest.mock import patch
 from app.services.narration_pipeline import (
     ContentAddressedNarrationCache,
     NarrationError,
-    EdgeTTSProvider,
     ProviderResult,
     _new_stats,
     _synthesize_segment_set,
