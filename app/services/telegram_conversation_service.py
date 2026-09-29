@@ -1423,6 +1423,23 @@ def handle_telegram_conversation(
                     "execution_id": synthesis.get("execution_id"),
                 },
             }
+    elif plan["kind"] == "SEMANTIC_REASONING_UNAVAILABLE":
+        canonical = {
+            "status": "BLOCKED",
+            "answer": (
+                "O planejamento semântico da missão está temporariamente indisponível. "
+                "A missão não foi convertida em chat genérico e nenhuma execução foi "
+                "despachada fora do Harness."
+            ),
+            "error": {
+                "code": "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE",
+                "message": (
+                    "Nenhum provider elegível concluiu o planejamento semântico."
+                ),
+            },
+            "authority": "DEEPSEEK_HARNESS",
+            "provider_independent_terminal_state": True,
+        }
     elif plan["kind"] in {"CONTINUE", "CAPABILITY", "CAPABILITY_DISCOVERY", "HERMES_COLLABORATION", "HARNESS_MISSION", "SYSTEM_IMPROVEMENT_MISSION"}:
         update_conversation_state(
             telegram_chat_id,
