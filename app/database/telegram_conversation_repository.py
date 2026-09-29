@@ -498,6 +498,45 @@ def list_recent_telegram_progress_events(
         return result
 
 
+def get_conversation_turn_by_message(
+    *,
+    telegram_chat_id: int,
+    telegram_message_id: int,
+    role: str = "HUMAN",
+    intent: str | None = None,
+) -> dict[str, Any] | None:
+    normalized_role = str(role or "").strip().upper()
+    connection = get_connection()
+    try:
+        _ensure_schema(connection)
+        params: list[Any] = [
+            int(telegram_chat_id),
+            int(telegram_message_id),
+            normalized_role,
+        ]
+        where = "telegram_chat_id=? AND telegram_message_id=? AND role=?"
+        if intent is not None:
+            where += " AND intent=?"
+            params.append(str(intent))
+        row = connection.execute(
+            f"""
+            SELECT *
+              FROM telegram_conversation_turns
+             WHERE {where}
+             ORDER BY turn_id DESC
+             LIMIT 1
+            """,
+            tuple(params),
+        ).fetchone()
+        if row is None:
+            return None
+        record = dict(row)
+        record["metadata"] = _load(record.get("metadata"), {})
+        return record
+    finally:
+        connection.close()
+
+
 def append_conversation_turn(
     *,
     telegram_chat_id: int,

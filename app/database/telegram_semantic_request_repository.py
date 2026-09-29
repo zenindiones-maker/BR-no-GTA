@@ -396,6 +396,45 @@ def promote_context_bound_semantic_requests_for_restart(
         connection.close()
 
 
+def list_telegram_semantic_requests_for_artifact(
+    *,
+    telegram_chat_id: int,
+    artifact_content_sha256: str,
+    artifact_ref: str | None = None,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    digest = str(artifact_content_sha256 or "").strip().lower()
+    if not digest:
+        return []
+    connection = get_connection()
+    try:
+        _ensure_schema(connection)
+        params: list[Any] = [int(telegram_chat_id), digest]
+        where = "telegram_chat_id=? AND artifact_content_sha256=?"
+        normalized_ref = str(artifact_ref or "").strip()
+        if normalized_ref:
+            where += " AND artifact_ref=?"
+            params.append(normalized_ref)
+        params.append(max(1, min(int(limit), 200)))
+        rows = connection.execute(
+            f"""
+            SELECT *
+              FROM telegram_semantic_reasoning_requests
+             WHERE {where}
+             ORDER BY created_at ASC, request_id ASC
+             LIMIT ?
+            """,
+            tuple(params),
+        ).fetchall()
+        return [
+            record
+            for row in rows
+            if (record := _row_to_record(row)) is not None
+        ]
+    finally:
+        connection.close()
+
+
 def get_latest_telegram_semantic_request_for_input(
     telegram_input_id: int,
 ) -> dict[str, Any] | None:

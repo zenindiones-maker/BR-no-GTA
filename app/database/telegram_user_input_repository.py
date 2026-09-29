@@ -306,6 +306,42 @@ def get_telegram_user_input(input_id: int) -> dict[str, Any] | None:
         connection.close()
 
 
+def get_telegram_materialized_input_for_artifact(
+    *,
+    telegram_chat_id: int,
+    content_sha256: str,
+    obsidian_note_ref: str | None = None,
+) -> dict[str, Any] | None:
+    digest = str(content_sha256 or "").strip().lower()
+    if not digest:
+        return None
+    connection = get_connection()
+    try:
+        _ensure_schema(connection)
+        params: list[Any] = [int(telegram_chat_id), digest]
+        where = (
+            "telegram_chat_id=? AND LOWER(COALESCE(content_sha256,''))=? "
+            "AND obsidian_materialization_status='MATERIALIZED'"
+        )
+        note_ref = str(obsidian_note_ref or "").strip()
+        if note_ref:
+            where += " AND obsidian_note_ref=?"
+            params.append(note_ref)
+        row = connection.execute(
+            f"""
+            SELECT *
+              FROM telegram_user_inputs
+             WHERE {where}
+             ORDER BY id DESC
+             LIMIT 1
+            """,
+            tuple(params),
+        ).fetchone()
+        return _row_to_record(row)
+    finally:
+        connection.close()
+
+
 def get_telegram_user_input_by_message(
     *,
     telegram_chat_id: int,

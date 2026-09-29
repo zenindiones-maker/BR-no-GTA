@@ -60,14 +60,19 @@ from app.services.telegram_obsidian_attachment_bridge_service import (
     materialize_staged_telegram_attachment_under_harness,
 )
 from app.database.telegram_user_input_repository import (
+    get_telegram_materialized_input_for_artifact,
     get_telegram_user_input,
     list_recent_telegram_user_inputs,
 )
 from app.database.telegram_semantic_request_repository import (
     get_latest_telegram_semantic_request_for_input,
+    list_telegram_semantic_requests_for_artifact,
 )
 from app.database.telegram_egress_outbox_repository import (
     list_telegram_egress_operations_for_request,
+)
+from app.database.telegram_conversation_repository import (
+    get_conversation_turn_by_message,
 )
 from app.database.telegram_source_intelligence_repository import (
     get_editorial_signal_by_candidate,
@@ -518,6 +523,70 @@ def _source_evidence_payload(input_id: int | None = None) -> dict[str, Any]:
     semantic_request = get_latest_telegram_semantic_request_for_input(
         int(record["id"])
     )
+    document_artifact_sha = str(record.get("content_sha256") or "").strip().lower()
+    document_note_ref = str(record.get("obsidian_note_ref") or "").strip()
+    document_artifact_ref = (
+        f"obsidian:{document_note_ref}" if document_note_ref else None
+    )
+    related_semantic_requests: list[dict[str, Any]] = []
+    if document_artifact_sha and document_artifact_ref:
+        for child in list_telegram_semantic_requests_for_artifact(
+            telegram_chat_id=int(record["telegram_chat_id"]),
+            artifact_content_sha256=document_artifact_sha,
+            artifact_ref=document_artifact_ref,
+            limit=50,
+        ):
+            child_ops = list_telegram_egress_operations_for_request(
+                str(child["request_id"])
+            )
+            final_child_ops = [
+                item for item in child_ops
+                if str(item.get("kind") or "") in {
+                    "FINAL_MESSAGE", "FINAL_EDIT", "FINAL_CHUNK"
+                }
+            ]
+            final_state = (
+                str(final_child_ops[-1].get("state") or "")
+                if final_child_ops else None
+            )
+            related_semantic_requests.append({
+                "question_input_id": child.get("telegram_input_id"),
+                "human_turn_id": child.get("human_turn_id"),
+                "semantic_request_id": child.get("request_id"),
+                "human_text_sha256": child.get("human_text_sha256"),
+                "status": child.get("status"),
+                "artifact_ref": child.get("artifact_ref"),
+                "artifact_content_sha256": child.get("artifact_content_sha256"),
+                "context_digest": child.get("context_digest"),
+                "final_egress_state": final_state,
+            })
+
+    source_attachment_lineage = None
+    if semantic_request is not None and semantic_request.get("artifact_content_sha256"):
+        source_input = get_telegram_materialized_input_for_artifact(
+            telegram_chat_id=int(semantic_request["telegram_chat_id"]),
+            content_sha256=str(semantic_request["artifact_content_sha256"]),
+            obsidian_note_ref=semantic_request.get("obsidian_note_ref"),
+        )
+        if source_input is not None:
+            attachment_turn = get_conversation_turn_by_message(
+                telegram_chat_id=int(source_input["telegram_chat_id"]),
+                telegram_message_id=int(source_input["telegram_message_id"]),
+                role="HUMAN",
+                intent="FILE_SUBMISSION",
+            )
+            source_attachment_lineage = {
+                "document_input_id": source_input.get("id"),
+                "document_message_id": source_input.get("telegram_message_id"),
+                "artifact_ref": semantic_request.get("artifact_ref"),
+                "obsidian_note_ref": source_input.get("obsidian_note_ref"),
+                "artifact_content_sha256": source_input.get("content_sha256"),
+                "attachment_turn_id": (
+                    attachment_turn.get("turn_id")
+                    if attachment_turn is not None else None
+                ),
+                "normalization_state": semantic_request.get("normalization_state"),
+            }
     semantic_egress = (
         list_telegram_egress_operations_for_request(
             str(semantic_request["request_id"])
@@ -605,6 +674,8 @@ def _source_evidence_payload(input_id: int | None = None) -> dict[str, Any]:
         "EFFECTIVELY_ONCE_EGRESS": effectively_once,
         "TelegramSemanticReasoningRequest": safe_semantic_request,
         "TelegramEgressOperations": semantic_egress,
+        "RELATED_SEMANTIC_REQUESTS": related_semantic_requests,
+        "SOURCE_ATTACHMENT_LINEAGE": source_attachment_lineage,
         "SOURCE_LEARNED": (
             "PASS"
             if candidate is not None

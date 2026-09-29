@@ -1579,3 +1579,182 @@ def test_timeout_failure_domain_is_model_local_for_semantic_failover():
     assert classify_semantic_failure_domain(
         code="timeout", status_code=None
     ) == "MODEL_LOCAL"
+
+
+def test_document_evidence_lists_descendant_semantic_requests(monkeypatch):
+    from app.database.telegram_egress_outbox_repository import (
+        upsert_telegram_egress_operation,
+        update_telegram_egress_operation,
+    )
+    from app.database.telegram_semantic_request_repository import (
+        upsert_telegram_semantic_request,
+    )
+    from app.database.telegram_user_input_repository import (
+        upsert_telegram_user_input,
+        update_telegram_attachment_materialization,
+    )
+    from scripts import telegram_harness_gateway_v2 as gateway
+
+    document = upsert_telegram_user_input(
+        telegram_user_id=77,
+        telegram_chat_id=-100711,
+        telegram_message_id=602,
+        telegram_update_id=9602,
+        input_kind="document",
+        text_content="",
+        classification="knowledge_note",
+        learning_status="captured",
+        telegram_file_id="file-doc",
+        telegram_file_unique_id="unique-doc",
+        file_name="readiness.html",
+        mime_type="text/html",
+        remote_verified=True,
+    )
+    document = update_telegram_attachment_materialization(
+        int(document["id"]),
+        status="MATERIALIZED",
+        obsidian_attachment_ref="90-Attachments/Telegram/sha256/7e/doc.html",
+        obsidian_note_ref="Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+        content_sha256="7e11d519ebdcbcaa6bf4fb82afe2478b9387e249feed5c65d9daf4a7ff84b131",
+        normalized_markdown_ref="Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+    )
+    question = upsert_telegram_user_input(
+        telegram_user_id=77,
+        telegram_chat_id=-100711,
+        telegram_message_id=603,
+        telegram_update_id=9603,
+        input_kind="text",
+        text_content="O que você entendeu desse arquivo? Me explique os pontos principais.",
+        classification="question",
+        learning_status="captured",
+    )
+    request = upsert_telegram_semantic_request(
+        request_id="semantic-lineage-child",
+        telegram_input_id=int(question["id"]),
+        telegram_update_id=9603,
+        telegram_message_id=603,
+        telegram_chat_id=-100711,
+        human_turn_id=71,
+        thread_id="thread-lineage",
+        human_identity_id="human-lineage",
+        human_text="O que você entendeu desse arquivo? Me explique os pontos principais.",
+        human_text_sha256="b" * 64,
+        resolved_reference="obsidian:Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+        artifact_ref="obsidian:Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+        obsidian_note_ref="Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+        artifact_content_sha256="7e11d519ebdcbcaa6bf4fb82afe2478b9387e249feed5c65d9daf4a7ff84b131",
+        normalization_state="LOCAL_TEXT_NORMALIZED",
+        context_digest="c" * 64,
+        context_json={
+            "active_attachment_context": {
+                "status": "AVAILABLE",
+                "artifact_ref": "obsidian:Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+                "content": "SYSTEM_OPERATIONAL=NOT_CERTIFIED",
+            }
+        },
+        status="DELIVERED",
+    )
+    op = upsert_telegram_egress_operation(
+        operation_id="egress-lineage-final",
+        request_id=request["request_id"],
+        chat_id=-100711,
+        reply_to_message_id=603,
+        kind="FINAL_MESSAGE",
+        sequence_number=0,
+        payload_text="Resumo específico do documento",
+    )
+    update_telegram_egress_operation(
+        op["operation_id"],
+        state="SENT",
+        telegram_message_id=777,
+    )
+
+    payload = gateway._source_evidence_payload(int(document["id"]))
+    assert payload["DURABLE_SEMANTIC_REQUEST"] == "NO"
+    related = payload["RELATED_SEMANTIC_REQUESTS"]
+    assert len(related) == 1
+    assert related[0]["question_input_id"] == int(question["id"])
+    assert related[0]["human_turn_id"] == 71
+    assert related[0]["semantic_request_id"] == "semantic-lineage-child"
+    assert related[0]["artifact_content_sha256"] == document["content_sha256"]
+    assert related[0]["status"] == "DELIVERED"
+    assert related[0]["final_egress_state"] == "SENT"
+
+
+def test_question_evidence_projects_source_attachment_lineage():
+    from app.database.telegram_semantic_request_repository import (
+        upsert_telegram_semantic_request,
+    )
+    from app.database.telegram_user_input_repository import (
+        upsert_telegram_user_input,
+        update_telegram_attachment_materialization,
+    )
+    from scripts import telegram_harness_gateway_v2 as gateway
+
+    document = upsert_telegram_user_input(
+        telegram_user_id=77,
+        telegram_chat_id=-100712,
+        telegram_message_id=602,
+        telegram_update_id=9702,
+        input_kind="document",
+        text_content="",
+        classification="knowledge_note",
+        learning_status="captured",
+        telegram_file_id="file-source",
+        telegram_file_unique_id="unique-source",
+        file_name="readiness.html",
+        mime_type="text/html",
+        remote_verified=True,
+    )
+    document = update_telegram_attachment_materialization(
+        int(document["id"]),
+        status="MATERIALIZED",
+        obsidian_attachment_ref="90-Attachments/Telegram/sha256/7e/doc.html",
+        obsidian_note_ref="Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+        content_sha256="7e11d519ebdcbcaa6bf4fb82afe2478b9387e249feed5c65d9daf4a7ff84b131",
+        normalized_markdown_ref="Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+    )
+    question = upsert_telegram_user_input(
+        telegram_user_id=77,
+        telegram_chat_id=-100712,
+        telegram_message_id=603,
+        telegram_update_id=9703,
+        input_kind="text",
+        text_content="O que você entendeu desse arquivo? Me explique os pontos principais.",
+        classification="question",
+        learning_status="captured",
+    )
+    upsert_telegram_semantic_request(
+        request_id="semantic-lineage-question",
+        telegram_input_id=int(question["id"]),
+        telegram_update_id=9703,
+        telegram_message_id=603,
+        telegram_chat_id=-100712,
+        human_turn_id=71,
+        thread_id="thread-lineage",
+        human_identity_id="human-lineage",
+        human_text="O que você entendeu desse arquivo? Me explique os pontos principais.",
+        human_text_sha256="b" * 64,
+        resolved_reference="obsidian:Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+        artifact_ref="obsidian:Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+        obsidian_note_ref="Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+        artifact_content_sha256="7e11d519ebdcbcaa6bf4fb82afe2478b9387e249feed5c65d9daf4a7ff84b131",
+        normalization_state="LOCAL_TEXT_NORMALIZED",
+        context_digest="c" * 64,
+        context_json={
+            "active_attachment_context": {
+                "status": "AVAILABLE",
+                "artifact_ref": "obsidian:Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+                "content": "SYSTEM_OPERATIONAL=NOT_CERTIFIED",
+            }
+        },
+        status="DELIVERED",
+    )
+
+    payload = gateway._source_evidence_payload(int(question["id"]))
+    lineage = payload["SOURCE_ATTACHMENT_LINEAGE"]
+    assert lineage["document_input_id"] == int(document["id"])
+    assert lineage["document_message_id"] == 602
+    assert lineage["artifact_content_sha256"] == document["content_sha256"]
+    assert lineage["obsidian_note_ref"] == document["obsidian_note_ref"]
+    assert lineage["normalization_state"] == "LOCAL_TEXT_NORMALIZED"
