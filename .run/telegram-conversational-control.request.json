@@ -1,9 +1,9 @@
 {
   "request": "telegram-conversational-control-validation",
-  "source_head": "21d992d8c4257cfb7dd44e5c89f5c08d00b8df9b",
-  "scope": "final-telegram-control-surface-reconciliation",
+  "source_head": "c87f5b186a9359466f603fe695433ba0d825f232",
+  "scope": "final-root-aligned-telegram-proof",
   "red_status_run_id": 36597705833,
   "red_terminal_veto_run_id": 36598916708,
-  "previous_status_green_run_id": 36598405290,
-  "trigger_reason": "Final combined proof: natural status followups, exact GitHub run reconciliation, terminal-result precedence, human-safe receipts, sanitized generic failures, no authority escape"
+  "combined_green_run_id": 36599609104,
+  "trigger_reason": "Root-aligned final proof after sanitization contract update: live status reconciliation, terminal precedence, safe human presentation, typed executor proof, no authority escape"
 }
