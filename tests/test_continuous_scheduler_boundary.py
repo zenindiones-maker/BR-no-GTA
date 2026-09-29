@@ -146,3 +146,20 @@ def test_executor_requires_exact_promoted_sha_before_runtime():
 def test_policy_sha_is_content_addressed():
     payload = b'{"schema":"continuous-operation-policy/v1"}\n'
     assert hashlib.sha256(payload).hexdigest() != "0" * 64
+
+
+def test_scheduler_separates_non_coalescible_proof_concurrency():
+    text = Path(".github/workflows/continuous-intelligence-operation.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "br-continuous-intelligence-scheduler-" in text
+    assert "inputs.request_id" in text
+    assert "coalescible" in text
+
+
+def test_executor_workflow_fallback_attempt_preserves_original_trigger_kind():
+    text = Path(".github/workflows/continuous-intelligence-executor.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "ORIGINAL_TRIGGER_KIND: ${{ inputs.trigger_kind }}" in text
+    assert '"trigger_kind":os.environ.get("ORIGINAL_TRIGGER_KIND")' in text
