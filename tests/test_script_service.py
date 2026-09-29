@@ -12,7 +12,7 @@ from app.services.script_service import (
     update_status,
 )
 from app.services.script_generator_service import (
-    VOICE_B_SCRIPT_PLANNING_WPM,
+    LONGFORM_SCRIPT_PLANNING_WPM,
     _build_ai_prompt,
 )
 
