@@ -901,3 +901,119 @@ def test_reference_attachment_ack_does_not_claim_cloud_execution_without_dispatc
     assert "análise enfileirada" not in lowered
     assert "já estou analisando" not in lowered
     assert "ainda não foi analisado" in lowered
+
+def test_brand_asset_receipt_is_human_facing_and_hides_registry_telemetry():
+    presentation = gateway_v2._brand_asset_presentation(
+        {
+            "authority": "deepseek_harness",
+            "routing_id": "route-brand-internal",
+            "authorization_id": "auth-brand-internal",
+            "asset": {
+                "id": 321,
+                "asset_type": "INTRO",
+                "file_name": "intro-oficial.mp4",
+                "remote_verified": True,
+                "telegram_file_unique_id": "brand-stable-id",
+            },
+        },
+        {
+            "standard": "BR_NO_GTA_VIDEO_BRANDING_V1",
+            "active": True,
+            "ready": True,
+            "required_asset_types": ["INTRO", "WATERMARK"],
+            "missing_asset_types": [],
+            "enforcement": "FAIL_CLOSED",
+        },
+        {
+            "authority": "deepseek_harness",
+            "routing_id": "route-learning-internal",
+            "input": {
+                "id": 777,
+                "classification": "brand_asset",
+                "learning_status": "learned",
+                "memory_event_id": 778,
+                "claim_id": 779,
+                "memory_id": 780,
+                "remote_verified": True,
+                "file_name": "intro-oficial.mp4",
+            },
+        },
+    )
+    reply = str(presentation["text"])
+
+    assert "intro-oficial.mp4" in reply
+    assert "branding" in reply.casefold() or "padrão do canal" in reply.casefold()
+    assert "ativo" in reply.casefold() or "pronto" in reply.casefold()
+    assert "/evidence" in reply
+
+    forbidden = (
+        "ASSET_REGISTERED=PASS",
+        "HARNESS_AUTHORITY=",
+        "ROUTING_ID=",
+        "AUTHORIZATION_ID=",
+        "ASSET_ID=",
+        "TELEGRAM_FILE_UNIQUE_ID=",
+        "CHANNEL_BRANDING_STANDARD=PASS",
+        "MEMORY_EVENT_ID=",
+        "CLAIM_ID=",
+        "MEMORY_ID=",
+        "route-brand-internal",
+        "auth-brand-internal",
+        "route-learning-internal",
+    )
+    for marker in forbidden:
+        assert marker not in reply
+
+
+def test_render_feedback_receipt_is_human_facing_and_preserves_no_publication_authority():
+    presentation = gateway_v2._review_feedback_presentation(
+        {
+            "HUMAN_FEEDBACK_INGESTION": "PASS",
+            "review_state": "CHANGES_REQUESTED",
+            "correction_id": "correction-internal-1",
+            "scope": "LOCAL",
+            "render_job_id": 920101,
+            "video_id": 920101,
+            "execution_id": "run001-video-a-investigative-v1",
+            "github_run_id": 35350000000,
+            "affected_capability": "production.render.execute",
+            "affected_skill": "vedit.longform.render-profile",
+            "publication_authority": "NONE",
+            "evidence_refs": ["internal:evidence:1"],
+        },
+        {
+            "authority": "deepseek_harness",
+            "routing_id": "route-feedback-internal",
+            "input": {
+                "id": 781,
+                "classification": "chat",
+                "learning_status": "captured",
+                "memory_event_id": 782,
+                "remote_verified": False,
+            },
+        },
+    )
+    reply = str(presentation["text"])
+
+    assert "alterações" in reply.casefold() or "correção" in reply.casefold()
+    assert "local" in reply.casefold()
+    assert "publicação" in reply.casefold()
+    assert "não" in reply.casefold()
+    assert "/evidence" in reply
+
+    forbidden = (
+        "HUMAN_FEEDBACK_INGESTION",
+        "correction_id",
+        "render_job_id",
+        "video_id",
+        "execution_id",
+        "github_run_id",
+        "affected_capability",
+        "affected_skill",
+        "PUBLICATION_AUTHORITY=NONE",
+        "route-feedback-internal",
+        "correction-internal-1",
+    )
+    for marker in forbidden:
+        assert marker not in reply
+
