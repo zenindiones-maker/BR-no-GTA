@@ -539,35 +539,64 @@ def _conversation_classification_override(text: str) -> str | None:
     return None
 
 
-def _attachment_reply(result: dict[str, Any]) -> str:
+def _attachment_presentation(
+    result: dict[str, Any],
+) -> dict[str, Any] | None:
     item = result.get("input") or {}
     if item.get("classification") == "owner_voice_reference":
         # Owner voice intake is intentionally silent on the human surface.
         # Detailed ingestion/QA telemetry stays in logs; the next human-visible
         # output is the actual pt-BR voice-note audition.
-        return ""
+        return None
 
-    lines = [
-        "TELEGRAM_INPUT=PASS",
-        f"HARNESS_AUTHORITY={result.get('authority')}",
-        f"CLASSIFICATION={item.get('classification')}",
-        f"LEARNING_STATUS={item.get('learning_status')}",
-        f"INPUT_ID={item.get('id')}",
-        f"MEMORY_EVENT_ID={item.get('memory_event_id')}",
-        f"CLAIM_ID={item.get('claim_id')}",
-        f"MEMORY_ID={item.get('memory_id')}",
-        f"REMOTE_GETFILE_VERIFIED={item.get('remote_verified')}",
-        "TELEGRAM_REFERENCE_IDENTITY=REDACTED",
-        "MEDIA_BYTES_ON_A15=NO",
-    ]
-    if item.get("learning_status") == "pending_cloud_analysis":
-        lines.extend(
-            [
-                "CONTENT_ANALYSIS=PENDING_CLOUD_ANALYSIS",
-                "NOTE=O arquivo foi preservado por identidade/proveniência e aguarda a capability cloud correspondente.",
-            ]
+    file_name = str(item.get("file_name") or "").strip()
+    file_label = f' “{file_name}”' if file_name else ""
+    learning_status = str(item.get("learning_status") or "").strip()
+
+    if learning_status in {
+        "pending_cloud_analysis",
+        "captured_awaiting_cloud_materialization",
+    }:
+        answer = (
+            f"Recebi o arquivo{file_label} e registrei a referência com proveniência verificada. "
+            "O conteúdo ainda não foi analisado: neste momento não existe uma execução cloud "
+            "materializada para este anexo. Nenhum byte foi baixado no A15. "
+            "Use /evidence para ver a auditoria técnica."
         )
-    return "\n".join(lines)
+        processing_state = "AWAITING_CLOUD_MATERIALIZATION"
+    else:
+        answer = (
+            f"Recebi o arquivo{file_label} e registrei a referência com proveniência verificada. "
+            "Nenhum byte foi baixado no A15. Use /evidence para ver a auditoria técnica."
+        )
+        processing_state = "CAPTURED"
+
+    canonical = {
+        "schema": "TelegramAttachmentReceipt/v1",
+        "status": "ATTACHMENT_CAPTURED",
+        "answer": answer,
+        "classification": item.get("classification"),
+        "input_kind": item.get("input_kind"),
+        "mime_type": item.get("mime_type"),
+        "file_name": item.get("file_name"),
+        "remote_verified": bool(item.get("remote_verified")),
+        "processing_state": processing_state,
+        "local_media_bytes": False,
+        "evidence_available": True,
+    }
+    return present_canonical_result_under_harness(
+        canonical,
+        surface="telegram",
+        mode=ACTION_FIRST,
+        lineage=_input_presentation_lineage(item),
+    )
+
+
+def _attachment_reply(result: dict[str, Any]) -> str:
+    presentation = _attachment_presentation(result)
+    if presentation is None:
+        return ""
+    return str(presentation.get("text") or "").strip()
 
 
 def _branding_reply(readiness: dict[str, Any]) -> str:
@@ -1105,6 +1134,8 @@ def main() -> int:
 
                 attachment = _extract_attachment(message)
                 if attachment is not None:
+                    api.typing(chat_id)
+                    learned: dict[str, Any] | None = None
                     try:
                         verified = _verify_attachment(api, attachment)
                         asset_type = _classify_brand_asset(text, verified.get("file_name"))
@@ -1151,13 +1182,60 @@ def main() -> int:
                                 text=text,
                                 attachment=verified,
                             )
-                            reply = _attachment_reply(learned)
+                            presentation = _attachment_presentation(learned)
+                            reply = (
+                                str(presentation.get("text") or "").strip()
+                                if presentation is not None
+                                else ""
+                            )
+                            if presentation is not None:
+                                audit = record_telegram_presentation_audit(
+                                    telegram_input_id=int(learned["input"]["id"]),
+                                    presentation=presentation,
+                                    reply_text=reply,
+                                )
+                                print(
+                                    "TELEGRAM_PRESENTATION=PASS "
+                                    f"MODE={presentation.get('mode')} "
+                                    f"CANONICAL_UNCHANGED={presentation.get('canonical_unchanged')} "
+                                    f"INPUT_ID={audit.get('telegram_input_id')} "
+                                    f"REPLY_SHA256={audit.get('reply_sha256')} "
+                                    f"AUTHORITY={presentation.get('authority')}",
+                                    flush=True,
+                                )
                             print(
                                 f"TELEGRAM_INGRESS=PASS USER_ID={user_id} CLASS={learned['input']['classification']} INPUT_ID={learned['input']['id']}",
                                 flush=True,
                             )
                     except Exception as exc:
-                        reply = f"TELEGRAM_INPUT=FAIL\n{type(exc).__name__}: {str(exc)[:1200]}"
+                        input_record = (
+                            learned.get("input")
+                            if isinstance(learned, dict)
+                            and isinstance(learned.get("input"), dict)
+                            else None
+                        )
+                        presentation = _generic_failure_presentation(
+                            exc,
+                            input_record=input_record,
+                            command="attachment",
+                            telegram_message_id=int(message.get("message_id") or 0) or None,
+                            telegram_update_id=update_id,
+                        )
+                        reply = str(presentation.get("text") or "").strip()
+                        if input_record is not None:
+                            audit = record_telegram_presentation_audit(
+                                telegram_input_id=int(input_record["id"]),
+                                presentation=presentation,
+                                reply_text=reply,
+                            )
+                            print(
+                                "TELEGRAM_PRESENTATION=PASS "
+                                f"MODE={presentation.get('mode')} "
+                                "OUTCOME=FAIL "
+                                f"INPUT_ID={audit.get('telegram_input_id')} "
+                                f"REPLY_SHA256={audit.get('reply_sha256')}",
+                                flush=True,
+                            )
                         print(
                             f"TELEGRAM_INGRESS=FAIL USER_ID={user_id} ERROR={type(exc).__name__}",
                             flush=True,
