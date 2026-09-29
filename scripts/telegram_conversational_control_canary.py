@@ -29,6 +29,7 @@ from app.services.harness_routing_policy_service import (
     route_harness_request,
 )
 from app.services.telegram_harness_service import HarnessReasoningFailure
+from app.services.task_result_envelope_service import TASK_RESULT_ENVELOPE_SCHEMA
 from scripts.telegram_harness_gateway_v2 import (
     _handle_live_natural_language_message,
 )
@@ -70,6 +71,116 @@ def _provider_unavailable(*_args, **_kwargs):
             },
         }
     )
+
+
+
+def _typed_task_result_bindings_are_canonical(
+    task_result_dir: Path,
+    *,
+    required_task_ids: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    paths = sorted(task_result_dir.glob("*.json")) if task_result_dir.is_dir() else []
+    if not paths:
+        return {
+            "status": "FAIL",
+            "failure_class": "TASK_RESULT_RECEIPT_MISSING",
+            "task_result_count": 0,
+            "audit_stream_consulted": False,
+        }
+
+    checked: list[dict[str, str]] = []
+    observed_task_ids: set[str] = set()
+    for result_path in paths:
+        try:
+            payload = json.loads(result_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return {
+                "status": "FAIL",
+                "failure_class": "TASK_RESULT_RECEIPT_INVALID",
+                "task_result_count": len(checked),
+                "audit_stream_consulted": False,
+                "path": str(result_path),
+                "error_type": type(exc).__name__,
+            }
+
+        if payload.get("schema") != TASK_RESULT_ENVELOPE_SCHEMA:
+            return {
+                "status": "FAIL",
+                "failure_class": "TASK_RESULT_SCHEMA_MISMATCH",
+                "task_result_count": len(checked),
+                "audit_stream_consulted": False,
+                "path": str(result_path),
+                "observed_schema": payload.get("schema"),
+                "expected_schema": TASK_RESULT_ENVELOPE_SCHEMA,
+            }
+
+        task_id = str(payload.get("task_id") or "").strip()
+        capability_id = str(payload.get("capability_id") or "").strip()
+        executor_binding = str(payload.get("executor_binding") or "").strip()
+        status = str(payload.get("status") or "").strip()
+        record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
+
+        if not task_id or status != "COMPLETED":
+            return {
+                "status": "FAIL",
+                "failure_class": "TASK_RESULT_COMPLETION_CONTRACT_INVALID",
+                "task_result_count": len(checked),
+                "audit_stream_consulted": False,
+                "path": str(result_path),
+                "task_id": task_id or None,
+                "task_status": status or None,
+            }
+        if record is None:
+            return {
+                "status": "FAIL",
+                "failure_class": "TASK_RESULT_CAPABILITY_UNREGISTERED",
+                "task_result_count": len(checked),
+                "audit_stream_consulted": False,
+                "path": str(result_path),
+                "task_id": task_id,
+                "capability_id": capability_id,
+            }
+
+        expected_binding = str(record.executor_binding or "").strip()
+        if not expected_binding or executor_binding != expected_binding:
+            return {
+                "status": "FAIL",
+                "failure_class": "EXECUTOR_BINDING_MISMATCH",
+                "task_result_count": len(checked),
+                "audit_stream_consulted": False,
+                "path": str(result_path),
+                "task_id": task_id,
+                "capability_id": capability_id,
+                "expected_executor_binding": expected_binding,
+                "observed_executor_binding": executor_binding,
+            }
+
+        observed_task_ids.add(task_id)
+        checked.append(
+            {
+                "task_id": task_id,
+                "capability_id": capability_id,
+                "executor_binding": executor_binding,
+            }
+        )
+
+    missing = sorted(set(required_task_ids) - observed_task_ids)
+    if missing:
+        return {
+            "status": "FAIL",
+            "failure_class": "TASK_RESULT_RECEIPT_MISSING",
+            "task_result_count": len(checked),
+            "audit_stream_consulted": False,
+            "missing_task_ids": missing,
+            "checked": checked,
+        }
+
+    return {
+        "status": "PASS",
+        "task_result_count": len(checked),
+        "audit_stream_consulted": False,
+        "checked": checked,
+    }
 
 
 def _route_only_continue(plan: dict[str, Any]) -> dict[str, Any]:
@@ -428,12 +539,16 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
     all_messages = api.human_facing + restarted_api.human_facing
     start_audit = list((hermes_start or {}).get("authorization_audit") or ())
     resume_audit = list((hermes_resume or {}).get("authorization_audit") or ())
-    exact_bindings = True
-    for row in [*start_audit, *resume_audit]:
-        record = GLOBAL_CAPABILITY_REGISTRY.get(str(row.get("capability_id") or ""))
-        if record is None or row.get("executor_binding") != record.executor_binding:
-            exact_bindings = False
-            break
+    binding_proof = _typed_task_result_bindings_are_canonical(
+        hermes_dir / "task-results",
+        required_task_ids=(
+            "fact-check",
+            "content-strategy",
+            "script-review",
+            "production-management",
+        ),
+    )
+    exact_bindings = binding_proof["status"] == "PASS"
 
     start_board = ((hermes_start or {}).get("canonical") or {}).get("result") or {}
     start_statuses = start_board.get("final_task_statuses") or {}
@@ -594,6 +709,7 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
         },
         "hermes_start": hermes_start,
         "hermes_resume": hermes_resume,
+        "executor_binding_proof": binding_proof,
         "sequence": {
             "status": status["answer"],
             "last_script": last_script["answer"],
