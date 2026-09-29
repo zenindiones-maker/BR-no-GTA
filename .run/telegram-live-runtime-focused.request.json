@@ -1,8 +1,8 @@
 {
-  "request": "semantic-proposal-rejection-red-v1",
-  "source_head": "9d2c0bc60cd5ba67f36784938109f0b2a07b3e10",
-  "objective": "Reproduce live SYSTEM_IMPROVEMENT semantic proposal rejection and prove no planning rejection may fall into generic chat.",
-  "expected_first_state": "RED_ON_SEMANTIC_REJECTION_FALLTHROUGH",
+  "request": "semantic-proposal-rejection-green-v1",
+  "source_head": "208c96a9f48a5b2b546dbc5cd56f6550dacd12c5",
+  "objective": "Verify SYSTEM_IMPROVEMENT falls back deterministically after rejected semantic proposals and every planning terminal state is fail-closed without generic chat.",
+  "expected_first_state": "GREEN",
   "authority": "DEEPSEEK_HARNESS",
   "publication": false
 }
