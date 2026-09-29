@@ -267,3 +267,13 @@ def test_all_runtime_entrypoints_enforce_ready_proof():
     assert 'rm -f "${REVISION_FILE}" "${READY_FILE}"' in foreground
     assert "runtime_ready_matches" in report
     assert "TELEGRAM_GATEWAY_READY=PASS" in report
+
+def test_runtime_reconcile_suppresses_owner_voice_handoff_by_contract():
+    text = (ROOT / "scripts/telegram_termux_control.sh").read_text(
+        encoding="utf-8"
+    )
+    section = text.split("reconcile_gateway()", 1)[1].split(
+        "foreground_gateway()", 1
+    )[0]
+    assert "BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START=1" in section
+    assert "start_gateway" in section
