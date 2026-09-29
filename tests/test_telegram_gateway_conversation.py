@@ -1017,3 +1017,36 @@ def test_render_feedback_receipt_is_human_facing_and_preserves_no_publication_au
     for marker in forbidden:
         assert marker not in reply
 
+def test_generic_unknown_failure_is_human_safe_but_preserves_technical_evidence(monkeypatch):
+    raw_error = "Command '['worker']' returned non-zero exit status 1."
+    captured = {}
+
+    real_presenter = gateway_v2.present_canonical_result_under_harness
+
+    def capture_presenter(canonical, **kwargs):
+        captured.update(canonical)
+        return real_presenter(canonical, **kwargs)
+
+    monkeypatch.setattr(
+        gateway_v2,
+        "present_canonical_result_under_harness",
+        capture_presenter,
+    )
+
+    presented = gateway_v2._generic_failure_presentation(
+        RuntimeError(raw_error),
+        command="natural-language",
+        telegram_message_id=81001,
+        telegram_update_id=81002,
+    )
+    text = presented["text"]
+
+    assert raw_error not in text
+    assert "non-zero exit status" not in text
+    assert "RuntimeError" not in text
+    assert "/evidence" in text
+    assert "não consegui" in text.casefold() or "falha interna" in text.casefold()
+
+    assert captured["technical_error"]["type"] == "RuntimeError"
+    assert captured["technical_error"]["message"] == raw_error
+    assert raw_error not in str(captured["error"].get("message") or "")
