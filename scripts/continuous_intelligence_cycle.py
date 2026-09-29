@@ -53,6 +53,11 @@ from app.services.gta6_knowledge_retrieval_service import (
 )
 from app.services.gta6_source_registry_service import register_gta6_source
 from app.services.task_result_envelope_service import TASK_RESULT_ENVELOPE_SCHEMA
+from app.services.continuous_operation_attempt_service import (
+    build_failure_attempt,
+    build_success_attempt,
+    persist_attempt,
+)
 
 
 HERMES_UPSTREAM_SHA = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
@@ -1759,16 +1764,62 @@ def main() -> int:
     parser.add_argument("--trigger-kind", default="workflow_dispatch")
     parser.add_argument("--mode", choices=("proof", "scheduled"), default="scheduled")
     args = parser.parse_args()
-    runner = run_proof if args.mode == "proof" else run_scheduled
-    report = runner(
-        artifact_dir=Path(args.artifact_dir),
-        upstream_root=Path(args.upstream_root),
-        target_sha=args.target_sha,
-        trigger_kind=args.trigger_kind,
+    artifact_dir = Path(args.artifact_dir)
+    attempt_started_at = _now()
+    run_id = str(os.getenv("GITHUB_RUN_ID") or "local")
+    target_ref = str(
+        os.getenv("BR_CONTINUOUS_TARGET_REF")
+        or os.getenv("TARGET_REF")
+        or "work/gate6f-analytics-learning"
     )
+    workflow_revision = str(
+        os.getenv("BR_CONTINUOUS_WORKFLOW_REVISION")
+        or os.getenv("GITHUB_SHA")
+        or args.target_sha
+    )
+    runner = run_proof if args.mode == "proof" else run_scheduled
+    try:
+        report = runner(
+            artifact_dir=artifact_dir,
+            upstream_root=Path(args.upstream_root),
+            target_sha=args.target_sha,
+            trigger_kind=args.trigger_kind,
+        )
+    except Exception as exc:
+        attempt = build_failure_attempt(
+            exc=exc,
+            run_id=run_id,
+            target_ref=target_ref,
+            target_sha=args.target_sha,
+            workflow_revision=workflow_revision,
+            trigger_kind=args.trigger_kind,
+            started_at=attempt_started_at,
+        )
+        persist_attempt(attempt, artifact_dir=artifact_dir)
+        print(
+            "CONTINUOUS_OPERATION=FAIL "
+            f"FAILURE_CLASS={attempt.failure_class} "
+            f"FAILURE_FINGERPRINT={attempt.failure_fingerprint[:16]} "
+            f"RETRYABILITY={attempt.retryability}",
+            file=__import__("sys").stderr,
+        )
+        raise
+
+    attempt = build_success_attempt(
+        run_id=run_id,
+        target_ref=target_ref,
+        target_sha=args.target_sha,
+        workflow_revision=workflow_revision,
+        trigger_kind=args.trigger_kind,
+        started_at=attempt_started_at,
+        evidence_refs=report.get("evidence_refs") or (),
+        artifact_refs=("artifact:continuous-cycle.json",),
+    )
+    persist_attempt(attempt, artifact_dir=artifact_dir)
     print("CONTINUOUS_OPERATION=PASS")
     for key, value in report["checks"].items():
         print(f"{key}={'PASS' if value else 'FAIL'}")
+    print("FAILURE_SETTLEMENT_DURABLE=PASS")
     print("NEW_VOICE_SYNTHESIS=NO")
     print("FULL_RENDER=NO")
     print("YOUTUBE_UPLOAD=NO")
