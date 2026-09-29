@@ -22,6 +22,7 @@ from app.services.telegram_harness_service import (
 from app.services.telegram_conversation_service import (
     classify_conversation_intent,
     handle_telegram_conversation,
+    register_telegram_attachment_context,
 )
 from app.services.telegram_ingress_policy_service import (
     HUMAN_SURFACE,
@@ -1450,6 +1451,21 @@ def main() -> int:
                                         f"INPUT_ID={bridge_result.get('telegram_input_id')} "
                                         f"CONTENT_SHA256={bridge_result.get('content_sha256')} "
                                         f"NORMALIZATION_STATE={bridge_result.get('normalization_state')}",
+                                        flush=True,
+                                    )
+                                    context_binding = register_telegram_attachment_context(
+                                        telegram_user_id=user_id,
+                                        telegram_chat_id=chat_id,
+                                        telegram_chat_type=chat_type,
+                                        telegram_message_id=int(message["message_id"]),
+                                        input_record=learned["input"],
+                                        bridge_result=bridge_result,
+                                        caption=text,
+                                    )
+                                    print(
+                                        "TELEGRAM_ATTACHMENT_CONTEXT=PASS "
+                                        f"ARTIFACT_REF={context_binding.get('artifact_ref')} "
+                                        f"TURN_ID={context_binding.get('turn_id')}",
                                         flush=True,
                                     )
                                 except Exception as bridge_exc:
