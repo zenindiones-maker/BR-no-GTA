@@ -17,6 +17,9 @@ from app.services.harness_adaptive_planning_service import (
     propose_validated_semantic_plan,
     select_capability_for_requirement,
 )
+from app.services.semantic_mission_planner_service import (
+    SemanticPlannerProviderFailure,
+)
 
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_routing_policy_service import (
@@ -1724,6 +1727,66 @@ def plan_mission_from_human_goal(
                             max_replans=1,
                         )
                     )
+                except SemanticPlannerProviderFailure as exc:
+                    if goal.mission_class != "SYSTEM_IMPROVEMENT":
+                        raise
+                    requirements = _deterministic_capability_requirements(goal)
+                    if not requirements:
+                        raise
+                    proposal = None
+                    planning_mode = "DETERMINISTIC_PROVIDER_FAILURE_FALLBACK"
+                    provider_attempts = list(
+                        (exc.evidence or {}).get("provider_attempts") or ()
+                    )
+                    provider_call_count = max(1, len(provider_attempts))
+                    safe_failure = {
+                        key: value
+                        for key, value in dict(exc.diagnostics).items()
+                        if key
+                        in {
+                            "provider_id",
+                            "transport",
+                            "failure_stage",
+                            "exception_class",
+                            "http_status",
+                            "retry_count",
+                            "response_present",
+                            "structured_output_present",
+                            "parse_stage",
+                            "sanitized_reason",
+                            "same_routing_retry_count",
+                            "same_routing_retry_result",
+                            "transient_retry_exhausted",
+                            "localized_replan_required",
+                            "transport_request_ms",
+                            "total_provider_ms",
+                            "prompt_build_ms",
+                        }
+                    }
+                    planning_evidence["planning_mode"] = planning_mode
+                    planning_evidence[
+                        "semantic_provider_call_count"
+                    ] = provider_call_count
+                    planning_evidence[
+                        "semantic_provider_failure_fallback"
+                    ] = True
+                    planning_evidence[
+                        "semantic_provider_failure_class"
+                    ] = str(exc.code or "provider_failed")
+                    planning_evidence[
+                        "semantic_provider_failure"
+                    ] = safe_failure
+                    semantic_span.set(
+                        output_size=0,
+                        metadata={
+                            "planner_model_calls": provider_call_count,
+                            "replan_count": 0,
+                            "provider_failure_fallback": True,
+                            "provider_failure_class": str(
+                                exc.code or "provider_failed"
+                            ),
+                        },
+                    )
                 except RuntimeError as exc:
                     if (
                         goal.mission_class == "SYSTEM_IMPROVEMENT"
@@ -1742,12 +1805,23 @@ def plan_mission_from_human_goal(
                         planning_evidence[
                             "semantic_provider_failure_class"
                         ] = "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE"
+                        planning_evidence[
+                            "semantic_provider_failure"
+                        ] = {
+                            "provider_id": None,
+                            "sanitized_reason": (
+                                "semantic reasoning provider unavailable"
+                            ),
+                        }
                         semantic_span.set(
                             output_size=0,
                             metadata={
                                 "planner_model_calls": 1,
                                 "replan_count": 0,
                                 "provider_failure_fallback": True,
+                                "provider_failure_class": (
+                                    "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE"
+                                ),
                             },
                         )
                     else:
