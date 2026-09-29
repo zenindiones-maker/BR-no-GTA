@@ -1639,3 +1639,48 @@ def test_mission_planning_rejected_plan_never_falls_through_to_generic_chat(monk
         "MISSION_PLANNING_REJECTED"
     )
     assert result["canonical_result"]["authority"] == "DEEPSEEK_HARNESS"
+
+
+def test_canary_executor_binding_proof_uses_typed_task_results_not_audit_stream(tmp_path):
+    from scripts.telegram_conversational_control_canary import (
+        _typed_task_result_bindings_are_canonical,
+    )
+
+    record = GLOBAL_CAPABILITY_REGISTRY.get("gta6.fact-check")
+    assert record is not None
+    (tmp_path / "fact-check-1.json").write_text(
+        json.dumps(
+            {
+                "schema": "task-result-envelope/v1",
+                "mission_id": "telegram-canary-red",
+                "task_id": "fact-check",
+                "capability_id": "gta6.fact-check",
+                "executor_binding": record.executor_binding,
+                "status": "COMPLETED",
+                "elapsed_ms": 1.0,
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    audit_events = [
+        {
+            "event": "TASK_PRECONDITION_PASSED",
+            "task_id": "fact-check",
+            "capability_id": "gta6.fact-check",
+            "executor_binding": None,
+        },
+        {
+            "event": "TASK_COMPLETED_REUSED",
+            "task_id": "fact-check",
+            "capability_id": "gta6.fact-check",
+            "executor_binding": None,
+        },
+    ]
+    assert audit_events
+
+    proof = _typed_task_result_bindings_are_canonical(tmp_path)
+    assert proof["status"] == "PASS"
+    assert proof["task_result_count"] == 1
+    assert proof["audit_stream_consulted"] is False
