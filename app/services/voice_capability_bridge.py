@@ -105,6 +105,17 @@ def voice_capability_records() -> tuple[CapabilityRecord, ...]:
             health_policy="VOICE_RUNTIME_AND_IDENTITY_REQUIRED",
             policy_tags=("narration", "qwen3-tts", "chatterbox", "voice-clone", "long-form"),
         ),
+        _record(
+            capability_id="voice.clone.pt-BR",
+            implementation="Telegram-bound BR_OWNER_V1 voice-clone synthesis boundary for Brazilian Portuguese",
+            input_contract="pt-BR VoiceSynthesisRequest/v1 + private Telegram-bound BR_OWNER_V1 VoiceIdentityProfile/v1",
+            output_contract="content-addressed owner-cloned pt-BR audio + VoiceProviderEvidence/v1",
+            evidence_contract="VoiceProviderEvidence/v1 + Telegram owner-reference lineage",
+            executor_binding="app.services.voice_capability_bridge.execute_owner_voice_clone_capability",
+            cost_class="SELF_HOSTED_COMPUTE",
+            health_policy="VOICE_RUNTIME_AND_IDENTITY_REQUIRED",
+            policy_tags=("voice-clone", "owner-reference", "telegram", "pt-br", "chatterbox"),
+        ),
     )
 
 
@@ -137,4 +148,18 @@ def execute_narration_voice_capability(payload: dict[str, Any]) -> dict[str, Any
     output_path = payload.get("output_path")
     if provider is None or request is None or not output_path:
         raise RuntimeError("VOICE_RUNTIME_OR_IDENTITY_UNAVAILABLE")
+    return provider.synthesize(request, output_path)
+
+
+def execute_owner_voice_clone_capability(payload: dict[str, Any]) -> dict[str, Any]:
+    _require_harness_context(payload)
+    provider = payload.get("provider")
+    request = payload.get("request")
+    output_path = payload.get("output_path")
+    if provider is None or request is None or not output_path:
+        raise RuntimeError("OWNER_VOICE_CLONE_RUNTIME_OR_REFERENCE_UNAVAILABLE")
+    if str(getattr(request, "voice_identity_id", "") or "") != "BR_OWNER_V1":
+        raise RuntimeError("OWNER_VOICE_IDENTITY_REQUIRED")
+    if str(getattr(request, "language", "") or "").lower().replace("_", "-") != "pt-br":
+        raise RuntimeError("OWNER_VOICE_PTBR_REQUIRED")
     return provider.synthesize(request, output_path)
