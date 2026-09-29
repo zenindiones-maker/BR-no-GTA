@@ -251,10 +251,17 @@ def execute_telegram_input_ingestion_capability(
     message_id = int(payload["telegram_message_id"])
     text = str(payload.get("text") or payload.get("caption") or "").strip()
     attachment = payload.get("attachment") if isinstance(payload.get("attachment"), dict) else None
+    classification_override = payload.get("classification_override")
+    if (
+        classification_override is None
+        and attachment is not None
+        and str(attachment.get("media_kind") or "").strip().lower() in {"voice", "audio"}
+    ):
+        classification_override = "owner_voice_reference"
     classification = classify_telegram_input(
         text,
         has_attachment=attachment is not None,
-        classification_override=payload.get("classification_override"),
+        classification_override=classification_override,
     )
     source_url = extract_source_url(text)
     if classification not in {
