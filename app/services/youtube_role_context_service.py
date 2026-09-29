@@ -188,6 +188,37 @@ def build_seo_packet(
     return finalize_packet(packet, full_context_chars=full_context_chars)
 
 
+def _budgeted_script_projection(
+    script_text: str,
+    *,
+    script_id: int,
+    limit: int,
+) -> dict[str, Any]:
+    canonical_chars = len(script_text)
+    bounded_limit = max(1600, int(limit))
+    if canonical_chars <= bounded_limit:
+        projected = script_text
+        mode = "FULL"
+        complete = True
+    else:
+        separator = "\n[canonical excerpt omitted for context budget]\n"
+        payload_budget = max(1200, bounded_limit - len(separator))
+        head_chars = max(900, int(payload_budget * 0.72))
+        tail_chars = max(300, payload_budget - head_chars)
+        projected = script_text[:head_chars] + separator + script_text[-tail_chars:]
+        mode = "HEAD_TAIL_BUDGETED"
+        complete = False
+    return {
+        "text": projected,
+        "is_complete": complete,
+        "projection_mode": mode,
+        "projected_chars": len(projected),
+        "canonical_chars": canonical_chars,
+        "omitted_chars": max(0, canonical_chars - len(projected)),
+        "canonical_artifact_ref": f"db:scripts:{script_id}",
+    }
+
+
 def build_production_packet(
     *,
     goal_id: str,
