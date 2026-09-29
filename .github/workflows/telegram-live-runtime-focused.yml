@@ -6,6 +6,10 @@ on:
       - work/gate6f-analytics-learning
     paths:
       - ".run/telegram-live-runtime-focused.request.json"
+      - "scripts/telegram_harness_gateway.py"
+      - "scripts/telegram_harness_gateway_v2.py"
+      - "app/services/telegram_transport_contract_service.py"
+      - "tests/test_telegram_transport_contract.py"
 
 permissions:
   contents: read
@@ -59,6 +63,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pytest -q \
+            tests/test_telegram_transport_contract.py \
             tests/test_telegram_a15_runtime_contract.py \
             tests/test_telegram_gateway_conversation.py::test_progress_reporter_is_audit_only_for_all_stages \
             tests/test_telegram_gateway_conversation.py::test_live_status_sends_no_visible_progress_before_final_answer \
