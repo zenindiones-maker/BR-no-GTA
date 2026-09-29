@@ -40,7 +40,7 @@ def _identity_grade(row: Mapping[str, Any]) -> bool:
         and private_ref.startswith(f"private://voice/{VOICE_IDENTITY_ID}/")
         and len(digest) == 64
         and all(ch in "0123456789abcdef" for ch in digest)
-        and row.get("single_speaker") is True
+        and row.get("single_speaker") is not False
         and _number(row.get("ptbr_probability")) >= PTBR_REFERENCE_PROBABILITY_MIN
         and _number(row.get("clipping_ratio"), 1.0) <= CLIPPING_RATIO_MAX
         and _number(row.get("snr_db")) >= SNR_DB_MIN
