@@ -8,6 +8,10 @@ on:
     paths:
       - ".run/owner-voice-private-materialization.request.json"
 
+concurrency:
+  group: owner-voice-private-materialization-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
@@ -17,11 +21,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
 
@@ -58,33 +62,63 @@ jobs:
     name: Materialize Telegram owner voice and synthesize real Qwen audition
     needs: contract
     runs-on: ubuntu-24.04
-    timeout-minutes: 50
+    timeout-minutes: 55
     env:
+      BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64 }}
       BR_OWNER_TELEGRAM_REFERENCE_INDEX: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_INDEX }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       HF_HOME: /tmp/br-owner-huggingface
-      TRANSFORMERS_CACHE: /tmp/br-owner-huggingface/transformers
       TOKENIZERS_PARALLELISM: "false"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
 
-      - name: Secret presence preflight
-        shell: bash
+      - name: Secret presence and masking preflight
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          if [[ -n "${BR_OWNER_TELEGRAM_REFERENCE_INDEX:-}" ]]; then
-            echo "OWNER_REFERENCE_INDEX_PRESENT=true"
-          else
-            echo "OWNER_REFERENCE_INDEX_PRESENT=false"
-            echo "OWNER_REFERENCE_MATERIALIZATION_BLOCKER=OWNER_TELEGRAM_REFERENCE_INDEX_NOT_MATERIALIZED"
-            exit 21
-          fi
+          python - <<'PY'
+          import json
+          import os
+          from app.services.owner_voice_telegram_handoff_service import (
+              parse_reference_envelope_b64,
+          )
+
+          envelope=(os.environ.get("BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64") or "").strip()
+          legacy=(os.environ.get("BR_OWNER_TELEGRAM_REFERENCE_INDEX") or "").strip()
+          if envelope:
+              index=parse_reference_envelope_b64(envelope)
+              print("OWNER_REFERENCE_ENVELOPE_PRESENT=true")
+              print("OWNER_REFERENCE_SECRET_MODE=OPAQUE_B64")
+          elif legacy:
+              index=json.loads(legacy)
+              print("OWNER_REFERENCE_ENVELOPE_PRESENT=false")
+              print("OWNER_REFERENCE_SECRET_MODE=LEGACY_MIGRATION_ONLY")
+          else:
+              print("OWNER_REFERENCE_MATERIALIZATION_BLOCKER=OWNER_TELEGRAM_REFERENCE_INDEX_NOT_MATERIALIZED")
+              raise SystemExit(21)
+
+          for row in index.get("references") or []:
+              for key in (
+                  "telegram_file_id",
+                  "telegram_file_unique_id",
+                  "telegram_user_id",
+                  "telegram_chat_id",
+                  "telegram_message_id",
+                  "telegram_update_id",
+              ):
+                  value=str(row.get(key) or "").strip()
+                  if value:
+                      print(f"::add-mask::{value}")
+          print("OWNER_REFERENCE_METADATA_MASKS=INSTALLED")
+          PY
+
           if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
             echo "TELEGRAM_BOT_TOKEN_PRESENT=true"
           else
@@ -92,7 +126,7 @@ jobs:
             echo "OWNER_REFERENCE_MATERIALIZATION_BLOCKER=TELEGRAM_BOT_TOKEN_NOT_MATERIALIZED"
             exit 22
           fi
-          echo "EXTERNAL_PRIVATE_VOICE_RUNTIME_REQUIRED=false"
+          echo "GENERIC_VOICE_FALLBACK=0"
           echo "EPHEMERAL_QWEN_OWNER_CLONE=true"
 
       - name: Install owner clone runtime
@@ -105,8 +139,9 @@ jobs:
             "soundfile>=0.12,<1" \
             "requests>=2.32,<3"
           python - <<'PY'
-          import qwen_tts, torch
+          import qwen_tts, torch, transformers
           print("QWEN_TTS_IMPORT=PASS")
+          print("TRANSFORMERS_VERSION=" + transformers.__version__)
           print("TORCH_VERSION=" + torch.__version__)
           print("CUDA_AVAILABLE=" + str(torch.cuda.is_available()).lower())
           PY
@@ -125,12 +160,11 @@ jobs:
           test -z "$(git status --porcelain --untracked-files=all -- '*.wav' '*.flac' '*.ogg' '*.oga' '*.opus' '*.mp3' '*.m4a' '*.pt')"
           echo "RAW_OWNER_AUDIO_IN_GIT=0"
           echo "VOICE_PROMPT_IN_GIT=0"
+          echo "OWNER_BIOMETRIC_ACTION_ARTIFACTS=0"
 
-      - name: Upload redacted proof only
+      - name: Remove ephemeral owner biometric material
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: owner-voice-qwen-redacted-proof-${{ github.run_id }}
-          path: runtime/owner-voice-materialization/
-          if-no-files-found: warn
-          retention-days: 7
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/br-owner-voice /tmp/br-owner-huggingface
+          echo "OWNER_EPHEMERAL_PRIVATE_MATERIAL_CLEANED=PASS"
