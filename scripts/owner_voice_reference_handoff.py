@@ -10,6 +10,7 @@ from typing import Any
 from app.database.telegram_user_input_repository import list_recent_telegram_user_inputs
 from app.services.owner_voice_telegram_handoff_service import (
     build_owner_voice_reference_index,
+    handoff_dispatch_key,
     handoff_reference_index_to_actions,
     redacted_reference_index_summary,
 )
@@ -90,7 +91,7 @@ def main() -> int:
     if not branch:
         branch = _git_value("branch", "--show-current")
     head = _git_value("rev-parse", "HEAD")
-    dispatch_key = f"{head}:{summary['index_sha256']}"
+    dispatch_key = handoff_dispatch_key(summary["index_sha256"])
 
     handoff_state_path = _state_file()
     previous = _load_json(handoff_state_path)
