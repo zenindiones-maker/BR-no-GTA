@@ -71,6 +71,7 @@ def validate_attestation(
     prefix = expected[:12]
     required = {
         "instances": "1",
+        "sha": expected,
         "local": prefix,
         "runtime": prefix,
         "remote": prefix,
