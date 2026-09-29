@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 from dataclasses import asdict, dataclass
 import json
 import os
@@ -9,6 +8,9 @@ from typing import Any, Protocol
 import unicodedata
 
 from app.services.github_actions_artifact_service import GitHubActionsArtifactService
+from app.services.fresh_research_dispatch_contract import (
+    encode_fresh_research_query_b64,
+)
 from app.services.github_actions_command_runner import run_github_actions_command
 from app.services.github_actions_dispatcher import GitHubActionsDispatcher
 from app.services.github_actions_run_tracker import GitHubActionsRunTracker
@@ -174,22 +176,19 @@ class GitHubActionsFreshResearchTransport:
         source_context: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any], str]:
         source_context = dict(source_context or {})
-        source_url = str(source_context.get("source_url") or "").strip()
         dispatched = self.dispatcher.dispatch(
             repository=self.repository,
             workflow=self.workflow,
             ref=self.ref,
             inputs={
+                # Keep the workflow_dispatch interface compatible with the
+                # default-branch workflow. Structured provenance travels inside
+                # the versioned query envelope, not as branch-only input names.
                 "execution_id": execution_id,
-                "query_b64": base64.b64encode(query.encode("utf-8")).decode("ascii"),
-                "source_url_b64": (
-                    base64.b64encode(source_url.encode("utf-8")).decode("ascii")
-                    if source_url else ""
+                "query_b64": encode_fresh_research_query_b64(
+                    query,
+                    source_context=source_context,
                 ),
-                "telegram_input_id": str(source_context.get("id") or ""),
-                "classification": str(source_context.get("classification") or ""),
-                "input_kind": str(source_context.get("input_kind") or ""),
-                "memory_event_id": str(source_context.get("memory_event_id") or ""),
             },
         )
         watched = self.watcher.wait_for_completion(
