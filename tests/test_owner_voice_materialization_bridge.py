@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-import json
+import hashlib
+from pathlib import Path
 
-from app.services.owner_voice_materialization_bridge import (
-    build_owner_voice_dispatch_payload,
-    redact_owner_voice_dispatch_payload,
-    select_authorized_owner_voice_records,
+from app.services.owner_voice_private_materialization_service import (
+    materialize_telegram_owner_references,
+)
+from app.services.owner_voice_telegram_handoff_service import (
+    build_owner_voice_reference_index,
+    redacted_reference_index_summary,
 )
 
 
@@ -28,59 +31,72 @@ def _record(
         "telegram_file_unique_id": f"unique-{input_id}",
         "duration_seconds": 17.5,
         "mime_type": "audio/ogg",
-        "file_size": 12345,
+        "file_size": 9,
         "remote_verified": remote_verified,
-        "text_content": "must-not-cross-cloud-bridge",
     }
 
 
-def test_owner_voice_backfill_selects_only_verified_authorized_voice_audio():
-    rows = [
-        _record(input_id=1, kind="voice"),
-        _record(input_id=2, kind="audio"),
-        _record(input_id=3, kind="document"),
-        _record(input_id=4, user_id=999),
-        _record(input_id=5, chat_id=-999),
-        _record(input_id=6, remote_verified=False),
-    ]
-    selected = select_authorized_owner_voice_records(
-        rows,
-        allowed_user_id=111,
+def test_current_handoff_selects_only_verified_authorized_owner_audio():
+    index = build_owner_voice_reference_index(
+        records=[
+            _record(input_id=1),
+            _record(input_id=2, kind="audio"),
+            _record(input_id=3, kind="document"),
+            _record(input_id=4, user_id=999),
+            _record(input_id=5, chat_id=-999),
+            _record(input_id=6, remote_verified=False),
+        ],
+        owner_user_id=111,
         allowed_chat_ids={-222},
     )
-    assert [item["id"] for item in selected] == [1, 2]
+    assert index["voice_identity_id"] == "BR_OWNER_V1"
+    assert [item["telegram_input_id"] for item in index["references"]] == [1, 2]
 
 
-def test_owner_voice_dispatch_payload_contains_metadata_only_and_exact_provenance():
-    payload = build_owner_voice_dispatch_payload(
-        _record(input_id=7),
-        source_ref="work/gate6f-analytics-learning",
-        source_sha="a" * 40,
+def test_public_handoff_summary_never_exposes_telegram_file_identity():
+    index = build_owner_voice_reference_index(
+        records=[_record(input_id=7)],
+        owner_user_id=111,
+        allowed_chat_ids={-222},
     )
-    assert payload["schema"] == "OwnerVoiceTelegramReferenceDispatch/v1"
-    assert payload["voice_identity_id"] == "BR_OWNER_V1"
-    assert payload["telegram_input_id"] == 7
-    assert payload["telegram_message_id"] == 1007
-    assert payload["telegram_update_id"] == 2007
-    assert payload["telegram_file_id"] == "file-7"
-    assert payload["telegram_file_unique_id"] == "unique-7"
-    assert payload["remote_verified"] is True
-    assert payload["source_sha"] == "a" * 40
-    serialized = json.dumps(payload, sort_keys=True).lower()
-    for forbidden in ("audio_bytes", "base64", "embedding", "voice_prompt", "text_content"):
-        assert forbidden not in serialized
+    public = redacted_reference_index_summary(index)
+    rendered = repr(public)
+    assert "file-7" not in rendered
+    assert "unique-7" not in rendered
+    assert public["voice_identity_id"] == "BR_OWNER_V1"
+    assert public["remote_verified_count"] == 1
 
 
-def test_public_dispatch_evidence_redacts_telegram_file_identity():
-    payload = build_owner_voice_dispatch_payload(
-        _record(input_id=8),
-        source_ref="work/gate6f-analytics-learning",
-        source_sha="b" * 40,
+def test_current_materialization_binds_owner_audio_to_private_content_hash(tmp_path):
+    repository_root = tmp_path / "repo"
+    repository_root.mkdir()
+    private_root = tmp_path / "private"
+    index = build_owner_voice_reference_index(
+        records=[_record(input_id=8)],
+        owner_user_id=111,
+        allowed_chat_ids={-222},
     )
-    redacted = redact_owner_voice_dispatch_payload(payload)
-    serialized = json.dumps(redacted, sort_keys=True)
-    assert "file-8" not in serialized
-    assert "unique-8" not in serialized
-    assert redacted["telegram_input_id"] == 8
-    assert redacted["telegram_file_identity_redacted"] is True
-    assert len(redacted["telegram_file_identity_sha256"]) == 64
+
+    def api_call(_token, method, payload):
+        assert method == "getFile"
+        assert payload == {"file_id": "file-8"}
+        return {"file_path": "voice/reference-8.oga"}
+
+    def downloader(_token, _file_path, destination):
+        destination.write_bytes(b"owner-ref")
+
+    result = materialize_telegram_owner_references(
+        index,
+        private_root=private_root,
+        repository_root=repository_root,
+        telegram_bot_token="private-token",
+        api_call=api_call,
+        downloader=downloader,
+    )
+    row = result["references"][0]
+    digest = hashlib.sha256(b"owner-ref").hexdigest()
+    assert Path(row["runtime_path"]).is_relative_to(private_root.resolve())
+    assert row["sha256"] == digest
+    assert row["private_audio_ref"] == f"private://voice/BR_OWNER_V1/references/{digest}"
+    assert result["public_evidence"]["raw_audio_public"] is False
+    assert result["public_evidence"]["media_bytes_on_a15"] is False
