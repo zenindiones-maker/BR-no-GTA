@@ -218,6 +218,28 @@ def handoff_reference_index_to_actions(
     if int(secret_result.returncode) != 0:
         raise RuntimeError("OWNER_REFERENCE_SECRET_MATERIALIZATION_FAILED")
 
+    legacy_delete_command = [
+        "gh",
+        "secret",
+        "delete",
+        "BR_OWNER_TELEGRAM_REFERENCE_INDEX",
+        "--repo",
+        repository,
+    ]
+    legacy_delete_result = runner(
+        legacy_delete_command,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    legacy_delete_stderr = str(getattr(legacy_delete_result, "stderr", "") or "").casefold()
+    legacy_delete_missing = any(
+        marker in legacy_delete_stderr
+        for marker in ("not found", "404", "does not exist")
+    )
+    if int(legacy_delete_result.returncode) != 0 and not legacy_delete_missing:
+        raise RuntimeError("OWNER_REFERENCE_LEGACY_SECRET_DELETE_FAILED")
+
     dispatch_command = [
         "gh",
         "workflow",
@@ -245,6 +267,7 @@ def handoff_reference_index_to_actions(
         "index_sha256": str(index.get("index_sha256") or ""),
         "dispatch_key": handoff_dispatch_key(str(index.get("index_sha256") or "")),
         "secret_name": OWNER_VOICE_REFERENCE_ENVELOPE_SECRET,
+        "legacy_structured_secret_deleted": True,
         "workflow": OWNER_VOICE_MATERIALIZATION_WORKFLOW,
         "sensitive_metadata_logged": False,
         "media_bytes_on_a15": False,
