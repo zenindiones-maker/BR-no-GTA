@@ -1,7 +1,8 @@
 {
   "request": "telegram-conversational-control-validation",
-  "source_head": "95ffd0571ee05aade79a5603d229357595260c7c",
-  "scope": "red-live-status-remote-reconciliation",
+  "source_head": "3705a7f31372113e2fe755c208c6ddf5b961307b",
+  "scope": "green-live-status-remote-reconciliation",
   "expected_deployed_target_sha": "a00e024b9365daafc8a25f25576416385d38b1ea",
-  "trigger_reason": "RED proof: natural operational status followups and exact GitHub run reconciliation must fail before implementation"
+  "red_run_id": 36597705833,
+  "trigger_reason": "GREEN proof: operational status followups are deterministic and exact GitHub run state is reconciled before Telegram reports execution activity"
 }
