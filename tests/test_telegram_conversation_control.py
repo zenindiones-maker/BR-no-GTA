@@ -12,6 +12,9 @@ from app.database.telegram_conversation_repository import (
     update_conversation_state,
 )
 from app.services import harness_collaboration_service as collaboration_service
+from app.services.semantic_mission_planner_service import (
+    SemanticPlannerProviderFailure,
+)
 from app.services.memory_plane_service import record_canonical_human_decision
 from app.services.telegram_intent_resolution_service import resolve_contextual_intent
 from app.services.telegram_conversation_service import (
@@ -1384,3 +1387,97 @@ def test_system_improvement_semantic_planner_outage_falls_back_without_chat_reas
         ]
         is True
     )
+
+
+
+def test_system_improvement_typed_semantic_provider_failure_stays_in_mission_planner(monkeypatch):
+    literal = _literal_natural_swarm_goal()
+    chat_id = 1200707
+    update_conversation_state(
+        chat_id,
+        active_project="BR-no-GTA",
+        active_goal_id="goal-system-improvement-typed-provider-failure",
+        current_subject="desempenho e eficiência do sistema BR-no-GTA",
+    )
+    seen = {}
+
+    monkeypatch.setattr(
+        collaboration_service,
+        "semantic_provider_health",
+        lambda: {
+            "semantic_reasoning_available": True,
+            "eligible_zero_cost_provider_ids": ["nvidia_nim"],
+            "providers": [
+                {
+                    "provider_id": "nvidia_nim",
+                    "state": "AVAILABLE",
+                    "retry_allowed": True,
+                    "zero_cost_eligible": True,
+                }
+            ],
+        },
+    )
+    typed_failure = SemanticPlannerProviderFailure(
+        "timeout",
+        {
+            "provider": "nvidia_nim",
+            "model": "nvidia/test-semantic-model",
+            "retry_count": 1,
+            "error": {
+                "code": "timeout",
+                "retryable": True,
+                "failure_stage": "transport_request",
+                "transport": "https",
+                "response_present": False,
+                "structured_output_present": False,
+                "sanitized_reason": "bounded planner transport timeout",
+            },
+            "performance": {
+                "transport": "https",
+                "total_attempt_latency_ms": 120000,
+            },
+            "same_routing_retry_count": 1,
+            "same_routing_retry_result": "EXHAUSTED",
+            "transient_retry_exhausted": True,
+            "localized_replan_required": True,
+            "provider_attempts": [
+                {"phase": "INITIAL", "provider": "nvidia_nim"},
+                {"phase": "SAME_ROUTING_RETRY", "provider": "nvidia_nim"},
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        collaboration_service,
+        "propose_validated_semantic_plan",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(typed_failure),
+    )
+
+    result = handle_telegram_conversation(
+        literal,
+        telegram_chat_id=chat_id,
+        telegram_user_id=7770707,
+        telegram_chat_type="private",
+        telegram_message_id=120070701,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError(
+                "typed planner provider failure must not fall through to ai.reasoning.text"
+            )
+        ),
+        action_executor=_capture_running_plan(seen),
+        presenter=_presenter,
+    )
+
+    plan = seen["plan"]
+    evidence = plan["mission_plan"]["planning_evidence"]
+    assert result["intent"] == "EXECUTION_REQUEST"
+    assert result["intent_resolution"]["layer"] == "LAYER_3_MISSION_PLANNER"
+    assert plan["kind"] == "SYSTEM_IMPROVEMENT_MISSION"
+    assert plan["mission_plan"]["goal"]["mission_class"] == "SYSTEM_IMPROVEMENT"
+    assert plan["mission_plan"]["goal"]["human_goal"] == literal
+    assert evidence["planning_mode"] == "DETERMINISTIC_PROVIDER_FAILURE_FALLBACK"
+    assert evidence["semantic_provider_failure_fallback"] is True
+    assert evidence["semantic_provider_failure"]["provider_id"] == "nvidia_nim"
+    assert evidence["semantic_provider_failure"]["sanitized_reason"] == (
+        "bounded planner transport timeout"
+    )
+    assert "nvidia/test-semantic-model" not in str(evidence)
