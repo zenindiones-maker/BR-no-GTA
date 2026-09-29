@@ -2098,7 +2098,8 @@ _hardened_narration_voice = replace(
     policy_tags=tuple(dict.fromkeys((*_existing_narration_voice.policy_tags, "voice-plane", "provider-neutral-candidate-boundary"))),
     security_boundary=(
         _existing_narration_voice.security_boundary
-        + " Voice Plane candidates remain subordinate; Voice B stays production baseline until explicit human promotion."
+        + " Voice Plane candidates remain subordinate; BR_OWNER_V1 is the sole production identity, "
+        + "must bind only to private Telegram owner references, and has no generic or preset-voice fallback."
     ),
 )
 _REGISTRY._by_id["narration.generate.pt-BR"] = _hardened_narration_voice
