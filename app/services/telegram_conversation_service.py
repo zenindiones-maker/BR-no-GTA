@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 import re
 import unicodedata
 from typing import Any, Callable
@@ -248,7 +250,15 @@ def resolve_conversation_reference(
         if latest_artifact:
             return {"reference": latest_artifact, "basis": "latest_artifact"}
         return {"reference": "script:last", "basis": "semantic-last"}
-    if any(term in text for term in ("esse roteiro", "esse audio", "esse resultado", "isso", "esse", "essa")):
+    if any(
+        term in text
+        for term in (
+            "esse roteiro", "esse audio", "esse resultado", "isso", "esse", "essa",
+            "esse arquivo", "desse arquivo", "deste arquivo", "esse documento",
+            "desse documento", "deste documento", "arquivo que mandei",
+            "arquivo que enviei", "documento que mandei", "documento que enviei",
+        )
+    ):
         if latest_artifact:
             return {"reference": latest_artifact, "basis": "active_artifact"}
         subject = str(state.get("current_subject") or "").strip()
@@ -285,6 +295,100 @@ def _compact_turns(turns: list[dict[str, Any]], *, limit: int = 8) -> list[dict[
     return compact
 
 
+def register_telegram_attachment_context(
+    *,
+    telegram_user_id: int,
+    telegram_chat_id: int,
+    telegram_chat_type: str,
+    telegram_message_id: int,
+    input_record: dict[str, Any],
+    bridge_result: dict[str, Any],
+    caption: str = "",
+) -> dict[str, Any]:
+    identity, state = _bind_surface_identity(
+        telegram_user_id=telegram_user_id,
+        telegram_chat_id=telegram_chat_id,
+        telegram_chat_type=telegram_chat_type,
+    )
+    note_ref = str(bridge_result.get("obsidian_note_ref") or "").strip()
+    if not note_ref:
+        raise ValueError("materialized attachment requires obsidian_note_ref")
+    artifact_ref = f"obsidian:{note_ref}"
+    file_name = str(input_record.get("file_name") or "arquivo Telegram").strip()
+    text_content = str(caption or "").strip() or f"Arquivo enviado: {file_name}"
+    turn = append_conversation_turn(
+        telegram_chat_id=telegram_chat_id,
+        telegram_message_id=telegram_message_id,
+        role="HUMAN",
+        text_content=text_content,
+        intent="FILE_SUBMISSION",
+        resolved_reference=artifact_ref,
+        artifact_ref=artifact_ref,
+        metadata={
+            "telegram_input_id": input_record.get("id"),
+            "file_name": file_name,
+            "mime_type": input_record.get("mime_type"),
+            "content_sha256": bridge_result.get("content_sha256"),
+            "normalization_state": bridge_result.get("normalization_state"),
+            "obsidian_materialization_status": bridge_result.get("status"),
+        },
+    )
+    state = update_conversation_state(
+        telegram_chat_id,
+        last_human_intent="FILE_SUBMISSION",
+        current_subject=file_name,
+        active_artifact=artifact_ref,
+    )
+    _sync_shared_thread(identity, state)
+    return {
+        "turn_id": turn["turn_id"],
+        "artifact_ref": artifact_ref,
+        "current_subject": file_name,
+        "thread_id": (identity or {}).get("thread_id"),
+    }
+
+
+def _load_obsidian_artifact_context(
+    reference: str | None,
+    *,
+    max_bytes: int = 64 * 1024,
+) -> dict[str, Any] | None:
+    ref = str(reference or "").strip()
+    if not ref.startswith("obsidian:"):
+        return None
+    relative = ref.split(":", 1)[1].strip()
+    if not relative or not relative.endswith(".md"):
+        return None
+    root = Path(
+        os.getenv(
+            "OBSIDIAN_VAULT_ROOT",
+            str(
+                Path.home()
+                / "storage/shared/Documents/Obsidian/BR-no-GTA-Vault/BR-no-GTA"
+            ),
+        )
+    ).expanduser().resolve()
+    target = (root / relative).resolve()
+    if root not in target.parents or not target.is_file() or target.is_symlink():
+        return {
+            "artifact_ref": ref,
+            "status": "NOT_AVAILABLE",
+            "content": "",
+            "bounded": True,
+        }
+    raw = target.read_bytes()
+    clipped = raw[:max_bytes]
+    text = clipped.decode("utf-8", errors="replace")
+    return {
+        "artifact_ref": ref,
+        "status": "AVAILABLE",
+        "content": text,
+        "used_bytes": len(clipped),
+        "source_bytes": len(raw),
+        "bounded": len(raw) > len(clipped),
+    }
+
+
 def retrieve_conversation_context(
     telegram_chat_id: int,
     *,
@@ -300,6 +404,9 @@ def retrieve_conversation_context(
         recent_turns=turns,
     )
     observation = build_gta6_observation()
+    attachment_context = _load_obsidian_artifact_context(
+        str(reference.get("reference") or state.get("active_artifact") or "")
+    )
     return {
         "conversation_state": state,
         "recent_turns": _compact_turns(turns),
@@ -316,6 +423,7 @@ def retrieve_conversation_context(
             for item in decisions
         ],
         "resolved_reference": reference,
+        "active_attachment_context": attachment_context,
         "operational_observation": {
             "domain": observation.get("domain"),
             "source_of_truth": observation.get("source_of_truth"),
