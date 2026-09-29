@@ -1,22 +1,20 @@
 {
-  "request": "telegram-full-system-integration-readonly-architecture-audit-v1",
-  "natural_goal": "Faça uma auditoria independente READ_ONLY da integração Telegram do BR-no-GTA e proponha a menor arquitetura profissional para tornar o Telegram a superfície humana realmente integrada ao sistema inteiro sem transferir autoridade para o bot. Use o HEAD remoto atual e evidência real dos arquivos/workflows atuais. Verifique: ingestão de texto/voz/áudio/documentos; dedupe e idempotência por update_id; persistência de offsets; callbacks para aprovações humanas; message_thread_id/forum topics; tratamento de 429 retry_after e backoff; allowed_updates; getWebhookInfo; segurança de webhook secret_token; autenticação por user/chat/topic; file_id versus file_unique_id; limite cloud de 20 MB para download e 50 MB para upload; viabilidade e requisitos do Telegram Bot API Server oficial em modo --local para arquivos grandes; migração segura cloud->local via logOut; durable outbox; observabilidade; retries; DLQ; integração com DeepSeek Harness/Hermes/Agent Office/Addy; e a rota privada de voice cloning BR_OWNER_V1 em pt-BR. Compare long polling A15 com webhook cloud e recomende rollout incremental sem perder updates. Nenhuma mutação, nenhum segredo em artifact/log, nenhum upload/publicação, nenhum relaxamento de autoridade/qualidade. Produza: CURRENT_MAP, VERIFIED_GAPS, TARGET_ARCHITECTURE, MIGRATION_PHASES, SECURITY_CONTROLS, FAILURE_MODES, TEST_PLAN, AGENT_ASSIGNMENTS e independent verdict.",
-  "source_head": "3fbc3b3fafe78c4c9fc6472602fedc0b52e4533f",
-  "telegram_integration_audit": {
-    "mode": "READ_ONLY",
-    "mutation_forbidden": true,
-    "authority": "DEEPSEEK_HARNESS",
-    "human_surface": "telegram_group",
-    "private_telegram_human_surface": "DISABLED",
-    "owner_voice_identity": "BR_OWNER_V1",
-    "owner_voice_locale": "pt-BR",
-    "a15_media_bytes": "FORBIDDEN",
-    "publication": "FORBIDDEN"
-  },
+  "request": "telegram-full-integration-agent-audit-v2",
+  "natural_goal": "Analisa por que o sistema está demorando e corrige o que for inútil sem reduzir qualidade. O alvo desta missão é exclusivamente a integração Telegram do BR-no-GTA. Primeiro faça auditoria READ_ONLY baseada no HEAD atual e nas evidências reais; só crie candidate patch se existir um gap mensurável, writable target explícito e teste que falha antes da mudança. Verifique end-to-end: update_id/dedupe, persistência do offset, retry_after/429, message_thread_id e reply lineage, callback_query para aprovações humanas, allowed_updates, getWebhookInfo, webhook secret_token, user/chat/topic authorization, file_id versus file_unique_id, limites cloud de download/upload, opção do Telegram Bot API Server oficial em modo local para arquivos grandes, migração logOut sem perder updates, durable outbox/DLQ, observabilidade, Telegram como superfície humana subordinada ao DeepSeek Harness, Hermes/Agent Office/Addy subordinados, e Voice Plane BR_OWNER_V1 usando somente referências privadas do humano no Telegram em pt-BR. Preserve A15 sem bytes pesados. Não publique vídeo, não faça upload público, não enfraqueça gates, não exponha secrets ou biometria. Independent reviewer obrigatório para qualquer candidate mutante. Retorne evidência causal, baseline, candidate quando aplicável, testes e decisão do Harness.",
+  "source_head": "e1997f7a88d62294ab9f97e41953b1cee324acab",
   "preserve": {
     "NEW_VOICE_SYNTHESIS": "NO",
     "FULL_RENDER": "NO",
     "YOUTUBE_UPLOAD": "NO",
     "YOUTUBE_PUBLICATION": "NO"
+  },
+  "constraints": {
+    "authority": "DEEPSEEK_HARNESS",
+    "telegram_authority": "HUMAN_SURFACE_ONLY",
+    "a15_media_bytes": "FORBIDDEN",
+    "owner_voice_identity": "BR_OWNER_V1",
+    "owner_voice_locale": "pt-BR",
+    "candidate_requires_measured_gap": true,
+    "independent_review_required": true
   }
 }
