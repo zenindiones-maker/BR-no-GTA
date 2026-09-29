@@ -132,6 +132,13 @@ def _safe_input(record: dict[str, Any]) -> dict[str, Any]:
         "learning_status": record["learning_status"],
         "source_url": record.get("source_url"),
         "source_state": record.get("source_state"),
+        "obsidian_materialization_status": record.get(
+            "obsidian_materialization_status", "NOT_REQUESTED"
+        ),
+        "obsidian_attachment_ref": record.get("obsidian_attachment_ref"),
+        "obsidian_note_ref": record.get("obsidian_note_ref"),
+        "content_sha256": record.get("content_sha256"),
+        "normalized_markdown_ref": record.get("normalized_markdown_ref"),
         "memory_event_id": record.get("memory_event_id"),
         "claim_id": record.get("claim_id"),
         "memory_id": record.get("memory_id"),
