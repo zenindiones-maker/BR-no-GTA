@@ -570,7 +570,7 @@ def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
         and sequence[1].get("phase") == "spoken_channel_opening"
         and branding["spoken_opening_final_start_seconds"] >= branding["intro_duration_seconds"],
         "editorial_hook_preserved": any(item.get("phase") == "editorial_hook" for item in sequence),
-        "voice_b_used": spoken_branding["official_voice_profile"] == "Voice B",
+        "owner_voice_used": spoken_branding["official_voice_profile"] == "BR_OWNER_V1",
         "opening_text_canonical": any(
             item.get("phase") == "spoken_channel_opening" and item.get("text") == spoken_branding["opening_text"]
             for item in sequence
