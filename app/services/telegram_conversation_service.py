@@ -35,6 +35,7 @@ from app.services.telegram_control_surface_status import (
     render_canonical_project_status,
 )
 from app.services.telegram_status_reconciliation_service import (
+    reconcile_remote_github_run_state,
     reconcile_stale_progress_state,
 )
 from app.services.telegram_gta6_query_service import execute_telegram_gta6_query
@@ -141,6 +142,9 @@ def classify_conversation_intent(message: str, *, has_attachment: bool = False) 
         "onde estamos", "onde voce esta", "onde esta agora",
         "o que voce esta fazendo", "o que esta fazendo agora",
         "qual o status", "status agora", "como esta o run", "como esta a tarefa",
+        "parou ai", "parou aqui", "travou", "travou ai",
+        "ainda esta rodando", "ainda ta rodando", "ainda esta executando",
+        "isso ainda esta rodando", "isso ainda esta executando",
     )):
         return "STATUS_REQUEST"
     if text in {"memoria", "memoria?", "o que voce lembra", "oque voce lembra"}:
@@ -1098,6 +1102,11 @@ def handle_telegram_conversation(
     pending_action_consumed = False
     if plan["kind"] == "STATUS":
         state = get_or_create_conversation_state(telegram_chat_id)
+        remote_reconciliation = reconcile_remote_github_run_state(
+            telegram_chat_id,
+            state=state,
+        )
+        state = dict(remote_reconciliation["state"])
         reconciliation = reconcile_stale_progress_state(
             telegram_chat_id,
             state=state,
@@ -1110,6 +1119,13 @@ def handle_telegram_conversation(
         control_surface_status.update({
             "stale_progress_state_detected": bool(reconciliation["detected"]),
             "stale_progress_state_reconciled": bool(reconciliation["reconciled"]),
+            "github_remote_reconciliation": {
+                "attempted": bool(remote_reconciliation["attempted"]),
+                "checked": bool(remote_reconciliation["checked"]),
+                "reconciled": bool(remote_reconciliation["reconciled"]),
+                "reason": remote_reconciliation.get("reason"),
+                "remote_run": remote_reconciliation.get("remote_run"),
+            },
         })
         project_snapshot = build_canonical_project_status_snapshot(
             control_surface_status,
@@ -1122,6 +1138,16 @@ def handle_telegram_conversation(
             "conversation_state": state,
             "control_surface_status": control_surface_status,
             "project_status_snapshot": project_snapshot.to_dict(),
+            "REMOTE_RUN_STATE_CHECKED": (
+                "PASS"
+                if remote_reconciliation["checked"]
+                else "UNAVAILABLE"
+                if remote_reconciliation["attempted"]
+                else "NOT_APPLICABLE"
+            ),
+            "REMOTE_RUN_STATE_RECONCILED": (
+                "PASS" if remote_reconciliation["reconciled"] else "NOT_REQUIRED"
+            ),
             "STALE_PROGRESS_STATE_DETECTED": (
                 "PASS" if reconciliation["detected"] else "NOT_PRESENT"
             ),
