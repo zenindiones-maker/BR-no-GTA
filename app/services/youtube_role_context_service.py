@@ -396,6 +396,27 @@ def build_production_packet(
             "at artifact_refs and hashes; no projected field becomes authority."
         ),
     }
+
+    target = int(ROLE_TARGET_PACKET_CHARS["production-management"])
+    size = len(_canonical(packet))
+    if size > target:
+        current_projection = dict(packet["script_projection"])
+        current_chars = len(str(current_projection.get("text") or ""))
+        overflow = size - target
+        next_limit = max(2400, current_chars - overflow - 384)
+        if next_limit < current_chars:
+            packet["script_projection"] = _budgeted_script_projection(
+                script_text,
+                script_id=script_id,
+                limit=next_limit,
+            )
+            packet["context_compaction"] = {
+                "schema": "ProductionRoleContextCompaction/v1",
+                "reason": "TARGET_PACKET_BUDGET",
+                "canonical_artifacts_preserved": True,
+                "compacted_field": "script_projection.text",
+            }
+
     return finalize_packet(packet, full_context_chars=full_context_chars)
 
 def build_thumbnail_packet(
