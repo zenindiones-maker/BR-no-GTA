@@ -1095,3 +1095,11 @@ def test_plain_subject_context_does_not_hijack_system_improvement_mission(monkey
     assert plan["authorized_action"] == "DEVELOPMENT"
     assert plan["collaboration_runtime"] == "HERMES_WHEN_MULTI_AGENT_REQUIRED"
     assert plan.get("context_bound_correction") is not True
+
+
+def test_system_improvement_intent_precedes_embedded_research_subtask():
+    literal = (
+        "Analisa e melhora a integração completa do sistema BR-no-GTA, corrige "
+        "a sinergia entre os agentes e usa pesquisa atual do GTA 6 como uma das tarefas."
+    )
+    assert classify_conversation_intent(literal) == "EXECUTION_REQUEST"
