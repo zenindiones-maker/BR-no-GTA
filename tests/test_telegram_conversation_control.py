@@ -11,6 +11,7 @@ from app.database.telegram_conversation_repository import (
     list_recent_telegram_progress_events,
     update_conversation_state,
 )
+from app.services import harness_collaboration_service as collaboration_service
 from app.services.memory_plane_service import record_canonical_human_decision
 from app.services.telegram_intent_resolution_service import resolve_contextual_intent
 from app.services.telegram_conversation_service import (
