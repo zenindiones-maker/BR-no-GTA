@@ -27,6 +27,10 @@ HERMES_TELEGRAM_WORKFLOW = HERMES_TELEGRAM_LAUNCHER_WORKFLOW
 HERMES_CAPABILITY_ID = "collaboration.hermes.execute"
 
 
+class TelegramHermesDispatchError(RuntimeError):
+    pass
+
+
 def _artifact_snapshot(artifact_ref: str | None) -> tuple[str, str]:
     ref = str(artifact_ref or "").strip()
     if not ref.startswith("script:"):
@@ -126,13 +130,25 @@ def _dispatch_command_runner(
     expected_title: str,
 ):
     def run(command) -> str:
-        subprocess.run(
-            list(command),
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        try:
+            subprocess.run(
+                list(command),
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            stderr = str(exc.stderr or "").strip()
+            digest = hashlib.sha256(stderr.encode("utf-8")).hexdigest() if stderr else "NONE"
+            print(
+                "TELEGRAM_HERMES_DISPATCH=FAIL "
+                f"EXIT_CODE={int(exc.returncode)} STDERR_SHA256={digest}",
+                flush=True,
+            )
+            raise TelegramHermesDispatchError(
+                "TELEGRAM_HERMES_DISPATCH_FAILED"
+            ) from exc
         query = [
             "gh",
             "run",
