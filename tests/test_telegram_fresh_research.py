@@ -223,7 +223,13 @@ def test_current_chat_injects_fresh_official_evidence_before_ai(monkeypatch):
         lambda message: fresh,
     )
 
-    def fake_ai(*, prompt, authorization, routing_decision):
+    def fake_ai(
+        *,
+        prompt,
+        authorization,
+        routing_decision,
+        request_timeout_seconds=None,
+    ):
         assert "November 19, 2026" in prompt
         assert "https://www.rockstargames.com/VI" in prompt
         assert "EVIDENCIA_FRESCA oficial da Rockstar prevalece" in prompt
