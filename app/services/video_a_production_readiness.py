@@ -495,13 +495,13 @@ def baseline_provenance(profile:dict[str,Any],lexicon:dict[str,Any])->dict[str,A
     strategy=str((profile.get("prosody") or {}).get("strategy") or "semantic-section-v1")
     return {
         "LAST_HUMAN_APPROVED_VOICE_BASELINE":{
-            "VOICE":str((profile.get("voice") or {}).get("short_name") or ""),
+            "VOICE":"RETIRED_NON_OWNER_BASELINE",
             "RATE":rate,
             "PITCH":pitch,
             "VOLUME":"+0%",
-            "TTS_CONFIGURATION":"edge-tts 7.2.8 / Voice B / pt-BR",
+            "TTS_CONFIGURATION":"RETIRED_NON_OWNER_RUNTIME",
             "CHUNK_POLICY":strategy,
-            "PUNCTUATION_POLICY":"canonical production text immutable; Fluid 2 punctuation was a reference-only fluency sample",
+            "PUNCTUATION_POLICY":"historical fluency calibration only; retired voice assets are forbidden for production",
             "SEGMENT_LENGTH_POLICY":"one canonical semantic section per synthesis unit",
             "SILENCE_TRIMMING":"native word-edge trim only at assembled section boundaries",
             "CROSSFADE":"none between semantic sections; locale-change path may crossfade only the approved Vice City span",
@@ -512,15 +512,20 @@ def baseline_provenance(profile:dict[str,Any],lexicon:dict[str,Any])->dict[str,A
             "ARTIFACT_ID":BASELINE_ARTIFACT_ID,
             "PROFILE_ID":profile.get("profile_id"),
             "PROFILE_STATUS":profile.get("status"),
-            "FLUID2_REFERENCE":{
-                "file":(profile.get("human_evidence") or {}).get("voice_quality_reference"),
-                "scope":"human fluency reference, not blanket authorization to mutate production punctuation/rate",
-                "known_reference_rate":"+3%",
-                "known_reference_pitch":"+1Hz",
+            "RETIRED_REFERENCE":{
+                "file":None,
+                "scope":"historical timing evidence only; not a synthesis identity or production asset",
+                "production_eligible":False,
             },
         },
         "CURRENT_VOICE_CONFIGURATION":{
-            "VOICE":"pt-BR-ThalitaMultilingualNeural",
+            "VOICE":"BR_OWNER_V1",
+            "VOICE_REFERENCE_SOURCE":"TELEGRAM",
+            "VOICE_SELECTION_MODE":"TELEGRAM_REFERENCE_CLONE",
+            "LANGUAGE":"pt-BR",
+            "ACCENT_LOCALE":"pt-BR",
+            "GENERIC_VOICE_FALLBACK":False,
+            "PROVIDER_PRESET_VOICE_ALLOWED":False,
             "RATE":"+0%",
             "PITCH":"+0Hz",
             "VOLUME":"+0%",
@@ -532,7 +537,7 @@ def baseline_provenance(profile:dict[str,Any],lexicon:dict[str,Any])->dict[str,A
             "REJECTED_TELEGRAM_MESSAGES":list(CURRENT_REJECTED_TELEGRAM_MESSAGES),
         },
         "CURRENT_VS_BASELINE_DELTA":[
-            "runtime default drifted from semantic-section-v1 to microsegment-v1 when a job omits segment_strategy",
+            "owner voice production remains blocked until Telegram-bound identity and Brazilian accent pass human review",
             "pronunciation layer changed after the locked voice baseline and introduced additional synthesis aliases requiring renewed listening review",
             "component proofs used word-gap and chunk metrics that cannot establish perceptual naturalness",
             "proof audio was not gated by full-script proper-noun inventory or final-mix script-to-speech fidelity",
