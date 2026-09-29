@@ -526,11 +526,24 @@ def _attachment_reply(result: dict[str, Any]) -> str:
         "TELEGRAM_REFERENCE_IDENTITY=REDACTED",
         "MEDIA_BYTES_ON_A15=NO",
     ]
-    if item.get("learning_status") == "pending_cloud_analysis":
+    if item.get("classification") == "owner_voice_reference":
+        lines.extend(
+            [
+                "OWNER_VOICE_REFERENCE=PRIVATE_TELEGRAM_REFERENCE_REGISTERED",
+                "OWNER_VOICE_IDENTITY=BR_OWNER_V1",
+                "VOICE_REFERENCE_ANALYSIS=speech.transcription.whisperx+owner-reference-qa",
+                "VOICE_CLONE_CAPABILITY=voice.synthesis.pt-BR",
+                "VOICE_CLONE_TARGET_LOCALE=pt-BR",
+                "OWNER_VOICE_REFERENCE_HANDOFF=DEBOUNCED_PENDING",
+                "GENERIC_VOICE_FALLBACK=0",
+                "NOTE=Áudio de voz registrado para análise privada e clonagem em Português do Brasil usando somente a referência do humano.",
+            ]
+        )
+    elif item.get("learning_status") == "pending_cloud_analysis":
         lines.extend(
             [
                 "CONTENT_ANALYSIS=PENDING_CLOUD_ANALYSIS",
-                "NOTE=O arquivo foi preservado por identidade/proveniência, mas não vou fingir que analisei pixels/áudio antes da capability cloud existir.",
+                "NOTE=O arquivo foi preservado por identidade/proveniência e aguarda a capability cloud correspondente.",
             ]
         )
     return "\n".join(lines)
