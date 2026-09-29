@@ -327,6 +327,7 @@ def create_opencode_provider_for_active_profile(
     *,
     routing_decision,
     authorization,
+    request_timeout_seconds: float | None = None,
 ):
     profile = resolve_active_opencode_executor_profile()
     options = dict(profile["options"])
@@ -346,5 +347,6 @@ def create_opencode_provider_for_active_profile(
             routing_decision=routing_decision,
             authorization=authorization,
             profile=profile,
+            request_timeout_seconds=request_timeout_seconds,
         )
     raise PermissionError("unrecognized promoted OpenCode executor profile")
