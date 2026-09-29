@@ -133,9 +133,9 @@ def derive_operational_activity_evidence(
         or _nested_value(latest_result, "goal_id")
         or pending_action.get("active_goal_id")
     )
-    mission_id = pending_action.get("mission_id") or _nested_value(
-        latest_result, "mission_id"
-    )
+    result_mission_id = _nested_value(latest_result, "mission_id")
+    pending_mission_id = pending_action.get("mission_id")
+    mission_id = pending_mission_id or result_mission_id
     execution_id = _nested_value(
         latest_result,
         "execution_id",
@@ -185,9 +185,16 @@ def derive_operational_activity_evidence(
         execution_id=execution_id,
         authorization_id=authorization_id,
     )
+    authorization_matches_terminal_result = _authorization_is_strong_active_evidence(
+        relevant_authorization,
+        mission_id=result_mission_id,
+        run_id=result_run_id,
+        execution_id=execution_id,
+        authorization_id=authorization_id,
+    )
     canonical_result_active = bool(
         result_status in _ACTIVE_RESULT_STATUSES
-        and any((execution_id, result_run_id, mission_id, authorization_id))
+        and any((execution_id, result_run_id, result_mission_id, authorization_id))
     )
     waiting_for_human = bool(current.get("waiting_for_human"))
     pending_task_real = bool(
@@ -199,19 +206,31 @@ def derive_operational_activity_evidence(
             or pending_action.get("mission_id")
         )
     )
+    terminal_result_veto = bool(
+        result_status in _TERMINAL_RESULT_STATUSES
+        and any((execution_id, result_run_id, result_mission_id, authorization_id))
+        and (
+            not active_authorization
+            or authorization_matches_terminal_result
+        )
+    )
     has_active_execution = bool(
         not waiting_for_human
+        and not terminal_result_veto
         and (active_authorization or canonical_result_active)
     )
 
     return {
         "has_active_execution": has_active_execution,
         "active_authorization": active_authorization,
+        "authorization_matches_terminal_result": authorization_matches_terminal_result,
         "canonical_result_active": canonical_result_active,
+        "terminal_result_veto": terminal_result_veto,
         "waiting_for_human": waiting_for_human,
         "pending_task_real": pending_task_real,
         "goal_id": goal_id,
         "mission_id": mission_id,
+        "result_mission_id": result_mission_id,
         "execution_id": execution_id,
         "authorization_id": authorization_id,
         "result_run_id": result_run_id,
