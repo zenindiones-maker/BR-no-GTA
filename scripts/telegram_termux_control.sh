@@ -609,7 +609,7 @@ reconcile_gateway() {
   reap_untracked_legacy_supervisors
   sync_branch_ff_only
   stop_gateway
-  start_gateway
+  BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START=1 start_gateway
   runtime_revision_report
   publish_runtime_status
   echo "TELEGRAM_DEPLOY_RECONCILE=PASS"
