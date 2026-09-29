@@ -1642,6 +1642,9 @@ def test_mission_planning_rejected_plan_never_falls_through_to_generic_chat(monk
 
 
 def test_canary_executor_binding_proof_uses_typed_task_results_not_audit_stream(tmp_path):
+    import json
+
+    from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
     from scripts.telegram_conversational_control_canary import (
         _typed_task_result_bindings_are_canonical,
     )
