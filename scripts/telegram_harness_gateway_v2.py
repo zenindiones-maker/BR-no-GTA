@@ -1450,7 +1450,8 @@ def main() -> int:
                                         "TELEGRAM_OBSIDIAN_BRIDGE=PASS "
                                         f"INPUT_ID={bridge_result.get('telegram_input_id')} "
                                         f"CONTENT_SHA256={bridge_result.get('content_sha256')} "
-                                        f"NORMALIZATION_STATE={bridge_result.get('normalization_state')}",
+                                        f"NORMALIZATION_STATE={bridge_result.get('normalization_state')} "
+                                        f"NORMALIZATION_ENGINE={bridge_result.get('normalization_engine')}",
                                         flush=True,
                                     )
                                     context_binding = register_telegram_attachment_context(
