@@ -140,7 +140,7 @@ def test_enrollment_policy_requires_30_seconds_clean_single_speaker_ptbr():
 
 def test_provider_profiles_are_pinned_ptbr_and_self_hosted_compute():
     assert QWEN_OWNER_INTERACTIVE.model_id == "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
-    assert QWEN_OWNER_INTERACTIVE.model_revision == "5d83992"
+    assert QWEN_OWNER_INTERACTIVE.model_revision == "5d83992436eae1d760afd27aff78a71d676296fc"
     assert QWEN_OWNER_LONG_FORM.model_id == "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
     assert QWEN_OWNER_LONG_FORM.model_revision == "fd4b254"
     assert CHATTERBOX_PTBR_PROFILE.model_id == "ResembleAI/Chatterbox-Multilingual-pt-br"
