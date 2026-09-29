@@ -1,8 +1,8 @@
 {
-  "request": "semantic-planner-outage-green-v1",
-  "source_head": "c7e400564a07b85aa48e2b3e4d9c2d92f13f54ed",
-  "objective": "Verify SYSTEM_IMPROVEMENT contains semantic planner outage without falling through to ai.reasoning.text.",
-  "expected_first_state": "GREEN",
+  "request": "typed-semantic-provider-failure-red-v1",
+  "source_head": "7d1a14ebde6176dd8ef2874b4913f08936835324",
+  "objective": "Reproduce the real typed SemanticPlannerProviderFailure at the Telegram SYSTEM_IMPROVEMENT boundary before the causal fix.",
+  "expected_first_state": "RED_ON_TYPED_SEMANTIC_PROVIDER_FAILURE",
   "authority": "DEEPSEEK_HARNESS",
   "publication": false
 }
