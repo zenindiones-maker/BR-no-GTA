@@ -12,6 +12,11 @@ on:
       - "app/services/semantic_mission_planner_service.py"
       - "app/services/harness_collaboration_service.py"
       - "app/services/telegram_conversation_service.py"
+      - "app/services/telegram_harness_service.py"
+      - "app/services/harness_ai_provider_service.py"
+      - "app/services/ai_provider_factory.py"
+      - "app/services/opencode_executor_profile_service.py"
+      - "app/services/opencode_native_ai_provider.py"
       - "app/services/telegram_obsidian_attachment_bridge_service.py"
       - "app/database/telegram_user_input_repository.py"
       - "scripts/telegram_obsidian_bridge.py"
@@ -19,6 +24,8 @@ on:
       - "tests/test_telegram_transport_contract.py"
       - "tests/test_telegram_bot_api_transport.py"
       - "tests/test_telegram_conversation_control.py"
+      - "tests/test_telegram_harness_integration.py"
+      - "tests/test_harness_ai_provider_service.py"
       - ".github/workflows/telegram-live-runtime-focused.yml"
 
 permissions:
@@ -64,8 +71,12 @@ jobs:
             app/services/telegram_control_surface_status.py \
             app/services/telegram_status_reconciliation_service.py \
             app/services/telegram_conversation_service.py \
+            app/services/telegram_harness_service.py \
             app/services/telegram_obsidian_attachment_bridge_service.py \
             app/services/harness_ai_provider_service.py \
+            app/services/ai_provider_factory.py \
+            app/services/opencode_executor_profile_service.py \
+            app/services/opencode_native_ai_provider.py \
             scripts/telegram_harness_gateway.py \
             scripts/telegram_harness_gateway_v2.py \
             scripts/telegram_obsidian_bridge.py
@@ -78,6 +89,10 @@ jobs:
             tests/test_telegram_transport_contract.py \
             tests/test_telegram_bot_api_transport.py \
             tests/test_telegram_obsidian_attachment_bridge.py \
+            tests/test_telegram_harness_integration.py::test_normal_chat_uses_harness_selected_provider_and_returns_provenance \
+            tests/test_telegram_harness_integration.py::test_telegram_generic_semantic_routing_is_provider_agnostic_and_fail_closed \
+            tests/test_harness_ai_provider_service.py::test_tuxevil_selection_accepts_per_call_bounded_timeout \
+            tests/test_harness_ai_provider_service.py::test_opencode_selection_accepts_per_call_bounded_timeout \
             tests/test_telegram_a15_runtime_contract.py \
             tests/test_telegram_gateway_conversation.py::test_progress_reporter_is_audit_only_for_all_stages \
             tests/test_telegram_gateway_conversation.py::test_live_status_sends_no_visible_progress_before_final_answer \
