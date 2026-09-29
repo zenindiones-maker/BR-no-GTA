@@ -43,14 +43,14 @@ jobs:
       - name: Compile continuous boundaries
         run: |
           set -euo pipefail
-          python -m py_compile             app/database/continuous_operation_repository.py             app/services/continuous_operation_policy_service.py             app/services/continuous_intelligence_service.py             app/services/obsidian_memory_service.py             app/services/telegram_conversation_service.py             app/services/hermes_multiagent/evidence.py             scripts/continuous_state_checkpoint.py             scripts/continuous_due_gate.py             scripts/continuous_intelligence_cycle.py
+          python -m py_compile             app/database/continuous_operation_repository.py             app/services/continuous_operation_policy_service.py             app/services/continuous_operation_deployment_service.py             app/services/continuous_intelligence_service.py             app/services/obsidian_memory_service.py             app/services/telegram_conversation_service.py             app/services/hermes_multiagent/evidence.py             scripts/continuous_state_checkpoint.py             scripts/continuous_due_gate.py             scripts/continuous_intelligence_cycle.py
           echo "CONTINUOUS_BOUNDARIES_COMPILE=PASS"
 
       - name: Run focused continuous tests
         run: |
           set -euo pipefail
           rm -f "$BR_TEST_DATABASE"
-          python -m pytest -q             tests/test_continuous_operation.py             tests/test_continuous_operation_attempt.py             tests/test_memory_plane_obsidian.py             tests/test_hermes_multiagent_boundary.py             tests/test_harness_learning_system.py             tests/test_telegram_conversation_control.py             --junitxml=artifacts/continuous-focused/pytest.xml
+          python -m pytest -q             tests/test_continuous_operation.py             tests/test_continuous_operation_attempt.py             tests/test_continuous_scheduler_boundary.py             tests/test_continuous_state_checkpoint.py             tests/test_memory_plane_obsidian.py             tests/test_hermes_multiagent_boundary.py             tests/test_harness_learning_system.py             tests/test_telegram_conversation_control.py             --junitxml=artifacts/continuous-focused/pytest.xml
           echo "CONTINUOUS_FOCUSED_TESTS=PASS"
 
       - name: Validate no busy-loop and safety policy
