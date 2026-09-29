@@ -20,6 +20,10 @@ from app.services.hermes_multiagent.contracts import (
 from app.services.hermes_multiagent.harness_tools import HermesHarnessTools
 from app.services.hermes_multiagent.capability_broker import HermesHarnessCapabilityBroker
 from app.services.hermes_multiagent.profile_factory import HermesProfileFactory
+from app.services.task_result_envelope_service import (
+    build_task_result_envelope,
+    persist_task_result_envelope,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -358,3 +362,77 @@ def test_child_execution_lease_accepts_only_explicit_child_capabilities():
         task_id="verify",
         capability_id="web.search.discover",
     )
+
+
+def test_task_completion_envelope_binds_exact_retry_result_identity(tmp_path):
+    broker = HermesHarnessCapabilityBroker.__new__(HermesHarnessCapabilityBroker)
+    broker.spec = SimpleNamespace(mission_id="mission-completion-metrics")
+    broker.artifact_dir = tmp_path
+    broker._task_results = {"research": []}
+
+    first = build_task_result_envelope(
+        mission_id="mission-completion-metrics",
+        task_id="research",
+        capability_id="gta6.research",
+        agent_id="research-agent",
+        skill_id=None,
+        executor_binding="test:research",
+        status="COMPLETED",
+        started_at="2026-09-29T00:00:00+00:00",
+        completed_at="2026-09-29T00:00:01+00:00",
+        elapsed_ms=1000.0,
+        result={"status": "PASS"},
+        source_task_ids=(),
+        authorization_id="auth-1",
+    )
+    second = build_task_result_envelope(
+        mission_id="mission-completion-metrics",
+        task_id="research",
+        capability_id="gta6.research",
+        agent_id="research-agent",
+        skill_id=None,
+        executor_binding="test:research",
+        status="COMPLETED",
+        started_at="2026-09-29T00:00:02+00:00",
+        completed_at="2026-09-29T00:00:04+00:00",
+        elapsed_ms=2000.0,
+        result={"status": "PASS"},
+        source_task_ids=(),
+        authorization_id="auth-2",
+    )
+    first_record = persist_task_result_envelope(first, artifact_dir=tmp_path, index=1)
+    second_record = persist_task_result_envelope(second, artifact_dir=tmp_path, index=2)
+    broker._task_results["research"] = [
+        {
+            "mission_id": "mission-completion-metrics",
+            "task_id": "research",
+            "capability_id": "gta6.research",
+            "status": "COMPLETED",
+            "task_result_ref": first_record["task_result_ref"],
+            "task_result_sha256": first_record["content_sha256"],
+        },
+        {
+            "mission_id": "mission-completion-metrics",
+            "task_id": "research",
+            "capability_id": "gta6.research",
+            "status": "COMPLETED",
+            "task_result_ref": second_record["task_result_ref"],
+            "task_result_sha256": second_record["content_sha256"],
+        },
+    ]
+
+    receipt = broker.task_completion_envelope(
+        task_id="research",
+        task_result_ref=second_record["task_result_ref"],
+    )
+    assert receipt["schema"] == "TaskResultEnvelope/v1"
+    assert receipt["mission_id"] == "mission-completion-metrics"
+    assert receipt["task_id"] == "research"
+    assert receipt["elapsed_ms"] == 2000.0
+    assert receipt["content_sha256"] == second_record["content_sha256"]
+
+    with pytest.raises(LookupError, match="TASK_RESULT_REF_NOT_FOUND"):
+        broker.task_completion_envelope(
+            task_id="research",
+            task_result_ref="artifact:task-results/research-999.json",
+        )

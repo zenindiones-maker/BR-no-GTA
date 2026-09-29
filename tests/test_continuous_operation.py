@@ -497,3 +497,76 @@ def test_next_execution_changed_gate_is_strict_boolean():
         {"status": "NO_MEANINGFUL_GTA6_DELTA"},
         {"active_delta_policy_memory_id": None},
     ) is False
+
+
+def test_research_duration_uses_typed_task_result_not_audit_stream_ordering():
+    class FakeBroker:
+        def audit_snapshot(self):
+            return (
+                {"event": "INPUT_CONTRACT_VALID", "task_id": "research"},
+                {"event": "TASK_PRECONDITION_PASSED", "task_id": "research"},
+                {
+                    "event": "TASK_COMPLETED",
+                    "task_id": "research",
+                    "elapsed_seconds": 999.0,
+                },
+            )
+
+        def task_completion_envelope(self, *, task_id, task_result_ref):
+            assert task_id == "research"
+            assert task_result_ref == "artifact:task-results/research-2.json"
+            return {
+                "schema": "TaskResultEnvelope/v1",
+                "mission_id": "mission-typed-duration",
+                "task_id": "research",
+                "capability_id": DELTA_RESEARCH_CAPABILITY_ID,
+                "status": "COMPLETED",
+                "elapsed_ms": 1250.0,
+                "content_sha256": "c" * 64,
+            }
+
+    elapsed = continuous_cycle._typed_task_elapsed_seconds(
+        FakeBroker(),
+        task_id="research",
+        task_result_ref="artifact:task-results/research-2.json",
+    )
+    assert elapsed == 1.25
+
+
+def test_research_duration_does_not_change_when_new_audit_event_is_inserted():
+    class FakeBroker:
+        def __init__(self):
+            self.events = [
+                {"event": "INPUT_CONTRACT_VALID", "task_id": "research"},
+                {"event": "TASK_WAITING_TOOL", "task_id": "research"},
+                {"event": "TOOL_EXECUTED", "task_id": "research"},
+                {"event": "TASK_COMPLETED", "task_id": "research", "elapsed_seconds": 77.0},
+            ]
+
+        def audit_snapshot(self):
+            return tuple(self.events)
+
+        def task_completion_envelope(self, *, task_id, task_result_ref):
+            return {
+                "schema": "TaskResultEnvelope/v1",
+                "mission_id": "mission-audit-evolution",
+                "task_id": task_id,
+                "capability_id": DELTA_RESEARCH_CAPABILITY_ID,
+                "status": "COMPLETED",
+                "elapsed_ms": 2000.0,
+                "content_sha256": "d" * 64,
+            }
+
+    broker = FakeBroker()
+    before = continuous_cycle._typed_task_elapsed_seconds(
+        broker,
+        task_id="research",
+        task_result_ref="artifact:task-results/research-1.json",
+    )
+    broker.events.insert(1, {"event": "NEW_OBSERVABILITY_EVENT", "task_id": "research"})
+    after = continuous_cycle._typed_task_elapsed_seconds(
+        broker,
+        task_id="research",
+        task_result_ref="artifact:task-results/research-1.json",
+    )
+    assert before == after == 2.0
