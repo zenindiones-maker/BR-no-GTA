@@ -6,9 +6,11 @@ import subprocess
 import pytest
 
 from app.services.owner_voice_telegram_handoff_service import (
-    OWNER_VOICE_REFERENCE_SECRET,
+    OWNER_VOICE_REFERENCE_ENVELOPE_SECRET,
     build_owner_voice_reference_index,
+    handoff_dispatch_key,
     handoff_reference_index_to_actions,
+    parse_reference_envelope_b64,
 )
 
 
@@ -60,7 +62,7 @@ def test_reference_index_contains_only_verified_owner_voice_from_authorized_chat
     assert all(row["telegram_file_unique_id"] for row in index["references"])
 
 
-def test_handoff_keeps_file_ids_out_of_argv_and_stdout():
+def test_handoff_uses_opaque_base64_secret_and_keeps_file_ids_out_of_argv():
     index = build_owner_voice_reference_index(
         records=[_record(row_id=1, file_id="sensitive-file-id")],
         owner_user_id=77,
@@ -75,12 +77,14 @@ def test_handoff_keeps_file_ids_out_of_argv_and_stdout():
                 "gh",
                 "secret",
                 "set",
-                OWNER_VOICE_REFERENCE_SECRET,
+                OWNER_VOICE_REFERENCE_ENVELOPE_SECRET,
                 "--repo",
                 "zenindiones-maker/BR-no-GTA",
             ]
             assert kwargs["input"]
-            assert "sensitive-file-id" in kwargs["input"]
+            assert "sensitive-file-id" not in kwargs["input"]
+            decoded = parse_reference_envelope_b64(kwargs["input"])
+            assert decoded["references"][0]["telegram_file_id"] == "sensitive-file-id"
             return subprocess.CompletedProcess(command, 0, "", "")
         assert command == [
             "gh",
@@ -107,6 +111,14 @@ def test_handoff_keeps_file_ids_out_of_argv_and_stdout():
     assert "sensitive-file-id" not in rendered_argv
     assert "telegram_file_id" not in json.dumps(result)
     assert result["index_sha256"] == index["index_sha256"]
+    assert result["secret_name"] == OWNER_VOICE_REFERENCE_ENVELOPE_SECRET
+
+
+def test_handoff_dispatch_key_depends_on_reference_content_not_git_head():
+    digest = "a" * 64
+    assert handoff_dispatch_key(digest) == handoff_dispatch_key(digest)
+    assert "HEAD" not in handoff_dispatch_key(digest)
+    assert handoff_dispatch_key("b" * 64) != handoff_dispatch_key(digest)
 
 
 def test_empty_reference_index_fails_closed_without_secret_or_dispatch():

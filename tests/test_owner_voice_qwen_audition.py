@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.owner_voice_qwen_ephemeral_audition import select_latest_reference
+from scripts.owner_voice_qwen_ephemeral_audition import (
+    QWEN_REQUIRED_SNAPSHOT_PATHS,
+    select_latest_reference,
+    validate_qwen_snapshot,
+)
 from app.services.owner_voice_private_materialization_service import (
     OwnerVoicePrivateMaterializationError,
 )
@@ -33,3 +37,19 @@ def test_audition_selection_fails_closed_without_materialized_reference():
         match="OWNER_REFERENCE_DISCOVERY_EMPTY",
     ):
         select_latest_reference([])
+
+
+def test_qwen_snapshot_requires_complete_embedded_speech_tokenizer(tmp_path):
+    for relative in QWEN_REQUIRED_SNAPSHOT_PATHS:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+    assert validate_qwen_snapshot(tmp_path) == tmp_path
+
+    missing = tmp_path / "speech_tokenizer" / "preprocessor_config.json"
+    missing.unlink()
+    with pytest.raises(
+        OwnerVoicePrivateMaterializationError,
+        match="QWEN_SNAPSHOT_INCOMPLETE",
+    ):
+        validate_qwen_snapshot(tmp_path)
