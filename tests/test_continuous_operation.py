@@ -570,3 +570,190 @@ def test_research_duration_does_not_change_when_new_audit_event_is_inserted():
         task_result_ref="artifact:task-results/research-1.json",
     )
     assert before == after == 2.0
+
+
+def test_scheduled_due_true_uses_typed_research_completion_without_audit_order_dependency(
+    monkeypatch, tmp_path
+):
+    from types import SimpleNamespace
+
+    class FakeBoard:
+        def __init__(self):
+            self._run = 0
+
+        def claim(self, _task, *, claimer):
+            self._run += 1
+            return SimpleNamespace(current_run_id=self._run)
+
+        def complete(self, _task, *, summary, run_id):
+            return True
+
+    class FakeBroker:
+        def __init__(self, *, spec, parent_authorization, board, task_mapping, artifact_dir):
+            self.spec = spec
+            self.artifact_dir = Path(artifact_dir)
+            self._audit = [
+                {"event": "INPUT_CONTRACT_VALID", "task_id": "research"},
+                {"event": "TASK_PRECONDITION_PASSED", "task_id": "research"},
+                {"event": "TASK_WAITING_TOOL", "task_id": "research"},
+            ]
+
+        def execute_delegated_capability(self, *, task_id, capability_id, payload):
+            if task_id == "knowledge-retrieve":
+                return {
+                    "evidence_ref": "artifact:knowledge-retrieve.json",
+                    "task_result_ref": "artifact:task-results/knowledge-retrieve-1.json",
+                    "result": {"status": "PASS", "result": {"context_bytes": 64}},
+                }
+            assert task_id == "research"
+            self._audit.append(
+                {
+                    "event": "TASK_COMPLETED",
+                    "task_id": "research",
+                    "elapsed_seconds": 999.0,
+                }
+            )
+            return {
+                "evidence_ref": "artifact:research.json",
+                "task_result_ref": "artifact:task-results/research-1.json",
+                "task_result_sha256": "e" * 64,
+                "status": "COMPLETED",
+                "result": {
+                    "status": "NO_MEANINGFUL_GTA6_DELTA",
+                    "SOURCE_UNCHANGED": "YES",
+                    "candidate_claims": [],
+                    "source_fetch_count": 0,
+                    "memory_hit_count": 1,
+                    "memory_miss_count": 0,
+                    "duplicate_research_avoided": True,
+                    "evidence_refs": [],
+                },
+            }
+
+        def task_completion_envelope(self, *, task_id, task_result_ref):
+            assert task_id == "research"
+            assert task_result_ref == "artifact:task-results/research-1.json"
+            return {
+                "schema": "task-result-envelope/v1",
+                "mission_id": "continuous-scheduled-test",
+                "task_id": "research",
+                "capability_id": DELTA_RESEARCH_CAPABILITY_ID,
+                "status": "COMPLETED",
+                "elapsed_ms": 1500.0,
+                "content_sha256": "e" * 64,
+            }
+
+        def submit_handoff(self, **_kwargs):
+            return {"schema": "TypedHandoff/v1"}
+
+        def audit_snapshot(self):
+            return tuple(self._audit)
+
+        def handoff_snapshot(self):
+            return ()
+
+    def fake_execute_hermes_mission_capability(*, spec, runner, **_kwargs):
+        board = FakeBoard()
+        mapping = {task_id: task_id for task_id in spec.allowed_task_ids}
+        profiles = tuple(
+            SimpleNamespace(task_id=task_id, profile_name=f"profile-{task_id}")
+            for task_id in spec.allowed_task_ids
+        )
+        runner(spec=spec, board=board, task_mapping=mapping, profiles=profiles)
+        return {
+            "success": True,
+            "result": {
+                "harness_episode_ids": [],
+                "reviews": [],
+                "retries": [],
+            },
+        }
+
+    fake_auth = SimpleNamespace(
+        harness_decision_id="decision-continuous-due",
+        authorization_id="authorization-continuous-due",
+    )
+    monkeypatch.setattr(
+        continuous_cycle,
+        "_hermes_parent",
+        lambda _plan, target_sha: (SimpleNamespace(), fake_auth),
+    )
+    monkeypatch.setattr(continuous_cycle, "consume_harness_authorization", lambda *_a, **_k: None)
+    monkeypatch.setattr(continuous_cycle, "HermesHarnessCapabilityBroker", FakeBroker)
+    monkeypatch.setattr(
+        continuous_cycle,
+        "execute_hermes_mission_capability",
+        fake_execute_hermes_mission_capability,
+    )
+    monkeypatch.setattr(
+        continuous_cycle,
+        "_bootstrap_brain_research_state",
+        lambda _policy: {"new_sources": 0, "new_questions": 0},
+    )
+    topic = {
+        "topic_id": "due-typed",
+        "question_id": "frontier-due-typed",
+        "subject": "GTA VI",
+        "query": QUERY,
+        "source_url": SOURCE_URL,
+        "source_id": "source-due-typed",
+    }
+    monkeypatch.setattr(continuous_cycle, "_select_daily_gta6_topic", lambda _policy: dict(topic))
+    monkeypatch.setattr(continuous_cycle, "_latest_active_gta6_recall_seed", lambda: None)
+    monkeypatch.setattr(
+        continuous_cycle,
+        "_run_harness_knowledge_probe",
+        lambda **_kwargs: {
+            "status": "PASS",
+            "authority": "deepseek_harness",
+            "provider_calls": 0,
+            "canonical_memory_plane": "BR_SQLITE",
+            "bounded_context": True,
+            "context_bytes": 0,
+            "max_context_bytes": 32768,
+            "source_provenance_preserved": True,
+            "matched_expected_claim": True,
+            "knowledge_units": [],
+            "source_fetch_count": 0,
+            "network_fetch_count": 0,
+            "NEW_NETWORK_FETCH": "NO",
+        },
+    )
+    monkeypatch.setattr(
+        continuous_cycle,
+        "_is_due",
+        lambda kind, _seconds: kind == "GTA6_INTELLIGENCE",
+    )
+    monkeypatch.setattr(
+        continuous_cycle,
+        "_failure_prevention",
+        lambda: {
+            "FAILURE_MEMORY_RETRIEVAL": "PASS",
+            "FAILURE_RECURRENCE_PREVENTION": "PASS",
+        },
+    )
+    monkeypatch.setattr(continuous_cycle, "_topic_source_state", lambda _topic: {"observed_at": continuous_cycle._now()})
+    monkeypatch.setattr(continuous_cycle, "_source_state_fresh", lambda *_a, **_k: True)
+    monkeypatch.setattr(continuous_cycle, "query_gta6_knowledge", lambda **_k: [{"claim_id": 1}])
+    monkeypatch.setattr(continuous_cycle, "_active_delta_policy_memory", lambda: {"memory_id": "m1"})
+    monkeypatch.setattr(continuous_cycle, "_update_frontier_after_research", lambda **_k: None)
+    recorded = []
+    monkeypatch.setattr(continuous_cycle, "_record_cycle", lambda **kwargs: recorded.append(kwargs) or kwargs)
+    monkeypatch.setattr(continuous_cycle.brain_repository, "list_frontier", lambda **_k: [])
+    monkeypatch.setattr(continuous_cycle.brain_repository, "upsert_daily_run", lambda row: dict(row))
+    monkeypatch.setattr(continuous_cycle.continuous_repository, "scoreboard", lambda: {})
+    monkeypatch.setenv("GITHUB_RUN_ID", "scheduled-test")
+
+    report = continuous_cycle.run_scheduled(
+        artifact_dir=tmp_path / "artifacts",
+        upstream_root=tmp_path / "hermes",
+        target_sha="f" * 40,
+        trigger_kind="schedule",
+    )
+
+    assert report["status"] == "PASS"
+    assert report["due"]["gta6"] is True
+    assert report["gta6"]["research_elapsed_seconds"] == 1.5
+    assert report["gta6"]["research_task_result_ref"] == "artifact:task-results/research-1.json"
+    assert recorded and recorded[0]["latency_seconds"] == 1.5
+    assert report["checks"]["SCHEDULED_ENTRYPOINT_CONTRACT"] is True
