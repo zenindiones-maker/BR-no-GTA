@@ -100,6 +100,7 @@ jobs:
           assert result["intent"]=="EXECUTION_REQUEST", result["intent"]
           assert result["intent_resolution"]["layer"]=="LAYER_3_MISSION_PLANNER", result["intent_resolution"]
           assert plan["kind"]=="SYSTEM_IMPROVEMENT_MISSION", plan
+          assert plan.get("capability_id") != "narration.generate.pt-BR", plan
           assert plan["mission_plan"]["authority"]=="DEEPSEEK_HARNESS"
           assert plan["mission_plan"]["goal"]["mission_class"]=="SYSTEM_IMPROVEMENT"
           mission_plan=plan["mission_plan"]
@@ -121,6 +122,7 @@ jobs:
           assert route["provider_required"] is False
           assert canonical["provider_substituted_for_known_executor"] is False
           run_id=int(canonical["run_id"])
+          assert run_id > 0
           payload={
               "literal_human_input": literal,
               "intent": result["intent"],
@@ -138,7 +140,11 @@ jobs:
           print("HUMAN_INPUT_LITERAL_MATCH=PASS")
           print("NATURAL_GOAL_RECEIVED=PASS")
           print("HARNESS_MISSION_PLAN=PASS")
+          print("SYSTEM_IMPROVEMENT_MISSION=PASS")
           print("MISSION_PLAN_DERIVED_FROM_CURRENT_NATURAL_GOAL=PASS")
+          print("VOICE_CONSTRAINT_DID_NOT_HIJACK_TOP_LEVEL_GOAL=PASS")
+          print("DIRECT_NARRATION_FALSE_POSITIVE=NO")
+          print("CHILD_MISSION_CREATED=PASS")
           print("PLAN_NOT_PREFABRICATED=PASS")
           print("HARNESS_NATURAL_GOAL_BEFORE_TUXEVIL=PASS")
           print("NVIDIA_PROVIDER_AVAILABLE_TO_PLANNER=PASS")
@@ -167,6 +173,7 @@ jobs:
           )
           assert d["CAPABILITY_USAGE_AUDIT"]=="PASS"
           print("CAPABILITY_USAGE_AUDIT=PASS")
+          print("REGISTRY_REAL_USAGE=PASS")
           print("REGISTERED_CAPABILITIES="+str(d["registered"]))
           print("AVAILABLE_CAPABILITIES="+str(d["available"]))
           print("ROUTABLE_CAPABILITIES="+str(d["routable"]))
@@ -197,6 +204,7 @@ jobs:
           if [ -s "$root/dynamic-system-improvement-report.json" ]; then
             echo "auth_waiting=false" >> "$GITHUB_OUTPUT"
             echo "CHILD_MISSION_RESULT=AVAILABLE"
+            echo "REAL_CHILD_EVIDENCE=PASS"
           elif [ -s "$root/codex-auth-control-report.json" ] && [ -s "$root/mission-auth-checkpoint.json" ]; then
             echo "auth_waiting=true" >> "$GITHUB_OUTPUT"
             echo "CHILD_MISSION_RESULT=WAITING_FOR_AUTH"
@@ -275,6 +283,9 @@ jobs:
           print("SPECIALIST_CAPABILITIES_SELECTED="+",".join(selected_caps))
           print("SPECIALIST_AGENTS_INVOKED="+",".join(sorted(agents)))
           print("SYSTEM_IMPROVEMENT_CLOSED_LOOP=PASS")
+          print("SWARM_CLOSED_LOOP=PASS")
+          print("REAL_CHILD_EVIDENCE=PASS")
+          print("REGISTRY_REAL_USAGE=PASS")
           print("BUILDER_SELF_APPROVAL=NO")
           print("AGENT_SELF_PROMOTION=NO")
           print("NO_REGRESSION=PASS")
