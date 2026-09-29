@@ -977,6 +977,26 @@ def _write_runtime_revision_proof() -> dict[str, Any]:
     return proof
 
 
+def _write_runtime_ready_proof() -> dict[str, Any]:
+    revision = os.getenv("BR_TELEGRAM_GATEWAY_REVISION", "").strip()
+    ready_file = os.getenv("TELEGRAM_GATEWAY_READY_FILE", "").strip()
+    proof = {
+        "pid": os.getpid(),
+        "revision": revision,
+    }
+    if not revision or not ready_file:
+        return proof
+    path = Path(ready_file)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        f"{proof['pid']} {revision}\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+    return proof
+
+
 def main() -> int:
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
@@ -1009,6 +1029,7 @@ def main() -> int:
     elif state.get("allowed_user_id") is not None:
         allowed_user_id = int(state["allowed_user_id"])
 
+    _write_runtime_ready_proof()
     offset = int(state.get("offset") or 0)
     username = (me or {}).get("username") if isinstance(me, dict) else None
     print("TELEGRAM_GATEWAY=ONLINE", flush=True)
