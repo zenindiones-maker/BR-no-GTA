@@ -1,0 +1,24 @@
+{
+  "schema": "AgentExecutionPlaneConformanceRequest/v1",
+  "phase": "E_ROOT_TEST_CONFORMANCE",
+  "source_head": "ed387ebc2dcf7919e07930dfdc82c751ae93ebe5",
+  "authority": "DEEPSEEK_HARNESS",
+  "required_proofs": [
+    "ROOT_TEST_COLLECTION_PASS",
+    "ROOT_FULL_SUITE_PASS",
+    "NO_STALE_CONTRACT_IMPORTS",
+    "CANONICAL_DEPENDENCIES_RESOLVED"
+  ],
+  "preserved_policies": {
+    "owner_voice_identity": "BR_OWNER_V1",
+    "owner_voice_reference_source": "PRIVATE_TELEGRAM",
+    "owner_voice_locale": "pt-BR",
+    "generic_voice_fallback": false,
+    "final_video_min_minutes": 20,
+    "artificial_padding": false,
+    "youtube_public": false,
+    "youtube_unlisted": false,
+    "new_voice_synthesis": false,
+    "full_render": false
+  }
+}
