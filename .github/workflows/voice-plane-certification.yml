@@ -6,6 +6,7 @@ on:
       - work/gate6f-analytics-learning
     paths:
       - "app/services/voice_*.py"
+      - "app/services/owner_voice_*.py"
       - "app/services/telegram_voice_service.py"
       - "app/services/realtime_voice_harness_gateway.py"
       - "app/services/global_capability_registry.py"
