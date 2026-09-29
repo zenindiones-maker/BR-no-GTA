@@ -1062,3 +1062,36 @@ def test_explicit_guarda_is_governed_memory_candidate_not_auto_promotion():
     assert result["canonical_result"]["memory_candidate"]["status"] == "CANDIDATE"
     assert result["canonical_result"]["CANONICAL_AUTO_PROMOTION"] == "NO"
     assert result["canonical_result"]["HARNESS_EVALUATION_REQUIRED"] == "PASS"
+
+
+def test_plain_subject_context_does_not_hijack_system_improvement_mission(monkeypatch):
+    class _FakePlan:
+        collaboration_plan = type("_Collaboration", (), {"tasks": (object(), object())})()
+
+        def to_dict(self):
+            return {
+                "mission_id": "mission-test",
+                "collaboration_plan": {"tasks": [{"task_id": "a"}, {"task_id": "b"}]},
+            }
+
+    monkeypatch.setattr(
+        "app.services.telegram_conversation_service.plan_mission_from_human_goal",
+        lambda *_args, **_kwargs: _FakePlan(),
+    )
+
+    subject = "desempenho e eficiência do sistema BR-no-GTA"
+    plan = plan_natural_language_action(
+        "Analisa o sistema, corrige os gargalos e melhora o desempenho usando os agentes.",
+        intent="EXECUTION_REQUEST",
+        state={
+            "active_project": "BR-no-GTA",
+            "current_subject": subject,
+            "active_artifact": None,
+        },
+        resolved_reference=subject,
+    )
+
+    assert plan["kind"] == "SYSTEM_IMPROVEMENT_MISSION"
+    assert plan["authorized_action"] == "DEVELOPMENT"
+    assert plan["collaboration_runtime"] == "HERMES_WHEN_MULTI_AGENT_REQUIRED"
+    assert plan.get("context_bound_correction") is not True
