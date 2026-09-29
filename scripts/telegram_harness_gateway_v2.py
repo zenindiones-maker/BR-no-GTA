@@ -67,6 +67,7 @@ from app.database.telegram_user_input_repository import (
 from app.database.telegram_semantic_request_repository import (
     get_latest_telegram_semantic_request_for_input,
     list_telegram_semantic_requests_for_artifact,
+    list_telegram_semantic_requests_for_source_input,
 )
 from app.database.telegram_egress_outbox_repository import (
     list_telegram_egress_operations_for_request,
@@ -529,45 +530,99 @@ def _source_evidence_payload(input_id: int | None = None) -> dict[str, Any]:
         f"obsidian:{document_note_ref}" if document_note_ref else None
     )
     related_semantic_requests: list[dict[str, Any]] = []
+    related_candidates = list_telegram_semantic_requests_for_source_input(
+        int(record["id"]),
+        limit=50,
+    )
+    lineage_resolution_by_request = {
+        str(item["request_id"]): "EXPLICIT_PARENT_IDENTITY"
+        for item in related_candidates
+    }
     if document_artifact_sha and document_artifact_ref:
-        for child in list_telegram_semantic_requests_for_artifact(
+        legacy_candidates = list_telegram_semantic_requests_for_artifact(
             telegram_chat_id=int(record["telegram_chat_id"]),
             artifact_content_sha256=document_artifact_sha,
             artifact_ref=document_artifact_ref,
             limit=50,
-        ):
-            child_ops = list_telegram_egress_operations_for_request(
+        )
+        seen = {str(item["request_id"]) for item in related_candidates}
+        for child in legacy_candidates:
+            if str(child["request_id"]) in seen:
+                continue
+            if child.get("source_attachment_input_id") is not None:
+                continue
+            related_candidates.append(child)
+            lineage_resolution_by_request[str(child["request_id"])] = (
+                "LEGACY_EXACT_ARTIFACT_JOIN"
+            )
+    for child in related_candidates:
+        child_ops = list_telegram_egress_operations_for_request(
+            str(child["request_id"])
+        )
+        final_child_ops = [
+            item for item in child_ops
+            if str(item.get("kind") or "") in {
+                "FINAL_MESSAGE", "FINAL_EDIT", "FINAL_CHUNK"
+            }
+        ]
+        final_state = (
+            str(final_child_ops[-1].get("state") or "")
+            if final_child_ops else None
+        )
+        final_message_id = next(
+            (
+                item.get("telegram_message_id")
+                for item in reversed(final_child_ops)
+                if item.get("telegram_message_id") is not None
+            ),
+            None,
+        )
+        related_semantic_requests.append({
+            "question_input_id": child.get("telegram_input_id"),
+            "question_turn_id": child.get("human_turn_id"),
+            "human_turn_id": child.get("human_turn_id"),
+            "semantic_request_id": child.get("request_id"),
+            "request_id": child.get("request_id"),
+            "human_text_sha256": child.get("human_text_sha256"),
+            "status": child.get("status"),
+            "artifact_ref": child.get("artifact_ref"),
+            "artifact_content_sha256": child.get("artifact_content_sha256"),
+            "context_digest": child.get("context_digest"),
+            "provider_attempts": child.get("provider_attempts"),
+            "routing_ids": child.get("routing_ids"),
+            "canonical_result_ref": child.get("canonical_result_ref"),
+            "egress_state": final_state,
+            "final_egress_state": final_state,
+            "final_telegram_message_id": final_message_id,
+            "lineage_resolution": lineage_resolution_by_request.get(
                 str(child["request_id"])
-            )
-            final_child_ops = [
-                item for item in child_ops
-                if str(item.get("kind") or "") in {
-                    "FINAL_MESSAGE", "FINAL_EDIT", "FINAL_CHUNK"
-                }
-            ]
-            final_state = (
-                str(final_child_ops[-1].get("state") or "")
-                if final_child_ops else None
-            )
-            related_semantic_requests.append({
-                "question_input_id": child.get("telegram_input_id"),
-                "human_turn_id": child.get("human_turn_id"),
-                "semantic_request_id": child.get("request_id"),
-                "human_text_sha256": child.get("human_text_sha256"),
-                "status": child.get("status"),
-                "artifact_ref": child.get("artifact_ref"),
-                "artifact_content_sha256": child.get("artifact_content_sha256"),
-                "context_digest": child.get("context_digest"),
-                "final_egress_state": final_state,
-            })
+            ),
+        })
 
     source_attachment_lineage = None
     if semantic_request is not None and semantic_request.get("artifact_content_sha256"):
-        source_input = get_telegram_materialized_input_for_artifact(
-            telegram_chat_id=int(semantic_request["telegram_chat_id"]),
-            content_sha256=str(semantic_request["artifact_content_sha256"]),
-            obsidian_note_ref=semantic_request.get("obsidian_note_ref"),
-        )
+        source_input = None
+        lineage_resolution = None
+        explicit_source_id = semantic_request.get("source_attachment_input_id")
+        if explicit_source_id is not None:
+            candidate = get_telegram_user_input(int(explicit_source_id))
+            if (
+                candidate is not None
+                and int(candidate.get("telegram_chat_id") or 0)
+                == int(semantic_request["telegram_chat_id"])
+                and str(candidate.get("content_sha256") or "").lower()
+                == str(semantic_request["artifact_content_sha256"]).lower()
+            ):
+                source_input = candidate
+                lineage_resolution = "EXPLICIT_PARENT_IDENTITY"
+        if source_input is None:
+            source_input = get_telegram_materialized_input_for_artifact(
+                telegram_chat_id=int(semantic_request["telegram_chat_id"]),
+                content_sha256=str(semantic_request["artifact_content_sha256"]),
+                obsidian_note_ref=semantic_request.get("obsidian_note_ref"),
+            )
+            if source_input is not None:
+                lineage_resolution = "LEGACY_EXACT_ARTIFACT_JOIN"
         if source_input is not None:
             attachment_turn = get_conversation_turn_by_message(
                 telegram_chat_id=int(source_input["telegram_chat_id"]),
@@ -576,16 +631,31 @@ def _source_evidence_payload(input_id: int | None = None) -> dict[str, Any]:
                 intent="FILE_SUBMISSION",
             )
             source_attachment_lineage = {
+                "source_attachment_input_id": source_input.get("id"),
+                "source_attachment_turn_id": (
+                    semantic_request.get("source_attachment_turn_id")
+                    if semantic_request.get("source_attachment_turn_id") is not None
+                    else (
+                        attachment_turn.get("turn_id")
+                        if attachment_turn is not None else None
+                    )
+                ),
+                "source_attachment_message_id": source_input.get("telegram_message_id"),
                 "document_input_id": source_input.get("id"),
                 "document_message_id": source_input.get("telegram_message_id"),
                 "artifact_ref": semantic_request.get("artifact_ref"),
                 "obsidian_note_ref": source_input.get("obsidian_note_ref"),
                 "artifact_content_sha256": source_input.get("content_sha256"),
                 "attachment_turn_id": (
-                    attachment_turn.get("turn_id")
-                    if attachment_turn is not None else None
+                    semantic_request.get("source_attachment_turn_id")
+                    if semantic_request.get("source_attachment_turn_id") is not None
+                    else (
+                        attachment_turn.get("turn_id")
+                        if attachment_turn is not None else None
+                    )
                 ),
                 "normalization_state": semantic_request.get("normalization_state"),
+                "lineage_resolution": lineage_resolution,
             }
     semantic_egress = (
         list_telegram_egress_operations_for_request(
@@ -603,6 +673,8 @@ def _source_evidence_payload(input_id: int | None = None) -> dict[str, Any]:
                 "thread_id", "human_identity_id", "human_text_sha256",
                 "resolved_reference", "artifact_ref", "obsidian_note_ref",
                 "artifact_content_sha256", "normalization_state",
+                "source_attachment_input_id", "source_attachment_turn_id",
+                "source_attachment_message_id",
                 "context_digest", "status", "attempt_count",
                 "provider_attempts", "routing_ids",
                 "unavailable_provider_ids", "unavailable_model_ids",

@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from app.database.telegram_conversation_repository import (
     append_conversation_turn,
+    get_conversation_turn_by_message,
     resolve_telegram_human_context,
     update_conversation_state,
 )
@@ -91,12 +92,29 @@ def _artifact_lineage(
         raise ValueError(
             "bound Obsidian attachment lacks canonical content_sha256 lineage"
         )
+    source_turn = None
+    if source is not None:
+        source_turn = get_conversation_turn_by_message(
+            telegram_chat_id=int(telegram_chat_id),
+            telegram_message_id=int(source["telegram_message_id"]),
+            role="HUMAN",
+            intent="FILE_SUBMISSION",
+        )
     return {
         "resolved_reference": ref or None,
         "artifact_ref": str(attachment.get("artifact_ref") or ref or "").strip() or None,
         "obsidian_note_ref": note_ref,
         "artifact_content_sha256": content_sha,
         "normalization_state": (source or {}).get("normalization_state"),
+        "source_attachment_input_id": (
+            int(source["id"]) if source is not None else None
+        ),
+        "source_attachment_turn_id": (
+            int(source_turn["turn_id"]) if source_turn is not None else None
+        ),
+        "source_attachment_message_id": (
+            int(source["telegram_message_id"]) if source is not None else None
+        ),
     }
 
 
@@ -176,6 +194,9 @@ def persist_telegram_semantic_request(
         obsidian_note_ref=lineage["obsidian_note_ref"],
         artifact_content_sha256=lineage["artifact_content_sha256"],
         normalization_state=lineage["normalization_state"],
+        source_attachment_input_id=lineage["source_attachment_input_id"],
+        source_attachment_turn_id=lineage["source_attachment_turn_id"],
+        source_attachment_message_id=lineage["source_attachment_message_id"],
         context_digest=context_digest,
         context_json=context,
         status="CONTEXT_BOUND",

@@ -1758,3 +1758,103 @@ def test_question_evidence_projects_source_attachment_lineage():
     assert lineage["artifact_content_sha256"] == document["content_sha256"]
     assert lineage["obsidian_note_ref"] == document["obsidian_note_ref"]
     assert lineage["normalization_state"] == "LOCAL_TEXT_NORMALIZED"
+
+def test_persisted_semantic_request_binds_explicit_source_attachment_identity():
+    from app.database.telegram_user_input_repository import upsert_telegram_user_input, update_telegram_attachment_materialization
+    from app.services.telegram_conversation_service import register_telegram_attachment_context
+    from app.services.telegram_durable_semantic_service import persist_telegram_semantic_request
+
+    document = upsert_telegram_user_input(
+        telegram_user_id=77, telegram_chat_id=-100713, telegram_message_id=602,
+        telegram_update_id=9802, input_kind="document", text_content="",
+        classification="knowledge_note", learning_status="captured",
+        telegram_file_id="file-explicit-parent", telegram_file_unique_id="unique-explicit-parent",
+        file_name="readiness.html", mime_type="text/html", remote_verified=True,
+    )
+    document = update_telegram_attachment_materialization(
+        int(document["id"]), status="MATERIALIZED",
+        obsidian_attachment_ref="90-Attachments/Telegram/sha256/7e/doc.html",
+        obsidian_note_ref="Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+        content_sha256="7e11d519ebdcbcaa6bf4fb82afe2478b9387e249feed5c65d9daf4a7ff84b131",
+        normalized_markdown_ref="Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+    )
+    attachment = register_telegram_attachment_context(
+        telegram_user_id=77, telegram_chat_id=-100713, telegram_chat_type="group",
+        telegram_message_id=602, input_record=document,
+        bridge_result={
+            "obsidian_note_ref": document["obsidian_note_ref"],
+            "content_sha256": document["content_sha256"],
+            "normalization_state": "LOCAL_TEXT_NORMALIZED",
+            "status": "MATERIALIZED",
+        },
+    )
+    question = upsert_telegram_user_input(
+        telegram_user_id=77, telegram_chat_id=-100713, telegram_message_id=603,
+        telegram_update_id=9803, input_kind="text",
+        text_content="O que você entendeu desse arquivo?",
+        classification="question", learning_status="captured",
+    )
+    request = persist_telegram_semantic_request(
+        telegram_user_id=77, telegram_chat_id=-100713, telegram_chat_type="group",
+        telegram_message_id=603, telegram_update_id=9803,
+        input_record=question, human_text="O que você entendeu desse arquivo?",
+    )
+    assert request["source_attachment_input_id"] == int(document["id"])
+    assert request["source_attachment_turn_id"] == int(attachment["turn_id"])
+    assert request["source_attachment_message_id"] == 602
+
+def test_legacy_semantic_request_recovers_parent_only_from_exact_artifact_lineage():
+    from app.database.telegram_semantic_request_repository import upsert_telegram_semantic_request
+    from app.database.telegram_user_input_repository import upsert_telegram_user_input, update_telegram_attachment_materialization
+    from app.services.telegram_conversation_service import register_telegram_attachment_context
+    from scripts import telegram_harness_gateway_v2 as gateway
+
+    document = upsert_telegram_user_input(
+        telegram_user_id=77, telegram_chat_id=-100714, telegram_message_id=602,
+        telegram_update_id=9902, input_kind="document", text_content="",
+        classification="knowledge_note", learning_status="captured",
+        telegram_file_id="file-legacy-parent", telegram_file_unique_id="unique-legacy-parent",
+        file_name="readiness.html", mime_type="text/html", remote_verified=True,
+    )
+    document = update_telegram_attachment_materialization(
+        int(document["id"]), status="MATERIALIZED",
+        obsidian_attachment_ref="90-Attachments/Telegram/sha256/7e/doc.html",
+        obsidian_note_ref="Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+        content_sha256="7e11d519ebdcbcaa6bf4fb82afe2478b9387e249feed5c65d9daf4a7ff84b131",
+        normalized_markdown_ref="Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+    )
+    attachment = register_telegram_attachment_context(
+        telegram_user_id=77, telegram_chat_id=-100714, telegram_chat_type="group",
+        telegram_message_id=602, input_record=document,
+        bridge_result={
+            "obsidian_note_ref": document["obsidian_note_ref"],
+            "content_sha256": document["content_sha256"],
+            "normalization_state": "LOCAL_TEXT_NORMALIZED",
+            "status": "MATERIALIZED",
+        },
+    )
+    question = upsert_telegram_user_input(
+        telegram_user_id=77, telegram_chat_id=-100714, telegram_message_id=603,
+        telegram_update_id=9903, input_kind="text", text_content="Explique o arquivo.",
+        classification="question", learning_status="captured",
+    )
+    upsert_telegram_semantic_request(
+        request_id="semantic-legacy-parent", telegram_input_id=int(question["id"]),
+        telegram_update_id=9903, telegram_message_id=603,
+        telegram_chat_id=-100714, human_turn_id=72,
+        thread_id="thread-legacy-parent", human_identity_id="human-legacy-parent",
+        human_text="Explique o arquivo.", human_text_sha256="d"*64,
+        resolved_reference="obsidian:Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+        artifact_ref="obsidian:Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+        obsidian_note_ref="Inbox/Telegram/000113-BR-no-GTA_Operational_Readiness_Standard_v1.md",
+        artifact_content_sha256=document["content_sha256"],
+        normalization_state="LOCAL_TEXT_NORMALIZED",
+        context_digest="e"*64,
+        context_json={"active_attachment_context":{"content":"document-specific"}},
+        status="DELIVERED",
+    )
+    payload = gateway._source_evidence_payload(int(question["id"]))
+    lineage = payload["SOURCE_ATTACHMENT_LINEAGE"]
+    assert lineage["document_input_id"] == int(document["id"])
+    assert lineage["attachment_turn_id"] == int(attachment["turn_id"])
+    assert lineage["lineage_resolution"] == "LEGACY_EXACT_ARTIFACT_JOIN"

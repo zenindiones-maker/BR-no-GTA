@@ -44,6 +44,9 @@ def _ensure_schema(connection) -> None:
             obsidian_note_ref TEXT,
             artifact_content_sha256 TEXT,
             normalization_state TEXT,
+            source_attachment_input_id INTEGER,
+            source_attachment_turn_id INTEGER,
+            source_attachment_message_id INTEGER,
             context_digest TEXT NOT NULL,
             context_json TEXT NOT NULL DEFAULT '{}',
             status TEXT NOT NULL,
@@ -70,6 +73,24 @@ def _ensure_schema(connection) -> None:
         )
         """
     )
+    existing_columns = {
+        row["name"]
+        for row in connection.execute(
+            "PRAGMA table_info(telegram_semantic_reasoning_requests)"
+        ).fetchall()
+    }
+    additions = {
+        "source_attachment_input_id": "INTEGER",
+        "source_attachment_turn_id": "INTEGER",
+        "source_attachment_message_id": "INTEGER",
+    }
+    for column, declaration in additions.items():
+        if column not in existing_columns:
+            connection.execute(
+                f"ALTER TABLE telegram_semantic_reasoning_requests "
+                f"ADD COLUMN {column} {declaration}"
+            )
+
     connection.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_telegram_semantic_due
@@ -130,7 +151,10 @@ def upsert_telegram_semantic_request(
     obsidian_note_ref: str | None,
     artifact_content_sha256: str | None,
     normalization_state: str | None,
-    context_digest: str,
+    source_attachment_input_id: int | None = None,
+    source_attachment_turn_id: int | None = None,
+    source_attachment_message_id: int | None = None,
+    context_digest: str = "",
     context_json: dict[str, Any],
     status: str = "RECEIVED",
     next_attempt_at: str | None = None,
@@ -159,11 +183,13 @@ def upsert_telegram_semantic_request(
                     telegram_message_id, telegram_chat_id, human_turn_id,
                     thread_id, human_identity_id, human_text, human_text_sha256,
                     resolved_reference, artifact_ref, obsidian_note_ref,
-                    artifact_content_sha256, normalization_state, context_digest,
+                    artifact_content_sha256, normalization_state,
+                    source_attachment_input_id, source_attachment_turn_id,
+                    source_attachment_message_id, context_digest,
                     context_json, status, next_attempt_at, wake_condition,
                     created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     rid, telegram_input_id, telegram_update_id,
@@ -172,7 +198,11 @@ def upsert_telegram_semantic_request(
                     str(human_text_sha256).lower(), resolved_reference, artifact_ref,
                     obsidian_note_ref,
                     str(artifact_content_sha256 or "").lower() or None,
-                    normalization_state, str(context_digest).lower(),
+                    normalization_state,
+                    int(source_attachment_input_id) if source_attachment_input_id is not None else None,
+                    int(source_attachment_turn_id) if source_attachment_turn_id is not None else None,
+                    int(source_attachment_message_id) if source_attachment_message_id is not None else None,
+                    str(context_digest).lower(),
                     json.dumps(context_json or {}, ensure_ascii=False, sort_keys=True),
                     normalized_status, next_attempt_at, wake_condition, now, now,
                 ),
@@ -185,10 +215,38 @@ def upsert_telegram_semantic_request(
                 "human_turn_id": int(human_turn_id),
                 "human_text_sha256": str(human_text_sha256).lower(),
                 "context_digest": str(context_digest).lower(),
+                "source_attachment_input_id": (
+                    int(source_attachment_input_id)
+                    if source_attachment_input_id is not None else None
+                ),
+                "source_attachment_turn_id": (
+                    int(source_attachment_turn_id)
+                    if source_attachment_turn_id is not None else None
+                ),
+                "source_attachment_message_id": (
+                    int(source_attachment_message_id)
+                    if source_attachment_message_id is not None else None
+                ),
             }
             for key, expected in checks.items():
-                if immutable.get(key) != expected:
+                if expected is None:
+                    continue
+                if immutable.get(key) not in {None, expected}:
                     raise ValueError(f"semantic request identity collision: {key}")
+            parent_updates = {
+                key: expected
+                for key, expected in checks.items()
+                if key.startswith("source_attachment_")
+                and expected is not None
+                and immutable.get(key) is None
+            }
+            if parent_updates:
+                assignments = ", ".join(f"{key}=?" for key in parent_updates)
+                connection.execute(
+                    f"UPDATE telegram_semantic_reasoning_requests "
+                    f"SET {assignments}, updated_at=? WHERE request_id=?",
+                    (*parent_updates.values(), now, rid),
+                )
         connection.commit()
         row = connection.execute(
             "SELECT * FROM telegram_semantic_reasoning_requests WHERE request_id = ?",
@@ -392,6 +450,36 @@ def promote_context_bound_semantic_requests_for_restart(
         )
         connection.commit()
         return int(cursor.rowcount or 0)
+    finally:
+        connection.close()
+
+
+def list_telegram_semantic_requests_for_source_input(
+    source_attachment_input_id: int,
+    *,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    connection = get_connection()
+    try:
+        _ensure_schema(connection)
+        rows = connection.execute(
+            """
+            SELECT *
+              FROM telegram_semantic_reasoning_requests
+             WHERE source_attachment_input_id=?
+             ORDER BY created_at ASC, request_id ASC
+             LIMIT ?
+            """,
+            (
+                int(source_attachment_input_id),
+                max(1, min(int(limit), 200)),
+            ),
+        ).fetchall()
+        return [
+            record
+            for row in rows
+            if (record := _row_to_record(row)) is not None
+        ]
     finally:
         connection.close()
 
