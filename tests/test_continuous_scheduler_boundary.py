@@ -163,3 +163,20 @@ def test_executor_workflow_fallback_attempt_preserves_original_trigger_kind():
     )
     assert "ORIGINAL_TRIGGER_KIND: ${{ inputs.trigger_kind }}" in text
     assert '"trigger_kind":os.environ.get("ORIGINAL_TRIGGER_KIND")' in text
+
+
+def test_executor_persists_incident_dedup_before_attempt_artifact_upload():
+    workflow = Path(".github/workflows/continuous-intelligence-executor.yml").read_text(
+        encoding="utf-8"
+    )
+    settlement = workflow.index(
+        "Settle workflow-level failure if cycle could not write an attempt"
+    )
+    incident = workflow.index("Settle actionable incident dedup state")
+    upload = workflow.index("Upload durable attempt settlement")
+
+    assert settlement < incident < upload
+    assert "scripts/continuous_incident_settlement.py" in workflow
+    assert "--prior-attempt artifacts/continuous-operation/prior-attempt.json" in workflow
+    assert "--current-attempt artifacts/continuous-operation/continuous-operation-attempt.json" in workflow
+    assert "ACTIONABLE_ALERT_REQUIRED" in workflow
