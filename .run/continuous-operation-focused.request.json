@@ -1,7 +1,7 @@
 {
   "request": "continuous-operation-focused",
-  "source_head": "8c841ddf74b6d564eba45650030fe562aefbc09b",
-  "scope": "typed-task-result-completion-metrics-and-audit-order-independence-green-2",
+  "source_head": "52ccfe69633b083af31eb0b59c310222f27102f7",
+  "scope": "due-true-scheduled-typed-task-result-regression",
   "regression_runs": [
     36572055458,
     36527996798,
