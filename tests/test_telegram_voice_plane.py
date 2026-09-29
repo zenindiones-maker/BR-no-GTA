@@ -202,3 +202,75 @@ def test_first_authorized_group_can_bootstrap_once_without_authorizing_other_sen
             authorized_user_id=111,
             sender_user_id=999,
         )
+
+
+def test_owner_voice_review_callback_is_authorized_persisted_and_not_auto_activated(tmp_path):
+    from app.services.owner_voice_human_review_service import (
+        process_owner_voice_review_callback,
+    )
+
+    result = process_owner_voice_review_callback(
+        update={
+            "callback_query": {
+                "id": "cb-1",
+                "from": {"id": 111},
+                "data": "ov1:approve:B",
+                "message": {
+                    "message_id": 900,
+                    "chat": {"id": -222, "type": "supergroup"},
+                },
+            }
+        },
+        allowed_user_id=111,
+        allowed_chat_ids={-222},
+        state_path=tmp_path / "owner-review.json",
+        now_epoch=1234.5,
+    )
+
+    assert result["status"] == "APPROVED_PENDING_ACTIVATION"
+    assert result["variant"] == "B"
+    assert result["production_activation"] == "BLOCKED_PENDING_PROMOTION"
+    assert (tmp_path / "owner-review.json").is_file()
+
+
+def test_owner_voice_review_callback_rejects_wrong_user_or_chat(tmp_path):
+    from app.services.owner_voice_human_review_service import (
+        process_owner_voice_review_callback,
+    )
+
+    update = {
+        "callback_query": {
+            "id": "cb-2",
+            "from": {"id": 999},
+            "data": "ov1:approve:A",
+            "message": {
+                "message_id": 901,
+                "chat": {"id": -222, "type": "supergroup"},
+            },
+        }
+    }
+    with pytest.raises(PermissionError, match="OWNER_VOICE_REVIEW_UNAUTHORIZED_USER"):
+        process_owner_voice_review_callback(
+            update=update,
+            allowed_user_id=111,
+            allowed_chat_ids={-222},
+            state_path=tmp_path / "owner-review.json",
+            now_epoch=1.0,
+        )
+
+    update["callback_query"]["from"]["id"] = 111
+    update["callback_query"]["message"]["chat"]["id"] = -333
+    with pytest.raises(PermissionError, match="OWNER_VOICE_REVIEW_UNAUTHORIZED_CHAT"):
+        process_owner_voice_review_callback(
+            update=update,
+            allowed_user_id=111,
+            allowed_chat_ids={-222},
+            state_path=tmp_path / "owner-review.json",
+            now_epoch=1.0,
+        )
+
+
+def test_gateway_subscribes_to_callback_queries_for_owner_voice_review():
+    from scripts.telegram_harness_gateway_v2 import telegram_allowed_updates
+
+    assert telegram_allowed_updates() == ["message", "callback_query"]
