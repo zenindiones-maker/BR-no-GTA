@@ -1525,3 +1525,117 @@ def test_semantic_reasoning_unavailable_plan_never_falls_through_to_generic_chat
     assert result["canonical_result"]["error"]["code"] == (
         "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE"
     )
+
+
+
+def test_system_improvement_semantic_proposal_rejection_falls_back_without_chat(monkeypatch):
+    literal = _literal_natural_swarm_goal()
+    chat_id = 1200709
+    update_conversation_state(
+        chat_id,
+        active_project="BR-no-GTA",
+        active_goal_id="goal-system-improvement-semantic-rejection",
+        current_subject="desempenho e eficiência do sistema BR-no-GTA",
+    )
+    seen = {}
+
+    monkeypatch.setattr(
+        collaboration_service,
+        "semantic_provider_health",
+        lambda: {
+            "semantic_reasoning_available": True,
+            "eligible_zero_cost_provider_ids": ["nvidia_nim"],
+            "providers": [
+                {
+                    "provider_id": "nvidia_nim",
+                    "state": "AVAILABLE",
+                    "retry_allowed": True,
+                    "zero_cost_eligible": True,
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        collaboration_service,
+        "propose_validated_semantic_plan",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError(
+                "SEMANTIC_MISSION_PROPOSAL_REJECTED:"
+                "MISSION_TASK_ACTION_POLICY_VIOLATION"
+            )
+        ),
+    )
+
+    result = handle_telegram_conversation(
+        literal,
+        telegram_chat_id=chat_id,
+        telegram_user_id=7770709,
+        telegram_chat_type="private",
+        telegram_message_id=120070901,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError(
+                "rejected semantic proposal must not fall through to ai.reasoning.text"
+            )
+        ),
+        action_executor=_capture_running_plan(seen),
+        presenter=_presenter,
+    )
+
+    plan = seen["plan"]
+    evidence = plan["mission_plan"]["planning_evidence"]
+    assert result["intent"] == "EXECUTION_REQUEST"
+    assert result["intent_resolution"]["layer"] == "LAYER_3_MISSION_PLANNER"
+    assert plan["kind"] == "SYSTEM_IMPROVEMENT_MISSION"
+    assert plan["mission_plan"]["goal"]["human_goal"] == literal
+    assert (
+        evidence["planning_mode"]
+        == "DETERMINISTIC_SEMANTIC_REJECTION_FALLBACK"
+    )
+    assert evidence["semantic_proposal_rejection_fallback"] is True
+    assert evidence["semantic_provider_call_count"] == 1
+    assert "MISSION_TASK_ACTION_POLICY_VIOLATION" not in str(evidence)
+
+
+
+def test_mission_planning_rejected_plan_never_falls_through_to_generic_chat(monkeypatch):
+    literal = "Planeje uma missão aberta que não é uma classe conhecida."
+    chat_id = 1200710
+    update_conversation_state(
+        chat_id,
+        active_project="BR-no-GTA",
+        active_goal_id="goal-open-semantic-rejected",
+        current_subject="planejamento aberto",
+    )
+    monkeypatch.setattr(
+        "app.services.telegram_conversation_service.plan_natural_language_action",
+        lambda *_args, **_kwargs: {
+            "kind": "MISSION_PLANNING_REJECTED",
+            "authorized_action": "DECISION",
+            "reason": "SEMANTIC_MISSION_PROPOSAL_REJECTED:redacted",
+            "authority": "DEEPSEEK_HARNESS",
+        },
+    )
+
+    result = handle_telegram_conversation(
+        literal,
+        telegram_chat_id=chat_id,
+        telegram_user_id=7770710,
+        telegram_chat_type="private",
+        telegram_message_id=120071001,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError(
+                "mission planning rejection must never fall through to generic chat"
+            )
+        ),
+        action_executor=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("rejected plan must not execute")
+        ),
+        presenter=_presenter,
+    )
+
+    assert result["plan"]["kind"] == "MISSION_PLANNING_REJECTED"
+    assert result["canonical_result"]["status"] == "BLOCKED"
+    assert result["canonical_result"]["error"]["code"] == (
+        "MISSION_PLANNING_REJECTED"
+    )
+    assert result["canonical_result"]["authority"] == "DEEPSEEK_HARNESS"
