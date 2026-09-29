@@ -297,3 +297,18 @@ def test_a15_runtime_ready_requires_exact_gateway_python_markitdown_and_pip_chec
         "doctor_gateway()", 1
     )[0]
     assert "runtime_dependency_readiness" in foreground
+
+
+def test_termux_heartbeat_publishes_semantic_lineage_attestations_only_on_exact_runtime():
+    text = (ROOT / "scripts/telegram_termux_control.sh").read_text(encoding="utf-8")
+    assert "publish_semantic_lineage_statuses()" in text
+    section = text.split("publish_semantic_lineage_statuses()", 1)[1].split(
+        "heartbeat_gateway()", 1
+    )[0]
+    assert "runtime_revision_matches" in section
+    assert "runtime_ready_matches" in section
+    assert "telegram_semantic_lineage_attestation.py" in section
+    heartbeat = text.split("heartbeat_gateway()", 1)[1].split(
+        "acquire_start_lock()", 1
+    )[0]
+    assert "publish_semantic_lineage_statuses" in heartbeat

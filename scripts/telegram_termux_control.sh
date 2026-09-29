@@ -391,10 +391,41 @@ publish_runtime_status() {
   gh api     --method POST     -H "Accept: application/vnd.github+json"     "repos/${repo}/statuses/${remote_head}"     -f "state=${state}"     -f "context=telegram-a15-runtime"     -f "description=${description}"     >/dev/null 2>&1 || true
 }
 
+publish_semantic_lineage_statuses() {
+  command -v gh >/dev/null 2>&1 || return 0
+  gh auth status >/dev/null 2>&1 || return 0
+  configure_cloud_routing >/dev/null 2>&1 || return 0
+  runtime_revision_matches || return 0
+  runtime_ready_matches || return 0
+
+  local remote_head repo line context state description
+  remote_head="$(remote_repo_revision 2>/dev/null || true)"
+  [[ -n "${remote_head}" ]] || return 0
+  repo="${GITHUB_ACTIONS_REPOSITORY:-zenindiones-maker/BR-no-GTA}"
+
+  export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
+  cd "${ROOT}"
+  while IFS='|' read -r context state description; do
+    [[ -n "${context}" ]] || continue
+    [[ "${state}" == "success" || "${state}" == "failure" || "${state}" == "error" || "${state}" == "pending" ]] || state="error"
+    gh api \
+      --method POST \
+      -H "Accept: application/vnd.github+json" \
+      "repos/${repo}/statuses/${remote_head}" \
+      -f "state=${state}" \
+      -f "context=${context}" \
+      -f "description=${description}" \
+      >/dev/null 2>&1 || true
+  done < <("${PYTHON_BIN}" scripts/telegram_semantic_lineage_attestation.py 2>/dev/null || true)
+}
+
 heartbeat_gateway() {
   local status=0
   runtime_revision_report || status=$?
   publish_runtime_status
+  if [[ "${status}" -eq 0 ]]; then
+    publish_semantic_lineage_statuses
+  fi
   return "${status}"
 }
 
