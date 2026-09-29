@@ -1,9 +1,10 @@
 {
   "request": "telegram-conversational-control-validation",
-  "source_head": "c87f5b186a9359466f603fe695433ba0d825f232",
-  "scope": "final-root-aligned-telegram-proof",
+  "source_head": "19e9e45f0bdeebd17ba83d4b46d7cd74dfe2c399",
+  "scope": "final-live-telegram-certification",
   "red_status_run_id": 36597705833,
   "red_terminal_veto_run_id": 36598916708,
-  "combined_green_run_id": 36599609104,
-  "trigger_reason": "Root-aligned final proof after sanitization contract update: live status reconciliation, terminal precedence, safe human presentation, typed executor proof, no authority escape"
+  "prior_green_run_id": 36599609104,
+  "root_regression_run_id": 36600026686,
+  "trigger_reason": "Final certification after safe-usage proof alignment: remote status truth, terminal authorization precedence, human-safe receipts/errors, provider-free control, no direct executor bypass"
 }
