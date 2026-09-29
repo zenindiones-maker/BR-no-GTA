@@ -794,8 +794,8 @@ def test_web_acquisition_status_never_reports_pass_for_blocked_transports():
         blocked_count=0,
     ) == "NO_NEW_URLS"
 
-def test_novelty_duration_uses_human_approved_voice_b_calibration(monkeypatch):
-    assert VOICE_B_EFFECTIVE_PLANNING_WPM == 132.0
+def test_novelty_duration_uses_provider_neutral_ptbr_timing_baseline(monkeypatch):
+    assert OWNER_VOICE_EFFECTIVE_PLANNING_WPM == 132.0
     assert PRE_TTS_DURATION_TOLERANCE_MINUTES == 0.35
 
     monkeypatch.setattr(
