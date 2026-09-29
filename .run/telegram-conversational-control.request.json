@@ -1,10 +1,10 @@
 {
   "request": "telegram-conversational-control-validation",
-  "source_head": "0a9e51a8f8b5faf4c84024f9d3608345d6723d50",
-  "scope": "default-branch-scheduler-workflow-run-exact-deployment-proof",
+  "source_head": "b1e3b64508bfd6e51c9442206d05ab470c755b60",
+  "scope": "typed-task-result-binding-regression-red",
   "prerequisite_live_query_run": 35619206864,
   "prerequisite_live_query_artifact": 10647174236,
-  "continuous_scheduler_main_head": "39941141924fbeac71fd6d6a26d4732e0cfa83a6",
+  "continuous_scheduler_main_head": "bb6fe9cb9d4c59a37ab454d23747744cfe23e2da",
   "expected_deployed_target_sha": "0a9e51a8f8b5faf4c84024f9d3608345d6723d50",
-  "trigger_reason": "safe workflow_run event to exercise default-branch Continuous Intelligence scheduler"
+  "trigger_reason": "RED proof: canary executor-binding validation must use typed TaskResult envelopes, not audit event shape"
 }
