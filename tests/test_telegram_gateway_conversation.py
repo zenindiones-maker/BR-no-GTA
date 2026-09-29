@@ -901,4 +901,3 @@ def test_reference_attachment_ack_does_not_claim_cloud_execution_without_dispatc
     assert "análise enfileirada" not in lowered
     assert "já estou analisando" not in lowered
     assert "ainda não foi analisado" in lowered
-
