@@ -74,10 +74,20 @@ def test_owner_consent_selects_owner_voice_and_telegram_is_reference_source():
     assert state["official_voice"] == "BR_OWNER_V1"
     assert state["active_voice_identities"] == ["BR_OWNER_V1"]
     assert state["materialized_reference_count"] == 0
-    assert state["owner_voice_status"] == "SELECTED_AWAITING_PRIVATE_REFERENCE_MATERIALIZATION"
-    assert state["human_ab_review"] == "NOT_REQUIRED_FOR_OWNER_SELECTION"
-    assert state["promotion_allowed"] is True
-    assert state["runtime_activation_status"] == "PENDING_PRIVATE_REFERENCE_MATERIALIZATION"
+    assert state["owner_voice_status"] == "REJECTED_REQUIRES_TELEGRAM_BOUND_PTBR_AUDITION"
+    assert state["human_ab_review"] == "REQUIRED_FOR_RUNTIME_ACTIVATION"
+    assert state["promotion_allowed"] is False
+    assert state["runtime_activation_status"] == "BLOCKED_HUMAN_VOICE_REVIEW"
+    assert state["voice_source_policy"] == "TELEGRAM_REFERENCES_ONLY"
+    assert state["voice_selection_mode"] == "TELEGRAM_REFERENCE_CLONE"
+    assert state["provider_preset_voice_allowed"] is False
+    assert state["provider_default_voice_allowed"] is False
+    assert state["generic_voice_fallback"] is False
+    assert state["alternate_voice_identities_allowed"] is False
+    assert state["accent_locale"] == "pt-BR"
+    assert state["latest_human_voice_review"] == "REJECTED"
+    assert state["latest_voice_identity_match"] == "FAIL"
+    assert state["latest_ptbr_accent_review"] == "FAIL"
     assert "voice_prompt_ref" not in state
     assert "voice_prompt_sha256" not in state
 
