@@ -4,11 +4,11 @@
   "requested_action": "MATERIALIZE_REAL_TELEGRAM_OWNER_REFERENCES",
   "requested_by": "authorized_human_owner",
   "source": "governed_human_instruction",
-  "request_revision": 14,
+  "request_revision": 15,
   "delivery_target": "TELEGRAM_OWNER_GROUP",
   "clone_backend": "QWEN3_TTS_0_6B_BASE_EPHEMERAL",
   "generic_voice_fallback": false,
   "fail_closed": true,
   "validation_fix": "JOB_ENV_USES_STATIC_TMP_PATH",
-  "phase": "TDD_GREEN_TRANSCRIPT_CONDITIONED_OWNER_CLONE"
+  "phase": "TDD_GREEN_TRANSCRIPT_CONDITIONED_OWNER_CLONE_FIXTURE_BOUND"
 }
