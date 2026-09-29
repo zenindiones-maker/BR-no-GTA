@@ -23,6 +23,7 @@ from app.services.harness_routing_policy_service import (
 from app.services.telegram_harness_service import (
     TELEGRAM_ASSET_CAPABILITY_ID,
     TELEGRAM_ASSET_EXECUTOR_BINDING,
+    _capability_context,
     _telegram_semantic_routing_request,
     build_harness_connection_proof,
     chat_under_harness,
@@ -259,3 +260,11 @@ def test_telegram_generic_semantic_routing_is_provider_agnostic_and_fail_closed(
     assert request.preferred_models == ()
     assert request.fallback_allowed is False
     assert request.zero_cost_operation is True
+
+
+def test_telegram_reasoning_context_includes_speech_and_voice_plane_capabilities():
+    capability_ids = {row["capability_id"] for row in _capability_context()}
+    assert "speech.transcription.whisperx" in capability_ids
+    assert "voice.turn.telegram" in capability_ids
+    assert "voice.synthesis.pt-BR" in capability_ids
+    assert "narration.generate.pt-BR" in capability_ids
