@@ -264,7 +264,8 @@ def test_telegram_generic_semantic_routing_is_provider_agnostic_and_fail_closed(
     assert request.required_capability_id == "ai.reasoning.text"
     assert request.provider_required is True
     assert request.preferred_providers == ()
-    assert request.allowed_providers == ()
+    assert request.allowed_providers == ("nvidia_nim", "tuxevil")
+    assert "opencode" not in request.allowed_providers
     assert request.preferred_models == ()
     assert request.prefer_low_latency is True
     assert request.fallback_allowed is False
