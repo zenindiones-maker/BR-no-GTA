@@ -70,6 +70,8 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       HF_HOME: /tmp/br-owner-huggingface
       TOKENIZERS_PARALLELISM: "false"
+      BR_OWNER_PRIVATE_TRANSCRIPT_CONTEXT: /tmp/br-owner-voice/private-transcript-context.json
+      BR_OWNER_STT_MODEL: medium
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -130,16 +132,31 @@ jobs:
           echo "GENERIC_VOICE_FALLBACK=0"
           echo "EPHEMERAL_QWEN_OWNER_CLONE=true"
 
-      - name: Install owner clone runtime
+      - name: Install private STT runtime
         run: |
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
-          python -m pip install --disable-pip-version-check -q \
+          python -m venv /tmp/br-owner-stt-venv
+          /tmp/br-owner-stt-venv/bin/python -m pip install --disable-pip-version-check -q \
+            "faster-whisper==1.2.0"
+
+      - name: Transcribe selected real Telegram owner reference
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          /tmp/br-owner-stt-venv/bin/python scripts/owner_voice_reference_transcript.py
+
+      - name: Install isolated Qwen owner clone runtime
+        run: |
+          set -euo pipefail
+          python -m venv /tmp/br-owner-qwen-venv
+          /tmp/br-owner-qwen-venv/bin/python -m pip install --disable-pip-version-check -q \
             "qwen-tts==0.1.1" \
             "soundfile>=0.12,<1" \
             "requests>=2.32,<3"
-          python - <<'PY'
+          /tmp/br-owner-qwen-venv/bin/python - <<'PY'
           import qwen_tts, torch, transformers
           print("QWEN_TTS_IMPORT=PASS")
           print("TRANSFORMERS_VERSION=" + transformers.__version__)
@@ -147,12 +164,12 @@ jobs:
           print("CUDA_AVAILABLE=" + str(torch.cuda.is_available()).lower())
           PY
 
-      - name: Clone owner voice from real Telegram reference and deliver audition
+      - name: Clone owner voice from transcript-conditioned real Telegram reference and deliver audition
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          python scripts/owner_voice_qwen_ephemeral_audition.py
+          /tmp/br-owner-qwen-venv/bin/python scripts/owner_voice_qwen_ephemeral_audition.py
 
       - name: Verify repository contains no owner biometric material
         if: ${{ always() }}
@@ -167,5 +184,9 @@ jobs:
         if: ${{ always() }}
         run: |
           set -euo pipefail
-          rm -rf /tmp/br-owner-voice /tmp/br-owner-huggingface
+          rm -rf \
+            /tmp/br-owner-voice \
+            /tmp/br-owner-huggingface \
+            /tmp/br-owner-stt-venv \
+            /tmp/br-owner-qwen-venv
           echo "OWNER_EPHEMERAL_PRIVATE_MATERIAL_CLEANED=PASS"
