@@ -27,6 +27,7 @@ from app.services.telegram_ingress_policy_service import (
     HUMAN_SURFACE,
     PRIVATE_TELEGRAM_HUMAN_SURFACE,
     bootstrap_first_allowed_chat,
+    configured_allowed_chat_ids,
     enroll_allowed_chat,
     parse_governed_telegram_ingress,
 )
@@ -61,6 +62,9 @@ from app.services.telegram_review_feedback_service import (
     is_render_review_feedback_message,
     record_render_review_feedback,
 )
+from app.services.owner_voice_human_review_service import (
+    process_owner_voice_review_callback,
+)
 from app.services.owner_voice_telegram_handoff_service import (
     OwnerVoiceHandoffDebouncer,
     flush_owner_voice_handoff_if_due,
@@ -82,6 +86,10 @@ from scripts.telegram_harness_gateway import (
     _render_result,
     _save_state,
 )
+
+
+def telegram_allowed_updates() -> list[str]:
+    return ["message", "callback_query"]
 
 
 def _verify_attachment(api: TelegramApi, attachment: dict[str, Any]) -> dict[str, Any]:
@@ -910,7 +918,7 @@ def main() -> int:
                 {
                     "offset": str(offset),
                     "timeout": "30",
-                    "allowed_updates": json.dumps(["message"]),
+                    "allowed_updates": json.dumps(telegram_allowed_updates()),
                 },
                 timeout=40,
             )
@@ -924,6 +932,100 @@ def main() -> int:
                 if update_id >= offset:
                     offset = update_id + 1
                     state["offset"] = offset
+
+                callback = update.get("callback_query")
+                if isinstance(callback, dict):
+                    callback_id = str(callback.get("id") or "").strip()
+                    try:
+                        review = process_owner_voice_review_callback(
+                            update=update,
+                            allowed_user_id=allowed_user_id,
+                            allowed_chat_ids=configured_allowed_chat_ids(state),
+                        )
+                        if review is None:
+                            if callback_id:
+                                api.call(
+                                    "answerCallbackQuery",
+                                    {
+                                        "callback_query_id": callback_id,
+                                        "text": "Ação não reconhecida.",
+                                        "show_alert": False,
+                                    },
+                                    timeout=20,
+                                )
+                            continue
+
+                        status = str(review.get("status") or "")
+                        variant = str(review.get("variant") or "")
+                        answer = (
+                            "Aprovação registrada; ativação continua bloqueada até o gate."
+                            if status == "APPROVED_PENDING_ACTIVATION"
+                            else "Rejeição registrada. A voz continua bloqueada."
+                        )
+                        api.call(
+                            "answerCallbackQuery",
+                            {
+                                "callback_query_id": callback_id,
+                                "text": answer,
+                                "show_alert": False,
+                            },
+                            timeout=20,
+                        )
+                        message = callback.get("message")
+                        chat = message.get("chat") if isinstance(message, dict) else None
+                        if isinstance(message, dict) and isinstance(chat, dict):
+                            api.call(
+                                "editMessageReplyMarkup",
+                                {
+                                    "chat_id": str(int(chat.get("id") or 0)),
+                                    "message_id": str(int(message.get("message_id") or 0)),
+                                    "reply_markup": json.dumps(
+                                        {"inline_keyboard": []},
+                                        separators=(",", ":"),
+                                    ),
+                                },
+                                timeout=20,
+                            )
+                        print(
+                            "OWNER_VOICE_HUMAN_REVIEW="
+                            f"{status} VARIANT={variant} "
+                            "PRODUCTION_ACTIVATION="
+                            f"{review.get('production_activation')}",
+                            flush=True,
+                        )
+                    except PermissionError as exc:
+                        if callback_id:
+                            api.call(
+                                "answerCallbackQuery",
+                                {
+                                    "callback_query_id": callback_id,
+                                    "text": "Ação não autorizada.",
+                                    "show_alert": True,
+                                },
+                                timeout=20,
+                            )
+                        print(
+                            "OWNER_VOICE_HUMAN_REVIEW=REJECTED "
+                            f"FAILURE_CLASS={type(exc).__name__}",
+                            flush=True,
+                        )
+                    except Exception as exc:
+                        if callback_id:
+                            api.call(
+                                "answerCallbackQuery",
+                                {
+                                    "callback_query_id": callback_id,
+                                    "text": "Não foi possível registrar a revisão.",
+                                    "show_alert": True,
+                                },
+                                timeout=20,
+                            )
+                        print(
+                            "OWNER_VOICE_HUMAN_REVIEW=FAIL "
+                            f"FAILURE_CLASS={type(exc).__name__}",
+                            flush=True,
+                        )
+                    continue
 
                 ingress = parse_governed_telegram_ingress(
                     update,
