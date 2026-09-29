@@ -166,6 +166,14 @@ class TelegramApi:
             api_root if api_root is not None else os.getenv("TELEGRAM_BOT_API_ROOT")
         )
         self._base_url = f"{root}{token}"
+        parsed_root = urllib.parse.urlsplit(root)
+        api_path = parsed_root.path.rstrip("/")
+        if not api_path.endswith("/bot"):
+            raise ValueError("Telegram Bot API root must end in /bot")
+        file_path = api_path[:-4] + "/file/bot"
+        self._file_base_url = urllib.parse.urlunsplit(
+            (parsed_root.scheme, parsed_root.netloc, file_path + token, "", "")
+        )
 
     def call(
         self,
@@ -209,6 +217,50 @@ class TelegramApi:
                 )
             raise TelegramApiError(str(data.get("description") or data))
         return data.get("result")
+
+    def download_file(
+        self,
+        file_id: str,
+        destination: Path,
+        *,
+        max_bytes: int = 20 * 1024 * 1024,
+    ) -> dict[str, Any]:
+        remote = self.call("getFile", {"file_id": str(file_id)}, timeout=20)
+        if not isinstance(remote, dict) or not isinstance(remote.get("file_path"), str):
+            raise TelegramApiError("Telegram getFile did not return a usable file path")
+        remote_path = remote["file_path"]
+        path_parts = Path(remote_path).parts
+        if not remote_path or remote_path.startswith("/") or ".." in path_parts:
+            raise TelegramApiError("Telegram getFile returned an unsafe file path")
+
+        destination = Path(destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.unlink(missing_ok=True)
+        request = urllib.request.Request(
+            f"{self._file_base_url}/{urllib.parse.quote(remote_path, safe='/')}",
+            method="GET",
+        )
+        total = 0
+        try:
+            with urllib.request.urlopen(request, timeout=180) as response, destination.open("wb") as stream:
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > int(max_bytes):
+                        raise TelegramApiError("Telegram file exceeds bounded download limit")
+                    stream.write(chunk)
+        except Exception:
+            destination.unlink(missing_ok=True)
+            raise
+        if total <= 0:
+            destination.unlink(missing_ok=True)
+            raise TelegramApiError("Telegram file download returned no bytes")
+        return {
+            "file_path_verified": True,
+            "downloaded_bytes": total,
+        }
 
     def send(
         self,
