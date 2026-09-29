@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BR-no-GTA — Operational Readiness Standard</title>
+<meta name="description" content="Norma canônica para decidir se o BR-no-GTA funciona de verdade.">
+<style>
+:root{--bg:#070a0f;--p:#101824;--p2:#141e2b;--line:#29384d;--tx:#edf4fc;--m:#9eafc5;--g:#68e39b;--b:#79a9ff;--c:#52d8c0;--y:#ffd06b;--r:#ff717d;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--sans:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(circle at 8% 0,rgba(82,216,192,.08),transparent 28rem),radial-gradient(circle at 95% 7%,rgba(121,169,255,.08),transparent 30rem),var(--bg);color:var(--tx);font:14px/1.55 var(--sans)}
+a{color:var(--b)}code,pre{font-family:var(--mono)}.layout{display:grid;grid-template-columns:300px 1fr;min-height:100vh}.side{position:sticky;top:0;height:100vh;overflow:auto;border-right:1px solid var(--line);background:rgba(6,9,14,.97);padding:20px 16px}.main{max-width:1500px;width:100%;padding:32px 40px 70px;margin:auto}
+.brand{display:flex;gap:11px;align-items:center}.logo{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--c),var(--b));display:grid;place-items:center;color:#03110e;font-weight:900}.brand h1{font-size:14px;margin:0}.brand small{display:block;color:var(--m)}
+.search{width:100%;margin:16px 0 12px;padding:10px 11px;background:var(--p);color:var(--tx);border:1px solid var(--line);border-radius:10px;outline:none}.navtitle{margin:15px 8px 5px;color:#73859d;font-size:10px;text-transform:uppercase;letter-spacing:.12em}.nav a{display:block;padding:7px 9px;border-radius:8px;color:#cbd7e6;text-decoration:none;font-size:12px}.nav a:hover,.nav a.active{background:#152132;color:white}.sidebox{margin-top:16px;border:1px solid var(--line);border-radius:11px;background:var(--p);padding:10px;color:var(--m);font-size:10px}
+.hero{padding:32px;border:1px solid var(--line);border-radius:24px;background:linear-gradient(145deg,#121b28,#0a1018);box-shadow:0 18px 55px rgba(0,0,0,.3)}.eye{color:var(--c);font-size:10px;letter-spacing:.15em;text-transform:uppercase;font-weight:800}.hero h2{font-size:clamp(32px,4vw,56px);line-height:1.02;margin:9px 0 13px}.hero p{max-width:1050px;color:var(--m);font-size:16px}.badges{display:flex;gap:7px;flex-wrap:wrap;margin-top:16px}.badge,.tag{border:1px solid var(--line);border-radius:999px;background:#101925;padding:5px 8px;font-size:10px}.tag{padding:3px 6px}.pass{color:var(--g)}.fail{color:var(--r)}.warn{color:var(--y)}
+.verdict{display:grid;grid-template-columns:210px 1fr;gap:11px;margin-top:18px}.vbox,.vtext{border:1px solid var(--line);border-radius:13px;padding:13px;background:#0d151f}.vbox{border-color:rgba(255,113,125,.4)}.vbox small{display:block;color:var(--m);font-size:9px;text-transform:uppercase;letter-spacing:.09em}.vbox b{display:block;color:var(--r);font-size:20px;margin-top:4px}.vtext{color:var(--m);font-size:12px}
+section{margin-top:40px;scroll-margin-top:20px}.head{display:flex;justify-content:space-between;gap:18px;align-items:end;margin-bottom:13px}.head h2{margin:0;font-size:26px}.head p{margin:0;max-width:800px;color:var(--m);font-size:12px}.k{color:var(--c);font-size:10px;text-transform:uppercase;letter-spacing:.11em;font-weight:800}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px}.card{border:1px solid var(--line);border-radius:15px;background:linear-gradient(180deg,var(--p),#0e1620);padding:17px}.card h3{font-size:15px;margin:0 0 7px}.card p,.card li{color:var(--m);font-size:11px}.card ul,.card ol{padding-left:18px}.call{margin:11px 0;padding:11px 13px;border-left:3px solid var(--b);background:#101a29;border-radius:0 10px 10px 0;color:#cbd8e7;font-size:11px}.call.red{border-left-color:var(--r)}.call.yellow{border-left-color:var(--y)}.call.green{border-left-color:var(--g)}
+.tw{overflow:auto;border:1px solid var(--line);border-radius:13px;background:var(--p)}table{border-collapse:collapse;width:100%;min-width:850px}th,td{padding:10px 11px;border-bottom:1px solid #202d3f;text-align:left;vertical-align:top;font-size:10px}th{position:sticky;top:0;background:#111a27;color:#bbc8d8;text-transform:uppercase;letter-spacing:.06em;font-size:9px}tr:last-child td{border-bottom:0}
+.flow{display:grid;gap:7px}.node{border:1px solid var(--line);border-radius:11px;background:#0e1621;padding:10px 12px;display:flex;justify-content:space-between;gap:12px;cursor:pointer}.node strong{font-size:12px}.node span{color:var(--m);font-size:10px}.detail{display:none;border:1px dashed var(--line);border-radius:0 0 10px 10px;margin-top:-4px;padding:8px 11px;color:var(--m);font-size:10px}.node.open+.detail{display:block}.arrow{text-align:center;color:#60728b;font-family:var(--mono)}
+.timeline{border-left:1px solid var(--line);padding-left:20px;margin-left:7px}.step{position:relative;margin:0 0 15px}.step:before{content:"";position:absolute;left:-26px;top:4px;width:9px;height:9px;border-radius:50%;background:var(--b)}.step h4{margin:0;font-size:12px}.step p{margin:2px 0;color:var(--m);font-size:10px}
+.gates{display:grid;gap:8px}.gate{display:grid;grid-template-columns:44px 220px 1fr 110px;gap:10px;align-items:start;border:1px solid var(--line);border-radius:12px;background:#0f1722;padding:11px}.gid{font:800 11px var(--mono);color:var(--c)}.gname{font-weight:800;font-size:11px}.gdesc{color:var(--m);font-size:10px}.gstate select{width:100%;background:#0b121b;color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:5px;font-size:9px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);overflow:auto;margin-bottom:12px}.tab{border:0;background:none;color:var(--m);padding:8px 9px;border-bottom:2px solid transparent;cursor:pointer}.tab.active{color:white;border-bottom-color:var(--c)}.panel{display:none}.panel.active{display:block}.hide{display:none!important}.footer{margin-top:52px;border-top:1px solid var(--line);padding-top:17px;color:var(--m);font-size:10px}
+@media(max-width:1000px){.layout{display:block}.side{display:none}.main{padding:22px 16px 50px}.grid4{grid-template-columns:repeat(2,1fr)}.grid3{grid-template-columns:repeat(2,1fr)}}@media(max-width:650px){.grid2,.grid3,.grid4{grid-template-columns:1fr}.head{display:block}.head p{margin-top:4px}.verdict{grid-template-columns:1fr}.gate{grid-template-columns:40px 1fr}.gdesc,.gstate{grid-column:1/-1}}
+</style>
+</head>
+<body><div class="layout"><aside class="side">
+<div class="brand"><div class="logo">BR</div><div><h1>BR-no-GTA</h1><small>Operational Readiness Standard</small></div></div>
+<input class="search" id="search" placeholder="Buscar requisito ou recurso…">
+<nav class="nav" id="nav">
+<div class="navtitle">Norma</div><a href="#purpose">Objetivo</a><a href="#definition">Definition of Working</a><a href="#architecture">Arquitetura</a><a href="#cert">Gates G0–G14</a>
+<div class="navtitle">Sistema</div><a href="#config">Configuração</a><a href="#durable">Durable V3</a><a href="#agents">Agents & capabilities</a><a href="#providers">Providers</a><a href="#obs">Observability</a><a href="#learning">Learning</a>
+<div class="navtitle">Produto</div><a href="#telegram">Telegram</a><a href="#voice">BR_OWNER_V1</a><a href="#editorial">Research & editorial</a><a href="#media">Media & render</a><a href="#youtube">YouTube PRIVATE</a>
+<div class="navtitle">Operação</div><a href="#testing">Testing</a><a href="#failures">Failure handling</a><a href="#snapshot">Snapshot</a><a href="#next">Próximos passos</a>
+</nav><div class="sidebox">Branch: <code>work/gate6f-analytics-learning</code><br>Norma: stable<br>Snapshot de origem: <code>55968586261e…</code></div></aside>
+<main class="main">
+<section class="hero searchable" id="purpose"><div class="eye">normative · auditable · fail-closed · evidence-first</div><h2>Operational Readiness Standard</h2>
+<p>Contrato canônico para responder de forma objetiva: <b>“o BR-no-GTA funciona profissionalmente de verdade?”</b> Ele define comportamento obrigatório, configuração, evidência, recovery, segurança e produto final.</p>
+<div class="badges"><span class="badge">DeepSeek Harness = sole authority</span><span class="badge">Telegram = human surface</span><span class="badge">YouTube = PRIVATE review only</span><span class="badge">Final ≥20 min</span><span class="badge">Voice = BR_OWNER_V1</span></div>
+<div class="verdict"><div class="vbox"><small>Regra</small><b>FAIL CLOSED</b></div><div class="vtext">Não existe nota média. Qualquer hard gate FAIL, BLOCKED ou UNPROVEN impede <code>SYSTEM_OPERATIONAL=PASS</code>. PASS exige evidence ref do lineage correto.</div></div></section>
+
+<section class="searchable" id="definition"><div class="head"><div><div class="k">Normative language</div><h2>Definition of Working</h2></div><p>Um teste verde não é “sistema funcionando”.</p></div>
+<div class="grid2"><div class="card"><h3>MUST / MUST NOT</h3><p><b>MUST</b> = requisito obrigatório. <b>MUST NOT</b> = proibido. Violação é FAIL. <b>SHOULD</b> exige justificativa quando não seguido. <b>MAY</b> é opcional.</p></div>
+<div class="card"><h3>SYSTEM_OPERATIONAL=PASS</h3><ul><li>G0–G14 todos PASS.</li><li>Evidence fresh e ligada ao HEAD/mission/task correto.</li><li>Nenhum successor contraditório ativo/queued.</li><li>Zero authority escape, secret leak, artifact mismatch e unintended publication.</li><li>Produto final respeita voz, duração, QA e review.</li></ul></div></div>
+<div class="call red"><b>Proibido:</b> UNKNOWN/UNPROVEN→PASS, CI GREEN→produto entregue, ou agent self-report→evidência canônica.</div></section>
+
+<section class="searchable" id="architecture"><div class="head"><div><div class="k">Control model</div><h2>Arquitetura profissional</h2></div><p>Uma autoridade; especialistas bounded; outcome reduzido por trusted code.</p></div>
+<div class="flow">
+<div class="node" onclick="tog(this)"><strong>Human Natural Goal</strong><span>Telegram / explicit intent</span></div><div class="detail">Objetivo literal, constraints e decisões humanas são preservados.</div><div class="arrow">↓</div>
+<div class="node" onclick="tog(this)"><strong>DeepSeek Harness</strong><span>sole control plane</span></div><div class="detail">Routing, authorization, planning, state, recovery, acceptance e publication permission.</div><div class="arrow">↓</div>
+<div class="node" onclick="tog(this)"><strong>GoalEnvelope + MissionPlan</strong><span>typed semantics</span></div><div class="detail">DAG, requirements, product contract, plan hash e human gates.</div><div class="arrow">↓</div>
+<div class="node" onclick="tog(this)"><strong>Registry + Hard Eligibility</strong><span>capability / worker</span></div><div class="detail">Version, health, certification, operations, scopes, tools e provider availability antes do scoring.</div><div class="arrow">↓</div>
+<div class="node" onclick="tog(this)"><strong>Hermes / Agent Office / Specialists / Providers</strong><span>delegated execution</span></div><div class="detail">Executam task bounded. Authority permanece NONE/DELEGATED_ONLY.</div><div class="arrow">↓</div>
+<div class="node" onclick="tog(this)"><strong>TaskResult + Evidence + Artifact</strong><span>typed + hashed + persisted</span></div><div class="detail">Identidade/version/authorization/input/output/tool/provider/artifact/failure lineage.</div><div class="arrow">↓</div>
+<div class="node" onclick="tog(this)"><strong>Trusted Reducer / Supervisor</strong><span>authoritative transition</span></div><div class="detail">Executor não define mission status ou next transition sozinho.</div></div></section>
+
+<section class="searchable" id="cert"><div class="head"><div><div class="k">Binary certification</div><h2>Gates G0–G14</h2></div><p>Use como checklist normativo. A automação futura deve gerar JSON machine-readable com os mesmos gates.</p></div><div class="gates" id="gates"></div><div class="call">PASS selecionado manualmente nesta página é apenas visual. O sistema canônico deve emitir <code>BRNoGTAOperationalReadinessCertification/v1</code> com evidence refs e digests.</div></section>
+
+<section class="searchable" id="config"><div class="head"><div><div class="k">Configuration</div><h2>O que deve ser configurado</h2></div><p>Valores secretos nunca entram nesta documentação.</p></div>
+<div class="tw"><table><thead><tr><th>Boundary</th><th>Config</th><th>Regra</th><th>Validação</th></tr></thead><tbody>
+<tr><td>Telegram</td><td><code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_REVIEW_CHAT_ID</code>, allow-lists</td><td>Bot oficial; sender/chat allow-list; privacy/webhook readiness.</td><td>telegram-runtime-readiness + focused live proof</td></tr>
+<tr><td>Owner voice</td><td><code>BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64</code></td><td>Envelope opaco; refs privadas Telegram; legacy index somente migração.</td><td>private materialization + QA + human audition</td></tr>
+<tr><td>YouTube</td><td><code>YOUTUBE_OAUTH_TOKEN_JSON</code>, <code>YOUTUBE_OAUTH_CLIENT_SECRET_JSON</code></td><td>Somente private-upload worker; runtime temp; nunca Git/artifact.</td><td>private upload result + processing + Telegram receipt</td></tr>
+<tr><td>NVIDIA</td><td><code>NVIDIA_API_KEY</code></td><td>Provider somente; 429/503/timeout passam pela failure taxonomy.</td><td>fresh health + circuit/admission evidence</td></tr>
+<tr><td>Claude</td><td><code>CLAUDE_CODE_OAUTH_TOKEN</code> OU <code>ANTHROPIC_API_KEY</code></td><td>Exatamente uma credencial quando live habilitado; auth separada de install.</td><td>auth boundary proof</td></tr>
+<tr><td>GitHub</td><td><code>GITHUB_TOKEN</code></td><td><code>contents: read</code> por padrão; write somente em mutation bounded.</td><td>workflow permissions review</td></tr>
+</tbody></table></div>
+<div class="grid3" style="margin-top:12px"><div class="card"><h3>Versioned policy</h3><p><code>continuous_operation_policy.json</code>, skill pack, voice enrollment/upstreams/clone mission e provider health devem ser versionados e testados.</p></div><div class="card"><h3>GitHub hardening</h3><p>Critical actions MUST ser pinadas por full commit SHA. Sensitive jobs SHOULD usar Environments/protection; OIDC quando suportado.</p></div><div class="card"><h3>Dependencies</h3><p>Uma fonte canônica por classe de runtime; workflows não podem divergir silenciosamente.</p></div></div></section>
+
+<section class="searchable" id="durable"><div class="head"><div><div class="k">Durable execution</div><h2>V3: crash/retry sem duplicar efeito</h2></div><p>Durability é state + replay + idempotência, não “tentar de novo”.</p></div>
+<div class="grid4"><div class="card"><h3>Plan binding</h3><p>PlanRevision/hash/runtime revision/grant/head devem coincidir.</p></div><div class="card"><h3>Claim fencing</h3><p>Stale claimant não executa side effect nem settle.</p></div><div class="card"><h3>Outbox</h3><p>State mutation + dispatch intent duráveis; relay repetível.</p></div><div class="card"><h3>Operation ledger</h3><p>Plan→start→authorize→external call→settle; unknown remote state requer reconcile.</p></div></div>
+<div class="call green">COMPLETED task → zero provider/tool calls no normal resume. Provider unavailable com capability ainda válida → WAIT. Partial failure → minimal affected subgraph.</div></section>
+
+<section class="searchable" id="agents"><div class="head"><div><div class="k">Agent execution plane</div><h2>Agents, capabilities, workers e skills</h2></div><p>Agente real possui identity/version/capability/scopes/runtime/evidence.</p></div>
+<div class="tw"><table><thead><tr><th>Recurso</th><th>Deve fazer</th><th>Não pode</th><th>Prova</th></tr></thead><tbody>
+<tr><td>Global Capability Registry</td><td>Discovery canônico, version/health/operations/evidence contract.</td><td>AVAILABLE=ACTIVE ou executor fora do Registry.</td><td>Resolution receipt + usage audit</td></tr>
+<tr><td>Worker Scheduler</td><td>Hard eligibility antes de scoring; deterministic tie-break.</td><td>Ranking de ineligible worker.</td><td>RoutingDecision + evidence snapshot</td></tr>
+<tr><td>Hermes</td><td>Bounded DAG, typed handoffs, child limits e exact scopes.</td><td>Policy/authority/publication mutation.</td><td>TypedHandoff + child TaskResults</td></tr>
+<tr><td>Agent Office</td><td>Development em worktrees, leases, path/tool/action budgets.</td><td>Canonical push authority ou arbitrary commands.</td><td>ExecutionResult + reducer READY_FOR_HARNESS_DECISION</td></tr>
+<tr><td>Skill</td><td>Metodologia/procedimento com pinned provenance.</td><td>Virar control plane ou side effect direto.</td><td>digest + selected skill identity</td></tr>
+<tr><td>Reviewer</td><td>Read-only e independente do executor.</td><td>Mesma session/principal/authorization.</td><td>ReviewIndependenceEvidence</td></tr>
+</tbody></table></div></section>
+
+<section class="searchable" id="providers"><div class="head"><div><div class="k">Provider resilience</div><h2>Recovery causal</h2></div><p>503/timeout/quota são eventos operacionais tipados.</p></div>
+<div class="timeline"><div class="step"><h4>Capture</h4><p>provider/model/status/retryable/stage/latency.</p></div><div class="step"><h4>Classify</h4><p>model-local, provider-wide, quota/rate-limit, transient, auth, contract.</p></div><div class="step"><h4>Circuit/admission</h4><p>CLOSED/OPEN/HALF-OPEN + fresh health.</p></div><div class="step"><h4>Recover</h4><p>bounded retry, alternate eligible route, WAIT, REPLAN ou AUTH_REQUIRED.</p></div><div class="step"><h4>Persist</h4><p>FailureEpisode + deterministic backoff/wake + idempotent requeue.</p></div></div>
+<div class="call yellow">Provider não é autoridade. Blind retry e immediate terminal failure são ambos incorretos quando a failure class não os autoriza.</div></section>
+
+<section class="searchable" id="obs"><div class="head"><div><div class="k">Observability</div><h2>Árvore causal ponta a ponta</h2></div><p>Se não dá para correlacionar, não dá para operar profissionalmente.</p></div>
+<div class="grid3"><div class="card"><h3>Trace</h3><p>trace_id, mission_id, plan/hash, task/parent, authorization.</p></div><div class="card"><h3>Executor</h3><p>agent/worker/capability/skill version, provider/model.</p></div><div class="card"><h3>Operation</h3><p>tool_call/execution/operation IDs, artifacts/digests, retry/replan.</p></div><div class="card"><h3>Signals</h3><p>latency, errors, workload, saturation, queue/wait time.</p></div><div class="card"><h3>Agent quality</h3><p>success, retries, corrections, tool/provider failures, budgets, cost.</p></div><div class="card"><h3>Zero tolerance</h3><p>authority escape, duplicate side effect, secret leak, hash mismatch, unintended public release = 0.</p></div></div></section>
+
+<section class="searchable" id="learning"><div class="head"><div><div class="k">Learning plane</div><h2>Aprender sem autoautoridade</h2></div><p>Observation, evaluation e promotion são fases separadas.</p></div>
+<div class="grid2"><div class="card"><h3>Episode → competence</h3><p>Outcome, version, retries, human correction e evidence informam routing somente após evidência suficiente.</p></div><div class="card"><h3>Candidate → promotion</h3><p>Baseline/challenger, regression/adversarial evidence, Harness authorization; high-risk exige human review.</p></div></div><div class="call yellow">Mudança de executable version deve stale/retire memories/certifications incompatíveis. Nunca reciclar “v2” com conteúdo diferente.</div></section>
+
+<section class="searchable" id="telegram"><div class="head"><div><div class="k">Human surface</div><h2>Telegram</h2></div><p>Ingress, status, feedback e delivery; nunca mission authority.</p></div>
+<div class="grid4"><div class="card"><h3>Ingress</h3><p>Allow-list sender/chat e reject unauthorized update.</p></div><div class="card"><h3>Readiness</h3><p>Detect privacy mode, group permissions e webhook conflict.</p></div><div class="card"><h3>Status</h3><p>Mostrar canonical state/run evidence, não inferência de chat.</p></div><div class="card"><h3>Review</h3><p>Delivery receipt ≠ approval; persist exact artifact/publication feedback.</p></div></div></section>
+
+<section class="searchable" id="voice"><div class="head"><div><div class="k">Biometric boundary</div><h2>BR_OWNER_V1</h2></div><p>Voz oficial exige identity binding real e revisão humana.</p></div>
+<div class="grid2"><div class="card"><h3>MUST</h3><ul><li>Telegram private refs, pt-BR, SHA integrity.</li><li>Private ephemeral storage fora do repo.</li><li>preset/default/generic fallback=false.</li><li>Human identity + fluency + Brazilian accent PASS antes de promotion.</li></ul></div><div class="card"><h3>MUST NOT</h3><ul><li>Raw audio/transcript/embedding/clone prompt em Git/artifact público.</li><li>Rotular voz genérica como BR_OWNER_V1.</li><li>Voice B/Thalita como fallback oficial.</li><li>Undocumented multi-reference fusion.</li></ul></div></div></section>
+
+<section class="searchable" id="editorial"><div class="head"><div><div class="k">Evidence-first content</div><h2>Research & editorial</h2></div><p>Provenance antes de narrativa.</p></div>
+<div class="grid3"><div class="card"><h3>Research</h3><p>Official/primary first; source class; freshness; corroboration.</p></div><div class="card"><h3>Claims</h3><p>OFFICIAL/PRIMARY/SECONDARY/RUMOR/UNVERIFIED/CONTRADICTED; unsupported current claims=0.</p></div><div class="card"><h3>Long-form</h3><p>Evidence-bounded, novelty/repetition gates, target 20–25 min, final ≥20 min, artificial padding OFF.</p></div></div></section>
+
+<section class="searchable" id="media"><div class="head"><div><div class="k">Media & render</div><h2>MASTER_FINAL é artifact auditável</h2></div><p>Acquisition, selection, EditPlan, render e QA têm boundaries separadas.</p></div>
+<div class="tabs"><button class="tab active" data-t="m1">Acquisition</button><button class="tab" data-t="m2">VEdit</button><button class="tab" data-t="m3">QA</button></div>
+<div class="panel active" id="m1"><div class="card"><p>Governed ingestion/materialization, confined runtime path, stream/duration/source-window checks e SHA/size evidence. Phone credentials/cookies forbidden.</p></div></div>
+<div class="panel" id="m2"><div class="card"><p>VEdit project JSON é edit state; mutações via Store; MCP/UI/CLI não escrevem direto. Heavy processing fica na cloud, não no A15.</p></div></div>
+<div class="panel" id="m3"><div class="grid3"><div class="card"><h3>Master</h3><p>1920×1080, 30fps, H.264 yuv420p High, AAC.</p></div><div class="card"><h3>Policy</h3><p>≥20 min; no debug/structural overlay; no burned subtitles.</p></div><div class="card"><h3>Evidence</h3><p>probe + SHA + source lineage + RenderJob + QA.</p></div></div></div></section>
+
+<section class="searchable" id="youtube"><div class="head"><div><div class="k">Human review delivery</div><h2>YouTube PRIVATE</h2></div><p>Upload privado é transporte de revisão, não publicação.</p></div>
+<div class="timeline"><div class="step"><h4>QA PASS</h4><p>Exact artifact locator + SHA/streams/duration.</p></div><div class="step"><h4>Private upload</h4><p>OAuth somente no worker; privacyStatus=private.</p></div><div class="step"><h4>HD/process verify</h4><p>Review-ready somente após processing/identity checks.</p></div><div class="step"><h4>Telegram delivery</h4><p>Private link + exact video/publication IDs + receipt.</p></div><div class="step"><h4>Human review</h4><p>Approval/rejection/change request persistido.</p></div></div>
+<div class="call red">PUBLIC e UNLISTED permanecem FORBIDDEN pela policy atual.</div></section>
+
+<section class="searchable" id="testing"><div class="head"><div><div class="k">Verification ladder</div><h2>Como uma correção vira prova</h2></div><p>Live run não deve funcionar como teste unitário caro.</p></div>
+<div class="grid3"><div class="card"><h3>L1 Contract</h3><p>schemas, reducers, routing, eligibility, hashes, policy/security.</p></div><div class="card"><h3>L2 Integration</h3><p>DB/files/artifacts/fake external boundaries, handoffs, resume/outbox.</p></div><div class="card"><h3>L3 Live</h3><p>Real Actions/providers/agents somente após níveis inferiores GREEN.</p></div></div>
+<div class="call green">RED regression → minimal coherent fix → focused GREEN → root suite GREEN → critical workflows GREEN → live GREEN → reconcile successors → persist evidence.</div></section>
+
+<section class="searchable" id="failures"><div class="head"><div><div class="k">Runbook</div><h2>Failure handling</h2></div><p>Failure class decide recovery.</p></div>
+<div class="tw"><table><thead><tr><th>Classe</th><th>Resposta</th><th>Proibido</th></tr></thead><tbody>
+<tr><td>CONTRACT_VIOLATION</td><td>RED regression → migrate/fix.</td><td>Fake compatibility shim.</td></tr>
+<tr><td>AUTHORIZATION_DENIED</td><td>BLOCK / request auth.</td><td>Bypass.</td></tr>
+<tr><td>PROVIDER_TRANSIENT / 503</td><td>circuit + bounded retry/alternate/WAIT.</td><td>terminal imediato ou retry infinito.</td></tr>
+<tr><td>PROVIDER_POOL_EXHAUSTED</td><td>WAITING_FOR_PROVIDER_AVAILABILITY + wake.</td><td>blind replan.</td></tr>
+<tr><td>VERSION_CONFLICT</td><td>immutable history + new version/migration.</td><td>overwrite same version.</td></tr>
+<tr><td>EXTERNAL_SIDE_EFFECT_UNKNOWN</td><td>read-only remote reconcile.</td><td>repeat operation.</td></tr>
+<tr><td>ARTIFACT_INTEGRITY_FAILURE</td><td>fail closed / quarantine.</td><td>continue render/upload.</td></tr>
+<tr><td>INSUFFICIENT_EVIDENCE</td><td>targeted research/reuse.</td><td>padding/lower gate.</td></tr>
+<tr><td>HUMAN_INPUT_REQUIRED</td><td>request exact human action.</td><td>pretend internal retry solves it.</td></tr>
+</tbody></table></div></section>
+
+<section class="searchable" id="snapshot"><div class="head"><div><div class="k">Snapshot discipline</div><h2>Status não pertence à norma</h2></div><p>Este HTML define a regra estável. Status atual deve vir de certification JSON gerado automaticamente.</p></div>
+<div class="grid3"><div class="card"><h3>Norma</h3><p>Este arquivo versionado muda somente quando o significado de “operacional” muda.</p></div><div class="card"><h3>Certification</h3><p>JSON fresh contém HEAD, mission/run IDs, G0–G14, evidence refs, artifact digests e verdict.</p></div><div class="card"><h3>Current source snapshot</h3><p>Documento inicialmente derivado de auditoria no HEAD <code>55968586261e…</code>; nunca usar isso como prova futura.</p></div></div></section>
+
+<section class="searchable" id="next"><div class="head"><div><div class="k">Roadmap</div><h2>Próximos passos obrigatórios</h2></div><p>Ordem de menor custo/maior causalidade.</p></div>
+<div class="timeline"><div class="step"><h4>P0 · Root suite limpa</h4><p>Migrar stale tests/fixtures sem ressuscitar Voice B.</p></div><div class="step"><h4>P0 · Provider recovery</h4><p>Provar 503 → circuit/admission + alternate/WAIT + idempotent wake.</p></div><div class="step"><h4>P0 · Owner voice</h4><p>Materialização privada + QA + transcript-conditioned audition + human pt-BR/identity approval.</p></div><div class="step"><h4>P1 · Supply-chain hardening</h4><p>Full-SHA pins, environments, dependency conformance, OIDC where supported.</p></div><div class="step"><h4>P1 · Unified tracing</h4><p>mission→task→agent→tool/provider→artifact.</p></div><div class="step"><h4>P1 · Fresh proof ladder</h4><p>CI → Intelligence/Learning → Self Improvement → Multi-Agent Synergy.</p></div><div class="step"><h4>P2 · Natural Swarm</h4><p>Mesmo literal natural goal; real child evidence + closed loop.</p></div><div class="step"><h4>P2 · Product proof</h4><p>Research/editorial≥20 → BR_OWNER_V1 → render/QA → YouTube PRIVATE HD → Telegram → HUMAN_REVIEW_PENDING.</p></div><div class="step"><h4>P3 · Automated certification</h4><p>Persistir <code>BRNoGTAOperationalReadinessCertification/v1</code> e bloquear PASS sem evidence.</p></div></div></section>
+
+<div class="footer">Canonical Operational Readiness Standard · values/secrets intentionally excluded · DeepSeek Harness remains sole authority.</div>
+</main></div>
+<script>
+const G=[
+["G0","Source & Build Integrity","Exact HEAD, reproducible dependencies, pinned critical actions, artifact provenance."],
+["G1","Single Control Plane","DeepSeek Harness sole authority; zero authority escape."],
+["G2","Mission Semantics","Natural goal→GoalEnvelope→MissionPlan; literal goal preserved; no keyword hijack."],
+["G3","Durable Execution V3","Plan/grant/claim/fence/outbox/operation ledger/replay/resume invariants."],
+["G4","Worker & Capability Plane","Manifest/certification, hard eligibility, deterministic routing, no bypass."],
+["G5","Provider Resilience","503/timeout/quota→causal retry/alternate/WAIT/replan."],
+["G6","Hermes / Agent Office","Real bounded subordinate coordination and evidence."],
+["G7","Observability & Evidence","End-to-end trace/IDs/artifacts/digests/failure class."],
+["G8","Telegram Human Surface","Authorized ingress/egress/status/review; no authority."],
+["G9","Owner Voice","BR_OWNER_V1 real Telegram refs, pt-BR, human-approved, no fallback."],
+["G10","Research & Editorial","Fresh evidence, provenance, unsupported=0, final≥20 min, no padding."],
+["G11","Media & Render","Real media binding, cloud render, QA, resume, artifact lineage."],
+["G12","YouTube Private Review","PRIVATE HD + Telegram receipt; PUBLIC/UNLISTED blocked."],
+["G13","Learning & Memory","Evidence-bound episodes/competence/memory/promotion/version handling."],
+["G14","End-to-End Certification","Same natural goal reaches PRIVATE human review with fresh evidence."]
+];
+function tog(e){e.classList.toggle("open")}
+const root=document.getElementById("gates");G.forEach(g=>{const d=document.createElement("div");d.className="gate";d.innerHTML='<div class="gid">'+g[0]+'</div><div class="gname">'+g[1]+'</div><div class="gdesc">'+g[2]+'</div><div class="gstate"><select><option>UNASSESSED</option><option>PASS</option><option>FAIL</option><option>UNPROVEN</option><option>BLOCKED</option></select></div>';root.appendChild(d)});
+document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{const s=b.closest("section");s.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));s.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));b.classList.add("active");s.querySelector("#"+b.dataset.t).classList.add("active")});
+document.getElementById("search").oninput=e=>{const q=e.target.value.trim().toLowerCase();document.querySelectorAll(".searchable").forEach(x=>x.classList.toggle("hide",q&&!x.innerText.toLowerCase().includes(q)))};
+const links=[...document.querySelectorAll("#nav a")];const ob=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)links.forEach(a=>a.classList.toggle("active",a.getAttribute("href")==="#"+e.target.id))}),{rootMargin:"-25% 0 -65% 0"});links.forEach(a=>{const x=document.querySelector(a.getAttribute("href"));if(x)ob.observe(x)});
+</script></body></html>
