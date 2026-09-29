@@ -62,6 +62,7 @@ def test_qwen_clone_requires_matching_private_transcript_context(tmp_path):
     path.write_text(
         """{
           "schema": "OwnerVoicePrivateTranscript/v1",
+          "voice_identity_id": "BR_OWNER_V1",
           "telegram_input_id": 50,
           "audio_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
           "language": "pt",
