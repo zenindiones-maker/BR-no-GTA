@@ -1,8 +1,8 @@
 {
-  "request": "telegram-bot-api-transport-red-v1",
-  "source_head": "41bf0c40b41e3d300d6d8a909e5fdca438815439",
-  "objective": "Run typed Bot API transport tests for custom API root, thread/reply lineage, and RetryAfter before implementation.",
-  "expected_first_state": "RED_ON_MISSING_TYPED_BOT_API_TRANSPORT_BEHAVIOR",
+  "request": "mission-precedence-green-after-voice-hijack-fix-v1",
+  "source_head": "d8b41166bb25b14053d8893ef0f254d048830fd9",
+  "objective": "Verify literal Natural Swarm mission precedence, direct narration contrast, and context-bound audio correction after the minimal planner fix.",
+  "expected_first_state": "GREEN_EXCEPT_NEWLY_EXPOSED_DOWNSTREAM_BLOCKER",
   "authority": "DEEPSEEK_HARNESS",
   "publication": false
 }
