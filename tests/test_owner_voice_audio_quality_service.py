@@ -35,6 +35,7 @@ def test_pcm_quality_metrics_measure_real_waveform(tmp_path):
     assert metrics["clipping_ratio"] == 0.0
     assert 0.0 <= metrics["speech_ratio"] <= 1.0
     assert metrics["rms_dbfs"] < 0.0
+    assert metrics["snr_db"] >= 0.0
 
 
 def test_quality_score_penalizes_foreign_language_and_clipping():
