@@ -148,6 +148,7 @@ class GitHubActionsFreshResearchTransport:
             ref
             or os.getenv("BR_FRESH_RESEARCH_REF")
             or os.getenv("BR_OMNIROUTE_REF")
+            or os.getenv("BR_GITHUB_REF")
             or "main"
         ).strip()
         self.workflow = workflow
