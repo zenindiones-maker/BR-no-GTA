@@ -62,8 +62,8 @@ jobs:
     env:
       BR_OWNER_TELEGRAM_REFERENCE_INDEX: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_INDEX }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      HF_HOME: ${{ runner.temp }}/huggingface
-      TRANSFORMERS_CACHE: ${{ runner.temp }}/huggingface/transformers
+      HF_HOME: /tmp/br-owner-huggingface
+      TRANSFORMERS_CACHE: /tmp/br-owner-huggingface/transformers
       TOKENIZERS_PARALLELISM: "false"
     steps:
       - uses: actions/checkout@v4
