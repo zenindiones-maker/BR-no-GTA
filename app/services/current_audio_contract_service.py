@@ -42,6 +42,22 @@ def current_audio_contract() -> dict[str, Any]:
         raise CurrentAudioContractError("exactly one owner voice identity must be active")
     if enrollment.get("consent_status") != "APPROVED":
         raise CurrentAudioContractError("owner voice consent must be approved")
+    if enrollment.get("reference_source") != "TELEGRAM":
+        raise CurrentAudioContractError("owner voice references must come from Telegram")
+    if str(enrollment.get("language") or "").lower().replace("_", "-") != "pt-br":
+        raise CurrentAudioContractError("owner voice language must be pt-BR")
+    if str(enrollment.get("accent_locale") or "").lower().replace("_", "-") != "pt-br":
+        raise CurrentAudioContractError("owner voice accent locale must be pt-BR")
+    if enrollment.get("voice_selection_mode") != "TELEGRAM_REFERENCE_CLONE":
+        raise CurrentAudioContractError("owner voice must be cloned from Telegram references")
+    if enrollment.get("provider_preset_voice_allowed") is not False:
+        raise CurrentAudioContractError("provider preset voice is forbidden")
+    if enrollment.get("provider_default_voice_allowed") is not False:
+        raise CurrentAudioContractError("provider default voice is forbidden")
+    if enrollment.get("generic_voice_fallback") is not False:
+        raise CurrentAudioContractError("generic voice fallback is forbidden")
+    if enrollment.get("alternate_voice_identities_allowed") is not False:
+        raise CurrentAudioContractError("alternate voice identities are forbidden")
 
     entries = {
         str(item.get("identity")): item
@@ -54,8 +70,12 @@ def current_audio_contract() -> dict[str, Any]:
     materialized = int(enrollment.get("materialized_reference_count") or 0)
     reference_ready = (
         materialized > 0
-        and enrollment.get("reference_materialization_status")
-        == "PRIVATE_REFERENCE_MATERIALIZED"
+        and enrollment.get("reference_materialization_status") in {"PASS", "PRIVATE_REFERENCE_MATERIALIZED"}
+        and enrollment.get("runtime_activation_status") == "READY"
+        and enrollment.get("owner_voice_status") == "READY"
+        and enrollment.get("latest_human_voice_review") == "APPROVED"
+        and enrollment.get("latest_voice_identity_match") == "PASS"
+        and enrollment.get("latest_ptbr_accent_review") == "PASS"
     )
 
     payload = {
@@ -70,6 +90,14 @@ def current_audio_contract() -> dict[str, Any]:
         "OWNER_REFERENCE_STATUS": enrollment.get("reference_materialization_status"),
         "OWNER_REFERENCE_COUNT": materialized,
         "OWNER_REFERENCE_READY": reference_ready,
+        "OWNER_LANGUAGE": "pt-BR",
+        "OWNER_ACCENT_LOCALE": "pt-BR",
+        "OWNER_VOICE_SELECTION_MODE": "TELEGRAM_REFERENCE_CLONE",
+        "PROVIDER_PRESET_VOICE_ALLOWED": False,
+        "PROVIDER_DEFAULT_VOICE_ALLOWED": False,
+        "GENERIC_VOICE_FALLBACK": False,
+        "PTBR_HUMAN_REVIEW_STATUS": enrollment.get("latest_human_voice_review"),
+        "PTBR_ACCENT_REVIEW_STATUS": enrollment.get("latest_ptbr_accent_review"),
         "SPOKEN_BRANDING_CONTRACT": SPOKEN_BRANDING_CONTRACT_VERSION,
         "OPENING_REFERENCE": None,
         "OPENING_TAKE": SELECTED_OPENING_TAKE_ID,
