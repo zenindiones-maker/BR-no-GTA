@@ -341,6 +341,7 @@ def main() -> int:
         "code_revision": CHATTERBOX_CODE_REVISION,
         "base_model_revision": BASE_MODEL_REVISION,
         "selected_reference_sha256": selected_sha,
+        "selected_reference_input_id": selected_id,
         "provider_default_voice_used": False,
         "provider_preset_voice_used": False,
         "generic_voice_fallback": False,
