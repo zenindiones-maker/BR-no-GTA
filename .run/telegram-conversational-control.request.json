@@ -1,7 +1,10 @@
 {
   "request": "telegram-conversational-control-validation",
-  "source_head": "0bafb8456350ba2661e6be6d02a2225642d3607f",
-  "scope": "exact-query-intelligence-plus-goal-planned-hermes-human-ux",
+  "source_head": "0a9e51a8f8b5faf4c84024f9d3608345d6723d50",
+  "scope": "default-branch-scheduler-workflow-run-exact-deployment-proof",
   "prerequisite_live_query_run": 35619206864,
-  "prerequisite_live_query_artifact": 10647174236
+  "prerequisite_live_query_artifact": 10647174236,
+  "continuous_scheduler_main_head": "39941141924fbeac71fd6d6a26d4732e0cfa83a6",
+  "expected_deployed_target_sha": "0a9e51a8f8b5faf4c84024f9d3608345d6723d50",
+  "trigger_reason": "safe workflow_run event to exercise default-branch Continuous Intelligence scheduler"
 }
