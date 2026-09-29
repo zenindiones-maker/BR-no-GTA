@@ -9,6 +9,7 @@ from app.services.owner_voice_telegram_handoff_service import (
     OWNER_VOICE_REFERENCE_ENVELOPE_SECRET,
     OwnerVoiceHandoffDebouncer,
     build_owner_voice_reference_index,
+    flush_owner_voice_handoff_if_due,
     handoff_dispatch_key,
     handoff_reference_index_to_actions,
     parse_reference_envelope_b64,
@@ -158,3 +159,33 @@ def test_owner_voice_handoff_debouncer_coalesces_burst_and_retries_after_failure
 
     debouncer.mark_success()
     assert debouncer.due(999.0) is False
+
+
+def test_flush_owner_voice_handoff_runs_once_when_due_and_backs_off_on_failure():
+    calls = []
+    debouncer = OwnerVoiceHandoffDebouncer(quiet_seconds=8.0, retry_seconds=30.0)
+    debouncer.mark_dirty(10.0)
+
+    assert flush_owner_voice_handoff_if_due(
+        debouncer,
+        now=17.99,
+        handoff=lambda: calls.append("early") or 0,
+    ) == "NOT_DUE"
+    assert calls == []
+
+    assert flush_owner_voice_handoff_if_due(
+        debouncer,
+        now=18.0,
+        handoff=lambda: calls.append("ok") or 0,
+    ) == "PASS"
+    assert calls == ["ok"]
+    assert debouncer.due(999.0) is False
+
+    debouncer.mark_dirty(100.0)
+    assert flush_owner_voice_handoff_if_due(
+        debouncer,
+        now=108.0,
+        handoff=lambda: 2,
+    ) == "DEFERRED_2"
+    assert debouncer.due(137.99) is False
+    assert debouncer.due(138.0) is True
