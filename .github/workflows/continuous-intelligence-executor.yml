@@ -346,7 +346,7 @@ jobs:
               "target_ref":os.environ.get("BR_CONTINUOUS_TARGET_REF",""),
               "target_sha":target_sha,
               "workflow_revision":os.environ.get("BR_CONTINUOUS_WORKFLOW_REVISION",""),
-              "trigger_kind":os.environ.get("GITHUB_EVENT_NAME","workflow_dispatch"),
+              "trigger_kind":os.environ.get("ORIGINAL_TRIGGER_KIND") or os.environ.get("GITHUB_EVENT_NAME","workflow_dispatch"),
               "started_at":now,
               "finished_at":now,
               "status":"FAIL" if failure_class else "PASS",
