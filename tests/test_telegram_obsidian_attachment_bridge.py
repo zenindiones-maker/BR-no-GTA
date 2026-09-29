@@ -248,3 +248,40 @@ def test_html_fallback_recovers_when_markitdown_fails(tmp_path, monkeypatch):
     assert "window.token" not in normalized
     assert "must-not-leak" not in normalized
     assert "display:none" not in normalized
+
+
+def test_legacy_backfill_resolves_latest_materialized_file_without_resend(
+    tmp_path, monkeypatch
+):
+    raw = (
+        b"<html><body><h1>Legacy standard</h1>"
+        b"<p>Recovered from a pre-bridge Telegram upload.</p></body></html>"
+    )
+    record = _record(tmp_path, monkeypatch, file_size=len(raw))
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    monkeypatch.setenv("OBSIDIAN_VAULT_ROOT", str(vault))
+    staged = tmp_path / "legacy.html"
+    staged.write_bytes(raw)
+
+    result = materialize_staged_telegram_attachment_under_harness(
+        input_record=record,
+        source_path=staged,
+    )
+    assert result["status"] == "MATERIALIZED"
+
+    context = retrieve_conversation_context(
+        -100123,
+        current_message="O que você entendeu desse arquivo?",
+    )
+    assert context["resolved_reference"]["basis"] == (
+        "latest_materialized_telegram_attachment"
+    )
+    assert context["resolved_reference"]["reference"] == (
+        f"obsidian:{result['obsidian_note_ref']}"
+    )
+    assert context["active_attachment_context"]["status"] == "AVAILABLE"
+    assert "Legacy standard" in context["active_attachment_context"]["content"]
+    assert "Recovered from a pre-bridge Telegram upload." in (
+        context["active_attachment_context"]["content"]
+    )
