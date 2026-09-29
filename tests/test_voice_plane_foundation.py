@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 from pathlib import Path
 import pytest
@@ -146,28 +147,47 @@ def test_provider_profiles_are_pinned_ptbr_and_self_hosted_compute():
     assert CHATTERBOX_PTBR_PROFILE.model_id == "ResembleAI/Chatterbox-Multilingual-pt-br"
     assert CHATTERBOX_PTBR_PROFILE.model_revision == "b3952f1"
     assert {QWEN_OWNER_INTERACTIVE.cost_class, QWEN_OWNER_LONG_FORM.cost_class, CHATTERBOX_PTBR_PROFILE.cost_class} == {"SELF_HOSTED_COMPUTE"}
-    assert all(p.supports_ptbr for p in (QWEN_OWNER_INTERACTIVE, QWEN_OWNER_LONG_FORM, CHATTERBOX_PTBR_PROFILE))
+    assert QWEN_OWNER_INTERACTIVE.supports_ptbr is False
+    assert QWEN_OWNER_LONG_FORM.supports_ptbr is False
+    assert CHATTERBOX_PTBR_PROFILE.supports_ptbr is True
+    assert all(
+        p.requires_owner_reference and not p.provider_preset_voice_allowed
+        for p in (QWEN_OWNER_INTERACTIVE, QWEN_OWNER_LONG_FORM, CHATTERBOX_PTBR_PROFILE)
+    )
+    assert all(
+        p.ptbr_accent_certified is False
+        for p in (QWEN_OWNER_INTERACTIVE, QWEN_OWNER_LONG_FORM, CHATTERBOX_PTBR_PROFILE)
+    )
 
 
-def test_long_form_routing_is_identity_sticky_and_never_silent_provider_fallback():
+def test_long_form_routing_requires_owner_identity_and_human_certified_ptbr_accent():
     request = VoiceRouteRequest(
         usage="LONG_FORM",
         language="pt-BR",
-        voice_identity_id="owner-v1-candidate",
+        voice_identity_id="BR_OWNER_V1",
         required_voice_identity_revision="rev-1",
     )
+    with pytest.raises(VoiceProviderUnavailable, match="VOICE_PROVIDER_UNAVAILABLE"):
+        select_voice_provider(
+            request,
+            candidates=(QWEN_OWNER_LONG_FORM, CHATTERBOX_PTBR_PROFILE),
+            certified_provider_ids=("qwen3-tts", "chatterbox"),
+        )
+
+    approved_ptbr = replace(CHATTERBOX_PTBR_PROFILE, ptbr_accent_certified=True)
     selected = select_voice_provider(
         request,
-        candidates=(QWEN_OWNER_LONG_FORM, CHATTERBOX_PTBR_PROFILE),
-        certified_provider_ids=("qwen3-tts", "chatterbox"),
-        sticky_provider_id="qwen3-tts",
-        sticky_model_id=QWEN_OWNER_LONG_FORM.model_id,
+        candidates=(approved_ptbr,),
+        certified_provider_ids=("chatterbox",),
+        sticky_provider_id="chatterbox",
+        sticky_model_id=approved_ptbr.model_id,
     )
-    assert selected.provider_id == "qwen3-tts"
+    assert selected.provider_id == "chatterbox"
+
     with pytest.raises(RuntimeError, match="VOICE_IDENTITY_STICKY"):
         select_voice_provider(
             request,
-            candidates=(CHATTERBOX_PTBR_PROFILE,),
+            candidates=(approved_ptbr,),
             certified_provider_ids=("chatterbox",),
             sticky_provider_id="qwen3-tts",
             sticky_model_id=QWEN_OWNER_LONG_FORM.model_id,
@@ -234,6 +254,11 @@ def _ready_owner_profile():
         "voice_identity_id": "BR_OWNER_V1",
         "owner_class": "OWNER",
         "language": "pt-BR",
+        "accent_locale": "pt-BR",
+        "reference_source": "TELEGRAM",
+        "voice_selection_mode": "TELEGRAM_REFERENCE_CLONE",
+        "preset_voice_used": False,
+        "generic_voice_fallback": False,
         "source_audio_refs": ["private://voice/BR_OWNER_V1/reference-001"],
         "source_audio_sha256s": ["a" * 64],
         "source_transcript_sha256s": ["b" * 64],
@@ -287,6 +312,11 @@ def test_private_voice_runtime_requires_matching_owner_clone_receipt(monkeypatch
                 "request_id": "owner-proof-request-1",
                 "audio_sha256": "",
                 "usage": "AUDITION",
+                "reference_source": "TELEGRAM",
+                "accent_locale": "pt-BR",
+                "identity_binding_mode": "TELEGRAM_REFERENCE_CLONE",
+                "preset_voice_used": False,
+                "generic_voice_fallback": False,
             },
         )
 
@@ -329,6 +359,11 @@ def test_private_voice_runtime_rejects_receipt_that_does_not_prove_bound_prompt(
                 "request_id": "owner-proof-request-2",
                 "audio_sha256": "",
                 "usage": "AUDITION",
+                "reference_source": "TELEGRAM",
+                "accent_locale": "pt-BR",
+                "identity_binding_mode": "TELEGRAM_REFERENCE_CLONE",
+                "preset_voice_used": False,
+                "generic_voice_fallback": False,
             },
         )
 
