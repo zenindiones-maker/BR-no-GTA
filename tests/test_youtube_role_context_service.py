@@ -213,3 +213,58 @@ def test_production_packet_carries_execution_context_required_by_professional_re
     assert packet["audio_plan"]["gta_vi_album_tracks_cleared_for_use"] is False
     assert packet["audio_plan"]["narration_priority"] == "VOICE_DOMINANT"
     assert result["metrics"]["packet_chars"] < MAX_SEMANTIC_CONTEXT_CHARS
+
+
+def test_production_packet_adaptively_compacts_projection_instead_of_failing_budget():
+    script = "HOOK\n" + ("Trecho factual detalhado sobre GTA VI e Vice City. " * 1200)
+    plan = _plan()
+    plan["scenes"] = [
+        {
+            **scene,
+            "evidence_refs": [
+                f"claim:claim-{index}-{n}"
+                for n in range(3)
+            ],
+            "media_search_terms": [
+                f"Rockstar GTA VI official visual {index} " + ("specific " * 8)
+            ],
+            "visual_description": "Visual factual específico " + ("detalhe " * 20),
+        }
+        for index, scene in enumerate(plan["scenes"], start=1)
+    ]
+    claims = [
+        {
+            "claim_id": f"claim-{index}",
+            "statement": "Afirmação verificada " + ("contexto " * 60),
+            "verification_status": "VERIFIED",
+            "fact_check_result": "SUPPORTED",
+            "evidence_refs": [f"https://www.rockstargames.com/VI#{index}"],
+        }
+        for index in range(16)
+    ]
+    result = build_production_packet(
+        goal_id="goal-budget-regression",
+        content_item_id=7,
+        script_id=8,
+        production_plan_id=10,
+        script_text=script,
+        production_plan=plan,
+        claims=claims,
+        strategy_output={
+            "angle": "ângulo editorial verificado " * 30,
+            "promise": "promessa factual " * 30,
+        },
+        full_context_chars=120_000,
+    )
+    packet = result["context"]
+    metrics = result["metrics"]
+    assert metrics["packet_chars"] <= ROLE_TARGET_PACKET_CHARS["production-management"]
+    assert metrics["packet_chars"] < MAX_SEMANTIC_CONTEXT_CHARS
+    assert packet["script_projection"]["canonical_artifact_ref"] == "db:scripts:8"
+    assert packet["script_projection"]["canonical_chars"] == len(script)
+    assert packet["script_projection"]["projection_mode"] in {
+        "FULL",
+        "HEAD_TAIL_BUDGETED",
+    }
+    if packet["script_projection"]["projection_mode"] == "HEAD_TAIL_BUDGETED":
+        assert packet["script_projection"]["omitted_chars"] > 0
