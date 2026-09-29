@@ -19,6 +19,11 @@ from app.services.telegram_harness_service import (
 )
 from app.services.telegram_conversation_service import handle_telegram_conversation
 from app.services.telegram_learning_service import ingest_telegram_input_under_harness
+from app.services.telegram_transport_contract_service import (
+    build_send_message_payload,
+    normalize_bot_api_root,
+    parse_retry_after_seconds,
+)
 from app.database.telegram_conversation_repository import (
     get_or_create_conversation_state,
     record_telegram_progress_event,
@@ -38,6 +43,12 @@ MAX_REPLY_CHARS = 3800
 
 class TelegramApiError(RuntimeError):
     pass
+
+
+class TelegramRateLimitError(TelegramApiError):
+    def __init__(self, message: str, *, retry_after_seconds: int) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = int(retry_after_seconds)
 
 
 def _split_telegram_text(text: str, *, limit: int = MAX_REPLY_CHARS) -> list[str]:
@@ -147,11 +158,14 @@ class TelegramProgressReporter:
 
 
 class TelegramApi:
-    def __init__(self, token: str) -> None:
+    def __init__(self, token: str, *, api_root: str | None = None) -> None:
         token = token.strip()
         if not token:
             raise ValueError("TELEGRAM_BOT_TOKEN is required")
-        self._base_url = f"{API_ROOT}{token}"
+        root = normalize_bot_api_root(
+            api_root if api_root is not None else os.getenv("TELEGRAM_BOT_API_ROOT")
+        )
+        self._base_url = f"{root}{token}"
 
     def call(
         self,
@@ -172,18 +186,49 @@ class TelegramApi:
                 data = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:1000]
+            try:
+                error_payload = json.loads(detail)
+            except json.JSONDecodeError:
+                error_payload = {}
+            retry_after = parse_retry_after_seconds(error_payload)
+            if exc.code == 429 and retry_after is not None:
+                raise TelegramRateLimitError(
+                    "Telegram flood control requested a retry",
+                    retry_after_seconds=retry_after,
+                ) from exc
             raise TelegramApiError(f"Telegram HTTP {exc.code}: {detail}") from exc
         except urllib.error.URLError as exc:
             raise TelegramApiError(f"Telegram network error: {exc.reason}") from exc
 
         if not data.get("ok"):
+            retry_after = parse_retry_after_seconds(data)
+            if int(data.get("error_code") or 0) == 429 and retry_after is not None:
+                raise TelegramRateLimitError(
+                    "Telegram flood control requested a retry",
+                    retry_after_seconds=retry_after,
+                )
             raise TelegramApiError(str(data.get("description") or data))
         return data.get("result")
 
-    def send(self, chat_id: int, text: str) -> int | None:
+    def send(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        message_thread_id: int | None = None,
+        reply_to_message_id: int | None = None,
+    ) -> int | None:
         last_message_id: int | None = None
         for chunk in _split_telegram_text(text):
-            result = self.call("sendMessage", {"chat_id": str(chat_id), "text": chunk})
+            result = self.call(
+                "sendMessage",
+                build_send_message_payload(
+                    chat_id=chat_id,
+                    text=chunk,
+                    message_thread_id=message_thread_id,
+                    reply_to_message_id=reply_to_message_id,
+                ),
+            )
             if isinstance(result, dict) and isinstance(result.get("message_id"), int):
                 last_message_id = int(result["message_id"])
         return last_message_id
