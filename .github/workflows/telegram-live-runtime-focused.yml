@@ -25,6 +25,7 @@ on:
       - "tests/test_telegram_bot_api_transport.py"
       - "tests/test_telegram_conversation_control.py"
       - "tests/test_telegram_harness_integration.py"
+      - "tests/test_telegram_fresh_research.py"
       - "tests/test_harness_ai_provider_service.py"
       - ".github/workflows/telegram-live-runtime-focused.yml"
 
@@ -91,6 +92,7 @@ jobs:
             tests/test_telegram_obsidian_attachment_bridge.py \
             tests/test_telegram_harness_integration.py::test_normal_chat_uses_harness_selected_provider_and_returns_provenance \
             tests/test_telegram_harness_integration.py::test_telegram_generic_semantic_routing_is_provider_agnostic_and_fail_closed \
+            tests/test_telegram_fresh_research.py::test_current_chat_injects_fresh_official_evidence_before_ai \
             tests/test_harness_ai_provider_service.py::test_tuxevil_selection_accepts_per_call_bounded_timeout \
             tests/test_harness_ai_provider_service.py::test_opencode_selection_accepts_per_call_bounded_timeout \
             tests/test_telegram_a15_runtime_contract.py \
