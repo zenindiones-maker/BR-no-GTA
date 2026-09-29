@@ -1762,3 +1762,46 @@ def test_status_reconciles_completed_remote_github_run_before_answering_active()
         state,
         recent_authorizations=[],
     )["has_active_execution"] is False
+
+
+
+def test_terminal_run_result_vetoes_stale_active_authorization():
+    from app.services.telegram_control_surface_status import (
+        derive_operational_activity_evidence,
+    )
+
+    state = {
+        "active_goal_id": "goal-system-recovery",
+        "active_run_id": "36596907553",
+        "execution_status": "COMPLETED",
+        "waiting_for_human": False,
+        "last_execution_result": {
+            "status": "SUCCESS",
+            "workflow_status": "COMPLETED",
+            "workflow_conclusion": "SUCCESS",
+            "run_id": "36596907553",
+            "workflow_run_id": "36596907553",
+            "mission_id": "mission-system-recovery",
+            "authorization_id": "auth-old-active",
+        },
+    }
+    authorizations = [
+        {
+            "authorization_id": "auth-old-active",
+            "status": "active",
+            "lineage": {
+                "goal_id": "goal-system-recovery",
+                "mission_id": "mission-system-recovery",
+                "run_id": "36596907553",
+            },
+        }
+    ]
+
+    activity = derive_operational_activity_evidence(
+        state,
+        recent_authorizations=authorizations,
+    )
+
+    assert activity["result_status"] == "COMPLETED"
+    assert activity["terminal_result_veto"] is True
+    assert activity["has_active_execution"] is False
