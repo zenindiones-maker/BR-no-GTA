@@ -4,6 +4,7 @@ import pytest
 
 from scripts.owner_voice_qwen_ephemeral_audition import (
     QWEN_REQUIRED_SNAPSHOT_PATHS,
+    build_clone_prompt_kwargs,
     load_verified_transcript_context,
     select_latest_reference,
     validate_qwen_snapshot,
@@ -86,3 +87,13 @@ def test_qwen_clone_requires_matching_private_transcript_context(tmp_path):
             telegram_input_id=49,
             audio_sha256="b" * 64,
         )
+
+
+def test_qwen_owner_clone_prompt_is_transcript_conditioned_not_x_vector_only():
+    kwargs = build_clone_prompt_kwargs(
+        ref_audio="/tmp/owner-reference.wav",
+        ref_text="Booooa meu povo, aqui é BR no GTA 6.",
+    )
+    assert kwargs["ref_audio"] == "/tmp/owner-reference.wav"
+    assert kwargs["ref_text"].startswith("Booooa meu povo")
+    assert kwargs["x_vector_only_mode"] is False
