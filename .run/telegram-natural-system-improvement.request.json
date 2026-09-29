@@ -1,7 +1,7 @@
 {
-  "request": "full-agent-synergy-integration-v6",
+  "request": "full-agent-synergy-integration-v7",
   "natural_goal": "Analisa e melhora profissionalmente a integração completa do BR-no-GTA. Corrige problemas reais de sinergia e routing entre DeepSeek Harness, Hermes, Agent Office, Addy skills, AgentTube, TUBEGENT comprovado, GTA6 Brain, pesquisa GTA6, audiovisual, Telegram, YouTube privado e analytics. Descobre dinamicamente no Global Capability Registry o menor swarm suficiente; executa em paralelo somente tarefas independentes; usa TDD para qualquer mudança, desenvolvimento bounded em worktree, review independente distinto do builder, benchmark baseline versus candidate e fail-closed. Detecta capabilities órfãs ou registradas mas não usadas, elimina bypasses e cadeia hardcoded, preserva DeepSeek Harness como única autoridade e Hermes como coordenador subordinado. Integra o pipeline editorial de YouTube com pesquisa atual verificável, estratégia, roteiro, thumbnail/discoverability, produção audiovisual, QA, upload exclusivamente PRIVATE e aprendizado por Analytics, sem PUBLIC ou UNLISTED. BR_OWNER_V1 permanece a única identidade de voz e somente referências privadas do humano no Telegram em pt-BR podem ser usadas. Não exponha secrets ou biometria, não reduza gates e não use provider/agent não comprovado como autoridade.",
-  "source_head": "7b04538fd456cce2633b5ff28efb9ebcebc2388b",
+  "source_head": "a8a66e2d4c18a83c226ba686e814c599b082d012",
   "preserve": {
     "NEW_VOICE_SYNTHESIS": "NO",
     "FULL_RENDER": "NO",
@@ -25,5 +25,5 @@
     "owner_voice_locale": "pt-BR",
     "generic_voice_fallback": false
   },
-  "retry_reason": "Successor after TDD-proven mission-over-capability precedence and read-only OBSERVE policy normalization."
+  "retry_reason": "Single successor after TDD-proven mission precedence and semantic planner outage containment; natural_goal unchanged."
 }
