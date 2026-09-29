@@ -1481,3 +1481,47 @@ def test_system_improvement_typed_semantic_provider_failure_stays_in_mission_pla
         "bounded planner transport timeout"
     )
     assert "nvidia/test-semantic-model" not in str(evidence)
+
+
+
+def test_semantic_reasoning_unavailable_plan_never_falls_through_to_generic_chat(monkeypatch):
+    literal = _literal_natural_swarm_goal()
+    chat_id = 1200708
+    update_conversation_state(
+        chat_id,
+        active_project="BR-no-GTA",
+        active_goal_id="goal-system-improvement-terminal-provider-unavailable",
+        current_subject="desempenho e eficiência do sistema BR-no-GTA",
+    )
+
+    monkeypatch.setattr(
+        "app.services.telegram_conversation_service.plan_mission_from_human_goal",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("SEMANTIC_REASONING_PROVIDER_UNAVAILABLE")
+        ),
+    )
+
+    result = handle_telegram_conversation(
+        literal,
+        telegram_chat_id=chat_id,
+        telegram_user_id=7770708,
+        telegram_chat_type="private",
+        telegram_message_id=120070801,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError(
+                "semantic-planning terminal state must never fall through to generic chat"
+            )
+        ),
+        action_executor=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("blocked semantic plan must not dispatch execution")
+        ),
+        presenter=_presenter,
+    )
+
+    assert result["intent"] == "EXECUTION_REQUEST"
+    assert result["intent_resolution"]["layer"] == "LAYER_3_MISSION_PLANNER"
+    assert result["plan"]["kind"] == "SEMANTIC_REASONING_UNAVAILABLE"
+    assert result["canonical_result"]["status"] == "BLOCKED"
+    assert result["canonical_result"]["error"]["code"] == (
+        "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE"
+    )
