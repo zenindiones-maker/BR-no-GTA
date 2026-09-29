@@ -141,3 +141,39 @@ def test_remote_runtime_health_requires_exactly_one_gateway_listener():
     assert "instances=${#pids[@]}" in text
     assert 'if [[ "${#pids[@]}" -eq 1' in text
     assert "reap_untracked_legacy_supervisors" in text
+
+def test_runtime_readiness_requires_fresh_exact_a15_attestation():
+    workflow = (
+        ROOT / ".github" / "workflows" / "telegram-runtime-readiness.yml"
+    ).read_text(encoding="utf-8")
+    assert "statuses: read" in workflow
+    assert "verify_telegram_a15_runtime_attestation.py" in workflow
+    assert "A15_LIVE_RUNTIME_ATTESTATION=PASS" in workflow
+    assert "TELEGRAM_A15_RUNTIME_ATTESTATION_MAX_AGE_SECONDS" in workflow
+
+
+def test_termux_supervisor_publishes_fresh_runtime_heartbeat():
+    installer = (ROOT / "scripts/install_telegram_termux_persistence.sh").read_text(
+        encoding="utf-8"
+    )
+    control = (ROOT / "scripts/telegram_termux_control.sh").read_text(
+        encoding="utf-8"
+    )
+    supervisor = installer.split("while true; do", 1)[1]
+    assert 'bash "${CONTROL}" heartbeat' in supervisor
+    assert "heartbeat_gateway()" in control
+    assert "publish_runtime_status" in control
+    assert "heartbeat)" in control
+
+
+def test_a15_attestation_validator_binds_exact_sha_singleton_and_freshness():
+    validator = (
+        ROOT / "scripts" / "verify_telegram_a15_runtime_attestation.py"
+    ).read_text(encoding="utf-8")
+    assert "telegram-a15-runtime" in validator
+    assert "instances=1" in validator
+    assert "local=" in validator
+    assert "runtime=" in validator
+    assert "remote=" in validator
+    assert "max_age_seconds" in validator
+    assert "A15_LIVE_RUNTIME_ATTESTATION=PASS" in validator
