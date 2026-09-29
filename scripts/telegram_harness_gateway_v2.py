@@ -599,6 +599,94 @@ def _attachment_reply(result: dict[str, Any]) -> str:
     return str(presentation.get("text") or "").strip()
 
 
+def _brand_asset_presentation(
+    brand_result: dict[str, Any],
+    readiness: dict[str, Any],
+    learned: dict[str, Any],
+) -> dict[str, Any]:
+    asset = brand_result.get("asset") or {}
+    item = learned.get("input") or {}
+    file_name = str(asset.get("file_name") or item.get("file_name") or "").strip()
+    asset_type = str(asset.get("asset_type") or "ativo").strip()
+    missing = [
+        str(value).strip()
+        for value in (readiness.get("missing_asset_types") or [])
+        if str(value).strip()
+    ]
+    ready = bool(readiness.get("ready"))
+    active = bool(readiness.get("active"))
+
+    if active and ready:
+        readiness_text = "O padrão de branding do canal está ativo e pronto para os próximos renders."
+    elif missing:
+        readiness_text = (
+            "O ativo foi registrado, mas o padrão do canal ainda não está completo. "
+            "Ainda falta: " + ", ".join(missing) + "."
+        )
+    else:
+        readiness_text = (
+            "O ativo foi registrado, mas a prontidão do padrão do canal ainda não foi ativada."
+        )
+
+    label = f' “{file_name}”' if file_name else ""
+    canonical = {
+        "schema": "TelegramBrandAssetReceipt/v1",
+        "status": "BRAND_ASSET_REGISTERED",
+        "answer": (
+            f"Recebi{label} e registrei como {asset_type} oficial. "
+            f"{readiness_text} Nenhum byte foi mantido no A15. "
+            "Use /evidence para ver a auditoria técnica."
+        ),
+        "asset_type": asset_type,
+        "file_name": file_name or None,
+        "remote_verified": bool(asset.get("remote_verified") or item.get("remote_verified")),
+        "branding_ready": ready,
+        "branding_active": active,
+        "missing_asset_types": missing,
+        "publication_authority": "NONE",
+        "evidence_available": True,
+    }
+    return present_canonical_result_under_harness(
+        canonical,
+        surface="telegram",
+        mode=ACTION_FIRST,
+        lineage=_input_presentation_lineage(item),
+    )
+
+
+def _review_feedback_presentation(
+    feedback: dict[str, Any],
+    learned: dict[str, Any],
+) -> dict[str, Any]:
+    item = learned.get("input") or {}
+    scope = str(feedback.get("scope") or "LOCAL").strip().upper()
+    scope_labels = {
+        "LOCAL": "correção local desta revisão",
+        "TASK_CLASS": "correção candidata para esta classe de tarefa",
+        "GLOBAL_CANDIDATE": "candidata global, ainda sujeita aos gates de promoção",
+    }
+    scope_text = scope_labels.get(scope, f"correção com escopo {scope.lower()}")
+    canonical = {
+        "schema": "TelegramReviewFeedbackReceipt/v1",
+        "status": "CHANGES_REQUESTED_RECORDED",
+        "answer": (
+            f"Registrei suas alterações como {scope_text}. "
+            "Isso não autoriza publicação: o material continua sob revisão humana. "
+            "Use /evidence para ver a auditoria técnica."
+        ),
+        "review_state": feedback.get("review_state"),
+        "scope": scope,
+        "publication_authority": "NONE",
+        "evidence_available": True,
+    }
+    return present_canonical_result_under_harness(
+        canonical,
+        surface="telegram",
+        mode=ACTION_FIRST,
+        lineage=_input_presentation_lineage(item),
+    )
+
+
 def _branding_reply(readiness: dict[str, Any]) -> str:
     return (
         "CHANNEL_BRANDING_STANDARD=PASS\n"
@@ -1162,12 +1250,25 @@ def main() -> int:
                                 attachment=verified,
                                 classification_override="brand_asset",
                             )
-                            reply = (
-                                _asset_reply(brand_result)
-                                + "\n\n"
-                                + _branding_reply(readiness)
-                                + "\n\n"
-                                + _learning_evidence(learned)
+                            presentation = _brand_asset_presentation(
+                                brand_result,
+                                readiness,
+                                learned,
+                            )
+                            reply = str(presentation.get("text") or "").strip()
+                            audit = record_telegram_presentation_audit(
+                                telegram_input_id=int(learned["input"]["id"]),
+                                presentation=presentation,
+                                reply_text=reply,
+                            )
+                            print(
+                                "TELEGRAM_PRESENTATION=PASS "
+                                f"MODE={presentation.get('mode')} "
+                                f"CANONICAL_UNCHANGED={presentation.get('canonical_unchanged')} "
+                                f"INPUT_ID={audit.get('telegram_input_id')} "
+                                f"REPLY_SHA256={audit.get('reply_sha256')} "
+                                f"AUTHORITY={presentation.get('authority')}",
+                                flush=True,
                             )
                             print(
                                 f"TELEGRAM_ASSET=PASS USER_ID={user_id} TYPE={asset_type} ASSET_ID={brand_result['asset']['id']} BRANDING_STANDARD_ACTIVE={readiness['active']}",
@@ -1280,11 +1381,24 @@ def main() -> int:
                             input_record=learned["input"],
                             text=text,
                         )
-                        reply = (
-                            _render_result(feedback)
-                            + "\n\n"
-                            + _learning_evidence(learned)
-                            + "\n\nPUBLICATION_AUTHORITY=NONE"
+                        presentation = _review_feedback_presentation(
+                            feedback,
+                            learned,
+                        )
+                        reply = str(presentation.get("text") or "").strip()
+                        audit = record_telegram_presentation_audit(
+                            telegram_input_id=int(learned["input"]["id"]),
+                            presentation=presentation,
+                            reply_text=reply,
+                        )
+                        print(
+                            "TELEGRAM_PRESENTATION=PASS "
+                            f"MODE={presentation.get('mode')} "
+                            f"CANONICAL_UNCHANGED={presentation.get('canonical_unchanged')} "
+                            f"INPUT_ID={audit.get('telegram_input_id')} "
+                            f"REPLY_SHA256={audit.get('reply_sha256')} "
+                            f"AUTHORITY={presentation.get('authority')}",
+                            flush=True,
                         )
                         command_name = "CHANGES_REQUESTED"
                     elif text.startswith("/"):
