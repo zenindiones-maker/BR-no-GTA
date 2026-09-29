@@ -140,5 +140,5 @@ def build_ptbr_audition_variants(
             cfg_weight=cfg_weight,
             seed=424242,
         )
-        for cfg_weight in (0.0, 0.3, 0.5)
+        for cfg_weight in (0.3, 0.5, 0.7)
     ]
