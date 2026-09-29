@@ -172,9 +172,9 @@ def test_a15_attestation_validator_binds_exact_sha_singleton_and_freshness():
     ).read_text(encoding="utf-8")
     assert "telegram-a15-runtime" in validator
     assert '"instances": "1"' in validator
-    assert "local=" in validator
-    assert "runtime=" in validator
-    assert "remote=" in validator
+    assert '"local": prefix' in validator
+    assert '"runtime": prefix' in validator
+    assert '"remote": prefix' in validator
     assert "max_age_seconds" in validator
     assert "A15_LIVE_RUNTIME_ATTESTATION=PASS" in validator
 
