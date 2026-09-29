@@ -177,3 +177,30 @@ def test_a15_attestation_validator_binds_exact_sha_singleton_and_freshness():
     assert "remote=" in validator
     assert "max_age_seconds" in validator
     assert "A15_LIVE_RUNTIME_ATTESTATION=PASS" in validator
+
+def test_legacy_supervisor_status_path_publishes_runtime_heartbeat():
+    text = (ROOT / "scripts/telegram_termux_control.sh").read_text(
+        encoding="utf-8"
+    )
+    section = text.split("status_gateway()", 1)[1].split("reconcile_gateway()", 1)[0]
+    assert "publish_runtime_status" in section
+
+
+def test_runtime_status_publishes_full_loaded_sha_for_exact_binding():
+    text = (ROOT / "scripts/telegram_termux_control.sh").read_text(
+        encoding="utf-8"
+    )
+    publish = text.split("publish_runtime_status()", 1)[1].split("heartbeat_gateway()", 1)[0]
+    assert "sha=" in publish
+    assert "loaded" in publish
+
+
+def test_runtime_readiness_waits_bounded_for_device_reconciliation():
+    workflow = (
+        ROOT / ".github" / "workflows" / "telegram-runtime-readiness.yml"
+    ).read_text(encoding="utf-8")
+    assert "A15_ATTESTATION_WAIT_SECONDS" in workflow
+    assert "A15_ATTESTATION_POLL_SECONDS" in workflow
+    assert "A15_ATTESTATION_WAIT_EXHAUSTED" in workflow
+    assert "verify_telegram_a15_runtime_attestation.py" in workflow
+    assert "sleep" in workflow
