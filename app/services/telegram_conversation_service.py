@@ -165,6 +165,19 @@ def classify_conversation_intent(message: str, *, has_attachment: bool = False) 
         "lembra disso", "guarda isso", "guarde isso", "anota isso", "anote isso",
     )):
         return "MEMORY_WRITE_REQUEST"
+
+    system_scope = any(term in text for term in (
+        "sistema", "pipeline", "runtime", "provider", "routing", "harness",
+        "hermes", "agent office", "agentes", "subagentes", "swarm",
+        "telegram", "youtube", "integracao", "sinergia", "orquestracao",
+    ))
+    system_change = any(term in text for term in (
+        "corrige", "corrija", "corrigir", "melhora", "melhore", "melhorar",
+        "otimiza", "otimize", "otimizar", "integra", "integrar",
+        "analisa", "analise", "analisar", "diagnostica", "diagnosticar",
+    ))
+    if system_scope and system_change:
+        return "EXECUTION_REQUEST"
     if any(term in text for term in (
         "pesquisa", "pesquise", "procura", "procure", "investiga", "investigue",
         "ultimas informacoes", "ultimas noticias", "verifica nas fontes",
