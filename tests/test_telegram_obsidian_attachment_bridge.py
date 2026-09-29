@@ -13,6 +13,7 @@ from app.services.telegram_conversation_service import (
     register_telegram_attachment_context,
     retrieve_conversation_context,
 )
+from app.services import telegram_obsidian_attachment_bridge_service as bridge_service
 from app.services.telegram_obsidian_attachment_bridge_service import (
     DEFAULT_MAX_FILE_BYTES,
     TelegramObsidianAttachmentBridgeError,
@@ -68,6 +69,10 @@ def test_verified_html_becomes_content_addressed_obsidian_artifact_and_markdown(
 
     assert result["status"] == "MATERIALIZED"
     assert result["normalization_state"] == "LOCAL_TEXT_NORMALIZED"
+    assert result["normalization_engine"] in {
+        "MARKITDOWN",
+        "STDLIB_HTML_FALLBACK",
+    }
     assert result["canonical_memory_promoted"] is False
     assert result["transport_secrets_persisted_in_obsidian"] is False
 
@@ -198,3 +203,48 @@ def test_oversized_staged_file_fails_before_vault_copy(tmp_path, monkeypatch):
             source_path=staged,
         )
     assert not (vault / "90-Attachments").exists()
+
+
+def test_html_fallback_recovers_when_markitdown_fails(tmp_path, monkeypatch):
+    source = tmp_path / "fallback.html"
+    source.write_text(
+        """
+        <html>
+          <head>
+            <style>.secret { display:none }</style>
+            <script>window.token = 'must-not-leak'</script>
+          </head>
+          <body>
+            <h1>Operational readiness</h1>
+            <p>Harness must fail closed.</p>
+            <ul><li>First gate</li><li>Second gate</li></ul>
+          </body>
+        </html>
+        """,
+        encoding="utf-8",
+    )
+
+    import markitdown
+
+    def fail_convert_local(self, path):
+        raise RuntimeError("forced MarkItDown failure")
+
+    monkeypatch.setattr(markitdown.MarkItDown, "convert_local", fail_convert_local)
+
+    normalized, state, engine, diagnostic = bridge_service._normalize_local_text(
+        source,
+        max_input_bytes=1024 * 1024,
+        max_output_bytes=1024 * 1024,
+    )
+
+    assert state == "LOCAL_TEXT_NORMALIZED"
+    assert engine == "STDLIB_HTML_FALLBACK"
+    assert diagnostic == "markitdown=RuntimeError"
+    assert normalized is not None
+    assert "Operational readiness" in normalized
+    assert "Harness must fail closed." in normalized
+    assert "First gate" in normalized
+    assert "Second gate" in normalized
+    assert "window.token" not in normalized
+    assert "must-not-leak" not in normalized
+    assert "display:none" not in normalized
