@@ -513,6 +513,12 @@ def _conversation_classification_override(text: str) -> str | None:
 
 def _attachment_reply(result: dict[str, Any]) -> str:
     item = result.get("input") or {}
+    if item.get("classification") == "owner_voice_reference":
+        # Owner voice intake is intentionally silent on the human surface.
+        # Detailed ingestion/QA telemetry stays in logs; the next human-visible
+        # output is the actual pt-BR voice-note audition.
+        return ""
+
     lines = [
         "TELEGRAM_INPUT=PASS",
         f"HARNESS_AUTHORITY={result.get('authority')}",
@@ -526,20 +532,7 @@ def _attachment_reply(result: dict[str, Any]) -> str:
         "TELEGRAM_REFERENCE_IDENTITY=REDACTED",
         "MEDIA_BYTES_ON_A15=NO",
     ]
-    if item.get("classification") == "owner_voice_reference":
-        lines.extend(
-            [
-                "OWNER_VOICE_REFERENCE=PRIVATE_TELEGRAM_REFERENCE_REGISTERED",
-                "OWNER_VOICE_IDENTITY=BR_OWNER_V1",
-                "VOICE_REFERENCE_ANALYSIS=speech.transcription.whisperx+owner-reference-qa",
-                "VOICE_CLONE_CAPABILITY=voice.synthesis.pt-BR",
-                "VOICE_CLONE_TARGET_LOCALE=pt-BR",
-                "OWNER_VOICE_REFERENCE_HANDOFF=DEBOUNCED_PENDING",
-                "GENERIC_VOICE_FALLBACK=0",
-                "NOTE=Áudio de voz registrado para análise privada e clonagem em Português do Brasil usando somente a referência do humano.",
-            ]
-        )
-    elif item.get("learning_status") == "pending_cloud_analysis":
+    if item.get("learning_status") == "pending_cloud_analysis":
         lines.extend(
             [
                 "CONTENT_ANALYSIS=PENDING_CLOUD_ANALYSIS",
@@ -720,9 +713,18 @@ def _send_final_human_response(
     reply: str,
     runtime_revision: str,
 ) -> int | None:
-    digest = hashlib.sha256(str(reply).encode("utf-8")).hexdigest()
+    rendered = str(reply or "").strip()
+    if not rendered:
+        print(
+            "FINAL_HUMAN_RESPONSE_SENT=SKIPPED_SILENT "
+            f"SEND_PROCESS_PID={os.getpid()} "
+            f"SEND_RUNTIME_REVISION={runtime_revision or 'UNSPECIFIED'}",
+            flush=True,
+        )
+        return None
+    digest = hashlib.sha256(rendered.encode("utf-8")).hexdigest()
     try:
-        message_id = api.send(chat_id, reply)
+        message_id = api.send(chat_id, rendered)
     except Exception as exc:
         print(
             "FINAL_HUMAN_RESPONSE_SENT=NO "
