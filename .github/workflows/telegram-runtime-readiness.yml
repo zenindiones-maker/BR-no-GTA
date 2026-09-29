@@ -11,6 +11,7 @@ on:
       - "scripts/install_telegram_termux_persistence.sh"
       - "scripts/verify_telegram_a15_runtime_attestation.py"
       - "tests/test_telegram_a15_runtime_contract.py"
+      - "tests/test_telegram_a15_runtime_attestation.py"
 
 permissions:
   contents: read
@@ -84,10 +85,25 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           TELEGRAM_A15_RUNTIME_ATTESTATION_MAX_AGE_SECONDS: "180"
+          A15_ATTESTATION_WAIT_SECONDS: "120"
+          A15_ATTESTATION_POLL_SECONDS: "10"
         run: |
           set -euo pipefail
-          python scripts/verify_telegram_a15_runtime_attestation.py
-          echo "A15_LIVE_RUNTIME_ATTESTATION=PASS"
+          deadline=$((SECONDS + A15_ATTESTATION_WAIT_SECONDS))
+          attempt=0
+          while true; do
+            attempt=$((attempt + 1))
+            echo "A15_ATTESTATION_POLL_ATTEMPT=${attempt}"
+            if python scripts/verify_telegram_a15_runtime_attestation.py; then
+              echo "A15_LIVE_RUNTIME_ATTESTATION=PASS"
+              break
+            fi
+            if (( SECONDS >= deadline )); then
+              echo "A15_ATTESTATION_WAIT_EXHAUSTED=YES"
+              exit 2
+            fi
+            sleep "${A15_ATTESTATION_POLL_SECONDS}"
+          done
 
       - name: Assert runtime reconciliation contract
         run: |
