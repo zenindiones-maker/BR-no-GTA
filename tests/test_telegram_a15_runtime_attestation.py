@@ -50,7 +50,7 @@ def test_exact_fresh_singleton_attestation_passes():
         (
             _payload(
                 description=(
-                    "pid=123 instances=2 local=aaaaaaaaaaaa "
+                    f"pid=123 instances=2 sha={SHA} local=aaaaaaaaaaaa "
                     "runtime=aaaaaaaaaaaa remote=aaaaaaaaaaaa"
                 )
             ),
@@ -59,7 +59,7 @@ def test_exact_fresh_singleton_attestation_passes():
         (
             _payload(
                 description=(
-                    "pid=123 instances=1 local=bbbbbbbbbbbb "
+                    f"pid=123 instances=1 sha={SHA} local=bbbbbbbbbbbb "
                     "runtime=aaaaaaaaaaaa remote=aaaaaaaaaaaa"
                 )
             ),
