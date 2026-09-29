@@ -1572,6 +1572,9 @@ class HermesHarnessCapabilityBroker:
                 "authorization_id": existing.get("authorization_id"),
                 "executor_binding": task.selected_executor_binding,
                 "evidence_ref": existing["evidence_ref"],
+                "task_result_ref": existing.get("task_result_ref"),
+                "task_result_sha256": existing.get("task_result_sha256"),
+                "status": existing.get("status"),
                 "result": existing.get("result"),
             }
 
@@ -2418,6 +2421,9 @@ class HermesHarnessCapabilityBroker:
                     "authorization_id": last_authorization_id,
                     "executor_binding": record.executor_binding,
                     "evidence_ref": result_row["evidence_ref"],
+                    "task_result_ref": result_row["task_result_ref"],
+                    "task_result_sha256": result_row["task_result_sha256"],
+                    "status": result_row["status"],
                     "result": persisted_result,
                     "agent_loop": loop_metrics,
                 }
@@ -3790,6 +3796,55 @@ class HermesHarnessCapabilityBroker:
             "current_run_id": task.get("current_run_id"),
             "parents": list(self._task(task_id).dependencies),
         }
+
+    def task_completion_envelope(
+        self,
+        *,
+        task_id: str,
+        task_result_ref: str,
+    ) -> dict[str, Any]:
+        """Resolve the exact persisted TaskResultEnvelope for one completion.
+
+        Audit events are deliberately excluded from this contract. Callers must
+        bind to the exact task_result_ref returned by execution so retries of the
+        same logical task cannot be selected by list position or audit ordering.
+        """
+        normalized_task_id = str(task_id or "").strip()
+        normalized_ref = str(task_result_ref or "").strip()
+        if not normalized_task_id or not normalized_ref:
+            raise ValueError("TASK_RESULT_IDENTITY_REQUIRED")
+
+        rows = tuple(self._task_results.get(normalized_task_id) or ())
+        matches = [
+            row
+            for row in rows
+            if str(row.get("task_result_ref") or "") == normalized_ref
+        ]
+        if len(matches) != 1:
+            raise LookupError("TASK_RESULT_REF_NOT_FOUND")
+        row = matches[0]
+        if (
+            str(row.get("mission_id") or "") != self.spec.mission_id
+            or str(row.get("task_id") or "") != normalized_task_id
+        ):
+            raise PermissionError("TASK_RESULT_IDENTITY_MISMATCH")
+
+        envelope = load_task_result_envelope(
+            artifact_dir=self.artifact_dir,
+            task_result_ref=normalized_ref,
+        )
+        if (
+            str(envelope.get("mission_id") or "") != self.spec.mission_id
+            or str(envelope.get("task_id") or "") != normalized_task_id
+            or str(envelope.get("capability_id") or "")
+            != str(row.get("capability_id") or "")
+            or str(envelope.get("content_sha256") or "")
+            != str(row.get("task_result_sha256") or "")
+        ):
+            raise PermissionError("TASK_RESULT_ENVELOPE_BINDING_MISMATCH")
+        if str(envelope.get("status") or "") != "COMPLETED":
+            raise RuntimeError("TASK_RESULT_NOT_COMPLETED")
+        return dict(envelope)
 
     def audit_snapshot(self) -> tuple[dict[str, Any], ...]:
         return tuple(dict(item) for item in self._audit)

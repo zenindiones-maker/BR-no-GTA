@@ -126,6 +126,26 @@ def _find_episode(*, mission_id: str, task_id: str) -> dict[str, Any]:
     raise RuntimeError(f"HarnessEpisode missing for {mission_id}/{task_id}")
 
 
+def _typed_task_elapsed_seconds(
+    broker: HermesHarnessCapabilityBroker,
+    *,
+    task_id: str,
+    task_result_ref: str,
+) -> float:
+    envelope = broker.task_completion_envelope(
+        task_id=task_id,
+        task_result_ref=task_result_ref,
+    )
+    if envelope.get("schema") != "TaskResultEnvelope/v1":
+        raise RuntimeError("TASK_RESULT_COMPLETION_SCHEMA_MISMATCH")
+    if str(envelope.get("task_id") or "") != str(task_id):
+        raise RuntimeError("TASK_RESULT_COMPLETION_IDENTITY_MISMATCH")
+    elapsed_ms = float(envelope["elapsed_ms"])
+    if elapsed_ms < 0:
+        raise RuntimeError("TASK_RESULT_COMPLETION_METRICS_INVALID")
+    return round(elapsed_ms / 1000.0, 6)
+
+
 def _fact_result_payload(result: dict[str, Any]) -> dict[str, Any]:
     level = result.get("result")
     if isinstance(level, dict) and isinstance(level.get("result"), dict):
@@ -392,8 +412,19 @@ def _run_intelligence_mission(
     if canonical.get("success") is not True:
         raise RuntimeError("continuous Hermes intelligence mission did not complete")
     broker = holder["broker"]
-    research_audit = next(
-        item for item in broker.audit_snapshot() if item["task_id"] == "research"
+    research_task_result_ref = str(
+        (holder.get("research") or {}).get("task_result_ref") or ""
+    )
+    if not research_task_result_ref:
+        raise RuntimeError("RESEARCH_TASK_RESULT_REF_MISSING")
+    research_completion = broker.task_completion_envelope(
+        task_id="research",
+        task_result_ref=research_task_result_ref,
+    )
+    research_elapsed_seconds = _typed_task_elapsed_seconds(
+        broker,
+        task_id="research",
+        task_result_ref=research_task_result_ref,
     )
     return {
         "mission_id": mission_id,
@@ -403,7 +434,9 @@ def _run_intelligence_mission(
         "fact_checks": holder["fact_checks"],
         "authorization_audit": list(broker.audit_snapshot()),
         "handoffs": list(broker.handoff_snapshot()),
-        "research_elapsed_seconds": float(research_audit["elapsed_seconds"]),
+        "research_task_result_ref": research_task_result_ref,
+        "research_task_result_sha256": research_completion["content_sha256"],
+        "research_elapsed_seconds": research_elapsed_seconds,
         "episode_ids": list((canonical.get("result") or {}).get("harness_episode_ids") or ()),
         "reviews": list((canonical.get("result") or {}).get("reviews") or ()),
         "retries": list((canonical.get("result") or {}).get("retries") or ()),
