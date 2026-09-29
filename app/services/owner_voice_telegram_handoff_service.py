@@ -5,12 +5,38 @@ import binascii
 import hashlib
 import json
 import subprocess
+from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Mapping
 
 
 OWNER_VOICE_IDENTITY_ID = "BR_OWNER_V1"
 OWNER_VOICE_REFERENCE_ENVELOPE_SECRET = "BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64"
 OWNER_VOICE_MATERIALIZATION_WORKFLOW = "owner-voice-private-materialization.yml"
+
+
+@dataclass
+class OwnerVoiceHandoffDebouncer:
+    quiet_seconds: float = 8.0
+    retry_seconds: float = 30.0
+    _due_at: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.quiet_seconds <= 0:
+            raise ValueError("quiet_seconds must be positive")
+        if self.retry_seconds <= 0:
+            raise ValueError("retry_seconds must be positive")
+
+    def mark_dirty(self, now: float) -> None:
+        self._due_at = float(now) + float(self.quiet_seconds)
+
+    def due(self, now: float) -> bool:
+        return self._due_at is not None and float(now) >= self._due_at
+
+    def mark_failure(self, now: float) -> None:
+        self._due_at = float(now) + float(self.retry_seconds)
+
+    def mark_success(self) -> None:
+        self._due_at = None
 
 
 def _stable_sha256(payload: Mapping[str, Any]) -> str:
