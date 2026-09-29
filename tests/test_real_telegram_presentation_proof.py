@@ -103,7 +103,9 @@ def test_generic_telegram_failure_uses_action_first_harness_presentation():
     assert presentation["mode"] == "ACTION_FIRST"
     assert presentation["canonical_unchanged"] is True
     assert presentation["text"].startswith("❌ FAILED")
-    assert "Causa observada: uso: /evidence [telegram_input_id]" in presentation["text"]
+    assert "Causa observada: A execução encontrou uma falha interna antes de concluir." in presentation["text"]
+    assert "uso: /evidence [telegram_input_id]" not in presentation["text"]
+    assert "/evidence" in presentation["text"]
     auth = get_harness_authorization(presentation["authorization_id"])
     assert auth is not None
     assert auth["status"] == "consumed"
