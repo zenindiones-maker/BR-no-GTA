@@ -174,7 +174,47 @@ def test_tuxevil_selection_accepts_per_call_bounded_timeout(monkeypatch):
     )
     import app.services.harness_ai_provider_service as service
 
-    decision = _decision("tuxevil", "gemini-3-flash")
+    run_id = "tuxevil-timeout-runtime"
+    evidence_ref = f"github:run:{run_id}:tuxevil-live-proof"
+    monkeypatch.setenv("GITHUB_RUN_ID", run_id)
+    monkeypatch.setenv(
+        "BR_RUNTIME_PROVIDER_HEALTH_JSON",
+        json.dumps({
+            "tuxevil": {
+                "provider_id": "tuxevil",
+                "state": "AVAILABLE",
+                "scope": "CURRENT_GITHUB_RUN",
+                "github_run_id": run_id,
+                "model_id": "gemini-3-flash",
+                "zero_cost_eligible": True,
+                "proof": {
+                    "TUXEVIL_RESPONSES_API": "PASS",
+                    "ANTIGRAVITY_UPSTREAM_AUTH": "PASS",
+                    "TUXEVIL_LIVE_INFERENCE": "PASS",
+                    "TUXEVIL_TOOL_CALLING": "PASS",
+                    "OPENAI_PLATFORM_API_KEY_REQUIRED": "NO",
+                },
+                "evidence_refs": [evidence_ref],
+            }
+        }),
+    )
+    decision = route_harness_request(
+        HarnessRoutingRequest(
+            intent="interactive Telegram reasoning deadline",
+            authorized_action="EDITORIAL",
+            required_capability_id="ai.reasoning.text",
+            provider_required=True,
+            preferred_providers=("tuxevil",),
+            fallback_allowed=False,
+            zero_cost_operation=True,
+            learning_required=False,
+        )
+    )
+    assert decision.selected_provider == "tuxevil"
+    assert decision.selected_model == "gemini-3-flash"
+    assert decision.policy_metadata["runtime_provider_binding_used"] is True
+    assert evidence_ref in decision.policy_metadata["runtime_provider_evidence_refs"]
+
     calls = []
 
     class SelectedProvider:
@@ -194,7 +234,7 @@ def test_tuxevil_selection_accepts_per_call_bounded_timeout(monkeypatch):
     assert provider_name == "tuxevil"
     assert isinstance(provider, SelectedProvider)
     assert calls == [{
-        "model": decision.selected_model,
+        "model": "gemini-3-flash",
         "timeout_seconds": 17.5,
     }]
 
