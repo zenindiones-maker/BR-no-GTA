@@ -14,6 +14,7 @@ VALID_CLASSIFICATIONS = {
     "news",
     "knowledge_note",
     "reference_media",
+    "owner_voice_reference",
     "channel_standard",
     "brand_asset",
 }
@@ -22,6 +23,7 @@ VALID_LEARNING_STATUSES = {
     "captured",
     "learned",
     "pending_cloud_analysis",
+    "private_voice_reference_registered",
     "command_only",
 }
 VALID_EXECUTION_OUTCOME_STATUSES = {
