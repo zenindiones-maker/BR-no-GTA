@@ -18,6 +18,9 @@ from pathlib import Path
 from typing import Any
 
 from app.integrations.gta6.news_feeds import fetch_gta6_news_feeds
+from app.services.fresh_research_dispatch_contract import (
+    decode_fresh_research_query_b64,
+)
 from app.services.performance_telemetry_service import PerformanceSpan
 
 
@@ -32,10 +35,8 @@ MAX_SECONDARY_ITEMS = 24
 
 
 def _decode_query(value: str) -> str:
-    try:
-        return base64.b64decode(value.encode("ascii"), validate=True).decode("utf-8").strip()
-    except Exception as exc:
-        raise ValueError("query_b64 is invalid") from exc
+    query, _context = decode_fresh_research_query_b64(value)
+    return query
 
 
 def _decode_optional(value: str) -> str:
@@ -498,17 +499,34 @@ def main() -> int:
     parser.add_argument("--output", default="runtime/gta6-fresh-research/result.json")
     args = parser.parse_args()
 
-    query = _decode_query(args.query_b64)
+    query, embedded_context = decode_fresh_research_query_b64(args.query_b64)
     if not query:
         raise ValueError("research query is required")
+
+    explicit_source_url = _decode_optional(args.source_url_b64)
     result = collect(
         query,
         execution_id=args.execution_id,
-        source_url=_decode_optional(args.source_url_b64),
-        telegram_input_id=args.telegram_input_id,
-        classification=args.classification,
-        input_kind=args.input_kind,
-        memory_event_id=args.memory_event_id,
+        source_url=(
+            explicit_source_url
+            or str(embedded_context.get("source_url") or "").strip()
+        ),
+        telegram_input_id=(
+            args.telegram_input_id
+            or str(embedded_context.get("id") or "")
+        ),
+        classification=(
+            args.classification
+            or str(embedded_context.get("classification") or "")
+        ),
+        input_kind=(
+            args.input_kind
+            or str(embedded_context.get("input_kind") or "")
+        ),
+        memory_event_id=(
+            args.memory_event_id
+            or str(embedded_context.get("memory_event_id") or "")
+        ),
     )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
