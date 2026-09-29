@@ -1,10 +1,10 @@
 {
   "request": "telegram-conversational-control-validation",
-  "source_head": "7055f6e0f586f72c5c98811bf3d5d287e27c7374",
-  "scope": "typed-task-result-binding-regression-green",
+  "source_head": "a00e024b9365daafc8a25f25576416385d38b1ea",
+  "scope": "continuous-deployment-promotion-scheduler-boundary-proof",
   "prerequisite_live_query_run": 35619206864,
   "prerequisite_live_query_artifact": 10647174236,
-  "continuous_scheduler_main_head": "bb6fe9cb9d4c59a37ab454d23747744cfe23e2da",
-  "expected_deployed_target_sha": "0a9e51a8f8b5faf4c84024f9d3608345d6723d50",
-  "trigger_reason": "GREEN proof: canary executor binding is authoritative from typed TaskResult envelopes and audit stream remains observability only"
+  "continuous_scheduler_main_head": "32a616d8b32b74a56289c481b12a020a9b6b201b",
+  "expected_deployed_target_sha": "a00e024b9365daafc8a25f25576416385d38b1ea",
+  "trigger_reason": "Trigger a normal workflow_run boundary after promoting the incident-safe continuous-operation deployment; executor must be dispatched only by the default-branch scheduler"
 }
