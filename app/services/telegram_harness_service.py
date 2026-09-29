@@ -120,6 +120,7 @@ def _telegram_semantic_routing_request(
         required_capability_id="ai.reasoning.text",
         provider_required=True,
         provider_domain="ai",
+        allowed_providers=("nvidia_nim", "tuxevil"),
         prefer_low_latency=True,
         fallback_allowed=False,
         zero_cost_operation=True,
