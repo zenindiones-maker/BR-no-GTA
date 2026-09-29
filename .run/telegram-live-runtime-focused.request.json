@@ -1,8 +1,8 @@
 {
-  "request": "semantic-outage-boundary-red-v2",
-  "source_head": "65072af5ecfe4ef248028923aa1b6f9820a20543",
-  "objective": "Prove typed provider failure and terminal semantic outage cannot escape mission planning into generic chat.",
-  "expected_first_state": "RED_ON_TYPED_FAILURE_AND_GENERIC_CHAT_FALLTHROUGH",
+  "request": "semantic-outage-boundary-green-v2",
+  "source_head": "25b328fae81432b16d10e6a2810cbbe3f4258dc3",
+  "objective": "Verify typed semantic provider failures remain inside SYSTEM_IMPROVEMENT planning and terminal semantic outages never fall through to generic chat.",
+  "expected_first_state": "GREEN",
   "authority": "DEEPSEEK_HARNESS",
   "publication": false
 }
