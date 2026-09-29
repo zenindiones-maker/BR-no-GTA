@@ -21,7 +21,9 @@ from app.services.harness_routing_policy_service import (
 from app.services.script_service import get_script
 
 
-HERMES_TELEGRAM_WORKFLOW = "telegram-hermes-control-mission.yml"
+HERMES_TELEGRAM_EXECUTOR_WORKFLOW = "telegram-hermes-control-mission.yml"
+HERMES_TELEGRAM_LAUNCHER_WORKFLOW = "dynamic-system-improvement.yml"
+HERMES_TELEGRAM_WORKFLOW = HERMES_TELEGRAM_LAUNCHER_WORKFLOW
 HERMES_CAPABILITY_ID = "collaboration.hermes.execute"
 
 
@@ -44,6 +46,76 @@ def _artifact_snapshot(artifact_ref: str | None) -> tuple[str, str]:
             "O roteiro ativo excede o limite seguro para materialização no workflow Hermes."
         )
     return base64.b64encode(raw).decode("ascii"), hashlib.sha256(raw).hexdigest()
+
+
+def _current_target_sha() -> str:
+    configured = str(
+        os.getenv("BR_TELEGRAM_GATEWAY_REVISION")
+        or os.getenv("GITHUB_SHA")
+        or ""
+    ).strip().lower()
+    if len(configured) == 40 and all(ch in "0123456789abcdef" for ch in configured):
+        return configured
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    observed = str(completed.stdout or "").strip().lower()
+    if len(observed) != 40 or any(ch not in "0123456789abcdef" for ch in observed):
+        raise RuntimeError("TELEGRAM_HERMES_TARGET_SHA_UNAVAILABLE")
+    return observed
+
+
+def _build_launcher_inputs(
+    *,
+    dispatch_id: str,
+    mode: str,
+    mission_id: str,
+    goal_id: str,
+    chat_id: int,
+    target_ref: str,
+    target_sha: str,
+    artifact_ref: str,
+    request_text: str,
+    artifact_text_b64: str,
+    artifact_sha256: str,
+    parent_run_id: str,
+    human_answer: str,
+) -> dict[str, str]:
+    if mode not in {"start", "resume"}:
+        raise ValueError("Telegram Hermes launcher mode must be start or resume")
+    plan = {
+        "schema": "TelegramHermesLauncherPlan/v1",
+        "kind": "TELEGRAM_HERMES_CONTROL",
+        "mode": mode,
+        "mission_id": mission_id,
+        "goal_id": goal_id,
+        "artifact_ref": artifact_ref,
+        "artifact_text_b64": artifact_text_b64,
+        "artifact_sha256": artifact_sha256,
+        "parent_run_id": str(parent_run_id or ""),
+        "human_answer": str(human_answer or "")[:2000],
+        "executor_workflow": HERMES_TELEGRAM_EXECUTOR_WORKFLOW,
+        "authority": "DEEPSEEK_HARNESS",
+    }
+    plan_raw = json.dumps(
+        plan,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    goal_raw = str(request_text or "").encode("utf-8")
+    return {
+        "dispatch_id": dispatch_id,
+        "target_ref": target_ref,
+        "target_sha": target_sha,
+        "plan_b64": base64.b64encode(plan_raw).decode("ascii"),
+        "human_goal_b64": base64.b64encode(goal_raw).decode("ascii"),
+        "telegram_chat_id": str(chat_id),
+    }
 
 
 def _dispatch_command_runner(
@@ -141,7 +213,7 @@ def _dispatch(
     human_answer: str = "",
 ) -> tuple[Any, Any, Any]:
     dispatch_id = f"{mission_id}-{mode}-{uuid4().hex[:8]}"
-    title = f"Telegram Hermes {dispatch_id}"
+    title = f"System Improvement {dispatch_id}"
     routing, authorization = _authorize_hermes(
         goal_id=goal_id,
         mission_id=mission_id,
@@ -149,10 +221,26 @@ def _dispatch(
     )
     repository = os.getenv("BR_GITHUB_REPOSITORY", "zenindiones-maker/BR-no-GTA")
     ref = os.getenv("BR_GITHUB_REF", "work/gate6f-analytics-learning")
+    target_sha = _current_target_sha()
+    launcher_inputs = _build_launcher_inputs(
+        dispatch_id=dispatch_id,
+        mode=mode,
+        mission_id=mission_id,
+        goal_id=goal_id[:240],
+        chat_id=chat_id,
+        target_ref=ref,
+        target_sha=target_sha,
+        artifact_ref=artifact_ref[:500],
+        request_text=request_text[:2000],
+        artifact_text_b64=artifact_text_b64,
+        artifact_sha256=artifact_sha256,
+        parent_run_id=str(parent_run_id or ""),
+        human_answer=str(human_answer or "")[:2000],
+    )
     dispatcher = GitHubActionsDispatcher(
         _dispatch_command_runner(
             repository=repository,
-            workflow=HERMES_TELEGRAM_WORKFLOW,
+            workflow=HERMES_TELEGRAM_LAUNCHER_WORKFLOW,
             ref=ref,
             expected_title=title,
         )
@@ -160,21 +248,9 @@ def _dispatch(
     try:
         dispatched = dispatcher.dispatch(
             repository=repository,
-            workflow=HERMES_TELEGRAM_WORKFLOW,
+            workflow=HERMES_TELEGRAM_LAUNCHER_WORKFLOW,
             ref=ref,
-            inputs={
-                "dispatch_id": dispatch_id,
-                "mission_id": mission_id,
-                "mode": mode,
-                "telegram_chat_id": str(chat_id),
-                "goal_id": goal_id[:240],
-                "artifact_ref": artifact_ref[:500],
-                "request_text": request_text[:2000],
-                "artifact_text_b64": artifact_text_b64,
-                "artifact_sha256": artifact_sha256,
-                "parent_run_id": str(parent_run_id or ""),
-                "human_answer": str(human_answer or "")[:2000],
-            },
+            inputs=launcher_inputs,
         )
     finally:
         consume_harness_authorization(authorization)
@@ -236,7 +312,8 @@ def dispatch_telegram_hermes_mission(
         "execution_id": authorization.execution_id,
         "provider_required": False,
         "authority": "DEEPSEEK_HARNESS",
-        "workflow": HERMES_TELEGRAM_WORKFLOW,
+        "workflow": HERMES_TELEGRAM_LAUNCHER_WORKFLOW,
+        "executor_workflow": HERMES_TELEGRAM_EXECUTOR_WORKFLOW,
         "pending_action": pending_action,
     }
 
@@ -292,5 +369,6 @@ def resume_telegram_hermes_mission(
         "execution_id": authorization.execution_id,
         "resumed_from_run_id": parent_run_id,
         "authority": "DEEPSEEK_HARNESS",
-        "workflow": HERMES_TELEGRAM_WORKFLOW,
+        "workflow": HERMES_TELEGRAM_LAUNCHER_WORKFLOW,
+        "executor_workflow": HERMES_TELEGRAM_EXECUTOR_WORKFLOW,
     }
