@@ -11,6 +11,9 @@ from app.services.owner_voice_private_materialization_service import (
     parse_owner_reference_index_secret,
     require_private_voice_runtime,
 )
+from app.services.owner_voice_telegram_handoff_service import (
+    parse_reference_envelope_b64,
+)
 
 
 def _env(name: str) -> str:
@@ -31,9 +34,10 @@ def main() -> int:
     private_root = runner_temp / "br-owner-voice" / "references"
     evidence_root = repository_root / "runtime" / "owner-voice-materialization"
 
+    raw_envelope = _env("BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64")
     raw_index = _env("BR_OWNER_TELEGRAM_REFERENCE_INDEX")
     telegram_token = _env("TELEGRAM_BOT_TOKEN")
-    if not raw_index:
+    if not raw_envelope and not raw_index:
         raise OwnerVoicePrivateMaterializationError(
             "OWNER_TELEGRAM_REFERENCE_INDEX_NOT_MATERIALIZED"
         )
@@ -42,7 +46,13 @@ def main() -> int:
             "TELEGRAM_BOT_TOKEN_NOT_MATERIALIZED"
         )
 
-    index = parse_owner_reference_index_secret(raw_index)
+    if raw_envelope:
+        decoded = parse_reference_envelope_b64(raw_envelope)
+        index = parse_owner_reference_index_secret(
+            json.dumps(decoded, ensure_ascii=False, sort_keys=True)
+        )
+    else:
+        index = parse_owner_reference_index_secret(raw_index)
     print(f"OWNER_TELEGRAM_REFERENCES_FOUND={index['reference_count']}")
     print(f"OWNER_REFERENCE_INDEX_SHA256={index['index_sha256']}")
     print("MEDIA_BYTES_ON_A15=NO")
