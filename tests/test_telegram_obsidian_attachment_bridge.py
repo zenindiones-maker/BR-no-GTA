@@ -10,6 +10,7 @@ from app.database.telegram_user_input_repository import (
     upsert_telegram_user_input,
 )
 from app.services.telegram_conversation_service import (
+    handle_telegram_conversation,
     register_telegram_attachment_context,
     retrieve_conversation_context,
 )
@@ -285,3 +286,59 @@ def test_legacy_backfill_resolves_latest_materialized_file_without_resend(
     assert "Recovered from a pre-bridge Telegram upload." in (
         context["active_attachment_context"]["content"]
     )
+
+
+def test_file_question_uses_obsidian_artifact_context_not_knowledge_recall(
+    tmp_path, monkeypatch
+):
+    raw = (
+        b"<html><body><h1>Operational standard</h1>"
+        b"<p>Fail closed on missing evidence.</p>"
+        b"<p>Final videos must preserve the configured duration gate.</p>"
+        b"</body></html>"
+    )
+    record = _record(tmp_path, monkeypatch, file_size=len(raw))
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    monkeypatch.setenv("OBSIDIAN_VAULT_ROOT", str(vault))
+    staged = tmp_path / "question.html"
+    staged.write_bytes(raw)
+    result = materialize_staged_telegram_attachment_under_harness(
+        input_record=record,
+        source_path=staged,
+    )
+
+    seen = {}
+
+    def chat_handler(message, **kwargs):
+        seen["message"] = message
+        seen["context"] = kwargs["conversation_context"]
+        return {
+            "status": "COMPLETED",
+            "answer": "Resumo fundamentado no arquivo.",
+            "capability_id": "ai.reasoning.text",
+            "execution_id": "exec-file-context",
+        }
+
+    response = handle_telegram_conversation(
+        "O que você entendeu desse arquivo? Me explique os pontos principais.",
+        telegram_chat_id=-100123,
+        telegram_user_id=77,
+        telegram_chat_type="supergroup",
+        telegram_message_id=777,
+        chat_handler=chat_handler,
+        presenter=lambda canonical, **_kwargs: {
+            "text": canonical.get("answer", "")
+        },
+    )
+
+    assert response["intent"] == "QUESTION"
+    assert response["plan"]["kind"] == "CHAT"
+    assert response["resolved_reference"]["reference"] == (
+        f"obsidian:{result['obsidian_note_ref']}"
+    )
+    artifact_context = seen["context"]["active_attachment_context"]
+    assert artifact_context["status"] == "AVAILABLE"
+    assert "Operational standard" in artifact_context["content"]
+    assert "Fail closed on missing evidence." in artifact_context["content"]
+    assert response["answer"] == "Resumo fundamentado no arquivo."
