@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from app.database.ideas_repository import insert_idea
 from app.database.scripts_repository import insert_script
 from app.database.telegram_conversation_repository import (
@@ -1131,3 +1134,188 @@ def test_contextual_resolver_keeps_pure_gta_research_on_research_path():
     )
     assert resolution is not None
     assert resolution.intent == "RESEARCH_REQUEST"
+
+
+def _literal_natural_swarm_goal() -> str:
+    payload = json.loads(
+        Path(".run/telegram-natural-system-improvement.request.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    return str(payload["natural_goal"])
+
+
+def _capture_running_plan(seen):
+    def execute(plan, _state, message):
+        seen["plan"] = dict(plan)
+        seen["message"] = message
+        return {
+            "status": "RUNNING",
+            "answer": "Missão governada despachada para execução subordinada.",
+            "mission_id": (plan.get("mission_plan") or {}).get("mission_id"),
+        }
+    return execute
+
+
+def test_literal_natural_swarm_goal_keeps_system_improvement_mission_precedence():
+    literal = _literal_natural_swarm_goal()
+    chat_id = 1200701
+    update_conversation_state(
+        chat_id,
+        active_project="BR-no-GTA",
+        active_goal_id="goal-natural-system-improvement-live",
+        current_subject="desempenho e eficiência do sistema BR-no-GTA",
+    )
+    seen = {}
+
+    result = handle_telegram_conversation(
+        literal,
+        telegram_chat_id=chat_id,
+        telegram_user_id=7770701,
+        telegram_chat_type="private",
+        telegram_message_id=120070101,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError(
+                "known system-improvement goal must not require ai.reasoning.text"
+            )
+        ),
+        action_executor=_capture_running_plan(seen),
+        presenter=_presenter,
+    )
+
+    plan = seen["plan"]
+    assert result["intent"] == "EXECUTION_REQUEST"
+    assert result["intent_resolution"]["layer"] == "LAYER_3_MISSION_PLANNER"
+    assert plan["kind"] == "SYSTEM_IMPROVEMENT_MISSION"
+    assert plan["mission_plan"]["authority"] == "DEEPSEEK_HARNESS"
+    assert plan["mission_plan"]["goal"]["mission_class"] == "SYSTEM_IMPROVEMENT"
+    assert plan["mission_plan"]["goal"]["human_goal"] == literal
+    assert plan["goal_envelope"]["human_goal"] == literal
+    assert seen["message"] == literal
+
+
+def test_system_improvement_voice_and_audio_constraints_do_not_become_top_level_narration():
+    literal = (
+        "Analisa e melhora a integração completa do sistema BR-no-GTA e corrige "
+        "a sinergia dos agentes. Preserve BR_OWNER_V1 como única voz, use apenas "
+        "áudio privado do humano no Telegram e mantenha pt-BR."
+    )
+    chat_id = 1200702
+    update_conversation_state(
+        chat_id,
+        active_project="BR-no-GTA",
+        active_goal_id="goal-system-improvement-voice-constraint",
+        current_subject="integração completa do sistema",
+    )
+    seen = {}
+
+    result = handle_telegram_conversation(
+        literal,
+        telegram_chat_id=chat_id,
+        telegram_user_id=7770702,
+        telegram_chat_type="private",
+        telegram_message_id=120070201,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("system mission with voice constraint must stay provider-free")
+        ),
+        action_executor=_capture_running_plan(seen),
+        presenter=_presenter,
+    )
+
+    assert result["intent_resolution"]["layer"] == "LAYER_3_MISSION_PLANNER"
+    assert seen["plan"]["kind"] == "SYSTEM_IMPROVEMENT_MISSION"
+    assert seen["plan"].get("capability_id") != "narration.generate.pt-BR"
+
+
+def test_system_improvement_youtube_research_render_thumbnail_terms_remain_subtasks():
+    literal = (
+        "Analisa e melhora a integração completa do sistema, corrige a sinergia do "
+        "swarm e integra YouTube, pesquisa GTA 6, render e thumbnail como subtarefas "
+        "governadas pelo Harness."
+    )
+    chat_id = 1200703
+    update_conversation_state(
+        chat_id,
+        active_project="BR-no-GTA",
+        active_goal_id="goal-system-improvement-youtube-subtasks",
+        current_subject="integração completa do sistema",
+    )
+    seen = {}
+
+    result = handle_telegram_conversation(
+        literal,
+        telegram_chat_id=chat_id,
+        telegram_user_id=7770703,
+        telegram_chat_type="private",
+        telegram_message_id=120070301,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("known system-improvement goal must not use ai.reasoning.text")
+        ),
+        action_executor=_capture_running_plan(seen),
+        presenter=_presenter,
+    )
+
+    assert result["intent"] == "EXECUTION_REQUEST"
+    assert result["intent_resolution"]["layer"] == "LAYER_3_MISSION_PLANNER"
+    assert seen["plan"]["kind"] == "SYSTEM_IMPROVEMENT_MISSION"
+    assert seen["plan"]["mission_plan"]["goal"]["human_goal"] == literal
+
+
+def test_direct_narration_request_still_routes_to_ptbr_narration_capability():
+    literal = "Gere a narração deste roteiro em português do Brasil."
+    chat_id = 1200704
+    update_conversation_state(
+        chat_id,
+        active_project="BR-no-GTA",
+        active_goal_id="goal-direct-narration",
+        current_subject="roteiro atual",
+    )
+    seen = {}
+
+    result = handle_telegram_conversation(
+        literal,
+        telegram_chat_id=chat_id,
+        telegram_user_id=7770704,
+        telegram_chat_type="private",
+        telegram_message_id=120070401,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("direct deterministic narration must not call ai.reasoning.text")
+        ),
+        action_executor=_capture_running_plan(seen),
+        presenter=_presenter,
+    )
+
+    assert result["intent"] == "EXECUTION_REQUEST"
+    assert seen["plan"]["kind"] == "CAPABILITY"
+    assert seen["plan"]["capability_id"] == "narration.generate.pt-BR"
+
+
+def test_existing_audio_artifact_correction_stays_context_bound_under_harness():
+    literal = "Corrige esse áudio existente sem trocar a identidade de voz."
+    chat_id = 1200705
+    update_conversation_state(
+        chat_id,
+        active_project="BR-no-GTA",
+        active_goal_id="goal-audio-correction",
+        current_subject="áudio existente",
+        active_artifact="asset:owner-audio-17",
+    )
+    seen = {}
+
+    result = handle_telegram_conversation(
+        literal,
+        telegram_chat_id=chat_id,
+        telegram_user_id=7770705,
+        telegram_chat_type="private",
+        telegram_message_id=120070501,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("context-bound correction must not call ai.reasoning.text")
+        ),
+        action_executor=_capture_running_plan(seen),
+        presenter=_presenter,
+    )
+
+    assert result["intent"] == "EXECUTION_REQUEST"
+    assert seen["plan"]["kind"] == "CAPABILITY_DISCOVERY"
+    assert seen["plan"]["context_bound_correction"] is True
+    assert seen["plan"]["artifact_ref"] == "asset:owner-audio-17"
