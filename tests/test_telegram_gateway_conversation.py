@@ -1050,3 +1050,17 @@ def test_generic_unknown_failure_is_human_safe_but_preserves_technical_evidence(
     assert captured["technical_error"]["type"] == "RuntimeError"
     assert captured["technical_error"]["message"] == raw_error
     assert raw_error not in str(captured["error"].get("message") or "")
+
+def test_generic_safe_usage_error_remains_actionable_without_becoming_internal_failure():
+    presented = gateway_v2._generic_failure_presentation(
+        ValueError("uso: /evidence [telegram_input_id]"),
+        command="/evidence",
+        telegram_message_id=82001,
+        telegram_update_id=82002,
+    )
+    text = presented["text"]
+
+    assert text.startswith("❌ FAILED")
+    assert "uso: /evidence [telegram_input_id]" in text
+    assert "Revise o comando" in text or "tente novamente" in text
+    assert "falha interna" not in text.casefold()
