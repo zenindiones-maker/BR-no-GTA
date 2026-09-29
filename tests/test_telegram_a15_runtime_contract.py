@@ -204,3 +204,11 @@ def test_runtime_readiness_waits_bounded_for_device_reconciliation():
     assert "A15_ATTESTATION_WAIT_EXHAUSTED" in workflow
     assert "verify_telegram_a15_runtime_attestation.py" in workflow
     assert "sleep" in workflow
+
+
+def test_gateway_reconcile_can_suppress_owner_voice_handoff_during_runtime_deploy():
+    text = (ROOT / "scripts/telegram_termux_control.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START" in text
+    assert "OWNER_VOICE_REFERENCE_HANDOFF=SUPPRESSED_FOR_RUNTIME_DEPLOY" in text
