@@ -246,13 +246,15 @@ runtime_revision_report() {
   echo "RUNNING_GATEWAY_REVISION=${loaded:-MISSING}"
   echo "LOCAL_HEAD=${local_head:-UNKNOWN}"
   echo "REMOTE_HEAD=${remote_head:-UNAVAILABLE}"
-  if [[ "${#pids[@]}" -eq 1 && -n "${local_head}" && -n "${remote_head}" && -n "${loaded}" && "${local_head}" == "${remote_head}" && "${loaded}" == "${local_head}" ]]; then
+  if [[ "${#pids[@]}" -eq 1 && -n "${local_head}" && -n "${remote_head}" && -n "${loaded}" && "${local_head}" == "${remote_head}" && "${loaded}" == "${local_head}" ]] && runtime_ready_matches; then
     echo "TELEGRAM_RUNTIME_REVISION_MATCHES_HEAD=PASS"
     echo "TELEGRAM_GATEWAY_SINGLETON=PASS"
+    echo "TELEGRAM_GATEWAY_READY=PASS"
     return 0
   fi
   echo "TELEGRAM_RUNTIME_REVISION_MATCHES_HEAD=FAIL"
   echo "TELEGRAM_GATEWAY_SINGLETON=FAIL"
+  echo "TELEGRAM_GATEWAY_READY=FAIL"
   return 2
 }
 
@@ -480,7 +482,7 @@ start_gateway() {
 
   if [[ ${#all_pids[@]} -eq 1 && ${#current_pids[@]} -eq 1 && "${all_pids[0]}" == "${current_pids[0]}" ]]; then
     printf '%s\n' "${current_pids[0]}" > "${PID_FILE}"
-    if runtime_revision_matches; then
+    if runtime_revision_matches && runtime_ready_matches; then
       echo "TELEGRAM_GATEWAY=ADOPTED_EXISTING PID=${current_pids[0]} REVISION=$(current_repo_revision)"
       release_start_lock
       return 0
@@ -555,14 +557,14 @@ stop_gateway() {
   mapfile -t pids < <(gateway_pids)
 
   if [[ ${#pids[@]} -eq 0 ]]; then
-    rm -f "${PID_FILE}" "${REVISION_FILE}"
+    rm -f "${PID_FILE}" "${REVISION_FILE}" "${READY_FILE}"
     release_start_lock
     echo "TELEGRAM_GATEWAY=STOPPED"
     return 0
   fi
 
   terminate_gateway_pids "${pids[@]}"
-  rm -f "${PID_FILE}" "${REVISION_FILE}"
+  rm -f "${PID_FILE}" "${REVISION_FILE}" "${READY_FILE}"
   release_start_lock
   if command -v termux-wake-unlock >/dev/null 2>&1; then
     termux-wake-unlock >/dev/null 2>&1 || true
@@ -627,9 +629,10 @@ foreground_gateway() {
   export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
   export TELEGRAM_CONTROL_STATE_FILE="${STATE_DIR}/telegram-control.json"
   export TELEGRAM_GATEWAY_REVISION_FILE="${REVISION_FILE}"
+  export TELEGRAM_GATEWAY_READY_FILE="${READY_FILE}"
   export BR_TELEGRAM_GATEWAY_REVISION
   BR_TELEGRAM_GATEWAY_REVISION="$(current_repo_revision)"
-  rm -f "${REVISION_FILE}"
+  rm -f "${REVISION_FILE}" "${READY_FILE}"
   cd "${ROOT}"
   exec "${PYTHON_BIN}" -u scripts/telegram_harness_gateway_v2.py
 }
