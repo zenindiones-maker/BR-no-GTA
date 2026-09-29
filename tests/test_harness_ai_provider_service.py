@@ -174,18 +174,7 @@ def test_tuxevil_selection_accepts_per_call_bounded_timeout(monkeypatch):
     )
     import app.services.harness_ai_provider_service as service
 
-    decision = route_harness_request(
-        HarnessRoutingRequest(
-            intent="interactive Telegram reasoning",
-            authorized_action="EDITORIAL",
-            required_capability_id="ai.reasoning.text",
-            provider_required=True,
-            preferred_providers=("tuxevil",),
-            fallback_allowed=False,
-            zero_cost_operation=True,
-            learning_required=False,
-        )
-    )
+    decision = _decision("tuxevil", "gemini-3-flash")
     calls = []
 
     class SelectedProvider:
@@ -218,18 +207,7 @@ def test_opencode_selection_accepts_per_call_bounded_timeout(monkeypatch):
     )
     import app.services.harness_ai_provider_service as service
 
-    decision = route_harness_request(
-        HarnessRoutingRequest(
-            intent="interactive Telegram reasoning",
-            authorized_action="EDITORIAL",
-            required_capability_id="ai.reasoning.text",
-            provider_required=True,
-            preferred_providers=("opencode",),
-            fallback_allowed=False,
-            zero_cost_operation=True,
-            learning_required=False,
-        )
-    )
+    decision = _decision("opencode", "oc/big-pickle")
     calls = []
 
     class SelectedProvider:
