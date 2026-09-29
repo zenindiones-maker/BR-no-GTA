@@ -176,13 +176,19 @@ def main() -> int:
     )
 
     from faster_whisper import WhisperModel
+    from faster_whisper.utils import download_model
 
     model_id = str(os.environ.get("BR_OWNER_STT_MODEL") or "small").strip()
-    stt = WhisperModel(
+    stt_model_root = runner_temp / "br-owner-voice" / "stt-model"
+    stt_model_path = download_model(
         model_id,
+        output_dir=str(stt_model_root),
+    )
+    stt = WhisperModel(
+        str(stt_model_path),
         device="cpu",
         compute_type="int8",
-        download_root=str(runner_temp / "br-owner-voice" / "stt-models"),
+        local_files_only=True,
     )
 
     candidates: list[dict[str, Any]] = []
@@ -220,7 +226,12 @@ def main() -> int:
         )
         candidates.append(candidate)
 
-    context = build_reference_qa_context(candidates)
+    context = {
+        **build_reference_qa_context(candidates),
+        "stt_model_path": str(stt_model_path),
+        "stt_model_id": model_id,
+        "stt_reuse_mode": "LOCAL_FILES_ONLY",
+    }
     output = Path(
         os.environ.get("BR_OWNER_REFERENCE_QA_CONTEXT")
         or runner_temp / "br-owner-voice" / "reference-qa-context.json"
