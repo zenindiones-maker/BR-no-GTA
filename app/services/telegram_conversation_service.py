@@ -337,6 +337,28 @@ def _planner_canonical_state(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _is_operational_artifact_reference(
+    reference: str | None,
+    *,
+    state: dict[str, Any],
+) -> bool:
+    ref = str(reference or "").strip()
+    if not ref:
+        return False
+
+    active = str(state.get("active_artifact") or "").strip()
+    if active and (ref == active or ref.startswith(active + "#")):
+        return True
+
+    return bool(
+        re.fullmatch(
+            r"(?:script|video|artifact|asset|render|publication|content-item|production-plan):[^\s#]+(?:#[^\s]+)?",
+            ref,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
 def plan_natural_language_action(
     message: str,
     *,
@@ -435,7 +457,10 @@ def plan_natural_language_action(
                 "artifact_ref": resolved_reference or state.get("active_artifact") or "script:last",
             }
         if (
-            resolved_reference
+            _is_operational_artifact_reference(
+                resolved_reference,
+                state=state,
+            )
             and any(
                 term in text
                 for term in (
