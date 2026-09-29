@@ -425,7 +425,7 @@ def test_task_completion_envelope_binds_exact_retry_result_identity(tmp_path):
         task_id="research",
         task_result_ref=second_record["task_result_ref"],
     )
-    assert receipt["schema"] == "TaskResultEnvelope/v1"
+    assert receipt["schema"] == "task-result-envelope/v1"
     assert receipt["mission_id"] == "mission-completion-metrics"
     assert receipt["task_id"] == "research"
     assert receipt["elapsed_ms"] == 2000.0

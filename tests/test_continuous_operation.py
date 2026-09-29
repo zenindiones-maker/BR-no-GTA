@@ -516,7 +516,7 @@ def test_research_duration_uses_typed_task_result_not_audit_stream_ordering():
             assert task_id == "research"
             assert task_result_ref == "artifact:task-results/research-2.json"
             return {
-                "schema": "TaskResultEnvelope/v1",
+                "schema": "task-result-envelope/v1",
                 "mission_id": "mission-typed-duration",
                 "task_id": "research",
                 "capability_id": DELTA_RESEARCH_CAPABILITY_ID,

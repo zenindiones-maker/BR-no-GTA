@@ -52,6 +52,7 @@ from app.services.gta6_knowledge_retrieval_service import (
     execute_gta6_knowledge_retrieval_capability,
 )
 from app.services.gta6_source_registry_service import register_gta6_source
+from app.services.task_result_envelope_service import TASK_RESULT_ENVELOPE_SCHEMA
 
 
 HERMES_UPSTREAM_SHA = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
@@ -136,7 +137,7 @@ def _typed_task_elapsed_seconds(
         task_id=task_id,
         task_result_ref=task_result_ref,
     )
-    if envelope.get("schema") != "TaskResultEnvelope/v1":
+    if envelope.get("schema") != TASK_RESULT_ENVELOPE_SCHEMA:
         raise RuntimeError("TASK_RESULT_COMPLETION_SCHEMA_MISMATCH")
     if str(envelope.get("task_id") or "") != str(task_id):
         raise RuntimeError("TASK_RESULT_COMPLETION_IDENTITY_MISMATCH")
