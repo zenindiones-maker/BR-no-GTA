@@ -1687,3 +1687,78 @@ def test_canary_executor_binding_proof_uses_typed_task_results_not_audit_stream(
     assert proof["status"] == "PASS"
     assert proof["task_result_count"] == 1
     assert proof["audit_stream_consulted"] is False
+
+
+
+def test_operational_followup_phrases_are_status_without_provider():
+    for text in (
+        "parou aí?",
+        "parou ai",
+        "travou?",
+        "travou aí?",
+        "ainda está rodando?",
+        "ainda ta rodando?",
+        "isso ainda está executando?",
+    ):
+        assert classify_conversation_intent(text) == "STATUS_REQUEST", text
+
+
+def test_status_reconciles_completed_remote_github_run_before_answering_active():
+    from app.services.github_actions_run_tracker import GitHubActionsRunStatus
+    from app.services.telegram_control_surface_status import (
+        derive_operational_activity_evidence,
+    )
+    from app.services.telegram_status_reconciliation_service import (
+        reconcile_remote_github_run_state,
+    )
+
+    class Tracker:
+        def __init__(self):
+            self.calls = []
+
+        def get_status(self, repository, run_id):
+            self.calls.append((repository, run_id))
+            return GitHubActionsRunStatus(
+                run_id=run_id,
+                status="completed",
+                conclusion="success",
+            )
+
+    chat_id = 1300803
+    update_conversation_state(
+        chat_id,
+        active_goal_id="goal-system-recovery",
+        active_task="continuous operation recovery",
+        active_run_id="36587219010",
+        active_stage="EXECUTING",
+        execution_status="RUNNING",
+        active_blocker=None,
+        last_execution_result={
+            "status": "RUNNING",
+            "execution_id": "exec-36587219010",
+            "run_id": "36587219010",
+            "goal_id": "goal-system-recovery",
+            "task_id": "continuous operation recovery",
+        },
+    )
+    tracker = Tracker()
+
+    result = reconcile_remote_github_run_state(
+        chat_id,
+        tracker=tracker,
+        repository="zenindiones-maker/BR-no-GTA",
+    )
+
+    assert tracker.calls == [("zenindiones-maker/BR-no-GTA", 36587219010)]
+    assert result["checked"] is True
+    assert result["reconciled"] is True
+    state = result["state"]
+    assert state["execution_status"] == "COMPLETED"
+    assert state["active_stage"] is None
+    assert state["last_execution_result"]["status"] == "SUCCESS"
+    assert state["last_execution_result"]["workflow_status"] == "COMPLETED"
+    assert state["last_execution_result"]["workflow_conclusion"] == "SUCCESS"
+    assert derive_operational_activity_evidence(
+        state,
+        recent_authorizations=[],
+    )["has_active_execution"] is False
