@@ -247,3 +247,23 @@ def test_runtime_status_requires_ready_proof_not_only_process_identity():
         "heartbeat_gateway()", 1
     )[0]
     assert "runtime_ready_matches" in publish
+
+def test_all_runtime_entrypoints_enforce_ready_proof():
+    text = (ROOT / "scripts/telegram_termux_control.sh").read_text(
+        encoding="utf-8"
+    )
+    start = text.split("start_gateway()", 1)[1].split("stop_gateway()", 1)[0]
+    stop = text.split("stop_gateway()", 1)[1].split("status_gateway()", 1)[0]
+    foreground = text.split("foreground_gateway()", 1)[1].split(
+        "doctor_gateway()", 1
+    )[0]
+    report = text.split("runtime_revision_report()", 1)[1].split(
+        "runtime_revision_matches()", 1
+    )[0]
+
+    assert "runtime_revision_matches && runtime_ready_matches" in start
+    assert 'rm -f "${PID_FILE}" "${REVISION_FILE}" "${READY_FILE}"' in stop
+    assert 'export TELEGRAM_GATEWAY_READY_FILE="${READY_FILE}"' in foreground
+    assert 'rm -f "${REVISION_FILE}" "${READY_FILE}"' in foreground
+    assert "runtime_ready_matches" in report
+    assert "TELEGRAM_GATEWAY_READY=PASS" in report
