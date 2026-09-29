@@ -256,17 +256,15 @@ def build_production_packet(
 
     script_complete_limit = 12_000
     script_truncated_limit = 6_000
-    script_is_complete = len(script_text) <= script_complete_limit
-    script_projection_text = (
-        script_text if script_is_complete else script_text[:script_truncated_limit]
+    script_projection = _budgeted_script_projection(
+        script_text,
+        script_id=script_id,
+        limit=(
+            script_complete_limit
+            if len(script_text) <= script_complete_limit
+            else script_truncated_limit
+        ),
     )
-    script_projection = {
-        "text": script_projection_text,
-        "is_complete": script_is_complete,
-        "projected_chars": len(script_projection_text),
-        "canonical_chars": len(script_text),
-        "canonical_artifact_ref": f"db:scripts:{script_id}",
-    }
 
     claim_scene_map: dict[str, list[int]] = {}
     scene_rows: list[dict[str, Any]] = []
