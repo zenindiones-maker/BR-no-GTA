@@ -86,6 +86,7 @@ jobs:
             tests/test_telegram_conversation_control.py::test_direct_narration_request_still_routes_to_ptbr_narration_capability \
             tests/test_telegram_conversation_control.py::test_existing_audio_artifact_correction_stays_context_bound_under_harness \
             tests/test_telegram_conversation_control.py::test_system_improvement_semantic_planner_outage_falls_back_without_chat_reasoning \
+            tests/test_telegram_conversation_control.py::test_system_improvement_typed_semantic_provider_failure_stays_in_mission_planner \
             tests/test_telegram_conversation_control.py::test_status_reconciles_legacy_understanding_without_operational_evidence \
             tests/test_telegram_project_status.py::test_status_query_never_replaces_project_subject_and_exposes_canonical_snapshot \
             tests/test_telegram_human_egress_policy.py \
