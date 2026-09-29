@@ -489,9 +489,15 @@ def select_harness_ai_provider(
             decision.selected_provider_executor_binding or ""
         ):
             raise PermissionError("Tuxevil executor escaped registered Harness binding")
-        return normalized_provider, create_ai_provider(
-            model=decision.selected_model,
-        )
+        provider_kwargs: dict[str, Any] = {
+            "model": decision.selected_model,
+        }
+        if request_timeout_seconds is not None:
+            timeout_value = float(request_timeout_seconds)
+            if timeout_value <= 0:
+                raise ValueError("request_timeout_seconds must be positive")
+            provider_kwargs["timeout_seconds"] = timeout_value
+        return normalized_provider, create_ai_provider(**provider_kwargs)
 
     if normalized_provider == "ollama_local":
         if "local_openweight_ai_provider.OllamaLocalAIProvider" not in (
