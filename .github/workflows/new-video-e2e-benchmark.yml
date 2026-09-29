@@ -6,7 +6,6 @@ on:
       - work/gate6f-analytics-learning
     paths:
       - .run/new-video-benchmark.request.json
-      - .github/workflows/new-video-e2e-benchmark.yml
   workflow_dispatch:
 
 permissions:
@@ -207,7 +206,7 @@ jobs:
           path: runtime/media-knowledge-source
           merge-multiple: true
 
-      - name: Create independent Video and RenderJob with current Voice B contract
+      - name: Create independent Video and RenderJob with current owner-voice contract
         run: |
           set -euo pipefail
           python scripts/new_video_benchmark_delivery.py prepare-handoff \
