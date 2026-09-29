@@ -55,22 +55,26 @@ jobs:
           python -m pytest -q \
             tests/test_owner_voice_reference_handoff.py \
             tests/test_owner_voice_private_materialization.py \
-            tests/test_owner_voice_qwen_audition.py \
-            tests/test_owner_voice_reference_transcript.py
+            tests/test_owner_voice_clone_service.py \
+            tests/test_owner_voice_audio_quality_service.py \
+            tests/test_owner_voice_reference_qa.py \
+            tests/test_owner_voice_chatterbox_ptbr_audition.py \
+            tests/test_owner_voice_ptbr_audition_review.py
           echo "OWNER_VOICE_PRIVATE_MATERIALIZATION_CONTRACT=PASS"
 
   materialize:
-    name: Materialize Telegram owner voice and synthesize real Qwen audition
+    name: Materialize Telegram owner voice and synthesize pt-BR auditions
     needs: contract
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
+    timeout-minutes: 90
     env:
       BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64 }}
       BR_OWNER_TELEGRAM_REFERENCE_INDEX: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_INDEX }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       HF_HOME: /tmp/br-owner-huggingface
       TOKENIZERS_PARALLELISM: "false"
-      BR_OWNER_PRIVATE_TRANSCRIPT_CONTEXT: /tmp/br-owner-voice/private-transcript-context.json
+      BR_OWNER_REFERENCE_QA_CONTEXT: /tmp/br-owner-voice/reference-qa-context.json
+      BR_OWNER_PTBR_AUDITION_SET: /tmp/br-owner-voice/ptbr-audition-set.json
       BR_OWNER_STT_MODEL: medium
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -130,7 +134,9 @@ jobs:
             exit 22
           fi
           echo "GENERIC_VOICE_FALLBACK=0"
-          echo "EPHEMERAL_QWEN_OWNER_CLONE=true"
+          echo "EPHEMERAL_TELEGRAM_BOUND_PTBR_OWNER_CLONE=true"
+          echo "OWNER_TARGET_LOCALE=pt-BR"
+          echo "OWNER_ALLOWED_IDENTITY=BR_OWNER_V1"
 
       - name: Install private STT runtime
         run: |
@@ -139,37 +145,62 @@ jobs:
           sudo apt-get install -y -qq ffmpeg
           python -m venv /tmp/br-owner-stt-venv
           /tmp/br-owner-stt-venv/bin/python -m pip install --disable-pip-version-check -q \
-            "faster-whisper==1.2.0"
+            "faster-whisper==1.2.0" \
+            "requests>=2.32,<3"
 
-      - name: Transcribe selected real Telegram owner reference
+      - name: Quality-rank all real Telegram owner references
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          /tmp/br-owner-stt-venv/bin/python scripts/owner_voice_reference_transcript.py
+          /tmp/br-owner-stt-venv/bin/python scripts/owner_voice_reference_qa.py
 
-      - name: Install isolated Qwen owner clone runtime
+      - name: Install isolated Chatterbox Brazilian Portuguese clone runtime
         run: |
           set -euo pipefail
-          python -m venv /tmp/br-owner-qwen-venv
-          /tmp/br-owner-qwen-venv/bin/python -m pip install --disable-pip-version-check -q \
-            "qwen-tts==0.1.1" \
-            "soundfile>=0.12,<1" \
-            "requests>=2.32,<3"
-          /tmp/br-owner-qwen-venv/bin/python - <<'PY'
-          import qwen_tts, torch, transformers
-          print("QWEN_TTS_IMPORT=PASS")
-          print("TRANSFORMERS_VERSION=" + transformers.__version__)
+          python -m venv /tmp/br-owner-chatterbox-venv
+          /tmp/br-owner-chatterbox-venv/bin/python -m pip install --disable-pip-version-check -q \
+            "numpy>=1.24,<2" \
+            "librosa==0.11.0" \
+            "s3tokenizer" \
+            "torch==2.6.0" \
+            "torchaudio==2.6.0" \
+            "transformers==5.2.0" \
+            "diffusers==0.29.0" \
+            "conformer==0.3.2" \
+            "safetensors==0.5.3" \
+            "spacy-pkuseg" \
+            "pykakasi==2.3.0" \
+            "pyloudnorm" \
+            "omegaconf" \
+            "huggingface_hub>=0.34,<1" \
+            "resemble-perth @ git+https://github.com/resemble-ai/Perth.git@ff1c8ac55a976971245cdd53c18d6131ca00d993"
+          /tmp/br-owner-chatterbox-venv/bin/python -m pip install --disable-pip-version-check -q --no-deps \
+            "git+https://github.com/resemble-ai/chatterbox.git@5de7a54aa4e5e2baadb0182dde554908b48b85c2"
+          /tmp/br-owner-chatterbox-venv/bin/python - <<'PY'
+          import torch
+          import chatterbox
+          print("CHATTERBOX_IMPORT=PASS")
           print("TORCH_VERSION=" + torch.__version__)
           print("CUDA_AVAILABLE=" + str(torch.cuda.is_available()).lower())
+          print("CHATTERBOX_CODE_REVISION=5de7a54aa4e5e2baadb0182dde554908b48b85c2")
+          print("CHATTERBOX_TARGET_MODEL=ResembleAI/Chatterbox-Multilingual-pt-br")
+          print("CHATTERBOX_TARGET_LOCALE=pt-BR")
           PY
 
-      - name: Clone owner voice from transcript-conditioned real Telegram reference and deliver audition
+      - name: Clone owner voice with dedicated Brazilian Portuguese model
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          /tmp/br-owner-qwen-venv/bin/python scripts/owner_voice_qwen_ephemeral_audition.py
+          /tmp/br-owner-chatterbox-venv/bin/python scripts/owner_voice_chatterbox_ptbr_audition.py
+
+      - name: Verify Portuguese output and deliver only passing auditions
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          /tmp/br-owner-stt-venv/bin/python scripts/owner_voice_ptbr_audition_review.py
 
       - name: Verify repository contains no owner biometric material
         if: ${{ always() }}
@@ -188,5 +219,5 @@ jobs:
             /tmp/br-owner-voice \
             /tmp/br-owner-huggingface \
             /tmp/br-owner-stt-venv \
-            /tmp/br-owner-qwen-venv
+            /tmp/br-owner-chatterbox-venv
           echo "OWNER_EPHEMERAL_PRIVATE_MATERIAL_CLEANED=PASS"
