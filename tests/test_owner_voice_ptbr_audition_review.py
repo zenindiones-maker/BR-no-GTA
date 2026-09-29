@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import pytest
+
 from scripts.owner_voice_ptbr_audition_review import (
     build_human_review_caption,
     build_human_review_markup,
     build_variant_qa,
     normalize_ptbr_text,
+    resolve_stt_model_path,
     word_error_rate,
 )
 
@@ -67,3 +70,31 @@ def test_human_review_delivery_is_clean_voice_note_ui():
         "ov1:reject_identity:B",
         "ov1:reject_ptbr:B",
     }
+
+
+def test_missing_manifest_stt_path_falls_back_to_qa_context(tmp_path):
+    model_dir = tmp_path / "stt-model"
+    model_dir.mkdir()
+    qa_context = tmp_path / "reference-qa-context.json"
+    qa_context.write_text(
+        '{"stt_model_path":"' + str(model_dir).replace("\\", "\\\\") + '"}',
+        encoding="utf-8",
+    )
+
+    resolved = resolve_stt_model_path(
+        manifest={},
+        qa_context_path=qa_context,
+    )
+    assert resolved == model_dir
+
+
+def test_empty_manifest_stt_path_never_resolves_to_current_directory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    qa_context = tmp_path / "reference-qa-context.json"
+    qa_context.write_text('{"stt_model_path":""}', encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="OWNER_PTBR_STT_LOCAL_MODEL_MISSING"):
+        resolve_stt_model_path(
+            manifest={"stt_model_path": ""},
+            qa_context_path=qa_context,
+        )
