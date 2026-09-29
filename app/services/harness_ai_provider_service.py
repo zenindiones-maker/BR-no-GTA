@@ -509,9 +509,17 @@ def select_harness_ai_provider(
             decision.selected_provider_executor_binding or ""
         ):
             raise PermissionError("OpenCode executor escaped governed profile resolver binding")
+        provider_kwargs: dict[str, Any] = {
+            "routing_decision": decision,
+            "authorization": resolved_authorization,
+        }
+        if request_timeout_seconds is not None:
+            timeout_value = float(request_timeout_seconds)
+            if timeout_value <= 0:
+                raise ValueError("request_timeout_seconds must be positive")
+            provider_kwargs["request_timeout_seconds"] = timeout_value
         return normalized_provider, create_opencode_provider_for_active_profile(
-            routing_decision=decision,
-            authorization=resolved_authorization,
+            **provider_kwargs
         )
 
     raise ValueError(
