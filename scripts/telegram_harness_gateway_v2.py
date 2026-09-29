@@ -234,7 +234,27 @@ def _generic_failure_presentation(
         or "opencode executor profile content_ref does not resolve to executable code" in lowered
         or "opencode semantic" in lowered and "403" in lowered
     )
-    if semantic_provider_boundary:
+    telegram_hermes_dispatch_failure = (
+        "telegram_hermes_dispatch_failed" in lowered
+    )
+    if telegram_hermes_dispatch_failure:
+        canonical_failure = {
+            "status": "FAILED",
+            "success": False,
+            "error": {
+                "code": "TELEGRAM_HERMES_DISPATCH_FAILED",
+                "message": (
+                    "Não consegui iniciar a execução cloud desta tarefa. "
+                    "Nenhuma execução parcial foi tratada como sucesso."
+                ),
+            },
+            "answer": (
+                "Não consegui iniciar a equipe no GitHub Actions agora. "
+                "O erro técnico ficou registrado para auditoria; tente novamente depois do reconcile."
+            ),
+            "technical_failure_preserved": True,
+        }
+    elif semantic_provider_boundary:
         canonical_failure = {
             "status": "FAILED",
             "success": False,
