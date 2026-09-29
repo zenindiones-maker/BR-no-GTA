@@ -283,3 +283,37 @@ def test_current_chat_fails_closed_when_fresh_official_research_fails(monkeypatc
     assert "não vou completar" in result["answer"].casefold()
     assert result["provider"] is None
     assert result["fallback_occurred"] is False
+
+
+def test_fresh_research_dispatch_envelope_preserves_context_over_stable_inputs():
+    from app.services.fresh_research_dispatch_contract import (
+        decode_fresh_research_query_b64,
+        encode_fresh_research_query_b64,
+    )
+
+    context = {
+        "id": 77,
+        "classification": "news",
+        "input_kind": "url",
+        "source_url": "https://example.com/gta-vi",
+        "memory_event_id": 88,
+    }
+    encoded = encode_fresh_research_query_b64(
+        "Confira esta fonte atualizada.",
+        source_context=context,
+    )
+    query, decoded = decode_fresh_research_query_b64(encoded)
+    assert query == "Confira esta fonte atualizada."
+    assert decoded == context
+
+
+def test_fresh_research_dispatch_contract_remains_backward_compatible_with_plain_query():
+    import base64
+    from app.services.fresh_research_dispatch_contract import (
+        decode_fresh_research_query_b64,
+    )
+
+    encoded = base64.b64encode("Qual a data oficial?".encode("utf-8")).decode("ascii")
+    query, context = decode_fresh_research_query_b64(encoded)
+    assert query == "Qual a data oficial?"
+    assert context == {}
