@@ -300,7 +300,7 @@ publish_runtime_status() {
       state="success"
     fi
   fi
-  description="pid=${pid:-none} instances=${#pids[@]} local=${local_head:0:12} runtime=${loaded:0:12} remote=${remote_head:0:12}"
+  description="pid=${pid:-none} instances=${#pids[@]} sha=${loaded:-missing} local=${local_head:0:12} runtime=${loaded:0:12} remote=${remote_head:0:12}"
   gh api     --method POST     -H "Accept: application/vnd.github+json"     "repos/${repo}/statuses/${remote_head}"     -f "state=${state}"     -f "context=telegram-a15-runtime"     -f "description=${description}"     >/dev/null 2>&1 || true
 }
 
@@ -553,6 +553,7 @@ status_gateway() {
     fi
   fi
   runtime_revision_report || status=2
+  publish_runtime_status
   return "${status}"
 }
 
