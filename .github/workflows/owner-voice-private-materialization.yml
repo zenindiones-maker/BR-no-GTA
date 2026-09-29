@@ -8,10 +8,6 @@ on:
     paths:
       - ".run/owner-voice-private-materialization.request.json"
 
-concurrency:
-  group: owner-voice-private-materialization-${{ github.ref }}
-  cancel-in-progress: true
-
 permissions:
   contents: read
 
@@ -58,7 +54,7 @@ jobs:
             tests/test_owner_voice_qwen_audition.py
           echo "OWNER_VOICE_PRIVATE_MATERIALIZATION_CONTRACT=PASS"
 
-  materialize-and-audition:
+  materialize:
     name: Materialize Telegram owner voice and synthesize real Qwen audition
     needs: contract
     runs-on: ubuntu-24.04
