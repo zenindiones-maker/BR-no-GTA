@@ -266,7 +266,7 @@ def execute_telegram_input_ingestion_capability(
     source_url = extract_source_url(text)
     if classification not in {
         "chat", "question", "idea", "theme", "news", "knowledge_note",
-        "reference_media", "channel_standard", "brand_asset",
+        "reference_media", "owner_voice_reference", "channel_standard", "brand_asset",
     }:
         raise ValueError("Telegram classification is outside the governed allowlist")
 
@@ -328,10 +328,9 @@ def execute_telegram_input_ingestion_capability(
         },
     )
     event_id = insert_memory_event(event)
-    if classification == "news":
-        # User-supplied news/URLs are evidence candidates, never semantic facts
-        # at ingress. Persist provenance + SourceCandidate only; claim/memory
-        # creation is exclusively owned by the verified source-intelligence path.
+    if classification in {"news", "owner_voice_reference"}:
+        # News remains evidence-only. Owner voice references stay private to the
+        # Voice Plane and are not promoted into semantic Knowledge Brain memory.
         claim_id = None
         memory_id = None
     else:
@@ -344,6 +343,8 @@ def execute_telegram_input_ingestion_capability(
     learning_status = "learned" if memory_id is not None else "captured"
     if classification == "reference_media" and attachment is not None:
         learning_status = "pending_cloud_analysis" if memory_id is not None else "captured"
+    elif classification == "owner_voice_reference" and attachment is not None:
+        learning_status = "private_voice_reference_registered"
 
     saved = upsert_telegram_user_input(
         telegram_user_id=user_id,
