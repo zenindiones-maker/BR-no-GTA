@@ -53,6 +53,28 @@ def pcm16_quality_metrics(path: str | Path) -> dict[str, Any]:
     duration = frame_count / float(sample_rate)
     speech_ratio = active / float(len(absolute))
     silence_ratio = 1.0 - speech_ratio
+
+    frame_samples = max(channels, int(sample_rate * channels * 0.02))
+    frame_rms: list[float] = []
+    for start in range(0, len(samples), frame_samples):
+        chunk = samples[start:start + frame_samples]
+        if not chunk:
+            continue
+        chunk_square_mean = (
+            sum(float(value) * float(value) for value in chunk) / len(chunk)
+        )
+        frame_rms.append(math.sqrt(chunk_square_mean))
+    ordered = sorted(value for value in frame_rms if value > 0.0)
+    if not ordered:
+        snr_db = 0.0
+    else:
+        noise = ordered[min(len(ordered) - 1, int((len(ordered) - 1) * 0.20))]
+        signal = ordered[min(len(ordered) - 1, int((len(ordered) - 1) * 0.80))]
+        if noise <= 0.0:
+            snr_db = 60.0
+        else:
+            snr_db = max(0.0, min(60.0, 20.0 * math.log10(max(signal, noise) / noise)))
+
     return {
         "duration_seconds": duration,
         "sample_rate_hz": sample_rate,
@@ -63,6 +85,7 @@ def pcm16_quality_metrics(path: str | Path) -> dict[str, Any]:
         "speech_ratio": max(0.0, min(1.0, speech_ratio)),
         "silence_ratio": max(0.0, min(1.0, silence_ratio)),
         "clipping_ratio": clipped / float(len(absolute)),
+        "snr_db": snr_db,
     }
 
 
