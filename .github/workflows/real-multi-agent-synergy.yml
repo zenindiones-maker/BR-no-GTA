@@ -19,6 +19,7 @@ on:
       - 'app/services/production_plan_service.py'
       - 'app/services/script_spec_service.py'
       - 'app/services/opencode_executor_profile_service.py'
+      - 'tests/test_opencode_profile_versioning_contract.py'
       - 'app/services/opencode_native_ai_provider.py'
       - 'app/services/harness_ai_provider_service.py'
       - 'app/services/global_capability_registry_base.py'
@@ -198,6 +199,11 @@ jobs:
           print(f"RECOMPUTED_STAGE_COUNT={d.get('RECOMPUTED_STAGE_COUNT')}")
           print(f"REUSED_TIME_SAVED_MS={d.get('REUSED_TIME_SAVED_MS')}")
           PY
+
+      - name: OpenCode immutable-profile contract
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/test_opencode_profile_versioning_contract.py
 
       - name: Rehydrate previously promoted OpenCode profile
         run: |
