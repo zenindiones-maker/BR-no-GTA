@@ -856,9 +856,20 @@ def _selection_requirement_for_mission(
         or normalized.get("authorized_action")
         or ""
     ).strip().upper()
-    if (
-        goal.mission_class == "SYSTEM_IMPROVEMENT"
-        and normalized["functional_role"] in {
+    if goal.mission_class == "SYSTEM_IMPROVEMENT":
+        role = normalized["functional_role"]
+        side_effect_class = str(
+            normalized.get("risk_side_effect_class")
+            or normalized.get("required_side_effect_class")
+            or "READ_ONLY"
+        ).strip().upper()
+        if role == "OBSERVE" and side_effect_class == "READ_ONLY":
+            # Observation is evidence gathering, not generic execution. Keep
+            # the system-improvement task inside the least-privilege RESEARCH
+            # action already allowed by mission policy.
+            normalized["action"] = "RESEARCH"
+            normalized["authorized_action"] = "RESEARCH"
+        elif role in {
             "EVIDENCE",
             "DIAGNOSIS",
             "ROOT_CAUSE",
@@ -866,10 +877,9 @@ def _selection_requirement_for_mission(
             "REVIEW",
             "APPLY",
             "VALIDATE",
-        }
-    ):
-        normalized["action"] = "DEVELOPMENT"
-        normalized["authorized_action"] = "DEVELOPMENT"
+        }:
+            normalized["action"] = "DEVELOPMENT"
+            normalized["authorized_action"] = "DEVELOPMENT"
     normalized["mission_constraints"] = {
         key: value
         for key, value in dict(goal.canonical_state or {}).items()
