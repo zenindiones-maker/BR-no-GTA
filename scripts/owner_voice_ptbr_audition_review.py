@@ -65,6 +65,35 @@ def build_variant_qa(
     }
 
 
+def resolve_stt_model_path(
+    *,
+    manifest: Mapping[str, Any],
+    qa_context_path,
+):
+    import json
+    from pathlib import Path
+
+    manifest_value = str(manifest.get("stt_model_path") or "").strip()
+    if manifest_value:
+        candidate = Path(manifest_value).expanduser()
+        if candidate.is_dir():
+            return candidate
+
+    context_path = Path(qa_context_path).expanduser()
+    try:
+        context = json.loads(context_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("OWNER_PTBR_STT_LOCAL_MODEL_MISSING") from exc
+
+    context_value = str(context.get("stt_model_path") or "").strip()
+    if context_value:
+        candidate = Path(context_value).expanduser()
+        if candidate.is_dir():
+            return candidate
+
+    raise RuntimeError("OWNER_PTBR_STT_LOCAL_MODEL_MISSING")
+
+
 def _transcription_confidence(segments) -> float:
     import math
 
@@ -241,16 +270,14 @@ def main() -> int:
 
     from faster_whisper import WhisperModel
 
-    stt_model_path = Path(str(manifest.get("stt_model_path") or "").strip())
-    if not stt_model_path.is_dir():
-        qa_context_path = Path(
-            os.environ.get("BR_OWNER_REFERENCE_QA_CONTEXT")
-            or runner_temp / "br-owner-voice" / "reference-qa-context.json"
-        )
-        qa_context = json.loads(qa_context_path.read_text(encoding="utf-8"))
-        stt_model_path = Path(str(qa_context.get("stt_model_path") or "").strip())
-    if not stt_model_path.is_dir():
-        raise RuntimeError("OWNER_PTBR_STT_LOCAL_MODEL_MISSING")
+    qa_context_path = Path(
+        os.environ.get("BR_OWNER_REFERENCE_QA_CONTEXT")
+        or runner_temp / "br-owner-voice" / "reference-qa-context.json"
+    )
+    stt_model_path = resolve_stt_model_path(
+        manifest=manifest,
+        qa_context_path=qa_context_path,
+    )
 
     stt = WhisperModel(
         str(stt_model_path),
