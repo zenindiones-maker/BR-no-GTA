@@ -267,4 +267,5 @@ def test_telegram_reasoning_context_includes_speech_and_voice_plane_capabilities
     assert "speech.transcription.whisperx" in capability_ids
     assert "voice.turn.telegram" in capability_ids
     assert "voice.synthesis.pt-BR" in capability_ids
+    assert "voice.clone.pt-BR" in capability_ids
     assert "narration.generate.pt-BR" in capability_ids
