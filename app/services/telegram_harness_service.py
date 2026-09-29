@@ -41,6 +41,7 @@ from app.services.telegram_source_intelligence_service import (
 
 
 TELEGRAM_ASSET_CAPABILITY_ID = "telegram.asset.register"
+TELEGRAM_INTERACTIVE_REASONING_TIMEOUT_SECONDS = 45.0
 TELEGRAM_ASSET_EXECUTOR_BINDING = (
     "app.services.telegram_harness_service.execute_telegram_asset_registration_capability"
 )
@@ -119,6 +120,7 @@ def _telegram_semantic_routing_request(
         required_capability_id="ai.reasoning.text",
         provider_required=True,
         provider_domain="ai",
+        prefer_low_latency=True,
         fallback_allowed=False,
         zero_cost_operation=True,
         learning_required=learning_required,
@@ -394,6 +396,7 @@ def _attempt_governed_reasoning_fallback(
             prompt=prompt,
             authorization=fallback_authorization,
             routing_decision=fallback_routing,
+            request_timeout_seconds=TELEGRAM_INTERACTIVE_REASONING_TIMEOUT_SECONDS,
         )
         if input_record is not None:
             fallback_learned = capture_telegram_reasoning_outcome(
@@ -644,6 +647,7 @@ def chat_under_harness(
             prompt=prompt,
             authorization=authorization,
             routing_decision=routing,
+            request_timeout_seconds=TELEGRAM_INTERACTIVE_REASONING_TIMEOUT_SECONDS,
         )
         if input_record is not None:
             learned_outcome = capture_telegram_reasoning_outcome(
