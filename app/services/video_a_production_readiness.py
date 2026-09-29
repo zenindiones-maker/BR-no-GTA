@@ -8,7 +8,7 @@ from statistics import median
 from typing import Any
 
 from app.services.human_review_quality_gate import (
-    VOICE_B_CONTENT_PLANNING_WPM,
+    CONTENT_PLANNING_WPM,
     validate_text_overlay_contract,
 )
 from app.services.narration_pipeline import (
@@ -449,7 +449,7 @@ def _sentence_count(text:str)->int:
 
 def chunking_report(candidate:dict[str,Any])->dict[str,Any]:
     sections=list(candidate.get("script_sections") or [])
-    wpm=VOICE_B_CONTENT_PLANNING_WPM
+    wpm=CONTENT_PLANNING_WPM
     current=deterministic_segment_script(sections,target_wpm=wpm)
     baseline=semantic_section_segments(sections)
     current_words=[float(x.word_count) for x in current]
