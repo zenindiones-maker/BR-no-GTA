@@ -489,7 +489,11 @@ start_gateway() {
     echo "TELEGRAM_GATEWAY=STARTED PID=${pid}"
     echo "TELEGRAM_GATEWAY_REVISION=${BR_TELEGRAM_GATEWAY_REVISION}"
     publish_runtime_status
-    handoff_owner_voice_references || true
+    if [[ "${BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START:-0}" == "1" ]]; then
+      echo "OWNER_VOICE_REFERENCE_HANDOFF=SUPPRESSED_FOR_RUNTIME_DEPLOY"
+    else
+      handoff_owner_voice_references || true
+    fi
     echo "TELEGRAM_LOG=${LOG_FILE}"
     echo "BR_OMNIROUTE_REF=${BR_OMNIROUTE_REF}"
     release_start_lock
