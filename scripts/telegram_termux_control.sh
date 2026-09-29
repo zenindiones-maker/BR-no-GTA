@@ -8,6 +8,7 @@ SECRET_FILE="${CONFIG_DIR}/telegram.env"
 PID_FILE="${STATE_DIR}/telegram-gateway.pid"
 LOG_FILE="${STATE_DIR}/telegram-gateway.log"
 REVISION_FILE="${STATE_DIR}/telegram-gateway.revision"
+READY_FILE="${STATE_DIR}/telegram-gateway.ready"
 MAINTENANCE_FILE="${STATE_DIR}/telegram-gateway.maintenance"
 START_LOCK_DIR="${STATE_DIR}/telegram-gateway.start.lock"
 SUPERVISOR_PID_FILE="${STATE_DIR}/telegram-supervisor.pid"
@@ -279,6 +280,42 @@ runtime_revision_matches() {
   [[ "${runtime_revision}" == "${expected}" ]]
 }
 
+runtime_ready_matches() {
+  [[ -s "${READY_FILE}" ]] || return 1
+  [[ -s "${PID_FILE}" ]] || return 1
+  local expected ready_pid ready_revision tracked_pid
+  expected="${BR_TELEGRAM_GATEWAY_REVISION:-}"
+  if [[ -z "${expected}" ]]; then
+    expected="$(git -C "${ROOT}" rev-parse HEAD 2>/dev/null || true)"
+  fi
+  [[ -n "${expected}" ]] || return 1
+
+  tracked_pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
+  read -r ready_pid ready_revision < "${READY_FILE}" || return 1
+  [[ "${tracked_pid}" =~ ^[0-9]+$ ]] || return 1
+  [[ "${ready_pid}" == "${tracked_pid}" ]] || return 1
+  [[ "${ready_revision}" == "${expected}" ]]
+}
+
+wait_for_runtime_ready() {
+  local pid="$1"
+  local wait_seconds="${TELEGRAM_GATEWAY_STARTUP_WAIT_SECONDS:-30}"
+  local deadline=$((SECONDS + wait_seconds))
+
+  while true; do
+    if ! kill -0 "${pid}" 2>/dev/null; then
+      return 2
+    fi
+    if runtime_revision_matches && runtime_ready_matches; then
+      return 0
+    fi
+    if (( SECONDS >= deadline )); then
+      return 1
+    fi
+    sleep 1
+  done
+}
+
 publish_runtime_status() {
   command -v gh >/dev/null 2>&1 || return 0
   gh auth status >/dev/null 2>&1 || return 0
@@ -295,7 +332,7 @@ publish_runtime_status() {
 
   [[ -n "${remote_head}" ]] || return 0
   state="error"
-  if [[ "${#pids[@]}" -eq 1 && -n "${local_head}" && -n "${loaded}" && "${local_head}" == "${remote_head}" && "${loaded}" == "${local_head}" ]]; then
+  if [[ "${#pids[@]}" -eq 1 && -n "${local_head}" && -n "${loaded}" && "${local_head}" == "${remote_head}" && "${loaded}" == "${local_head}" ]] && runtime_ready_matches; then
     if [[ "${pid}" =~ ^[0-9]+$ ]] && kill -0 "${pid}" 2>/dev/null; then
       state="success"
     fi
@@ -412,7 +449,7 @@ is_running() {
   [[ "${pid}" =~ ^[0-9]+$ ]] || return 1
   kill -0 "${pid}" 2>/dev/null || return 1
   pid_is_current_gateway "${pid}" || return 1
-  runtime_revision_matches
+  runtime_revision_matches && runtime_ready_matches
 }
 
 start_gateway() {
@@ -455,7 +492,7 @@ start_gateway() {
   if [[ ${#all_pids[@]} -gt 0 ]]; then
     echo "TELEGRAM_GATEWAY_SINGLETON=RECONCILING STALE_OR_DUPLICATE_COUNT=${#all_pids[@]}"
     terminate_gateway_pids "${all_pids[@]}"
-    rm -f "${PID_FILE}" "${REVISION_FILE}"
+    rm -f "${PID_FILE}" "${REVISION_FILE}" "${READY_FILE}"
   fi
 
   load_token
@@ -463,9 +500,10 @@ start_gateway() {
   export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
   export TELEGRAM_CONTROL_STATE_FILE="${STATE_DIR}/telegram-control.json"
   export TELEGRAM_GATEWAY_REVISION_FILE="${REVISION_FILE}"
+  export TELEGRAM_GATEWAY_READY_FILE="${READY_FILE}"
   export BR_TELEGRAM_GATEWAY_REVISION
   BR_TELEGRAM_GATEWAY_REVISION="$(current_repo_revision)"
-  rm -f "${REVISION_FILE}"
+  rm -f "${REVISION_FILE}" "${READY_FILE}"
 
   if command -v termux-wake-lock >/dev/null 2>&1; then
     termux-wake-lock >/dev/null 2>&1 || true
@@ -476,13 +514,18 @@ start_gateway() {
     >>"${LOG_FILE}" 2>&1 </dev/null &
   local pid=$!
   printf '%s\n' "${pid}" > "${PID_FILE}"
-  sleep 2
 
   if kill -0 "${pid}" 2>/dev/null && pid_is_current_gateway "${pid}"; then
-    if ! runtime_revision_matches; then
-      echo "TELEGRAM_GATEWAY=FAIL loaded revision proof mismatch" >&2
+    if ! wait_for_runtime_ready "${pid}"; then
+      echo "TELEGRAM_GATEWAY=FAIL runtime revision/readiness proof mismatch" >&2
+      echo "EXPECTED_REVISION=${BR_TELEGRAM_GATEWAY_REVISION:-UNKNOWN}" >&2
+      echo "TRACKED_PID=$(cat "${PID_FILE}" 2>/dev/null || echo MISSING)" >&2
+      echo "REVISION_PROOF=$(cat "${REVISION_FILE}" 2>/dev/null || echo MISSING)" >&2
+      echo "READY_PROOF=$(cat "${READY_FILE}" 2>/dev/null || echo MISSING)" >&2
+      echo "=== TELEGRAM STARTUP LOG ===" >&2
+      tail -n 120 "${LOG_FILE}" >&2 || true
       terminate_gateway_pids "${pid}"
-      rm -f "${PID_FILE}" "${REVISION_FILE}"
+      rm -f "${PID_FILE}" "${REVISION_FILE}" "${READY_FILE}"
       release_start_lock
       return 1
     fi
@@ -501,7 +544,7 @@ start_gateway() {
   else
     echo "TELEGRAM_GATEWAY=FAIL"
     tail -n 80 "${LOG_FILE}" || true
-    rm -f "${PID_FILE}" "${REVISION_FILE}"
+    rm -f "${PID_FILE}" "${REVISION_FILE}" "${READY_FILE}"
     release_start_lock
     return 1
   fi
