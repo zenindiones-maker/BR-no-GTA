@@ -258,8 +258,13 @@ def _generic_failure_presentation(
             },
             "answer": (
                 "Não consegui iniciar a equipe no GitHub Actions agora. "
-                "O erro técnico ficou registrado para auditoria; tente novamente depois do reconcile."
+                "O diagnóstico técnico foi preservado em /evidence; "
+                "nenhuma execução parcial foi tratada como sucesso."
             ),
+            "technical_error": {
+                "type": type(exc).__name__,
+                "message": raw_message,
+            },
             "technical_failure_preserved": True,
         }
     elif semantic_provider_boundary:
@@ -288,13 +293,22 @@ def _generic_failure_presentation(
             "status": "FAILED",
             "success": False,
             "error": {
-                "code": type(exc).__name__,
-                "message": raw_message,
+                "code": "INTERNAL_EXECUTION_FAILURE",
+                "message": (
+                    "A execução encontrou uma falha interna antes de concluir. "
+                    "O detalhe técnico foi preservado para auditoria."
+                ),
             },
             "answer": (
-                "Corrija a causa mostrada acima e repita a ação. "
-                "Use /evidence quando houver input persistido."
+                "Não consegui concluir esta ação. "
+                "O diagnóstico técnico foi preservado em /evidence; "
+                "nenhuma execução parcial foi tratada como sucesso."
             ),
+            "technical_error": {
+                "type": type(exc).__name__,
+                "message": raw_message,
+            },
+            "technical_failure_preserved": True,
         }
     return present_canonical_result_under_harness(
         canonical_failure,
