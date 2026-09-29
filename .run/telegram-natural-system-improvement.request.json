@@ -1,7 +1,7 @@
 {
-  "request": "telegram-full-integration-agent-audit-v2",
-  "natural_goal": "Analisa por que o sistema está demorando e corrige o que for inútil sem reduzir qualidade. O alvo desta missão é exclusivamente a integração Telegram do BR-no-GTA. Primeiro faça auditoria READ_ONLY baseada no HEAD atual e nas evidências reais; só crie candidate patch se existir um gap mensurável, writable target explícito e teste que falha antes da mudança. Verifique end-to-end: update_id/dedupe, persistência do offset, retry_after/429, message_thread_id e reply lineage, callback_query para aprovações humanas, allowed_updates, getWebhookInfo, webhook secret_token, user/chat/topic authorization, file_id versus file_unique_id, limites cloud de download/upload, opção do Telegram Bot API Server oficial em modo local para arquivos grandes, migração logOut sem perder updates, durable outbox/DLQ, observabilidade, Telegram como superfície humana subordinada ao DeepSeek Harness, Hermes/Agent Office/Addy subordinados, e Voice Plane BR_OWNER_V1 usando somente referências privadas do humano no Telegram em pt-BR. Preserve A15 sem bytes pesados. Não publique vídeo, não faça upload público, não enfraqueça gates, não exponha secrets ou biometria. Independent reviewer obrigatório para qualquer candidate mutante. Retorne evidência causal, baseline, candidate quando aplicável, testes e decisão do Harness.",
-  "source_head": "e1997f7a88d62294ab9f97e41953b1cee324acab",
+  "request": "full-agent-synergy-integration-v3",
+  "natural_goal": "Analisa e melhora profissionalmente a integração completa do BR-no-GTA. Corrige problemas reais de sinergia e routing entre DeepSeek Harness, Hermes, Agent Office, Addy skills, AgentTube, TUBEGENT comprovado, GTA6 Brain, pesquisa GTA6, audiovisual, Telegram, YouTube privado e analytics. Descobre dinamicamente no Global Capability Registry o menor swarm suficiente; executa em paralelo somente tarefas independentes; usa TDD para qualquer mudança, desenvolvimento bounded em worktree, review independente distinto do builder, benchmark baseline versus candidate e fail-closed. Detecta capabilities órfãs ou registradas mas não usadas, elimina bypasses e cadeia hardcoded, preserva DeepSeek Harness como única autoridade e Hermes como coordenador subordinado. Integra o pipeline editorial de YouTube com pesquisa atual verificável, estratégia, roteiro, thumbnail/discoverability, produção audiovisual, QA, upload exclusivamente PRIVATE e aprendizado por Analytics, sem PUBLIC ou UNLISTED. BR_OWNER_V1 permanece a única identidade de voz e somente referências privadas do humano no Telegram em pt-BR podem ser usadas. Não exponha secrets ou biometria, não reduza gates e não use provider/agent não comprovado como autoridade.",
+  "source_head": "db2ec3127ce16004e67b03dc594b3d5b151b11a8",
   "preserve": {
     "NEW_VOICE_SYNTHESIS": "NO",
     "FULL_RENDER": "NO",
@@ -10,11 +10,19 @@
   },
   "constraints": {
     "authority": "DEEPSEEK_HARNESS",
-    "telegram_authority": "HUMAN_SURFACE_ONLY",
-    "a15_media_bytes": "FORBIDDEN",
+    "hermes_role": "SUBORDINATE_COORDINATOR",
+    "agent_selection": "GLOBAL_CAPABILITY_REGISTRY_DYNAMIC",
+    "task_parallelism": "INDEPENDENT_ONLY",
+    "tdd_required": true,
+    "independent_review_required": true,
+    "builder_self_approval": false,
+    "generic_tubegent_unproven_must_not_execute": true,
+    "agenttube_use": "PROVEN_ADAPTERS_ONLY",
+    "youtube_private_review": "ALLOWED",
+    "youtube_public": "FORBIDDEN",
+    "youtube_unlisted": "FORBIDDEN",
     "owner_voice_identity": "BR_OWNER_V1",
     "owner_voice_locale": "pt-BR",
-    "candidate_requires_measured_gap": true,
-    "independent_review_required": true
+    "generic_voice_fallback": false
   }
 }
