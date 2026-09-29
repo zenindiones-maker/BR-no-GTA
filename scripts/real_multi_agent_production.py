@@ -101,12 +101,11 @@ BR_NO_GTA_MISSION_PRODUCT_CONTRACT_DIGEST = mission_product_contract_digest(
     BR_NO_GTA_MISSION_PRODUCT_CONTRACT
 )
 
-# Human-approved Voice B (+0%) calibration evidence:
-# run 35399181943 / artifact 10568953094 measured about 145-163 spoken
-# words/minute across six real PT-BR contexts. Long-form planning uses a
-# conservative effective 132 WPM plus 21 seconds of pre-TTS estimate tolerance.
-# Physical narration/render QA remains the authoritative duration check later.
-VOICE_B_EFFECTIVE_PLANNING_WPM = 132.0
+# Historical PT-BR timing calibration measured about 145-163 spoken words/minute.
+# The timing metric is retained only for duration estimation; its former voice identity
+# is retired and cannot be used for synthesis. Physical narration/render QA remains
+# the authoritative duration check.
+OWNER_VOICE_EFFECTIVE_PLANNING_WPM = 132.0
 PRE_TTS_DURATION_TOLERANCE_MINUTES = 0.35
 MAX_LONGFORM_EVIDENCE_EXPANSIONS = 1
 MAX_LONGFORM_EXPANSION_FACT_CHECKS = 6
@@ -2618,7 +2617,7 @@ def _novelty_gate(state: dict[str, Any]) -> dict[str, Any]:
     internal_dup = internal_sentence_duplication_percent(script_text)
     word_count = len(re.findall(r"[A-Za-zÀ-ÿ0-9]+", script_text))
     target_seconds = float(state.get("target_duration_seconds") or 0.0)
-    supported_minutes = word_count / VOICE_B_EFFECTIVE_PLANNING_WPM
+    supported_minutes = word_count / OWNER_VOICE_EFFECTIVE_PLANNING_WPM
     target_minutes = target_seconds / 60.0 if target_seconds else 0.0
     duration_supported = (
         target_minutes
@@ -2650,9 +2649,9 @@ def _novelty_gate(state: dict[str, Any]) -> dict[str, Any]:
         "script_word_count": word_count,
         "target_duration_seconds": target_seconds,
         "content_supported_duration_minutes": round(supported_minutes, 3),
-        "duration_estimator_wpm": VOICE_B_EFFECTIVE_PLANNING_WPM,
+        "duration_estimator_wpm": OWNER_VOICE_EFFECTIVE_PLANNING_WPM,
         "duration_estimator_provenance": (
-            "Voice B +0% casting run 35399181943 artifact 10568953094"
+            "historical PT-BR timing calibration only; synthesis identity retired"
         ),
         "duration_estimate_tolerance_minutes": (
             PRE_TTS_DURATION_TOLERANCE_MINUTES
