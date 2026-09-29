@@ -55,7 +55,8 @@ jobs:
           python -m pytest -q \
             tests/test_owner_voice_reference_handoff.py \
             tests/test_owner_voice_private_materialization.py \
-            tests/test_owner_voice_qwen_audition.py
+            tests/test_owner_voice_qwen_audition.py \
+            tests/test_owner_voice_reference_transcript.py
           echo "OWNER_VOICE_PRIVATE_MATERIALIZATION_CONTRACT=PASS"
 
   materialize:
