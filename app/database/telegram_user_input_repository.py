@@ -33,6 +33,11 @@ VALID_EXECUTION_OUTCOME_STATUSES = {
     "BLOCKED",
     "CANCELLED",
 }
+VALID_ATTACHMENT_MATERIALIZATION_STATUSES = {
+    "NOT_REQUESTED",
+    "MATERIALIZED",
+    "BLOCKED",
+}
 
 
 def _ensure_schema(connection) -> None:
@@ -98,6 +103,12 @@ def _ensure_schema(connection) -> None:
         "execution_episode_id": "TEXT",
         "execution_failure_memory_id": "TEXT",
         "execution_outcome_updated_at": "TEXT",
+        "obsidian_materialization_status": "TEXT NOT NULL DEFAULT 'NOT_REQUESTED'",
+        "obsidian_attachment_ref": "TEXT",
+        "obsidian_note_ref": "TEXT",
+        "content_sha256": "TEXT",
+        "normalized_markdown_ref": "TEXT",
+        "obsidian_materialized_at": "TEXT",
     }
     for column, declaration in additions.items():
         if column not in existing_columns:
@@ -357,6 +368,69 @@ def update_telegram_source_state(
         record = _row_to_record(row)
         if record is None:
             raise RuntimeError("Telegram input disappeared after source-state update")
+        return record
+    finally:
+        connection.close()
+
+
+def update_telegram_attachment_materialization(
+    input_id: int,
+    *,
+    status: str,
+    obsidian_attachment_ref: str | None = None,
+    obsidian_note_ref: str | None = None,
+    content_sha256: str | None = None,
+    normalized_markdown_ref: str | None = None,
+) -> dict[str, Any]:
+    if not isinstance(input_id, int) or isinstance(input_id, bool) or input_id <= 0:
+        raise ValueError("Telegram input id must be positive")
+    normalized_status = str(status or "").strip().upper()
+    if normalized_status not in VALID_ATTACHMENT_MATERIALIZATION_STATUSES:
+        raise ValueError("invalid Telegram attachment materialization status")
+    digest = str(content_sha256 or "").strip().lower() or None
+    if digest is not None and (
+        len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest)
+    ):
+        raise ValueError("content_sha256 must be a sha256 digest")
+
+    connection = get_connection()
+    try:
+        _ensure_schema(connection)
+        cursor = connection.execute(
+            """UPDATE telegram_user_inputs
+               SET obsidian_materialization_status = ?,
+                   obsidian_attachment_ref = COALESCE(?, obsidian_attachment_ref),
+                   obsidian_note_ref = COALESCE(?, obsidian_note_ref),
+                   content_sha256 = COALESCE(?, content_sha256),
+                   normalized_markdown_ref = COALESCE(?, normalized_markdown_ref),
+                   obsidian_materialized_at = CASE
+                       WHEN ? = 'MATERIALIZED' THEN CURRENT_TIMESTAMP
+                       ELSE obsidian_materialized_at
+                   END,
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?""",
+            (
+                normalized_status,
+                obsidian_attachment_ref,
+                obsidian_note_ref,
+                digest,
+                normalized_markdown_ref,
+                normalized_status,
+                input_id,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError("Telegram input not found")
+        connection.commit()
+        row = connection.execute(
+            "SELECT * FROM telegram_user_inputs WHERE id = ?",
+            (input_id,),
+        ).fetchone()
+        record = _row_to_record(row)
+        if record is None:
+            raise RuntimeError(
+                "Telegram input disappeared after attachment materialization update"
+            )
         return record
     finally:
         connection.close()
