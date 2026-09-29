@@ -12,9 +12,17 @@ from typing import Any
 from app.database.telegram_user_input_repository import (
     update_telegram_attachment_materialization,
 )
-from app.services.harness_authorization_service import validate_harness_authorization
+from app.services.harness_authorization_service import (
+    consume_harness_authorization,
+    issue_harness_authorization,
+    validate_harness_authorization,
+)
 from app.services.harness_capability_service import CapabilityEvidence
-from app.services.harness_routing_policy_service import HarnessRoutingDecision
+from app.services.harness_routing_policy_service import (
+    HarnessRoutingDecision,
+    HarnessRoutingRequest,
+    route_harness_request,
+)
 
 
 TELEGRAM_OBSIDIAN_ATTACHMENT_CAPABILITY_ID = "telegram.attachment.obsidian.materialize"
@@ -400,3 +408,81 @@ def execute_telegram_obsidian_attachment_capability(
         "authorization_id": auth.authorization_id,
         "canonical_execution_result": canonical.to_dict(),
     }
+
+
+def materialize_staged_telegram_attachment_under_harness(
+    *,
+    input_record: dict[str, Any],
+    source_path: str | Path,
+    vault_root: str | Path | None = None,
+) -> dict[str, Any]:
+    from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
+
+    routing = route_harness_request(
+        HarnessRoutingRequest(
+            intent=(
+                "materialize one remotely verified Telegram attachment into "
+                "the configured Obsidian vault"
+            ),
+            authorized_action="EXECUTION",
+            domain="telegram-ingress",
+            task_class="telegram-obsidian-attachment-bridge",
+            goal_id=(
+                f"telegram:{input_record.get('telegram_chat_id')}:"
+                f"{input_record.get('telegram_message_id')}"
+            ),
+            artifact_ref=f"telegram-input:{input_record.get('id')}",
+            required_capability_id=TELEGRAM_OBSIDIAN_ATTACHMENT_CAPABILITY_ID,
+            required_policy_tags=(
+                "telegram",
+                "obsidian",
+                "attachment",
+                "zero-cost",
+            ),
+            provider_required=False,
+            fallback_allowed=False,
+            learning_required=False,
+            zero_cost_operation=True,
+        )
+    )
+    authorization = issue_harness_authorization(
+        authorized_action="EXECUTION",
+        subject=f"capability:{TELEGRAM_OBSIDIAN_ATTACHMENT_CAPABILITY_ID}",
+        lineage={
+            "routing_id": routing.routing_id,
+            "capability_id": routing.selected_capability_id,
+            "selected_executor_binding": routing.selected_executor_binding,
+            "source_surface": "telegram",
+            "telegram_input_id": input_record.get("id"),
+            "telegram_message_id": input_record.get("telegram_message_id"),
+            "obsidian_role": "ARTIFACT_PROJECTION_NOT_CANONICAL_MEMORY",
+        },
+    )
+    record = GLOBAL_CAPABILITY_REGISTRY.get(
+        TELEGRAM_OBSIDIAN_ATTACHMENT_CAPABILITY_ID
+    )
+    if record is None:
+        consume_harness_authorization(authorization)
+        raise TelegramObsidianAttachmentBridgeError(
+            "TELEGRAM_OBSIDIAN_CAPABILITY_NOT_REGISTERED"
+        )
+    try:
+        return execute_telegram_obsidian_attachment_capability(
+            record,
+            input_record=input_record,
+            source_path=source_path,
+            vault_root=vault_root,
+            authorization=authorization,
+            routing_decision=routing,
+        )
+    finally:
+        consume_harness_authorization(authorization)
+
+
+__all__ = [
+    "TELEGRAM_OBSIDIAN_ATTACHMENT_CAPABILITY_ID",
+    "TELEGRAM_OBSIDIAN_ATTACHMENT_EXECUTOR_BINDING",
+    "TelegramObsidianAttachmentBridgeError",
+    "execute_telegram_obsidian_attachment_capability",
+    "materialize_staged_telegram_attachment_under_harness",
+]
