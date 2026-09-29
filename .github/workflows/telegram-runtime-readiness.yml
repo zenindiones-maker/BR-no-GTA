@@ -7,9 +7,14 @@ on:
     paths:
       - ".run/telegram-runtime-readiness.request.json"
       - ".github/workflows/telegram-runtime-readiness.yml"
+      - "scripts/telegram_termux_control.sh"
+      - "scripts/install_telegram_termux_persistence.sh"
+      - "scripts/verify_telegram_a15_runtime_attestation.py"
+      - "tests/test_telegram_a15_runtime_contract.py"
 
 permissions:
   contents: read
+  statuses: read
 
 jobs:
   readiness:
@@ -75,9 +80,20 @@ jobs:
               raise SystemExit("GROUP_BLOCKER=WEBHOOK_CONFLICTS_WITH_A15_LONG_POLLING")
           PY
 
+      - name: Require live exact A15 runtime attestation
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TELEGRAM_A15_RUNTIME_ATTESTATION_MAX_AGE_SECONDS: "180"
+        run: |
+          set -euo pipefail
+          python scripts/verify_telegram_a15_runtime_attestation.py
+          echo "A15_LIVE_RUNTIME_ATTESTATION=PASS"
+
       - name: Assert runtime reconciliation contract
         run: |
           set -euo pipefail
           bash -n scripts/telegram_termux_control.sh
+          bash -n scripts/install_telegram_termux_persistence.sh
+          python -m py_compile scripts/verify_telegram_a15_runtime_attestation.py
           python -m pytest -q tests/test_telegram_a15_runtime_contract.py
           echo "A15_RUNTIME_RECONCILE_CONTRACT=PASS"
