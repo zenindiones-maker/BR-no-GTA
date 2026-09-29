@@ -86,6 +86,54 @@ def _load_reference_index_from_environment() -> dict[str, Any]:
     )
 
 
+def load_verified_transcript_context(
+    path: str | Path,
+    *,
+    telegram_input_id: int,
+    audio_sha256: str,
+) -> str:
+    source = Path(path).expanduser()
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise OwnerVoicePrivateMaterializationError(
+            "OWNER_REFERENCE_TRANSCRIPT_MISSING"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise OwnerVoicePrivateMaterializationError(
+            "OWNER_REFERENCE_TRANSCRIPT_MISMATCH"
+        )
+
+    expected_sha = str(audio_sha256 or "").strip().lower()
+    language = str(payload.get("language") or "").strip().lower().replace("_", "-")
+    try:
+        same_input = int(payload.get("telegram_input_id") or 0) == int(telegram_input_id)
+        language_probability = float(payload.get("language_probability") or 0.0)
+        transcription_confidence = float(
+            payload.get("transcription_confidence") or 0.0
+        )
+    except (TypeError, ValueError) as exc:
+        raise OwnerVoicePrivateMaterializationError(
+            "OWNER_REFERENCE_TRANSCRIPT_MISMATCH"
+        ) from exc
+
+    transcript = " ".join(str(payload.get("transcript") or "").split()).strip()
+    if (
+        payload.get("schema") != "OwnerVoicePrivateTranscript/v1"
+        or payload.get("voice_identity_id") != VOICE_IDENTITY_ID
+        or not same_input
+        or str(payload.get("audio_sha256") or "").strip().lower() != expected_sha
+        or language not in {"pt", "pt-br"}
+        or language_probability < 0.70
+        or transcription_confidence < 0.65
+        or not transcript
+    ):
+        raise OwnerVoicePrivateMaterializationError(
+            "OWNER_REFERENCE_TRANSCRIPT_MISMATCH"
+        )
+    return transcript
+
+
 def select_latest_reference(
     hydrated: list[dict[str, Any]],
 ) -> dict[str, Any]:
