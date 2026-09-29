@@ -92,6 +92,10 @@ while true; do
     # Reconcile remains ff-only and fail-closed on a dirty/diverged worktree.
     bash "\${CONTROL}" reconcile >>"\${LOG_FILE}" 2>&1 || true
   fi
+
+  # Publish a fresh exact-revision heartbeat even when the runtime is healthy.
+  # Cloud readiness must never infer "live" from static tests or an old status.
+  bash "\${CONTROL}" heartbeat >>"\${LOG_FILE}" 2>&1 || true
   sleep 30
 done
 EOF
@@ -201,4 +205,4 @@ fi
 printf 'TERMUX_BOOT_APP=%s\n' "${boot_state}"
 printf 'TERMUX_BOOT_SCRIPT=%s\n' "${BOOT_SCRIPT}"
 printf 'TELEGRAM_SUPERVISOR_LOG=%s\n' "${SUPERVISOR_LOG}"
-printf 'NOTE=Supervisor checks runtime every 30s and remote branch drift every 60s, then reconciles ff-only before restarting stale Telegram runtime. Reboot autostart requires the Termux:Boot companion app to be installed and opened once.\n'
+printf 'NOTE=Supervisor checks runtime every 30s, publishes an exact-revision heartbeat every 30s, checks remote branch drift every 60s, and reconciles ff-only before restarting stale Telegram runtime. Reboot autostart requires the Termux:Boot companion app to be installed and opened once.\n'
