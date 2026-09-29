@@ -4,6 +4,7 @@ import pytest
 
 from scripts.owner_voice_qwen_ephemeral_audition import (
     QWEN_REQUIRED_SNAPSHOT_PATHS,
+    load_verified_transcript_context,
     select_latest_reference,
     validate_qwen_snapshot,
 )
@@ -53,3 +54,35 @@ def test_qwen_snapshot_requires_complete_embedded_speech_tokenizer(tmp_path):
         match="QWEN_SNAPSHOT_INCOMPLETE",
     ):
         validate_qwen_snapshot(tmp_path)
+
+
+def test_qwen_clone_requires_matching_private_transcript_context(tmp_path):
+    path = tmp_path / "transcript.json"
+    path.write_text(
+        """{
+          "schema": "OwnerVoicePrivateTranscript/v1",
+          "telegram_input_id": 50,
+          "audio_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "language": "pt",
+          "language_probability": 0.98,
+          "transcription_confidence": 0.91,
+          "transcript": "Teste real da voz do dono do canal."
+        }""",
+        encoding="utf-8",
+    )
+    text = load_verified_transcript_context(
+        path,
+        telegram_input_id=50,
+        audio_sha256="b" * 64,
+    )
+    assert text == "Teste real da voz do dono do canal."
+
+    with pytest.raises(
+        OwnerVoicePrivateMaterializationError,
+        match="OWNER_REFERENCE_TRANSCRIPT_MISMATCH",
+    ):
+        load_verified_transcript_context(
+            path,
+            telegram_input_id=49,
+            audio_sha256="b" * 64,
+        )
