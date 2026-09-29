@@ -1788,38 +1788,74 @@ def plan_mission_from_human_goal(
                         },
                     )
                 except RuntimeError as exc:
-                    if (
+                    reason = str(exc)
+                    system_improvement = (
                         goal.mission_class == "SYSTEM_IMPROVEMENT"
-                        and str(exc) == "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE"
+                    )
+                    provider_unavailable = (
+                        reason == "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE"
+                    )
+                    proposal_rejected = reason.startswith(
+                        "SEMANTIC_MISSION_PROPOSAL_REJECTED:"
+                    )
+                    if (
+                        system_improvement
+                        and (provider_unavailable or proposal_rejected)
                     ):
                         requirements = _deterministic_capability_requirements(goal)
                         if not requirements:
                             raise
                         proposal = None
-                        planning_mode = "DETERMINISTIC_PROVIDER_FAILURE_FALLBACK"
+                        if proposal_rejected:
+                            planning_mode = (
+                                "DETERMINISTIC_SEMANTIC_REJECTION_FALLBACK"
+                            )
+                            planning_evidence[
+                                "semantic_proposal_rejection_fallback"
+                            ] = True
+                            planning_evidence[
+                                "semantic_proposal_rejection_digest"
+                            ] = sha256(reason.encode("utf-8")).hexdigest()
+                            planning_evidence[
+                                "semantic_provider_failure_class"
+                            ] = "SEMANTIC_MISSION_PROPOSAL_REJECTED"
+                        else:
+                            planning_mode = (
+                                "DETERMINISTIC_PROVIDER_FAILURE_FALLBACK"
+                            )
+                            planning_evidence[
+                                "semantic_provider_failure_fallback"
+                            ] = True
+                            planning_evidence[
+                                "semantic_provider_failure_class"
+                            ] = (
+                                "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE"
+                            )
+                            planning_evidence[
+                                "semantic_provider_failure"
+                            ] = {
+                                "provider_id": None,
+                                "sanitized_reason": (
+                                    "semantic reasoning provider unavailable"
+                                ),
+                            }
                         planning_evidence["planning_mode"] = planning_mode
                         planning_evidence["semantic_provider_call_count"] = 1
-                        planning_evidence[
-                            "semantic_provider_failure_fallback"
-                        ] = True
-                        planning_evidence[
-                            "semantic_provider_failure_class"
-                        ] = "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE"
-                        planning_evidence[
-                            "semantic_provider_failure"
-                        ] = {
-                            "provider_id": None,
-                            "sanitized_reason": (
-                                "semantic reasoning provider unavailable"
-                            ),
-                        }
                         semantic_span.set(
                             output_size=0,
                             metadata={
                                 "planner_model_calls": 1,
                                 "replan_count": 0,
-                                "provider_failure_fallback": True,
+                                "provider_failure_fallback": (
+                                    provider_unavailable
+                                ),
+                                "semantic_rejection_fallback": (
+                                    proposal_rejected
+                                ),
                                 "provider_failure_class": (
+                                    "SEMANTIC_MISSION_PROPOSAL_REJECTED"
+                                    if proposal_rejected
+                                    else
                                     "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE"
                                 ),
                             },
