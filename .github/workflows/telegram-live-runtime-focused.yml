@@ -86,6 +86,7 @@ jobs:
             tests/test_telegram_gateway_conversation.py::test_semantic_provider_integrity_failure_is_human_safe \
             tests/test_telegram_gateway_conversation.py::test_generic_semantic_provider_boundary_leak_is_sanitized \
             tests/test_telegram_gateway_conversation.py::test_generic_unknown_failure_is_human_safe_but_preserves_technical_evidence \
+            tests/test_telegram_gateway_conversation.py::test_generic_safe_usage_error_remains_actionable_without_becoming_internal_failure \
             tests/test_harness_ai_provider_service.py::test_provider_constructor_integrity_error_is_captured_as_evidence \
             tests/test_telegram_gateway_conversation.py::test_governed_ingress_rejects_private_and_accepts_only_authorized_groups \
             tests/test_telegram_conversation_control.py::test_literal_natural_swarm_goal_keeps_system_improvement_mission_precedence \
