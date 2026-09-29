@@ -45,6 +45,9 @@ from app.services.telegram_learning_service import (
     ingest_telegram_input_under_harness,
     list_recent_governed_telegram_inputs,
 )
+from app.services.telegram_obsidian_attachment_bridge_service import (
+    materialize_staged_telegram_attachment_under_harness,
+)
 from app.database.telegram_user_input_repository import (
     get_telegram_user_input,
     list_recent_telegram_user_inputs,
@@ -105,6 +108,47 @@ def _verify_attachment(api: TelegramApi, attachment: dict[str, Any]) -> dict[str
     verified = dict(attachment)
     verified["remote_verified"] = True
     return verified
+
+
+def _materialize_attachment_to_obsidian(
+    *,
+    api: TelegramApi,
+    learned: dict[str, Any],
+    attachment: dict[str, Any],
+) -> dict[str, Any]:
+    item = learned.get("input") or {}
+    classification = str(item.get("classification") or "")
+    if classification in {"owner_voice_reference", "brand_asset"}:
+        raise PermissionError(
+            "attachment class is excluded from generic Obsidian materialization"
+        )
+    file_id = str(attachment.get("telegram_file_id") or "").strip()
+    if not file_id:
+        raise ValueError("Telegram attachment file_id is missing")
+    declared_size = item.get("file_size")
+    if isinstance(declared_size, int) and declared_size > 20 * 1024 * 1024:
+        raise ValueError("Telegram attachment exceeds bounded download limit")
+
+    staging_root = Path.home() / ".local/state/br-no-gta/telegram-obsidian-bridge"
+    staging_root.mkdir(parents=True, exist_ok=True)
+    try:
+        staging_root.chmod(0o700)
+    except OSError:
+        pass
+    staging = staging_root / f"input-{int(item['id'])}-{os.getpid()}.part"
+    staging.unlink(missing_ok=True)
+    try:
+        api.download_file(
+            file_id,
+            staging,
+            max_bytes=20 * 1024 * 1024,
+        )
+        return materialize_staged_telegram_attachment_under_harness(
+            input_record=item,
+            source_path=staging,
+        )
+    finally:
+        staging.unlink(missing_ok=True)
 
 
 def _ingest(
@@ -577,6 +621,8 @@ def _conversation_classification_override(text: str) -> str | None:
 
 def _attachment_presentation(
     result: dict[str, Any],
+    *,
+    bridge_result: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     item = result.get("input") or {}
     if item.get("classification") == "owner_voice_reference":
@@ -588,36 +634,77 @@ def _attachment_presentation(
     file_name = str(item.get("file_name") or "").strip()
     file_label = f' “{file_name}”' if file_name else ""
     learning_status = str(item.get("learning_status") or "").strip()
+    bridge = bridge_result if isinstance(bridge_result, dict) else {}
+    bridge_status = str(bridge.get("status") or "").strip().upper()
+    normalization_state = str(
+        bridge.get("normalization_state") or ""
+    ).strip().upper()
 
-    if learning_status in {
+    if bridge_status == "MATERIALIZED":
+        if normalization_state.startswith("LOCAL_TEXT_NORMALIZED"):
+            answer = (
+                f"Recebi o arquivo{file_label}, preservei o original por SHA-256 "
+                "no Obsidian e gerei uma versão Markdown local para consulta. "
+                "O conteúdo continua sendo evidência e não foi promovido "
+                "automaticamente para memória canônica. Use /evidence para a "
+                "auditoria técnica."
+            )
+            processing_state = "OBSIDIAN_MATERIALIZED_LOCAL_TEXT_READY"
+        else:
+            answer = (
+                f"Recebi o arquivo{file_label} e preservei o original por SHA-256 "
+                "no Obsidian. A análise semântica pesada continua pendente da rota "
+                "cloud apropriada; o A15 fez somente materialização e hashing "
+                "determinísticos. Use /evidence para a auditoria técnica."
+            )
+            processing_state = "OBSIDIAN_MATERIALIZED_AWAITING_CLOUD_ANALYSIS"
+        local_media_bytes = True
+    elif bridge_status == "BLOCKED":
+        answer = (
+            f"Recebi o arquivo{file_label} e registrei a referência com proveniência "
+            "verificada, mas a cópia para o Obsidian não foi materializada. "
+            "O diagnóstico técnico ficou em /evidence; nenhum sucesso de "
+            "armazenamento foi inventado."
+        )
+        processing_state = "OBSIDIAN_MATERIALIZATION_BLOCKED"
+        local_media_bytes = False
+    elif learning_status in {
         "pending_cloud_analysis",
         "captured_awaiting_cloud_materialization",
     }:
         answer = (
-            f"Recebi o arquivo{file_label} e registrei a referência com proveniência verificada. "
-            "O conteúdo ainda não foi analisado: neste momento não existe uma execução cloud "
-            "materializada para este anexo. Nenhum byte foi baixado no A15. "
-            "Use /evidence para ver a auditoria técnica."
+            f"Recebi o arquivo{file_label} e registrei a referência com proveniência "
+            "verificada. O conteúdo ainda não foi analisado: neste momento não existe "
+            "uma execução cloud materializada para este anexo. Nenhum byte foi baixado "
+            "no A15. Use /evidence para ver a auditoria técnica."
         )
         processing_state = "AWAITING_CLOUD_MATERIALIZATION"
+        local_media_bytes = False
     else:
         answer = (
-            f"Recebi o arquivo{file_label} e registrei a referência com proveniência verificada. "
-            "Nenhum byte foi baixado no A15. Use /evidence para ver a auditoria técnica."
+            f"Recebi o arquivo{file_label} e registrei a referência com proveniência "
+            "verificada. Nenhum byte foi baixado no A15. Use /evidence para ver a "
+            "auditoria técnica."
         )
         processing_state = "CAPTURED"
+        local_media_bytes = False
 
     canonical = {
-        "schema": "TelegramAttachmentReceipt/v1",
+        "schema": "TelegramAttachmentReceipt/v2",
         "status": "ATTACHMENT_CAPTURED",
         "answer": answer,
+        "telegram_input_id": item.get("id"),
         "classification": item.get("classification"),
-        "input_kind": item.get("input_kind"),
         "mime_type": item.get("mime_type"),
         "file_name": item.get("file_name"),
         "remote_verified": bool(item.get("remote_verified")),
         "processing_state": processing_state,
-        "local_media_bytes": False,
+        "local_media_bytes": local_media_bytes,
+        "obsidian_materialization_status": bridge_status or "NOT_REQUESTED",
+        "obsidian_note_ref": bridge.get("obsidian_note_ref"),
+        "content_sha256": bridge.get("content_sha256"),
+        "normalization_state": normalization_state or None,
+        "canonical_memory_promoted": False,
         "evidence_available": True,
     }
     return present_canonical_result_under_harness(
@@ -628,8 +715,15 @@ def _attachment_presentation(
     )
 
 
-def _attachment_reply(result: dict[str, Any]) -> str:
-    presentation = _attachment_presentation(result)
+def _attachment_reply(
+    result: dict[str, Any],
+    *,
+    bridge_result: dict[str, Any] | None = None,
+) -> str:
+    presentation = _attachment_presentation(
+        result,
+        bridge_result=bridge_result,
+    )
     if presentation is None:
         return ""
     return str(presentation.get("text") or "").strip()
@@ -1340,7 +1434,39 @@ def main() -> int:
                                 text=text,
                                 attachment=verified,
                             )
-                            presentation = _attachment_presentation(learned)
+                            bridge_result: dict[str, Any] | None = None
+                            if str(learned["input"].get("classification") or "") not in {
+                                "owner_voice_reference",
+                                "brand_asset",
+                            }:
+                                try:
+                                    bridge_result = _materialize_attachment_to_obsidian(
+                                        api=api,
+                                        learned=learned,
+                                        attachment=verified,
+                                    )
+                                    print(
+                                        "TELEGRAM_OBSIDIAN_BRIDGE=PASS "
+                                        f"INPUT_ID={bridge_result.get('telegram_input_id')} "
+                                        f"CONTENT_SHA256={bridge_result.get('content_sha256')} "
+                                        f"NORMALIZATION_STATE={bridge_result.get('normalization_state')}",
+                                        flush=True,
+                                    )
+                                except Exception as bridge_exc:
+                                    bridge_result = {
+                                        "status": "BLOCKED",
+                                        "failure_class": type(bridge_exc).__name__,
+                                    }
+                                    print(
+                                        "TELEGRAM_OBSIDIAN_BRIDGE=BLOCKED "
+                                        f"INPUT_ID={learned['input'].get('id')} "
+                                        f"FAILURE_CLASS={type(bridge_exc).__name__}",
+                                        flush=True,
+                                    )
+                            presentation = _attachment_presentation(
+                                learned,
+                                bridge_result=bridge_result,
+                            )
                             reply = (
                                 str(presentation.get("text") or "").strip()
                                 if presentation is not None
