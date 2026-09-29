@@ -88,17 +88,27 @@ def test_handoff_uses_opaque_base64_secret_and_keeps_file_ids_out_of_argv():
             decoded = parse_reference_envelope_b64(kwargs["input"])
             assert decoded["references"][0]["telegram_file_id"] == "sensitive-file-id"
             return subprocess.CompletedProcess(command, 0, "", "")
+        if command[:3] == ["gh", "workflow", "run"]:
+            assert command == [
+                "gh",
+                "workflow",
+                "run",
+                "owner-voice-private-materialization.yml",
+                "--repo",
+                "zenindiones-maker/BR-no-GTA",
+                "--ref",
+                "work/gate6f-analytics-learning",
+            ]
+            assert "input" not in kwargs
+            return subprocess.CompletedProcess(command, 0, "", "")
         assert command == [
             "gh",
-            "workflow",
-            "run",
-            "owner-voice-private-materialization.yml",
+            "secret",
+            "delete",
+            "BR_OWNER_TELEGRAM_REFERENCE_INDEX",
             "--repo",
             "zenindiones-maker/BR-no-GTA",
-            "--ref",
-            "work/gate6f-analytics-learning",
         ]
-        assert "input" not in kwargs
         return subprocess.CompletedProcess(command, 0, "", "")
 
     result = handoff_reference_index_to_actions(
@@ -114,6 +124,8 @@ def test_handoff_uses_opaque_base64_secret_and_keeps_file_ids_out_of_argv():
     assert "telegram_file_id" not in json.dumps(result)
     assert result["index_sha256"] == index["index_sha256"]
     assert result["secret_name"] == OWNER_VOICE_REFERENCE_ENVELOPE_SECRET
+    assert result["legacy_structured_secret_deleted"] is True
+    assert len(calls) == 3
 
 
 def test_handoff_dispatch_key_depends_on_reference_content_not_git_head():
