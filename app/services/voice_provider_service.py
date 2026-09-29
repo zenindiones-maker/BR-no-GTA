@@ -9,6 +9,15 @@ from typing import Any, Callable
 import urllib.request
 
 from app.services.voice_plane_contracts import VoiceSynthesisRequest
+from app.services.owner_voice_strict_policy import (
+    OWNER_ACCENT_LOCALE,
+    OWNER_IDENTITY_BINDING_MODE,
+    OWNER_REFERENCE_SOURCE,
+    owner_voice_runtime_policy,
+    validate_owner_identity_profile,
+    validate_owner_runtime_receipt,
+    validate_owner_synthesis_request,
+)
 
 
 @dataclass(frozen=True)
@@ -31,6 +40,9 @@ class VoiceProviderProfile:
     supports_reference_batch: bool = False
     supports_reference_fusion: bool = False
     supports_reusable_clone_prompt: bool = False
+    requires_owner_reference: bool = True
+    provider_preset_voice_allowed: bool = False
+    ptbr_accent_certified: bool = False
 
 
 QWEN_OWNER_INTERACTIVE = VoiceProviderProfile(
@@ -40,7 +52,7 @@ QWEN_OWNER_INTERACTIVE = VoiceProviderProfile(
     model_revision="5d83992436eae1d760afd27aff78a71d676296fc",
     license="Apache-2.0",
     supports_voice_clone=True,
-    supports_ptbr=True,
+    supports_ptbr=False,
     supports_streaming=True,
     supports_long_form=False,
     supports_pronunciation_control=True,
@@ -52,6 +64,7 @@ QWEN_OWNER_INTERACTIVE = VoiceProviderProfile(
     supports_reference_batch=True,
     supports_reference_fusion=False,
     supports_reusable_clone_prompt=True,
+    ptbr_accent_certified=False,
 )
 
 QWEN_OWNER_LONG_FORM = VoiceProviderProfile(
@@ -61,7 +74,7 @@ QWEN_OWNER_LONG_FORM = VoiceProviderProfile(
     model_revision="fd4b254",
     license="Apache-2.0",
     supports_voice_clone=True,
-    supports_ptbr=True,
+    supports_ptbr=False,
     supports_streaming=True,
     supports_long_form=True,
     supports_pronunciation_control=True,
@@ -73,6 +86,7 @@ QWEN_OWNER_LONG_FORM = VoiceProviderProfile(
     supports_reference_batch=True,
     supports_reference_fusion=False,
     supports_reusable_clone_prompt=True,
+    ptbr_accent_certified=False,
 )
 
 CHATTERBOX_PTBR_PROFILE = VoiceProviderProfile(
@@ -94,6 +108,7 @@ CHATTERBOX_PTBR_PROFILE = VoiceProviderProfile(
     supports_reference_batch=False,
     supports_reference_fusion=False,
     supports_reusable_clone_prompt=False,
+    ptbr_accent_certified=True,
 )
 
 
@@ -180,6 +195,10 @@ def _materialized_owner_binding(
         raise VoiceProviderUnavailable("OWNER_VOICE_NOT_MATERIALIZED")
     if str(profile.get("quality_status") or "") != "READY":
         raise VoiceProviderUnavailable("OWNER_VOICE_NOT_MATERIALIZED")
+    try:
+        validate_owner_identity_profile(profile)
+    except ValueError as exc:
+        raise VoiceProviderUnavailable(str(exc)) from exc
 
     source_refs = tuple(str(v) for v in (profile.get("source_audio_refs") or ()))
     source_hashes = tuple(str(v).lower() for v in (profile.get("source_audio_sha256s") or ()))
@@ -210,6 +229,11 @@ def _materialized_owner_binding(
         "voice_prompt_ref": prompt_ref,
         "voice_prompt_sha256": prompt_sha,
         "reference_set_sha256": reference_set_sha,
+        "reference_source": OWNER_REFERENCE_SOURCE,
+        "accent_locale": OWNER_ACCENT_LOCALE,
+        "identity_binding_mode": OWNER_IDENTITY_BINDING_MODE,
+        "preset_voice_used": "false",
+        "generic_voice_fallback": "false",
     }
 
 
@@ -222,8 +246,12 @@ def _eligible(
         profile.provider_id in set(certified_provider_ids)
         and request.usage in profile.usage_kinds
         and profile.supports_voice_clone
-        and request.language.lower().replace("_", "-") in {"pt-br", "pt"}
+        and request.voice_identity_id == OWNER_VOICE_IDENTITY_ID
+        and request.language.lower().replace("_", "-") == "pt-br"
         and profile.supports_ptbr
+        and profile.requires_owner_reference
+        and not profile.provider_preset_voice_allowed
+        and profile.ptbr_accent_certified
         and (request.usage != "LONG_FORM" or profile.supports_long_form)
     )
 
@@ -317,6 +345,11 @@ class PrivateVoiceRuntimeProvider:
                 "request_id": str(headers.get("X-BR-Voice-Request-Id") or ""),
                 "audio_sha256": str(headers.get("X-BR-Voice-Audio-SHA256") or ""),
                 "usage": str(headers.get("X-BR-Voice-Usage") or ""),
+                "reference_source": str(headers.get("X-BR-Voice-Reference-Source") or ""),
+                "accent_locale": str(headers.get("X-BR-Voice-Accent-Locale") or ""),
+                "identity_binding_mode": str(headers.get("X-BR-Voice-Identity-Binding-Mode") or ""),
+                "preset_voice_used": str(headers.get("X-BR-Voice-Preset-Voice-Used") or ""),
+                "generic_voice_fallback": str(headers.get("X-BR-Voice-Generic-Fallback") or ""),
             }
             return PrivateVoiceRuntimeResponse(audio=audio, receipt=receipt)
 
@@ -325,6 +358,11 @@ class PrivateVoiceRuntimeProvider:
         request: VoiceSynthesisRequest,
         output_path: str | Path,
     ) -> dict[str, Any]:
+        try:
+            validate_owner_synthesis_request(request)
+        except ValueError as exc:
+            raise VoiceProviderUnavailable(str(exc)) from exc
+
         token = str(os.environ.get(self.auth_token_env) or "").strip()
         if not token:
             raise VoiceProviderUnavailable("VOICE_RUNTIME_AUTH_UNAVAILABLE")
@@ -339,6 +377,12 @@ class PrivateVoiceRuntimeProvider:
             "model": self.model_id,
             "model_revision": self.model_revision,
             "voice_identity_binding": binding,
+            "owner_voice_policy": owner_voice_runtime_policy(),
+            "accent_locale": OWNER_ACCENT_LOCALE,
+            "reference_source": OWNER_REFERENCE_SOURCE,
+            "identity_binding_mode": OWNER_IDENTITY_BINDING_MODE,
+            "provider_preset_voice_allowed": False,
+            "generic_voice_fallback": False,
         }
         raw_response = self._transport(
             self.base_url + "/v1/speech",
@@ -370,6 +414,10 @@ class PrivateVoiceRuntimeProvider:
                 raise VoiceProviderUnavailable("OWNER_VOICE_RECEIPT_MISMATCH")
         if not str(receipt.get("request_id") or "").strip():
             raise VoiceProviderUnavailable("OWNER_VOICE_RECEIPT_MISMATCH")
+        try:
+            validate_owner_runtime_receipt(receipt)
+        except ValueError as exc:
+            raise VoiceProviderUnavailable(str(exc)) from exc
 
         audio_sha = hashlib.sha256(audio).hexdigest()
         runtime_audio_sha = str(receipt.get("audio_sha256") or "").strip().lower()
