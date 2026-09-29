@@ -48,7 +48,7 @@ def main() -> int:
     master=_single_master(a.narration_root)
     caption=(
         "BR no GTA — MASTER DE NARRAÇÃO PRONTO PARA REVISÃO\n"
-        "Voice B · arquivo sem recompressão\n"
+        "BR_OWNER_V1 · referência de voz do Telegram · PT-BR · arquivo sem recompressão\n"
         f"Duração: {quality.get('NARRATION_DURATION_SECONDS','pendente')}s\n\n"
         "Ouça e responda neste grupo com aprovação ou ajustes de voz."
     )
