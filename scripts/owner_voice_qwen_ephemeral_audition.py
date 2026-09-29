@@ -13,15 +13,77 @@ from app.services.owner_voice_private_materialization_service import (
     materialize_telegram_owner_references,
     parse_owner_reference_index_secret,
 )
+from app.services.owner_voice_telegram_handoff_service import (
+    parse_reference_envelope_b64,
+)
 
 VOICE_IDENTITY_ID = "BR_OWNER_V1"
 MODEL_ID = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
-MODEL_REVISION = "5d83992"
+MODEL_REVISION = "5d83992436eae1d760afd27aff78a71d676296fc"
+QWEN_REQUIRED_SNAPSHOT_PATHS = (
+    "config.json",
+    "generation_config.json",
+    "preprocessor_config.json",
+    "tokenizer_config.json",
+    "vocab.json",
+    "merges.txt",
+    "model.safetensors",
+    "speech_tokenizer/config.json",
+    "speech_tokenizer/preprocessor_config.json",
+    "speech_tokenizer/model.safetensors",
+)
+
 AUDITION_TEXT = (
     "Booooa meu povo, aqui é BR no GTA 6. "
     "Vice City, Leonida, Rockstar, Lucia e Jason. "
     "E BR não dorme em Vice City."
 )
+
+
+def validate_qwen_snapshot(model_dir: str | Path) -> Path:
+    root = Path(model_dir).expanduser().resolve()
+    missing = [
+        relative
+        for relative in QWEN_REQUIRED_SNAPSHOT_PATHS
+        if not (root / relative).is_file()
+    ]
+    if missing:
+        raise OwnerVoicePrivateMaterializationError("QWEN_SNAPSHOT_INCOMPLETE")
+    return root
+
+
+def prepare_qwen_snapshot(private_root: str | Path) -> Path:
+    from huggingface_hub import snapshot_download
+
+    root = Path(private_root).expanduser().resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    model_dir = root / "qwen3-tts-12hz-0.6b-base"
+    snapshot_download(
+        repo_id=MODEL_ID,
+        revision=MODEL_REVISION,
+        local_dir=str(model_dir),
+    )
+    return validate_qwen_snapshot(model_dir)
+
+
+def _load_reference_index_from_environment() -> dict[str, Any]:
+    envelope = str(
+        os.environ.get("BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64") or ""
+    ).strip()
+    if envelope:
+        decoded = parse_reference_envelope_b64(envelope)
+        return parse_owner_reference_index_secret(
+            json.dumps(decoded, ensure_ascii=False, sort_keys=True)
+        )
+
+    raw_index = str(
+        os.environ.get("BR_OWNER_TELEGRAM_REFERENCE_INDEX") or ""
+    ).strip()
+    if raw_index:
+        return parse_owner_reference_index_secret(raw_index)
+    raise OwnerVoicePrivateMaterializationError(
+        "OWNER_TELEGRAM_REFERENCE_INDEX_NOT_MATERIALIZED"
+    )
 
 
 def select_latest_reference(
@@ -100,22 +162,17 @@ def _send_private_audition(
 
 
 def main() -> int:
-    raw_index = str(os.environ.get("BR_OWNER_TELEGRAM_REFERENCE_INDEX") or "").strip()
     bot_token = str(os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
-    if not raw_index:
-        raise OwnerVoicePrivateMaterializationError(
-            "OWNER_TELEGRAM_REFERENCE_INDEX_NOT_MATERIALIZED"
-        )
     if not bot_token:
         raise OwnerVoicePrivateMaterializationError(
             "TELEGRAM_BOT_TOKEN_NOT_MATERIALIZED"
         )
 
-    index = parse_owner_reference_index_secret(raw_index)
+    index = _load_reference_index_from_environment()
     runner_temp = Path(os.environ.get("RUNNER_TEMP") or "/tmp").resolve()
     repo_root = Path.cwd().resolve()
     private_root = runner_temp / "br-owner-voice" / "references"
-    evidence_root = repo_root / "runtime" / "owner-voice-materialization"
+    evidence_root = runner_temp / "br-owner-voice" / "evidence"
 
     materialized = materialize_telegram_owner_references(
         index,
@@ -149,8 +206,7 @@ def main() -> int:
         "OWNER_REFERENCE_DOWNLOAD=PASS "
         f"COUNT={materialized['materialized_reference_count']}"
     )
-    print(f"OWNER_PRIMARY_REFERENCE_INPUT_ID={selected['telegram_input_id']}")
-    print(f"OWNER_PRIMARY_REFERENCE_SHA256={selected['sha256']}")
+    print("OWNER_PRIMARY_REFERENCE_SELECTED=PASS")
     print("OWNER_REFERENCE_MODE=X_VECTOR_ONLY_EPHEMERAL_FIRST_AUDITION")
     print("GENERIC_VOICE_FALLBACK=0")
     print("RAW_OWNER_AUDIO_PUBLIC_ARTIFACT=0")
@@ -159,13 +215,22 @@ def main() -> int:
     import torch
     from qwen_tts import Qwen3TTSModel
 
-    model = Qwen3TTSModel.from_pretrained(
-        MODEL_ID,
-        revision=MODEL_REVISION,
-        device_map="cpu",
-        dtype=torch.float32,
-        attn_implementation="eager",
+    model_dir = prepare_qwen_snapshot(
+        runner_temp / "br-owner-voice" / "models"
     )
+    print("QWEN_SNAPSHOT_MANIFEST=PASS")
+    try:
+        model = Qwen3TTSModel.from_pretrained(
+            str(model_dir),
+            local_files_only=True,
+            device_map="cpu",
+            dtype=torch.float32,
+            attn_implementation="eager",
+        )
+    except Exception as exc:
+        raise OwnerVoicePrivateMaterializationError(
+            "QWEN_MODEL_LOAD_FAILED"
+        ) from exc
     prompt = model.create_voice_clone_prompt(
         ref_audio=str(normalized),
         ref_text=None,
@@ -227,7 +292,7 @@ def main() -> int:
         evidence,
     )
     print("OWNER_QWEN_AUDITION=PASS")
-    print(f"OWNER_AUDITION_AUDIO_SHA256={audio_sha}")
+    print("OWNER_AUDITION_AUDIO_SHA256=REDACTED")
     print(f"TELEGRAM_DELIVERY_MESSAGE_ID={message_id}")
     print("HUMAN_REVIEW=PENDING")
     return 0
