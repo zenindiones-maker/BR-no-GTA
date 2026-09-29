@@ -304,6 +304,14 @@ publish_runtime_status() {
   gh api     --method POST     -H "Accept: application/vnd.github+json"     "repos/${repo}/statuses/${remote_head}"     -f "state=${state}"     -f "context=telegram-a15-runtime"     -f "description=${description}"     >/dev/null 2>&1 || true
 }
 
+heartbeat_gateway() {
+  local status=0
+  runtime_revision_report || status=$?
+  publish_runtime_status
+  return "${status}"
+}
+
+
 acquire_start_lock() {
   local owner=""
   for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -710,6 +718,9 @@ case "${1:-start}" in
   status)
     status_gateway
     ;;
+  heartbeat)
+    heartbeat_gateway
+    ;;
   logs)
     tail -n "${2:-80}" "${LOG_FILE}" 2>/dev/null || true
     ;;
@@ -726,7 +737,7 @@ case "${1:-start}" in
     presentation_proof "$@"
     ;;
   *)
-    echo "uso: $0 {start|stop|restart|reconcile|status|doctor|logs [N]|foreground|source-proof [INPUT_ID]|presentation-proof [TEST_INPUT_ID] [SOURCE_INPUT_ID]}" >&2
+    echo "uso: $0 {start|stop|restart|reconcile|status|heartbeat|doctor|logs [N]|foreground|source-proof [INPUT_ID]|presentation-proof [TEST_INPUT_ID] [SOURCE_INPUT_ID]}" >&2
     exit 2
     ;;
 esac
