@@ -832,3 +832,73 @@ def test_owner_voice_attachment_is_silent_until_voice_audition_delivery():
         }
     )
     assert reply == ""
+
+def test_reference_attachment_reply_is_human_facing_and_hides_internal_telemetry():
+    reply = gateway_v2._attachment_reply(
+        {
+            "authority": "deepseek_harness",
+            "routing_id": "route-internal-99",
+            "authorization_id": "auth-internal-99",
+            "input": {
+                "id": 99,
+                "classification": "reference_media",
+                "learning_status": "pending_cloud_analysis",
+                "memory_event_id": 254,
+                "claim_id": 24,
+                "memory_id": 24,
+                "remote_verified": True,
+                "file_name": "BR-no-GTA_Operational_Readiness_Standard_v1.html",
+                "mime_type": "text/html",
+                "input_kind": "document",
+            },
+        }
+    )
+
+    assert "Recebi" in reply
+    assert "BR-no-GTA_Operational_Readiness_Standard_v1.html" in reply
+    assert "ainda não foi analisado" in reply
+    assert "A15" in reply
+    assert "/evidence" in reply
+
+    forbidden = (
+        "TELEGRAM_INPUT=PASS",
+        "HARNESS_AUTHORITY=",
+        "CLASSIFICATION=",
+        "LEARNING_STATUS=",
+        "INPUT_ID=",
+        "MEMORY_EVENT_ID=",
+        "CLAIM_ID=",
+        "MEMORY_ID=",
+        "REMOTE_GETFILE_VERIFIED=",
+        "TELEGRAM_REFERENCE_IDENTITY=",
+        "CONTENT_ANALYSIS=",
+        "route-internal-99",
+        "auth-internal-99",
+    )
+    for marker in forbidden:
+        assert marker not in reply
+
+
+def test_reference_attachment_ack_does_not_claim_cloud_execution_without_dispatch():
+    reply = gateway_v2._attachment_reply(
+        {
+            "authority": "deepseek_harness",
+            "input": {
+                "id": 100,
+                "classification": "reference_media",
+                "learning_status": "pending_cloud_analysis",
+                "remote_verified": True,
+                "file_name": "reference.pdf",
+                "mime_type": "application/pdf",
+                "input_kind": "document",
+            },
+        }
+    )
+
+    lowered = reply.casefold()
+    assert "análise em andamento" not in lowered
+    assert "análise iniciada" not in lowered
+    assert "análise enfileirada" not in lowered
+    assert "já estou analisando" not in lowered
+    assert "ainda não foi analisado" in lowered
+
