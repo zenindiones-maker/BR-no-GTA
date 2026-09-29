@@ -1,7 +1,8 @@
 {
   "request": "telegram-conversational-control-validation",
-  "source_head": "7e2353bc1883ffc60c8595ac522d940ad9e8ab30",
-  "scope": "red-terminal-run-veto-stale-authorization",
+  "source_head": "7596da965492f9ad9103276fe3dc032e8bd7a014",
+  "scope": "green-terminal-run-veto-stale-authorization",
+  "red_run_id": 36598916708,
   "predecessor_green_run_id": 36598405290,
-  "trigger_reason": "RED proof: a terminal canonical GitHub run/result must veto a stale active Harness authorization so Telegram cannot report phantom active execution"
+  "trigger_reason": "GREEN proof: exact remote run reconciliation plus terminal-result precedence prevents phantom active execution while preserving distinct new pending missions"
 }
