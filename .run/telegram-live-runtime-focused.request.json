@@ -1,8 +1,8 @@
 {
-  "request": "semantic-outage-boundary-green-v2",
-  "source_head": "25b328fae81432b16d10e6a2810cbbe3f4258dc3",
-  "objective": "Verify typed semantic provider failures remain inside SYSTEM_IMPROVEMENT planning and terminal semantic outages never fall through to generic chat.",
-  "expected_first_state": "GREEN",
+  "request": "semantic-proposal-rejection-red-v1",
+  "source_head": "9d2c0bc60cd5ba67f36784938109f0b2a07b3e10",
+  "objective": "Reproduce live SYSTEM_IMPROVEMENT semantic proposal rejection and prove no planning rejection may fall into generic chat.",
+  "expected_first_state": "RED_ON_SEMANTIC_REJECTION_FALLTHROUGH",
   "authority": "DEEPSEEK_HARNESS",
   "publication": false
 }
