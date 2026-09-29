@@ -244,6 +244,17 @@ def _provider_failure_is_failover_eligible(exc: Exception) -> bool:
     status = getattr(exc, "status_code", None)
     if code in {"malformed_structured_output", "invalid_json", "invalid_completion"}:
         return False
+    # Authentication failure is permanent for the failed provider credentials,
+    # but not necessarily terminal for the human request. Exclude that provider
+    # and let the canonical Harness router decide whether another authorized
+    # route exists; never retry the same provider blindly.
+    if status == 401 or code in {
+        "authentication_failed",
+        "invalid_credentials",
+        "unauthorized",
+        "auth_required",
+    }:
+        return True
     if status in _RECOVERABLE_HTTP_STATUS:
         return True
     return bool(
@@ -263,6 +274,7 @@ class ResilientHarnessAIProvider:
         structured_output_schema: dict[str, Any] | None = None,
         request_timeout_seconds: float | None = None,
         max_attempts: int = 8,
+        initial_routing_decision: HarnessRoutingDecision | None = None,
     ) -> None:
         if max_attempts < 1 or max_attempts > 12:
             raise ValueError("max_attempts must be between 1 and 12")
@@ -279,14 +291,31 @@ class ResilientHarnessAIProvider:
         self.structured_output_schema = structured_output_schema
         self.request_timeout_seconds = request_timeout_seconds
         self.max_attempts = int(max_attempts)
+        self.initial_routing_decision = initial_routing_decision
+        if initial_routing_decision is not None:
+            if (
+                initial_routing_decision.authorized_action
+                != routing_request.authorized_action
+            ):
+                raise PermissionError("initial routing action mismatch")
+            if (
+                routing_request.required_capability_id
+                and initial_routing_decision.selected_capability_id
+                != routing_request.required_capability_id
+            ):
+                raise PermissionError("initial routing capability mismatch")
         self.last_attempts: list[dict[str, Any]] = []
         self.last_retry_count = 0
         self.last_routing: dict[str, Any] | None = None
+        self.last_routing_decision: HarnessRoutingDecision | None = None
         self.last_performance_metrics: dict[str, Any] = {}
 
     def _next_request(
         self,
         exhausted_pairs: tuple[tuple[str, str], ...],
+        unavailable_providers: tuple[str, ...] = (),
+        unavailable_models: tuple[str, ...] = (),
+        exhausted_free_quota_providers: tuple[str, ...] = (),
     ) -> HarnessRoutingRequest:
         return replace(
             self.routing_request,
@@ -294,7 +323,45 @@ class ResilientHarnessAIProvider:
                 *tuple(self.routing_request.exhausted_provider_model_pairs or ()),
                 *tuple(exhausted_pairs),
             ])),
+            unavailable_provider_ids=tuple(dict.fromkeys([
+                *tuple(self.routing_request.unavailable_provider_ids or ()),
+                *tuple(unavailable_providers),
+            ])),
+            unavailable_model_ids=tuple(dict.fromkeys([
+                *tuple(self.routing_request.unavailable_model_ids or ()),
+                *tuple(unavailable_models),
+            ])),
+            exhausted_free_quota_provider_ids=tuple(dict.fromkeys([
+                *tuple(self.routing_request.exhausted_free_quota_provider_ids or ()),
+                *tuple(exhausted_free_quota_providers),
+            ])),
+            provider_level_replan_authorized=True,
         )
+
+    @staticmethod
+    def _failure_domain(exc: AIProviderError) -> str:
+        code = str(getattr(exc, "code", "") or "").strip().casefold()
+        status = getattr(exc, "status_code", None)
+        if status == 401 or code in {
+            "authentication_failed",
+            "invalid_credentials",
+            "unauthorized",
+            "auth_required",
+        }:
+            return "PROVIDER_AUTH"
+        if code in {"model_unavailable", "provider_model_unavailable"}:
+            return "MODEL_LOCAL"
+        if code == "quota_exhausted":
+            return "FREE_QUOTA_EXHAUSTED"
+        if code == "rate_limited" or status == 429:
+            return "RATE_LIMIT"
+        if status in {500, 502, 503, 504} or code in {
+            "service_unavailable",
+            "transport_error",
+            "upstream_error",
+        }:
+            return "PROVIDER_WIDE"
+        return "MODEL_LOCAL"
 
     def generate(self, prompt: str):
         if not prompt or not prompt.strip():
@@ -304,22 +371,55 @@ class ResilientHarnessAIProvider:
                 retryable=False,
             )
         exhausted_pairs: list[tuple[str, str]] = []
+        unavailable_providers: list[str] = []
+        unavailable_models: list[str] = []
+        exhausted_free_quota_providers: list[str] = []
         attempts: list[dict[str, Any]] = []
         started = time.perf_counter()
         last_error: AIProviderError | None = None
 
         for attempt_index in range(self.max_attempts):
-            request = self._next_request(tuple(exhausted_pairs))
-            try:
-                decision = route_harness_request(request)
-            except Exception as exc:
-                raise AIProviderError(
-                    "No eligible zero-cost semantic provider route remains.",
-                    code="zero_cost_route_exhausted",
-                    retryable=False,
-                    failure_pattern="zero_cost_provider_chain_exhausted",
-                    sanitized_reason="zero_cost_route_exhausted",
-                ) from exc
+            request = self._next_request(
+                tuple(exhausted_pairs),
+                tuple(unavailable_providers),
+                tuple(unavailable_models),
+                tuple(exhausted_free_quota_providers),
+            )
+            if attempt_index == 0 and self.initial_routing_decision is not None:
+                decision = self.initial_routing_decision
+            else:
+                try:
+                    decision = route_harness_request(request)
+                except Exception as exc:
+                    if attempts and all(
+                        bool(item.get("recoverable")) for item in attempts
+                    ):
+                        self.last_attempts = attempts
+                        self.last_retry_count = max(0, len(attempts) - 1)
+                        self.last_performance_metrics = {
+                            "provider_chain_attempts": len(attempts),
+                            "provider_failover_count": max(0, len(attempts) - 1),
+                            "latency_seconds": max(
+                                0.0, time.perf_counter() - started
+                            ),
+                            "selected_provider": None,
+                            "selected_model": None,
+                            "route_exhausted_after_transient_failures": True,
+                        }
+                        raise AIProviderError(
+                            "Eligible semantic provider pool is temporarily exhausted.",
+                            code="provider_pool_exhausted",
+                            retryable=True,
+                            failure_pattern="provider_pool_exhausted",
+                            sanitized_reason="provider_pool_exhausted",
+                        ) from exc
+                    raise AIProviderError(
+                        "No eligible zero-cost semantic provider route remains.",
+                        code="zero_cost_route_exhausted",
+                        retryable=False,
+                        failure_pattern="zero_cost_provider_chain_exhausted",
+                        sanitized_reason="zero_cost_route_exhausted",
+                    ) from exc
 
             provider_id = normalize_provider_id(
                 str(decision.selected_provider or "")
@@ -333,6 +433,7 @@ class ResilientHarnessAIProvider:
                 )
 
             self.last_routing = decision.to_dict()
+            self.last_routing_decision = decision
             child = issue_harness_authorization(
                 authorized_action=self.parent_authorization.authorized_action,
                 subject=f"provider:{provider_id}",
@@ -355,6 +456,34 @@ class ResilientHarnessAIProvider:
                     "zero_cost_operation": True,
                 },
             )
+            attempt_context = {
+                "authorization_id": child.authorization_id,
+                "unavailable_provider_ids": tuple(
+                    request.unavailable_provider_ids or ()
+                ),
+                "unavailable_model_ids": tuple(
+                    request.unavailable_model_ids or ()
+                ),
+                "exhausted_provider_model_pairs": tuple(
+                    request.exhausted_provider_model_pairs or ()
+                ),
+                "exhausted_free_quota_provider_ids": tuple(
+                    request.exhausted_free_quota_provider_ids or ()
+                ),
+                "provider_health_snapshot_ref": request.provider_health_snapshot_ref,
+                "provider_health_snapshot_sha256": (
+                    request.provider_health_snapshot_sha256
+                ),
+                "health_eligible_provider_ids": tuple(
+                    request.health_eligible_provider_ids or ()
+                ),
+                "recovery_phase": request.recovery_phase,
+                "provider_level_replan_authorized": bool(
+                    request.provider_level_replan_authorized
+                ),
+                "from_provider": request.from_provider,
+                "allow_half_open_probe": bool(request.allow_half_open_probe),
+            }
             attempt_started = time.perf_counter()
             try:
                 _, provider = select_harness_ai_provider(
@@ -373,6 +502,7 @@ class ResilientHarnessAIProvider:
                         0.0, time.perf_counter() - attempt_started
                     ),
                     "routing_id": decision.routing_id,
+                    **attempt_context,
                 })
                 self.last_attempts = attempts
                 self.last_retry_count = max(0, len(attempts) - 1)
@@ -391,6 +521,7 @@ class ResilientHarnessAIProvider:
             except AIProviderError as exc:
                 last_error = exc
                 recoverable = _provider_failure_is_failover_eligible(exc)
+                failure_domain = self._failure_domain(exc)
                 attempts.append({
                     "attempt_index": attempt_index,
                     "provider": provider_id,
@@ -399,29 +530,40 @@ class ResilientHarnessAIProvider:
                     "failure_code": str(
                         getattr(exc, "code", "") or "provider_error"
                     ),
+                    "failure_domain": failure_domain,
                     "status_code": getattr(exc, "status_code", None),
                     "recoverable": recoverable,
                     "latency_seconds": max(
                         0.0, time.perf_counter() - attempt_started
                     ),
                     "routing_id": decision.routing_id,
+                    **attempt_context,
                 })
                 if not recoverable:
                     self.last_attempts = attempts
                     self.last_retry_count = max(0, len(attempts) - 1)
                     raise
-                exhausted_pairs.append((provider_id, model_id))
+                if failure_domain in {"PROVIDER_WIDE", "PROVIDER_AUTH"}:
+                    unavailable_providers.append(provider_id)
+                elif failure_domain == "MODEL_LOCAL":
+                    exhausted_pairs.append((provider_id, model_id))
+                elif failure_domain == "FREE_QUOTA_EXHAUSTED":
+                    exhausted_free_quota_providers.append(provider_id)
+                elif failure_domain == "RATE_LIMIT":
+                    unavailable_providers.append(provider_id)
+                else:
+                    exhausted_pairs.append((provider_id, model_id))
             finally:
                 consume_harness_authorization(child)
 
         self.last_attempts = attempts
         self.last_retry_count = max(0, len(attempts) - 1)
         raise AIProviderError(
-            "Zero-cost semantic provider failover budget exhausted.",
-            code="provider_failover_exhausted",
-            retryable=False,
-            failure_pattern="provider_failover_exhausted",
-            sanitized_reason="provider_failover_exhausted",
+            "Eligible semantic provider pool is temporarily exhausted.",
+            code="provider_pool_exhausted",
+            retryable=True,
+            failure_pattern="provider_pool_exhausted",
+            sanitized_reason="provider_pool_exhausted",
         ) from last_error
 
 
@@ -432,6 +574,7 @@ def create_resilient_harness_ai_provider(
     structured_output_schema: dict[str, Any] | None = None,
     request_timeout_seconds: float | None = None,
     max_attempts: int = 8,
+    initial_routing_decision: HarnessRoutingDecision | None = None,
 ) -> ResilientHarnessAIProvider:
     return ResilientHarnessAIProvider(
         parent_authorization=authorization,
@@ -439,6 +582,7 @@ def create_resilient_harness_ai_provider(
         structured_output_schema=structured_output_schema,
         request_timeout_seconds=request_timeout_seconds,
         max_attempts=max_attempts,
+        initial_routing_decision=initial_routing_decision,
     )
 
 

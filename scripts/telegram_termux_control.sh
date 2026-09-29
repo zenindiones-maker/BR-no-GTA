@@ -17,9 +17,57 @@ PYTHON_BIN="${ROOT}/.venv/bin/python"
 mkdir -p "${STATE_DIR}" "${CONFIG_DIR}"
 chmod 700 "${STATE_DIR}" "${CONFIG_DIR}" 2>/dev/null || true
 
-if [[ ! -x "${PYTHON_BIN}" ]]; then
-  PYTHON_BIN="$(command -v python)"
-fi
+ensure_gateway_python_runtime() {
+  if [[ -x "${PYTHON_BIN}" ]]; then
+    return 0
+  fi
+  local bootstrap_python
+  bootstrap_python="$(command -v python 2>/dev/null || true)"
+  if [[ -z "${bootstrap_python}" ]]; then
+    echo "TELEGRAM_RUNTIME_PYTHON=FAIL no bootstrap python available" >&2
+    return 1
+  fi
+  echo "TELEGRAM_RUNTIME_PYTHON=RECONCILING VENV=${ROOT}/.venv"
+  "${bootstrap_python}" -m venv "${ROOT}/.venv"
+  if [[ ! -x "${PYTHON_BIN}" ]]; then
+    echo "TELEGRAM_RUNTIME_PYTHON=FAIL venv python unavailable after reconciliation" >&2
+    return 1
+  fi
+}
+
+runtime_dependency_probe() {
+  "${PYTHON_BIN}" - <<'PY' >/dev/null
+from importlib.metadata import version
+import markitdown  # noqa: F401
+
+installed = version("markitdown")
+if installed != "0.1.7":
+    raise SystemExit(f"unexpected markitdown version: {installed}")
+PY
+  "${PYTHON_BIN}" -m pip check >/dev/null
+}
+
+runtime_dependency_readiness() {
+  ensure_gateway_python_runtime
+  if ! runtime_dependency_probe; then
+    echo "TELEGRAM_RUNTIME_DEPENDENCIES=RECONCILING"
+    "${PYTHON_BIN}" -m pip install -r "${ROOT}/requirements.txt"
+  fi
+
+  echo "GATEWAY_PYTHON=$(readlink -f "${PYTHON_BIN}" 2>/dev/null || printf '%s' "${PYTHON_BIN}")"
+  echo "PYTHON_BIN=$(readlink -f "${PYTHON_BIN}" 2>/dev/null || printf '%s' "${PYTHON_BIN}")"
+  "${PYTHON_BIN}" - <<'PY'
+from importlib.metadata import version
+import markitdown  # noqa: F401
+
+print("MARKITDOWN_IMPORT=PASS")
+print(f"MARKITDOWN_VERSION={version('markitdown')}")
+PY
+  "${PYTHON_BIN}" -m pip check
+  echo "PIP_CHECK=PASS"
+}
+
+ensure_gateway_python_runtime
 
 read_telegram_token_from_env_file() {
   local env_file="$1"
@@ -497,6 +545,7 @@ start_gateway() {
     rm -f "${PID_FILE}" "${REVISION_FILE}" "${READY_FILE}"
   fi
 
+  runtime_dependency_readiness
   load_token
   configure_cloud_routing
   export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
@@ -624,6 +673,7 @@ foreground_gateway() {
     echo "TELEGRAM_GATEWAY=FAIL foreground refused while another gateway instance exists: ${pids[*]}" >&2
     return 1
   fi
+  runtime_dependency_readiness
   load_token
   configure_cloud_routing
   export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"

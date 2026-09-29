@@ -206,34 +206,38 @@ def test_harness_connection_proof_contains_persisted_route_and_authority():
 def test_normal_chat_uses_harness_selected_provider_and_returns_provenance(monkeypatch):
     captured = {}
 
-    def fake_execute(
-        *,
-        prompt,
-        authorization,
-        routing_decision,
-        request_timeout_seconds=None,
-    ):
-        assert "MENSAGEM_USUARIO=Qual é o estado do canal?" in prompt
-        captured["provider"] = routing_decision.selected_provider
-        captured["model"] = routing_decision.selected_model
-        captured["fallback_allowed"] = routing_decision.fallback_allowed
-        captured["request_timeout_seconds"] = request_timeout_seconds
-        return SimpleNamespace(
-            provider=routing_decision.selected_provider,
-            status="EXECUTED",
-            active=True,
-            authority="deepseek_harness",
-            authorized_action="DECISION",
-            execution_id=authorization.execution_id,
-            result={
-                "text": "Estado consultado sob autoridade do Harness.",
-                "model": routing_decision.selected_model,
-            },
-        )
+    class FakeResilient:
+        def __init__(self, *, authorization, routing_request, request_timeout_seconds, initial_routing_decision=None):
+            lineage = dict(authorization.lineage or {})
+            self.provider = str(lineage["selected_provider"])
+            self.model = str(lineage["selected_model"])
+            self.last_attempts = [{
+                "attempt_index": 0,
+                "provider": self.provider,
+                "model": self.model,
+                "status": "EXECUTED",
+                "routing_id": lineage["routing_id"],
+            }]
+            self.last_retry_count = 0
+            self.last_performance_metrics = {"provider_chain_attempts": 1}
+            self.last_routing_decision = None
+            captured["provider"] = self.provider
+            captured["model"] = self.model
+            captured["fallback_allowed"] = routing_request.fallback_allowed
+            captured["allowed_providers"] = routing_request.allowed_providers
+            captured["request_timeout_seconds"] = request_timeout_seconds
+
+        def generate(self, prompt):
+            assert "MENSAGEM_USUARIO=Qual é o estado do canal?" in prompt
+            return SimpleNamespace(
+                text="Estado consultado sob autoridade do Harness.",
+                provider=self.provider,
+                model=self.model,
+            )
 
     monkeypatch.setattr(
-        "app.services.telegram_harness_service.execute_harness_ai_generation",
-        fake_execute,
+        "app.services.telegram_harness_service.create_resilient_harness_ai_provider",
+        lambda **kwargs: FakeResilient(**kwargs),
     )
 
     result = chat_under_harness("Qual é o estado do canal?")
@@ -246,12 +250,14 @@ def test_normal_chat_uses_harness_selected_provider_and_returns_provenance(monke
     assert result["model"] == captured["model"]
     assert captured["provider"]
     assert captured["model"]
-    assert captured["fallback_allowed"] is False
+    assert captured["fallback_allowed"] is True
+    assert captured["allowed_providers"] == ()
     assert captured["request_timeout_seconds"] == 45.0
     assert result["fallback_occurred"] is False
     assert result["zero_cost_operation"] is True
     assert result["routing_id"]
     assert result["authorization_id"]
+    assert result["RESILIENT_PROVIDER_EXECUTION"] == "PASS"
 
 
 def test_telegram_generic_semantic_routing_is_provider_agnostic_and_fail_closed():
@@ -264,11 +270,11 @@ def test_telegram_generic_semantic_routing_is_provider_agnostic_and_fail_closed(
     assert request.required_capability_id == "ai.reasoning.text"
     assert request.provider_required is True
     assert request.preferred_providers == ()
-    assert request.allowed_providers == ("nvidia_nim", "tuxevil")
-    assert "opencode" not in request.allowed_providers
+    assert request.allowed_providers == ()
+    assert request.fallback_allowed is True
     assert request.preferred_models == ()
     assert request.prefer_low_latency is True
-    assert request.fallback_allowed is False
+    assert request.fallback_allowed is True
     assert request.zero_cost_operation is True
 
 

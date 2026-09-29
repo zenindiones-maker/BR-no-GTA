@@ -18,7 +18,12 @@ on:
       - "app/services/opencode_executor_profile_service.py"
       - "app/services/opencode_native_ai_provider.py"
       - "app/services/telegram_obsidian_attachment_bridge_service.py"
+      - "app/services/telegram_durable_semantic_service.py"
+      - "app/services/telegram_egress_outbox_service.py"
+      - "app/services/telegram_semantic_request_service.py"
       - "app/database/telegram_user_input_repository.py"
+      - "app/database/telegram_semantic_request_repository.py"
+      - "app/database/telegram_egress_outbox_repository.py"
       - "scripts/telegram_obsidian_bridge.py"
       - "tests/test_telegram_obsidian_attachment_bridge.py"
       - "tests/test_telegram_transport_contract.py"
@@ -26,6 +31,7 @@ on:
       - "tests/test_telegram_conversation_control.py"
       - "tests/test_telegram_harness_integration.py"
       - "tests/test_telegram_fresh_research.py"
+      - "tests/test_telegram_durable_semantic_recovery_v2.py"
       - "tests/test_harness_ai_provider_service.py"
       - ".github/workflows/telegram-live-runtime-focused.yml"
 
@@ -74,6 +80,11 @@ jobs:
             app/services/telegram_conversation_service.py \
             app/services/telegram_harness_service.py \
             app/services/telegram_obsidian_attachment_bridge_service.py \
+            app/services/telegram_durable_semantic_service.py \
+            app/services/telegram_egress_outbox_service.py \
+            app/services/telegram_semantic_request_service.py \
+            app/database/telegram_semantic_request_repository.py \
+            app/database/telegram_egress_outbox_repository.py \
             app/services/harness_ai_provider_service.py \
             app/services/ai_provider_factory.py \
             app/services/opencode_executor_profile_service.py \
@@ -90,6 +101,7 @@ jobs:
             tests/test_telegram_transport_contract.py \
             tests/test_telegram_bot_api_transport.py \
             tests/test_telegram_obsidian_attachment_bridge.py \
+            tests/test_telegram_durable_semantic_recovery_v2.py \
             tests/test_telegram_harness_integration.py::test_normal_chat_uses_harness_selected_provider_and_returns_provenance \
             tests/test_telegram_harness_integration.py::test_telegram_generic_semantic_routing_is_provider_agnostic_and_fail_closed \
             tests/test_telegram_fresh_research.py::test_current_chat_injects_fresh_official_evidence_before_ai \

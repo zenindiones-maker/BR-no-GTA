@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import time
+import threading
 import unicodedata
 from typing import Any
 
@@ -23,6 +24,15 @@ from app.services.telegram_conversation_service import (
     classify_conversation_intent,
     handle_telegram_conversation,
     register_telegram_attachment_context,
+)
+from app.services.telegram_durable_semantic_service import (
+    drain_due_telegram_semantic_requests,
+    drain_pending_telegram_egress_operations,
+    mark_telegram_semantic_request_ready,
+    persist_telegram_semantic_request,
+)
+from app.database.telegram_semantic_request_repository import (
+    promote_context_bound_semantic_requests_for_restart,
 )
 from app.services.telegram_ingress_policy_service import (
     HUMAN_SURFACE,
@@ -52,6 +62,12 @@ from app.services.telegram_obsidian_attachment_bridge_service import (
 from app.database.telegram_user_input_repository import (
     get_telegram_user_input,
     list_recent_telegram_user_inputs,
+)
+from app.database.telegram_semantic_request_repository import (
+    get_latest_telegram_semantic_request_for_input,
+)
+from app.database.telegram_egress_outbox_repository import (
+    list_telegram_egress_operations_for_request,
 )
 from app.database.telegram_source_intelligence_repository import (
     get_editorial_signal_by_candidate,
@@ -499,6 +515,63 @@ def _source_evidence_payload(input_id: int | None = None) -> dict[str, Any]:
             agent_id=episode.get("agent_id"),
             limit=20,
         )
+    semantic_request = get_latest_telegram_semantic_request_for_input(
+        int(record["id"])
+    )
+    semantic_egress = (
+        list_telegram_egress_operations_for_request(
+            str(semantic_request["request_id"])
+        )
+        if semantic_request is not None else []
+    )
+    safe_semantic_request = None
+    if semantic_request is not None:
+        safe_semantic_request = {
+            key: semantic_request.get(key)
+            for key in (
+                "request_id", "telegram_input_id", "telegram_update_id",
+                "telegram_message_id", "telegram_chat_id", "human_turn_id",
+                "thread_id", "human_identity_id", "human_text_sha256",
+                "resolved_reference", "artifact_ref", "obsidian_note_ref",
+                "artifact_content_sha256", "normalization_state",
+                "context_digest", "status", "attempt_count",
+                "provider_attempts", "routing_ids",
+                "unavailable_provider_ids", "unavailable_model_ids",
+                "exhausted_provider_model_pairs",
+                "exhausted_free_quota_provider_ids", "failure_class",
+                "provider_health_snapshot_ref",
+                "provider_health_snapshot_sha256", "next_attempt_at",
+                "wake_condition", "lease_owner", "lease_expiry",
+                "canonical_result_ref", "outbox_ref", "wait_message_id",
+                "created_at", "updated_at",
+            )
+        }
+        context = dict(semantic_request.get("context_json") or {})
+        attachment = dict(context.get("active_attachment_context") or {})
+        safe_semantic_request["context_binding"] = {
+            "active_attachment_status": attachment.get("status"),
+            "active_attachment_ref": attachment.get("artifact_ref"),
+            "context_digest": semantic_request.get("context_digest"),
+            "content_in_context": bool(attachment.get("content")),
+        }
+    final_ops = [
+        item for item in semantic_egress
+        if str(item.get("kind") or "") in {
+            "FINAL_MESSAGE", "FINAL_EDIT", "FINAL_CHUNK"
+        }
+    ]
+    if any(str(item.get("state") or "") == "UNKNOWN_REMOTE_STATE" for item in semantic_egress):
+        effectively_once = "UNKNOWN_REMOTE_STATE"
+    elif final_ops and all(
+        str(item.get("state") or "") == "SENT"
+        and item.get("telegram_message_id") is not None
+        for item in final_ops
+    ):
+        effectively_once = "PASS"
+    elif semantic_egress:
+        effectively_once = "PENDING"
+    else:
+        effectively_once = "NOT_APPLICABLE"
     fact_check_results = [
         {
             "claim_id": item.get("claim_id"),
@@ -513,6 +586,25 @@ def _source_evidence_payload(input_id: int | None = None) -> dict[str, Any]:
     ]
     return {
         "INPUT_CAPTURED": "PASS" if record.get("memory_event_id") else "FAIL",
+        "DURABLE_SEMANTIC_REQUEST": "PASS" if semantic_request is not None else "NO",
+        "ATTACHMENT_CONTENT_BOUND": (
+            "PASS"
+            if semantic_request is not None
+            and semantic_request.get("artifact_content_sha256")
+            and bool(
+                ((semantic_request.get("context_json") or {}).get(
+                    "active_attachment_context"
+                ) or {}).get("content")
+            )
+            else "NO"
+        ),
+        "HUMAN_RETRY_REQUIRED": 0 if semantic_request is not None else None,
+        "TRANSACTIONAL_EGRESS_OUTBOX": (
+            "PASS" if semantic_egress else "NOT_APPLICABLE"
+        ),
+        "EFFECTIVELY_ONCE_EGRESS": effectively_once,
+        "TelegramSemanticReasoningRequest": safe_semantic_request,
+        "TelegramEgressOperations": semantic_egress,
         "SOURCE_LEARNED": (
             "PASS"
             if candidate is not None
@@ -1092,6 +1184,66 @@ def _write_runtime_ready_proof() -> dict[str, Any]:
     return proof
 
 
+def _is_durable_semantic_question(text: str) -> bool:
+    value = str(text or "").strip()
+    if not value or value.startswith("/"):
+        return False
+    return classify_conversation_intent(value) == "QUESTION"
+
+
+def _semantic_worker_loop(
+    *,
+    api: TelegramApi,
+    stop_event: threading.Event,
+    runtime_revision: str,
+) -> None:
+    recovered = promote_context_bound_semantic_requests_for_restart()
+    if recovered:
+        print(
+            "TELEGRAM_SEMANTIC_RESTART_RECOVERY=PASS "
+            f"RECOVERED_CONTEXT_BOUND={recovered}",
+            flush=True,
+        )
+    lease_owner = (
+        f"telegram-gateway:{os.getpid()}:"
+        f"{runtime_revision or 'UNSPECIFIED'}"
+    )
+    while not stop_event.is_set():
+        try:
+            egress_results = drain_pending_telegram_egress_operations(
+                api=api,
+                lease_owner=lease_owner + ":egress",
+                limit=32,
+            )
+            for result in egress_results:
+                print(
+                    "TELEGRAM_DURABLE_EGRESS_RECOVERY="
+                    f"{result.get('status')} "
+                    f"REQUEST_ID={result.get('request_id')}",
+                    flush=True,
+                )
+            results = drain_due_telegram_semantic_requests(
+                api=api,
+                lease_owner=lease_owner,
+                limit=8,
+            )
+            for result in results:
+                print(
+                    "TELEGRAM_DURABLE_SEMANTIC_EXECUTION="
+                    f"{result.get('status')} "
+                    f"REQUEST_ID={result.get('request_id')} "
+                    f"HUMAN_RETRY_REQUIRED=0",
+                    flush=True,
+                )
+        except Exception as exc:
+            print(
+                "TELEGRAM_DURABLE_SEMANTIC_WORKER=RETRY "
+                f"ERROR={type(exc).__name__}:{str(exc)[:800]}",
+                flush=True,
+            )
+        stop_event.wait(1.0)
+
+
 def main() -> int:
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
@@ -1179,6 +1331,19 @@ def main() -> int:
         quiet_seconds=8.0,
         retry_seconds=30.0,
     )
+    semantic_worker_stop = threading.Event()
+    semantic_worker = threading.Thread(
+        target=_semantic_worker_loop,
+        kwargs={
+            "api": api,
+            "stop_event": semantic_worker_stop,
+            "runtime_revision": str(revision_proof.get("revision") or ""),
+        },
+        name="telegram-durable-semantic-worker",
+        daemon=True,
+    )
+    semantic_worker.start()
+    print("TELEGRAM_DURABLE_SEMANTIC_WORKER=ONLINE", flush=True)
 
     while True:
         try:
@@ -1198,6 +1363,7 @@ def main() -> int:
                 if not isinstance(update, dict):
                     continue
                 update_id = int(update.get("update_id") or 0)
+                previous_offset = offset
                 if update_id >= offset:
                     offset = update_id + 1
                     state["offset"] = offset
@@ -1562,6 +1728,48 @@ def main() -> int:
                 if not text:
                     continue
 
+                if _is_durable_semantic_question(text):
+                    try:
+                        learned = _ingest(
+                            user_id=user_id,
+                            chat_id=chat_id,
+                            message=message,
+                            update_id=update_id,
+                            text=text,
+                            classification_override=_conversation_classification_override(text),
+                        )
+                        semantic_request = persist_telegram_semantic_request(
+                            telegram_user_id=user_id,
+                            telegram_chat_id=chat_id,
+                            telegram_chat_type=chat_type,
+                            telegram_message_id=int(message["message_id"]),
+                            telegram_update_id=update_id,
+                            input_record=learned["input"],
+                            human_text=text,
+                        )
+                        # Durable acceptance precedes semantic execution. Persisting
+                        # the offset allows the next getUpdates call to ACK ingress;
+                        # only then is the request made claimable by the worker.
+                        _save_state(state)
+                        semantic_request = mark_telegram_semantic_request_ready(
+                            str(semantic_request["request_id"])
+                        )
+                        print(
+                            "TELEGRAM_DURABLE_SEMANTIC_ACCEPTED=PASS "
+                            f"REQUEST_ID={semantic_request.get('request_id')} "
+                            f"STATUS={semantic_request.get('status')} "
+                            f"TURN_ID={semantic_request.get('human_turn_id')} "
+                            f"ARTIFACT_SHA256={semantic_request.get('artifact_content_sha256') or 'NONE'}",
+                            flush=True,
+                        )
+                    except Exception:
+                        # Never durably advance a failed semantic ingress. A restart
+                        # or next poll must be able to receive the update again.
+                        offset = previous_offset
+                        state["offset"] = previous_offset
+                        raise
+                    continue
+
                 api.typing(chat_id)
                 learned: dict[str, Any] | None = None
                 final_response_sent = False
@@ -1749,6 +1957,7 @@ def main() -> int:
                     flush=True,
                 )
         except KeyboardInterrupt:
+            semantic_worker_stop.set()
             print("TELEGRAM_GATEWAY=STOPPED", flush=True)
             return 0
         except TelegramApiError as exc:

@@ -277,3 +277,23 @@ def test_runtime_reconcile_suppresses_owner_voice_handoff_by_contract():
     )[0]
     assert "BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START=1" in section
     assert "start_gateway" in section
+
+
+def test_a15_runtime_ready_requires_exact_gateway_python_markitdown_and_pip_check():
+    text = (ROOT / "scripts/telegram_termux_control.sh").read_text(
+        encoding="utf-8"
+    )
+    assert 'PYTHON_BIN="${ROOT}/.venv/bin/python"' in text
+    assert "ensure_gateway_python_runtime()" in text
+    assert "runtime_dependency_readiness()" in text
+    assert "MARKITDOWN_IMPORT=PASS" in text
+    assert "MARKITDOWN_VERSION=" in text
+    assert "PIP_CHECK=PASS" in text
+    assert '"${PYTHON_BIN}" -m pip check' in text
+    assert '"${PYTHON_BIN}" -m pip install -r "${ROOT}/requirements.txt"' in text
+    start = text.split("start_gateway()", 1)[1].split("stop_gateway()", 1)[0]
+    assert "runtime_dependency_readiness" in start
+    foreground = text.split("foreground_gateway()", 1)[1].split(
+        "doctor_gateway()", 1
+    )[0]
+    assert "runtime_dependency_readiness" in foreground

@@ -223,33 +223,36 @@ def test_current_chat_injects_fresh_official_evidence_before_ai(monkeypatch):
         lambda message: fresh,
     )
 
-    def fake_ai(
-        *,
-        prompt,
-        authorization,
-        routing_decision,
-        request_timeout_seconds=None,
-    ):
-        assert "November 19, 2026" in prompt
-        assert "https://www.rockstargames.com/VI" in prompt
-        assert "EVIDENCIA_FRESCA oficial da Rockstar prevalece" in prompt
-        assert "model_prior_is_not_evidence" in prompt
-        return SimpleNamespace(
-            provider="opencode",
-            status="EXECUTED",
-            active=True,
-            authority="deepseek_harness",
-            authorized_action="DECISION",
-            execution_id=authorization.execution_id,
-            result={
-                "text": "A data oficial atual é 19 de novembro de 2026, conforme a Rockstar.",
-                "model": "oc/big-pickle",
-            },
-        )
+    class FakeResilient:
+        def __init__(self, *, authorization, routing_request, request_timeout_seconds, initial_routing_decision=None):
+            lineage = dict(authorization.lineage or {})
+            self.provider = str(lineage["selected_provider"])
+            self.model = str(lineage["selected_model"])
+            self.last_attempts = [{
+                "attempt_index": 0,
+                "provider": self.provider,
+                "model": self.model,
+                "status": "EXECUTED",
+                "routing_id": lineage["routing_id"],
+            }]
+            self.last_retry_count = 0
+            self.last_performance_metrics = {"provider_chain_attempts": 1}
+            self.last_routing_decision = None
+
+        def generate(self, prompt):
+            assert "November 19, 2026" in prompt
+            assert "https://www.rockstargames.com/VI" in prompt
+            assert "EVIDENCIA_FRESCA oficial da Rockstar prevalece" in prompt
+            assert "model_prior_is_not_evidence" in prompt
+            return SimpleNamespace(
+                text="A data oficial atual é 19 de novembro de 2026, conforme a Rockstar.",
+                provider=self.provider,
+                model=self.model,
+            )
 
     monkeypatch.setattr(
-        "app.services.telegram_harness_service.execute_harness_ai_generation",
-        fake_ai,
+        "app.services.telegram_harness_service.create_resilient_harness_ai_provider",
+        lambda **kwargs: FakeResilient(**kwargs),
     )
     progress: list[tuple[str, str]] = []
     result = chat_under_harness(
@@ -278,7 +281,7 @@ def test_current_chat_fails_closed_when_fresh_official_research_fails(monkeypatc
         fail_research,
     )
     monkeypatch.setattr(
-        "app.services.telegram_harness_service.execute_harness_ai_generation",
+        "app.services.telegram_harness_service.create_resilient_harness_ai_provider",
         must_not_call_ai,
     )
 

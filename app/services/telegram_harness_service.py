@@ -14,7 +14,12 @@ from app.services.gta6_knowledge_query_service import (
     query_gta6_knowledge_context,
 )
 from app.services.gta6_observation_service import build_gta6_observation
-from app.services.harness_ai_provider_service import execute_harness_ai_generation
+from app.services.ai_provider import AIProviderError
+from app.services.harness_ai_provider_service import (
+    HarnessAIProviderEvidence,
+    create_resilient_harness_ai_provider,
+    execute_harness_ai_generation,
+)
 from app.services.harness_authorization_service import (
     HARNESS_ISSUER,
     consume_harness_authorization,
@@ -120,9 +125,8 @@ def _telegram_semantic_routing_request(
         required_capability_id="ai.reasoning.text",
         provider_required=True,
         provider_domain="ai",
-        allowed_providers=("nvidia_nim", "tuxevil"),
         prefer_low_latency=True,
-        fallback_allowed=False,
+        fallback_allowed=True,
         zero_cost_operation=True,
         learning_required=learning_required,
     )
@@ -550,17 +554,16 @@ def chat_under_harness(
             f"telegram:{input_record.get('telegram_chat_id')}:"
             f"{input_record.get('telegram_message_id')}"
         )
-    routing = route_harness_request(
-        _telegram_semantic_routing_request(
-            intent=(
-                "answer one Telegram user message with governed grounded "
-                "GTA6 reasoning"
-            ),
-            task_class=TELEGRAM_REASONING_TASK_CLASS,
-            goal_id=telegram_goal,
-            learning_required=True,
-        )
+    routing_request = _telegram_semantic_routing_request(
+        intent=(
+            "answer one Telegram user message with governed grounded "
+            "GTA6 reasoning"
+        ),
+        task_class=TELEGRAM_REASONING_TASK_CLASS,
+        goal_id=telegram_goal,
+        learning_required=True,
     )
+    routing = route_harness_request(routing_request)
     if not routing.selected_provider:
         raise RuntimeError("Harness did not select an AI provider")
 
@@ -643,14 +646,144 @@ def chat_under_harness(
     )
     evidence = None
     learned_outcome = None
+    resilient_provider = create_resilient_harness_ai_provider(
+        authorization=authorization,
+        routing_request=routing_request,
+        request_timeout_seconds=TELEGRAM_INTERACTIVE_REASONING_TIMEOUT_SECONDS,
+        initial_routing_decision=routing,
+    )
+    started_at = datetime.now(timezone.utc)
+    started_perf = __import__("time").perf_counter()
     try:
-        evidence = execute_harness_ai_generation(
-            prompt=prompt,
-            authorization=authorization,
-            routing_decision=routing,
-            request_timeout_seconds=TELEGRAM_INTERACTIVE_REASONING_TIMEOUT_SECONDS,
-        )
-        if input_record is not None:
+        try:
+            response = resilient_provider.generate(prompt)
+        except AIProviderError as exc:
+            code = str(getattr(exc, "code", "") or "provider_failure")
+            if code == "provider_pool_exhausted" and bool(
+                getattr(exc, "retryable", False)
+            ):
+                return {
+                    "status": "WAITING_FOR_PROVIDER_AVAILABILITY",
+                    "answer": "",
+                    "authority": HARNESS_ISSUER,
+                    "authorized_action": "DECISION",
+                    "routing_id": routing.routing_id,
+                    "authorization_id": authorization.authorization_id,
+                    "execution_id": authorization.execution_id,
+                    "capability_id": "ai.reasoning.text",
+                    "provider": (
+                        (resilient_provider.last_attempts[-1] or {}).get("provider")
+                        if resilient_provider.last_attempts else routing.selected_provider
+                    ),
+                    "model": (
+                        (resilient_provider.last_attempts[-1] or {}).get("model")
+                        if resilient_provider.last_attempts else routing.selected_model
+                    ),
+                    "provider_attempts": list(resilient_provider.last_attempts),
+                    "failure_class": "PROVIDER_POOL_EXHAUSTED",
+                    "terminal": False,
+                    "human_intervention_required": False,
+                    "human_retry_required": False,
+                    "retry_count": resilient_provider.last_retry_count,
+                    "RESILIENT_PROVIDER_EXECUTION": "WAITING",
+                    "TRANSIENT_PROVIDER_FAILURE_NOT_TERMINAL": "PASS",
+                    "WAITING_FOR_PROVIDER_AVAILABILITY": "PASS",
+                    "USER_GOAL_COMPLETED": "NO",
+                }
+            finished_at = datetime.now(timezone.utc)
+            final_routing = (
+                getattr(resilient_provider, "last_routing_decision", None)
+                or routing
+            )
+            routing = final_routing
+            attempts = list(getattr(resilient_provider, "last_attempts", []) or [])
+            last_attempt = attempts[-1] if attempts else {}
+            evidence = HarnessAIProviderEvidence(
+                provider=str(last_attempt.get("provider") or routing.selected_provider or ""),
+                model=str(last_attempt.get("model") or routing.selected_model or "") or None,
+                status="FAILED",
+                active=False,
+                authority=HARNESS_ISSUER,
+                authorized_action="DECISION",
+                harness_decision_id=authorization.harness_decision_id,
+                execution_id=authorization.execution_id,
+                authorization_id=authorization.authorization_id,
+                result=None,
+                error={
+                    "code": code,
+                    "status_code": getattr(exc, "status_code", None),
+                    "retryable": bool(getattr(exc, "retryable", False)),
+                    "message": str(exc)[:1200],
+                    "failure_pattern": getattr(exc, "failure_pattern", None),
+                },
+                routing={
+                    "final": routing.to_dict(),
+                    "attempts": attempts,
+                },
+                executor_binding=routing.selected_provider_executor_binding,
+                started_at=started_at.isoformat(),
+                finished_at=finished_at.isoformat(),
+                latency_seconds=max(
+                    0.0, __import__("time").perf_counter() - started_perf
+                ),
+                retry_count=int(
+                    getattr(resilient_provider, "last_retry_count", 0) or 0
+                ),
+                performance=dict(
+                    getattr(
+                        resilient_provider,
+                        "last_performance_metrics",
+                        {},
+                    )
+                    or {}
+                ),
+            )
+        else:
+            finished_at = datetime.now(timezone.utc)
+            final_routing = (
+                getattr(resilient_provider, "last_routing_decision", None)
+                or routing
+            )
+            routing = final_routing
+            attempts = list(getattr(resilient_provider, "last_attempts", []) or [])
+            evidence = HarnessAIProviderEvidence(
+                provider=str(getattr(response, "provider", None) or routing.selected_provider or ""),
+                model=str(getattr(response, "model", None) or routing.selected_model or "") or None,
+                status="EXECUTED",
+                active=True,
+                authority=HARNESS_ISSUER,
+                authorized_action="DECISION",
+                harness_decision_id=authorization.harness_decision_id,
+                execution_id=authorization.execution_id,
+                authorization_id=authorization.authorization_id,
+                result={
+                    "text": str(getattr(response, "text", "") or ""),
+                    "model": getattr(response, "model", None),
+                },
+                error=None,
+                routing={
+                    "final": routing.to_dict(),
+                    "attempts": attempts,
+                },
+                executor_binding=routing.selected_provider_executor_binding,
+                started_at=started_at.isoformat(),
+                finished_at=finished_at.isoformat(),
+                latency_seconds=max(
+                    0.0, __import__("time").perf_counter() - started_perf
+                ),
+                retry_count=int(
+                    getattr(resilient_provider, "last_retry_count", 0) or 0
+                ),
+                performance=dict(
+                    getattr(
+                        resilient_provider,
+                        "last_performance_metrics",
+                        {},
+                    )
+                    or {}
+                ),
+            )
+        if input_record is not None and evidence is not None:
             learned_outcome = capture_telegram_reasoning_outcome(
                 evidence=evidence,
                 routing_decision=routing,
@@ -664,26 +797,20 @@ def chat_under_harness(
 
     result = evidence.result if isinstance(evidence.result, dict) else {}
     answer = str(result.get("text") or "").strip()
-    fallback_audit = None
-    primary_routing_id = routing.routing_id
-    if not evidence.active or evidence.status != "EXECUTED" or not answer:
-        fallback_evidence, fallback_routing, fallback_learned, fallback_audit = (
-            _attempt_governed_reasoning_fallback(
-                prompt=prompt,
-                primary_routing=routing,
-                primary_evidence=evidence,
-                telegram_goal=telegram_goal,
-                telegram_lineage=telegram_lineage,
-                progress_callback=progress_callback,
-                input_record=input_record,
-            )
-        )
-        if fallback_evidence is not None and fallback_routing is not None:
-            evidence = fallback_evidence
-            routing = fallback_routing
-            learned_outcome = fallback_learned
-            result = evidence.result if isinstance(evidence.result, dict) else {}
-            answer = str(result.get("text") or "").strip()
+    fallback_audit = {
+        "FALLBACK_OCCURRED": (
+            "YES" if int(getattr(evidence, "retry_count", 0) or 0) > 0 else "NO"
+        ),
+        "FALLBACK_REASON": "canonical_resilient_harness_provider_chain",
+        "ATTEMPTS": list(
+            (evidence.routing or {}).get("attempts") or []
+        ),
+    }
+    primary_routing_id = (
+        (fallback_audit["ATTEMPTS"][0] or {}).get("routing_id")
+        if fallback_audit["ATTEMPTS"]
+        else routing.routing_id
+    )
 
     if not evidence.active or evidence.status != "EXECUTED" or not answer:
         provider_error = (
@@ -768,6 +895,8 @@ def chat_under_harness(
             if learned_outcome is not None else "NOT_APPLICABLE"
         ),
         "USER_GOAL_COMPLETED": "YES",
+        "RESILIENT_PROVIDER_EXECUTION": "PASS",
+        "provider_attempts": list((evidence.routing or {}).get("attempts") or []),
         "episode_id": (
             learned_outcome["episode"]["episode_id"]
             if learned_outcome is not None else None
