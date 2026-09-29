@@ -477,6 +477,27 @@ def test_final_human_response_send_is_logged_only_after_api_success(capsys):
     assert f"REPLY_SHA256={digest}" in out
 
 
+def test_empty_human_reply_is_silent(capsys):
+    class NoSendApi:
+        def __init__(self):
+            self.calls = []
+
+        def send(self, chat_id, text):
+            self.calls.append((chat_id, text))
+            return 999
+
+    api = NoSendApi()
+    result = gateway_v2._send_final_human_response(
+        api=api,
+        chat_id=123,
+        reply="",
+        runtime_revision="deadbeef",
+    )
+    assert result is None
+    assert api.calls == []
+    assert "FINAL_HUMAN_RESPONSE_SENT=SKIPPED_SILENT" in capsys.readouterr().out
+
+
 def test_final_human_response_send_failure_is_explicit(capsys):
     class FailingApi:
         def send(self, _chat_id, _text):
