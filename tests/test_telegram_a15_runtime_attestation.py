@@ -72,3 +72,22 @@ def test_invalid_runtime_attestation_fails_closed(payload, error):
             now=NOW,
             max_age_seconds=180,
         )
+
+def test_matching_prefixes_do_not_substitute_for_exact_full_sha():
+    wrong_sha = "a" * 12 + "b" * 28
+    payload = _payload(
+        description=(
+            f"pid=123 instances=1 sha={wrong_sha} "
+            f"local={SHA[:12]} runtime={SHA[:12]} remote={SHA[:12]}"
+        )
+    )
+    with pytest.raises(
+        RuntimeError,
+        match="A15_RUNTIME_ATTESTATION_IDENTITY_MISMATCH:sha",
+    ):
+        validate_attestation(
+            payload,
+            expected_sha=SHA,
+            now=NOW,
+            max_age_seconds=180,
+        )
