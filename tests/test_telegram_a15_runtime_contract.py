@@ -160,7 +160,7 @@ def test_termux_supervisor_publishes_fresh_runtime_heartbeat():
         encoding="utf-8"
     )
     supervisor = installer.split("while true; do", 1)[1]
-    assert 'bash "${CONTROL}" heartbeat' in supervisor
+    assert 'bash "\\${CONTROL}" heartbeat' in supervisor
     assert "heartbeat_gateway()" in control
     assert "publish_runtime_status" in control
     assert "heartbeat)" in control
@@ -171,7 +171,7 @@ def test_a15_attestation_validator_binds_exact_sha_singleton_and_freshness():
         ROOT / "scripts" / "verify_telegram_a15_runtime_attestation.py"
     ).read_text(encoding="utf-8")
     assert "telegram-a15-runtime" in validator
-    assert "instances=1" in validator
+    assert '"instances": "1"' in validator
     assert "local=" in validator
     assert "runtime=" in validator
     assert "remote=" in validator
