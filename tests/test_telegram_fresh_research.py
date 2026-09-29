@@ -317,3 +317,15 @@ def test_fresh_research_dispatch_contract_remains_backward_compatible_with_plain
     query, context = decode_fresh_research_query_b64(encoded)
     assert query == "Qual a data oficial?"
     assert context == {}
+
+
+def test_fresh_research_transport_falls_back_to_current_github_ref(monkeypatch):
+    from app.services.telegram_fresh_research_service import (
+        GitHubActionsFreshResearchTransport,
+    )
+
+    monkeypatch.delenv("BR_FRESH_RESEARCH_REF", raising=False)
+    monkeypatch.delenv("BR_OMNIROUTE_REF", raising=False)
+    monkeypatch.setenv("BR_GITHUB_REF", "work/gate6f-analytics-learning")
+    transport = GitHubActionsFreshResearchTransport(repository="owner/repo")
+    assert transport.ref == "work/gate6f-analytics-learning"
