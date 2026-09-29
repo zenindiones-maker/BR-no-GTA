@@ -101,7 +101,7 @@ def test_audition_matrix_is_small_deterministic_and_ptbr_only():
         reference=_ref(12, quality=0.96, duration=8.1),
         text="Hoje a gente vai falar de GTA 6 em português brasileiro.",
     )
-    assert [row["cfg_weight"] for row in variants] == [0.0, 0.3, 0.5]
+    assert [row["cfg_weight"] for row in variants] == [0.3, 0.5, 0.7]
     assert {row["locale"] for row in variants} == {"pt-BR"}
     assert {row["language_id"] for row in variants} == {"pt"}
     assert {row["seed"] for row in variants} == {424242}
