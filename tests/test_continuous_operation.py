@@ -548,7 +548,7 @@ def test_research_duration_does_not_change_when_new_audit_event_is_inserted():
 
         def task_completion_envelope(self, *, task_id, task_result_ref):
             return {
-                "schema": "TaskResultEnvelope/v1",
+                "schema": "task-result-envelope/v1",
                 "mission_id": "mission-audit-evolution",
                 "task_id": task_id,
                 "capability_id": DELTA_RESEARCH_CAPABILITY_ID,
