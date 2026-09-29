@@ -245,7 +245,29 @@ def _generic_failure_presentation(
     telegram_hermes_dispatch_failure = (
         "telegram_hermes_dispatch_failed" in lowered
     )
-    if telegram_hermes_dispatch_failure:
+    safe_user_input_error = (
+        isinstance(exc, ValueError)
+        and lowered.startswith("uso:")
+    )
+    if safe_user_input_error:
+        canonical_failure = {
+            "status": "FAILED",
+            "success": False,
+            "error": {
+                "code": "USER_INPUT_INVALID",
+                "message": raw_message,
+            },
+            "answer": (
+                "Revise o comando e tente novamente. "
+                "Use /help se precisar ver as opções disponíveis."
+            ),
+            "technical_error": {
+                "type": type(exc).__name__,
+                "message": raw_message,
+            },
+            "technical_failure_preserved": True,
+        }
+    elif telegram_hermes_dispatch_failure:
         canonical_failure = {
             "status": "FAILED",
             "success": False,
