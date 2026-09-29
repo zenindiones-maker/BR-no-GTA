@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from hashlib import sha256
 import json
-
-import pytest
+import unittest
 
 from app.database.harness_learning_repository import (
     activate_version,
@@ -69,104 +68,116 @@ def _insert_legacy_promoted_v2() -> dict:
     )
 
 
-def test_legacy_v2_promotion_metadata_drift_is_explicitly_migrated_without_overwrite():
-    before = _insert_legacy_promoted_v2()
+class OpenCodeProfileVersioningContractTests(unittest.TestCase):
+    def test_legacy_v2_promotion_metadata_drift_is_explicitly_migrated_without_overwrite(self):
+        before = _insert_legacy_promoted_v2()
 
-    result = hydrate()
+        result = hydrate()
 
-    after = get_version(
-        table="harness_skill_versions",
-        identity_field="skill_id",
-        identity=OPENCODE_EXECUTOR_SKILL_ID,
-        version=CANDIDATE_OPENCODE_EXECUTOR_VERSION,
-    )
-    canonical = executable_opencode_executor_profile(
-        CANDIDATE_OPENCODE_EXECUTOR_VERSION
-    )
+        after = get_version(
+            table="harness_skill_versions",
+            identity_field="skill_id",
+            identity=OPENCODE_EXECUTOR_SKILL_ID,
+            version=CANDIDATE_OPENCODE_EXECUTOR_VERSION,
+        )
+        canonical = executable_opencode_executor_profile(
+            CANDIDATE_OPENCODE_EXECUTOR_VERSION
+        )
 
-    assert result["status"] == "PASS"
-    assert result["profile_definition_compatibility"] == (
-        "KNOWN_LEGACY_PROMOTION_METADATA_DRIFT"
-    )
-    assert result["profile_migration_required"] is False
-    assert result["active_profile"]["version"] == "v2"
-    assert result["active_profile"]["checksum"] == canonical["checksum"]
-    assert before["checksum"] == after["checksum"] == _legacy_promoted_v2_checksum()
-    assert after["content_ref"] == before["content_ref"]
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(
+            result["profile_definition_compatibility"],
+            "KNOWN_LEGACY_PROMOTION_METADATA_DRIFT",
+        )
+        self.assertFalse(result["profile_migration_required"])
+        self.assertEqual(result["active_profile"]["version"], "v2")
+        self.assertEqual(result["active_profile"]["checksum"], canonical["checksum"])
+        self.assertEqual(
+            before["checksum"],
+            after["checksum"],
+            _legacy_promoted_v2_checksum(),
+        )
+        self.assertEqual(after["content_ref"], before["content_ref"])
+
+    def test_unknown_same_version_checksum_conflict_still_fails_closed(self):
+        initialize_schema()
+        canonical = executable_opencode_executor_profile(
+            CANDIDATE_OPENCODE_EXECUTOR_VERSION
+        )
+        insert_version(
+            table="harness_skill_versions",
+            identity_field="skill_id",
+            record={
+                "skill_id": OPENCODE_EXECUTOR_SKILL_ID,
+                "version": CANDIDATE_OPENCODE_EXECUTOR_VERSION,
+                "parent_version": BASELINE_OPENCODE_EXECUTOR_VERSION,
+                "content_ref": canonical["content_ref"],
+                "checksum": "0" * 64,
+                "status": "ACTIVE",
+                "evidence_refs": ["test:unknown-profile-conflict"],
+                "created_at": "2026-09-19T14:40:18.249249+00:00",
+                "promoted_at": "2026-09-19T14:40:18.249249+00:00",
+            },
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "AGENT_PROFILE_VERSION_CONFLICT"):
+            hydrate()
+
+    def test_promotion_pointer_change_does_not_mutate_immutable_definition_checksum(self):
+        initialize_schema()
+        canonical = executable_opencode_executor_profile(
+            CANDIDATE_OPENCODE_EXECUTOR_VERSION
+        )
+        insert_version(
+            table="harness_skill_versions",
+            identity_field="skill_id",
+            record={
+                "skill_id": OPENCODE_EXECUTOR_SKILL_ID,
+                "version": CANDIDATE_OPENCODE_EXECUTOR_VERSION,
+                "parent_version": BASELINE_OPENCODE_EXECUTOR_VERSION,
+                "content_ref": canonical["content_ref"],
+                "checksum": canonical["checksum"],
+                "status": "CANDIDATE",
+                "evidence_refs": ["test:immutable-definition"],
+                "created_at": "2026-09-19T14:40:18.249249+00:00",
+                "promoted_at": None,
+            },
+        )
+
+        activate_version(
+            table="harness_skill_versions",
+            identity_field="skill_id",
+            identity=OPENCODE_EXECUTOR_SKILL_ID,
+            version=CANDIDATE_OPENCODE_EXECUTOR_VERSION,
+            promoted_at="2026-09-19T14:40:18.249249+00:00",
+        )
+
+        promoted = get_version(
+            table="harness_skill_versions",
+            identity_field="skill_id",
+            identity=OPENCODE_EXECUTOR_SKILL_ID,
+            version=CANDIDATE_OPENCODE_EXECUTOR_VERSION,
+        )
+        self.assertEqual(promoted["status"], "ACTIVE")
+        self.assertEqual(promoted["checksum"], canonical["checksum"])
+
+    def test_legacy_compatibility_hydration_is_idempotent(self):
+        _insert_legacy_promoted_v2()
+
+        first = hydrate()
+        second = hydrate()
+
+        self.assertEqual(first["status"], second["status"])
+        self.assertEqual(first["status"], "PASS")
+        self.assertEqual(
+            first["profile_definition_compatibility"],
+            "KNOWN_LEGACY_PROMOTION_METADATA_DRIFT",
+        )
+        self.assertEqual(
+            second["profile_definition_compatibility"],
+            "KNOWN_LEGACY_PROMOTION_METADATA_DRIFT",
+        )
 
 
-def test_unknown_same_version_checksum_conflict_still_fails_closed():
-    initialize_schema()
-    canonical = executable_opencode_executor_profile(
-        CANDIDATE_OPENCODE_EXECUTOR_VERSION
-    )
-    insert_version(
-        table="harness_skill_versions",
-        identity_field="skill_id",
-        record={
-            "skill_id": OPENCODE_EXECUTOR_SKILL_ID,
-            "version": CANDIDATE_OPENCODE_EXECUTOR_VERSION,
-            "parent_version": BASELINE_OPENCODE_EXECUTOR_VERSION,
-            "content_ref": canonical["content_ref"],
-            "checksum": "0" * 64,
-            "status": "ACTIVE",
-            "evidence_refs": ["test:unknown-profile-conflict"],
-            "created_at": "2026-09-19T14:40:18.249249+00:00",
-            "promoted_at": "2026-09-19T14:40:18.249249+00:00",
-        },
-    )
-
-    with pytest.raises(RuntimeError, match="AGENT_PROFILE_VERSION_CONFLICT"):
-        hydrate()
-
-
-def test_promotion_pointer_change_does_not_mutate_immutable_definition_checksum():
-    initialize_schema()
-    canonical = executable_opencode_executor_profile(
-        CANDIDATE_OPENCODE_EXECUTOR_VERSION
-    )
-    insert_version(
-        table="harness_skill_versions",
-        identity_field="skill_id",
-        record={
-            "skill_id": OPENCODE_EXECUTOR_SKILL_ID,
-            "version": CANDIDATE_OPENCODE_EXECUTOR_VERSION,
-            "parent_version": BASELINE_OPENCODE_EXECUTOR_VERSION,
-            "content_ref": canonical["content_ref"],
-            "checksum": canonical["checksum"],
-            "status": "CANDIDATE",
-            "evidence_refs": ["test:immutable-definition"],
-            "created_at": "2026-09-19T14:40:18.249249+00:00",
-            "promoted_at": None,
-        },
-    )
-
-    activate_version(
-        table="harness_skill_versions",
-        identity_field="skill_id",
-        identity=OPENCODE_EXECUTOR_SKILL_ID,
-        version=CANDIDATE_OPENCODE_EXECUTOR_VERSION,
-        promoted_at="2026-09-19T14:40:18.249249+00:00",
-    )
-
-    promoted = get_version(
-        table="harness_skill_versions",
-        identity_field="skill_id",
-        identity=OPENCODE_EXECUTOR_SKILL_ID,
-        version=CANDIDATE_OPENCODE_EXECUTOR_VERSION,
-    )
-    assert promoted["status"] == "ACTIVE"
-    assert promoted["checksum"] == canonical["checksum"]
-
-
-def test_legacy_compatibility_hydration_is_idempotent():
-    _insert_legacy_promoted_v2()
-
-    first = hydrate()
-    second = hydrate()
-
-    assert first["status"] == second["status"] == "PASS"
-    assert first["profile_definition_compatibility"] == (
-        second["profile_definition_compatibility"]
-        == "KNOWN_LEGACY_PROMOTION_METADATA_DRIFT"
-    )
+if __name__ == "__main__":
+    unittest.main()
