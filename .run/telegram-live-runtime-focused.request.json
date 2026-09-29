@@ -1,8 +1,10 @@
 {
-  "request": "semantic-proposal-rejection-green-v1",
-  "source_head": "208c96a9f48a5b2b546dbc5cd56f6550dacd12c5",
-  "objective": "Verify SYSTEM_IMPROVEMENT falls back deterministically after rejected semantic proposals and every planning terminal state is fail-closed without generic chat.",
-  "expected_first_state": "GREEN",
+  "request": "telegram-live-runtime-focused",
+  "source_head": "f1d2dab1a642f713549471d3452fbfcd01d6f84a",
+  "objective": "Final focused certification of human-safe Telegram replies, status reconciliation, failure sanitization, attachment receipts, and A15 runtime reconciliation contract.",
+  "readiness_run_id": 36600890484,
+  "control_validation_run_id": 36600275476,
+  "root_ci_run_id": 36600276211,
   "authority": "DEEPSEEK_HARNESS",
   "publication": false
 }
