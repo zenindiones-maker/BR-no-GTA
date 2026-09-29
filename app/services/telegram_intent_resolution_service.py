@@ -77,6 +77,9 @@ def resolve_contextual_intent(
 
     if text in {"onde estamos", "onde estamos?", "status", "status?"} or any(term in text for term in (
         "qual o status", "o que voce esta fazendo", "como esta o run", "como esta a tarefa",
+        "parou ai", "parou aqui", "travou", "travou ai",
+        "ainda esta rodando", "ainda ta rodando", "ainda esta executando",
+        "isso ainda esta rodando", "isso ainda esta executando",
     )):
         return IntentResolution("STATUS_REQUEST", "LAYER_1_CONTROL", "HIGH", "status control")
 
