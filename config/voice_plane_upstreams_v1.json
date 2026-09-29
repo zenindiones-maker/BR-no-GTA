@@ -65,5 +65,29 @@
   },
   "authority": "DEEPSEEK_HARNESS",
   "official_voice_promotion": "HUMAN_REVIEW_REQUIRED",
-  "raw_voice_in_git": false
+  "raw_voice_in_git": false,
+  "personaplex": {
+    "repository": "NVIDIA/personaplex",
+    "repository_sha": "3428dfd95309a7f3c84fd93259ded0f810d1ff91",
+    "code_license": "MIT",
+    "model_id": "nvidia/personaplex-7b-v1",
+    "model_revision": "fdaf4090a61cb315c138a1faee287ffd6c716309",
+    "model_license": "nvidia-open-model-license",
+    "model_gated": true,
+    "language": [
+      "en"
+    ],
+    "sample_rate_hz": 24000,
+    "protocol": "WEBSOCKET_BINARY_FULL_DUPLEX",
+    "runtime_mode": "PRIVATE_ISOLATED_GPU_SIDECAR",
+    "voice_prompt_supported": true,
+    "text_role_prompt_supported": true,
+    "ptbr_eligible": false,
+    "production_eligible": false,
+    "official_owner_voice_eligible": false,
+    "allowed_tools": [
+      "harness.voice.turn"
+    ],
+    "status": "EXPERIMENTAL_READY"
+  }
 }
