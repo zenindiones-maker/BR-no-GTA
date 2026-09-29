@@ -76,7 +76,18 @@ jobs:
             echo "TARGET_SHA_DRIFT_BLOCKED expected=$EXPECTED_SHA actual=$actual" >&2
             exit 23
           fi
-          actual_policy_sha="$(sha256sum config/continuous_operation_policy.json | awk '{print $1}')"
+          actual_policy_sha="$(python3 - <<'PY'
+          import hashlib, json
+          payload=json.load(open("config/continuous_operation_policy.json", encoding="utf-8"))
+          raw=json.dumps(
+              payload,
+              ensure_ascii=False,
+              sort_keys=True,
+              separators=(",", ":"),
+          ).encode("utf-8")
+          print(hashlib.sha256(raw).hexdigest())
+          PY
+          )"
           if [[ "$actual_policy_sha" != "$EXPECTED_POLICY_SHA256" ]]; then
             echo "DEPLOYMENT_POLICY_SHA_DRIFT_BLOCKED" >&2
             exit 24
@@ -141,7 +152,7 @@ jobs:
                   "target_ref":os.environ.get("BR_CONTINUOUS_TARGET_REF",""),
                   "target_sha":target_sha,
                   "workflow_revision":os.environ.get("BR_CONTINUOUS_WORKFLOW_REVISION",""),
-                  "trigger_kind":os.environ.get("GITHUB_EVENT_NAME","workflow_dispatch"),
+                  "trigger_kind":os.environ.get("ORIGINAL_TRIGGER_KIND") or os.environ.get("GITHUB_EVENT_NAME","workflow_dispatch"),
                   "started_at":now,
                   "finished_at":now,
                   "status":"HELD_KNOWN_DEFECT",
@@ -301,6 +312,8 @@ jobs:
         env:
           JOB_STATUS: ${{ job.status }}
           TARGET_SHA: ${{ steps.target.outputs.sha }}
+          EXPECTED_TARGET_SHA: ${{ inputs.expected_target_sha }}
+          ORIGINAL_TRIGGER_KIND: ${{ inputs.trigger_kind }}
         run: |
           set -euo pipefail
           attempt="artifacts/continuous-operation/continuous-operation-attempt.json"
@@ -316,7 +329,11 @@ jobs:
           from pathlib import Path
 
           now=datetime.now(timezone.utc).isoformat()
-          target_sha=os.environ.get("TARGET_SHA") or os.environ.get("INPUT_EXPECTED_TARGET_SHA","")
+          target_sha=(
+              os.environ.get("TARGET_SHA")
+              or os.environ.get("EXPECTED_TARGET_SHA")
+              or ""
+          )
           job_status=os.environ.get("JOB_STATUS","failure")
           failure_class="PRECHECK_CONTRACT_BLOCKED" if job_status!="success" else None
           fingerprint=None

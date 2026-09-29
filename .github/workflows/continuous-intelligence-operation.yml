@@ -102,7 +102,18 @@ jobs:
           resolved="$(gh api "repos/$GITHUB_REPOSITORY/commits/$EXPECTED_SHA" --jq .sha)"
           test "$resolved" = "$EXPECTED_SHA"
           gh api "repos/$GITHUB_REPOSITORY/contents/config/continuous_operation_policy.json?ref=$EXPECTED_SHA"             --jq .content | tr -d '\n' | base64 -d > /tmp/continuous-policy.json
-          actual_policy_sha="$(sha256sum /tmp/continuous-policy.json | awk '{print $1}')"
+          actual_policy_sha="$(python3 - /tmp/continuous-policy.json <<'PY'
+          import hashlib, json, sys
+          payload=json.load(open(sys.argv[1], encoding="utf-8"))
+          raw=json.dumps(
+              payload,
+              ensure_ascii=False,
+              sort_keys=True,
+              separators=(",", ":"),
+          ).encode("utf-8")
+          print(hashlib.sha256(raw).hexdigest())
+          PY
+          )"
           test "$actual_policy_sha" = "$EXPECTED_POLICY_SHA256"
           echo "TARGET_REF_RESOLVED=PASS"
           echo "TARGET_SHA_EXACT_MATCH=PASS"
