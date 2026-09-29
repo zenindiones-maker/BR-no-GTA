@@ -33,7 +33,7 @@ permissions:
   actions: write
 
 concurrency:
-  group: br-continuous-intelligence-scheduler
+  group: br-continuous-intelligence-scheduler-${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'proof' && format('proof-{0}', inputs.request_id) || 'coalescible' }}
   cancel-in-progress: false
 
 jobs:
