@@ -793,3 +793,26 @@ def test_group_human_surface_requires_exact_harness_child_authorization(monkeypa
         consume_harness_authorization(invalid)
 
     assert len(outbox) == 1
+
+
+def test_owner_voice_attachment_reply_reports_real_voice_pipeline():
+    reply = gateway_v2._attachment_reply(
+        {
+            "authority": "deepseek_harness",
+            "input": {
+                "id": 58,
+                "classification": "owner_voice_reference",
+                "learning_status": "private_voice_reference_registered",
+                "memory_event_id": 213,
+                "claim_id": None,
+                "memory_id": None,
+                "remote_verified": True,
+            },
+        }
+    )
+    assert "OWNER_VOICE_REFERENCE=PRIVATE_TELEGRAM_REFERENCE_REGISTERED" in reply
+    assert "VOICE_REFERENCE_ANALYSIS=speech.transcription.whisperx+owner-reference-qa" in reply
+    assert "VOICE_CLONE_CAPABILITY=voice.synthesis.pt-BR" in reply
+    assert "VOICE_CLONE_TARGET_LOCALE=pt-BR" in reply
+    assert "GENERIC_VOICE_FALLBACK=0" in reply
+    assert "PENDING_CLOUD_ANALYSIS" not in reply
