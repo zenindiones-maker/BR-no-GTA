@@ -39,6 +39,26 @@ class OwnerVoiceHandoffDebouncer:
         self._due_at = None
 
 
+def flush_owner_voice_handoff_if_due(
+    debouncer: OwnerVoiceHandoffDebouncer,
+    *,
+    now: float,
+    handoff: Callable[[], int],
+) -> str:
+    if not debouncer.due(now):
+        return "NOT_DUE"
+    try:
+        code = int(handoff())
+    except Exception:
+        debouncer.mark_failure(now)
+        raise
+    if code == 0:
+        debouncer.mark_success()
+        return "PASS"
+    debouncer.mark_failure(now)
+    return f"DEFERRED_{code}"
+
+
 def _stable_sha256(payload: Mapping[str, Any]) -> str:
     rendered = json.dumps(
         payload,
