@@ -1,8 +1,8 @@
 {
-  "request": "telegram-transport-contract-red-green-v2",
-  "source_head": "3871e5edecb3ffe2480dee3ee30790c7fc554228",
-  "objective": "Run the live Telegram focused suite including the new production transport contract before implementation.",
-  "expected_first_state": "RED_ONLY_ON_MISSING_TELEGRAM_TRANSPORT_CONTRACT_SERVICE",
+  "request": "telegram-bot-api-transport-red-v1",
+  "source_head": "41bf0c40b41e3d300d6d8a909e5fdca438815439",
+  "objective": "Run typed Bot API transport tests for custom API root, thread/reply lineage, and RetryAfter before implementation.",
+  "expected_first_state": "RED_ON_MISSING_TYPED_BOT_API_TRANSPORT_BEHAVIOR",
   "authority": "DEEPSEEK_HARNESS",
   "publication": false
 }
