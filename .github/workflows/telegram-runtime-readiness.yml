@@ -95,5 +95,7 @@ jobs:
           bash -n scripts/telegram_termux_control.sh
           bash -n scripts/install_telegram_termux_persistence.sh
           python -m py_compile scripts/verify_telegram_a15_runtime_attestation.py
-          python -m pytest -q tests/test_telegram_a15_runtime_contract.py
+          python -m pytest -q \
+            tests/test_telegram_a15_runtime_contract.py \
+            tests/test_telegram_a15_runtime_attestation.py
           echo "A15_RUNTIME_RECONCILE_CONTRACT=PASS"
