@@ -9,6 +9,7 @@ from app.database.telegram_conversation_repository import (
     update_conversation_state,
 )
 from app.services.memory_plane_service import record_canonical_human_decision
+from app.services.telegram_intent_resolution_service import resolve_contextual_intent
 from app.services.telegram_conversation_service import (
     classify_conversation_intent,
     handle_telegram_conversation,
@@ -1103,3 +1104,30 @@ def test_system_improvement_intent_precedes_embedded_research_subtask():
         "a sinergia entre os agentes e usa pesquisa atual do GTA 6 como uma das tarefas."
     )
     assert classify_conversation_intent(literal) == "EXECUTION_REQUEST"
+
+
+def test_contextual_resolver_prioritizes_system_mission_over_embedded_gta_research():
+    literal = (
+        "Analisa e melhora profissionalmente a integração completa do BR-no-GTA, "
+        "corrige a sinergia entre os agentes e usa pesquisa atual do GTA 6 como "
+        "uma das tarefas do swarm."
+    )
+    resolution = resolve_contextual_intent(
+        literal,
+        state={"active_project": "BR-no-GTA", "current_subject": "sistema BR-no-GTA"},
+        recent_turns=[],
+    )
+    assert resolution is not None
+    assert resolution.intent == "EXECUTION_REQUEST"
+    assert resolution.layer == "LAYER_3_MISSION_PLANNER"
+    assert "SYSTEM_IMPROVEMENT" in resolution.reason
+
+
+def test_contextual_resolver_keeps_pure_gta_research_on_research_path():
+    resolution = resolve_contextual_intent(
+        "Pesquise as últimas informações oficiais sobre GTA 6.",
+        state={"active_project": "BR-no-GTA", "current_subject": "GTA 6"},
+        recent_turns=[],
+    )
+    assert resolution is not None
+    assert resolution.intent == "RESEARCH_REQUEST"
