@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from hashlib import sha256
 import json
+import os
+import tempfile
 import unittest
 
 from app.database.harness_learning_repository import (
@@ -69,6 +71,18 @@ def _insert_legacy_promoted_v2() -> dict:
 
 
 class OpenCodeProfileVersioningContractTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory(prefix="opencode-profile-test-")
+        self._previous_db = os.environ.get("BR_TEST_DATABASE")
+        os.environ["BR_TEST_DATABASE"] = os.path.join(self._tmp.name, "profile.db")
+
+    def tearDown(self):
+        if self._previous_db is None:
+            os.environ.pop("BR_TEST_DATABASE", None)
+        else:
+            os.environ["BR_TEST_DATABASE"] = self._previous_db
+        self._tmp.cleanup()
+
     def test_legacy_v2_promotion_metadata_drift_is_explicitly_migrated_without_overwrite(self):
         before = _insert_legacy_promoted_v2()
 
