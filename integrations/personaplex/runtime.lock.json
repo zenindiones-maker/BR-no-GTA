@@ -1,0 +1,57 @@
+{
+  "schema": "PersonaPlexRuntimeLock/v1",
+  "provider_id": "nvidia-personaplex",
+  "authority": "DEEPSEEK_HARNESS",
+  "upstream": {
+    "repository": "NVIDIA/personaplex",
+    "repository_revision": "3428dfd95309a7f3c84fd93259ded0f810d1ff91",
+    "code_license": "MIT"
+  },
+  "model": {
+    "id": "nvidia/personaplex-7b-v1",
+    "revision": "fdaf4090a61cb315c138a1faee287ffd6c716309",
+    "model_license": "nvidia-open-model-license",
+    "gated": true,
+    "language": ["en"],
+    "parameter_count": 8371408896,
+    "storage_bytes": 17137697420,
+    "sample_rate_hz": 24000
+  },
+  "runtime": {
+    "mode": "PRIVATE_ISOLATED_GPU_SIDECAR",
+    "python": "3.12",
+    "protocol": "WEBSOCKET_BINARY",
+    "endpoint": "/api/chat",
+    "input_audio_codec": "OPUS",
+    "output_audio_codec": "OPUS",
+    "handshake_frame_type": 0,
+    "audio_frame_type": 1,
+    "text_frame_type": 2,
+    "full_duplex": true,
+    "voice_prompt_supported": true,
+    "text_role_prompt_supported": true,
+    "hf_token_runtime_secret_only": true,
+    "implicit_main_branch_weights": "FORBIDDEN"
+  },
+  "deployment_policy": {
+    "live_gpu_required": true,
+    "upstream_tested_hardware": "NVIDIA A100 80GB",
+    "low_vram_live_server": "NOT_CERTIFIED",
+    "cpu_offload": "EXPERIMENTAL_NOT_PRODUCTION_CERTIFIED",
+    "github_hosted_runner_live_inference": "FORBIDDEN"
+  },
+  "routing_policy": {
+    "allowed_tools": ["harness.voice.turn"],
+    "ptbr_eligible": false,
+    "production_eligible": false,
+    "official_owner_voice_eligible": false,
+    "generic_voice_fallback": false,
+    "status": "EXPERIMENTAL_READY"
+  },
+  "privacy_policy": {
+    "raw_voice_prompt_in_git": false,
+    "raw_voice_prompt_in_actions_artifact": false,
+    "raw_voice_prompt_in_actions_cache": false,
+    "voice_prompt_storage": "PRIVATE_RUNTIME_ONLY"
+  }
+}
