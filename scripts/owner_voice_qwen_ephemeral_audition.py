@@ -86,6 +86,20 @@ def _load_reference_index_from_environment() -> dict[str, Any]:
     )
 
 
+def build_clone_prompt_kwargs(*, ref_audio: str, ref_text: str) -> dict[str, Any]:
+    audio = str(ref_audio or "").strip()
+    text = " ".join(str(ref_text or "").split()).strip()
+    if not audio or not text:
+        raise OwnerVoicePrivateMaterializationError(
+            "OWNER_REFERENCE_TRANSCRIPT_MISSING"
+        )
+    return {
+        "ref_audio": audio,
+        "ref_text": text,
+        "x_vector_only_mode": False,
+    }
+
+
 def load_verified_transcript_context(
     path: str | Path,
     *,
@@ -255,7 +269,7 @@ def main() -> int:
         f"COUNT={materialized['materialized_reference_count']}"
     )
     print("OWNER_PRIMARY_REFERENCE_SELECTED=PASS")
-    print("OWNER_REFERENCE_MODE=X_VECTOR_ONLY_EPHEMERAL_FIRST_AUDITION")
+    print("OWNER_REFERENCE_MODE=TRANSCRIPT_CONDITIONED_ICL_AUDITION")
     print("GENERIC_VOICE_FALLBACK=0")
     print("RAW_OWNER_AUDIO_PUBLIC_ARTIFACT=0")
 
@@ -279,10 +293,20 @@ def main() -> int:
         raise OwnerVoicePrivateMaterializationError(
             "QWEN_MODEL_LOAD_FAILED"
         ) from exc
+    transcript_context_path = str(
+        os.environ.get("BR_OWNER_PRIVATE_TRANSCRIPT_CONTEXT")
+        or "/tmp/br-owner-voice/private-transcript-context.json"
+    ).strip()
+    ref_text = load_verified_transcript_context(
+        transcript_context_path,
+        telegram_input_id=int(selected["telegram_input_id"]),
+        audio_sha256=str(selected["sha256"]),
+    )
     prompt = model.create_voice_clone_prompt(
-        ref_audio=str(normalized),
-        ref_text=None,
-        x_vector_only_mode=True,
+        **build_clone_prompt_kwargs(
+            ref_audio=str(normalized),
+            ref_text=ref_text,
+        )
     )
     wavs, sample_rate = model.generate_voice_clone(
         text=AUDITION_TEXT,
@@ -308,7 +332,7 @@ def main() -> int:
         "OWNER_REFERENCE_MATERIALIZED=PASS\n"
         "REAL_TELEGRAM_REFERENCE=PASS\n"
         "GENERIC_FALLBACK=0\n"
-        "X_VECTOR_ONLY_FIRST_AUDITION=YES\n"
+        "TRANSCRIPT_CONDITIONED_ICL=PASS\n"
         "HUMAN_REVIEW=PENDING"
     )
     message_id = _send_private_audition(
@@ -327,7 +351,7 @@ def main() -> int:
         "primary_reference_sha256": str(selected["sha256"]),
         "model_id": MODEL_ID,
         "model_revision": MODEL_REVISION,
-        "clone_mode": "X_VECTOR_ONLY_EPHEMERAL_FIRST_AUDITION",
+        "clone_mode": "TRANSCRIPT_CONDITIONED_ICL_AUDITION",
         "generic_voice_fallback": False,
         "audition_audio_sha256": audio_sha,
         "telegram_delivery_message_id": message_id,
