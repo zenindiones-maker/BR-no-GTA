@@ -59,6 +59,7 @@ jobs:
             tests/test_owner_voice_audio_quality_service.py \
             tests/test_owner_voice_reference_qa.py \
             tests/test_owner_voice_chatterbox_ptbr_audition.py \
+            tests/test_owner_voice_chatterbox_dependency_contract.py \
             tests/test_owner_voice_ptbr_audition_review.py
           echo "OWNER_VOICE_PRIVATE_MATERIALIZATION_CONTRACT=PASS"
 
