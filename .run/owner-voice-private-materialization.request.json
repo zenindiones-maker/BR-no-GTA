@@ -4,12 +4,12 @@
   "requested_action": "MATERIALIZE_REAL_TELEGRAM_OWNER_REFERENCES",
   "requested_by": "authorized_human_owner",
   "source": "governed_human_instruction",
-  "request_revision": 18,
+  "request_revision": 19,
   "delivery_target": "TELEGRAM_OWNER_GROUP",
   "clone_backend": "CHATTERBOX_MULTILINGUAL_PT_BR_TELEGRAM_BOUND",
   "generic_voice_fallback": false,
   "fail_closed": true,
-  "phase": "RETRY_AFTER_CHATTERBOX_DEPENDENCY_LOCK",
+  "phase": "RETRY_AFTER_CLEAN_TELEGRAM_VOICE_NOTE_DELIVERY",
   "target_locale": "pt-BR",
   "language_id": "pt",
   "reference_selection": "QUALITY_FIRST_DETERMINISTIC",
@@ -18,6 +18,8 @@
   "human_voice_identity_review": "REQUIRED",
   "human_brazilian_accent_review": "REQUIRED",
   "human_ptbr_fluency_review": "REQUIRED",
-  "retry_reason": "Retry after Chatterbox pt-BR dependency resolver correction, explicit constraints, pip check, and Voice Plane certification.",
-  "dependency_contract": "integrations/chatterbox-ptbr/constraints.txt"
+  "retry_reason": "Previous clone generation passed but review/delivery failed before the human received an audition. Retry with local Whisper reuse, clean sendVoice OGG/Opus delivery, silent owner-reference intake, and pt-BR human review.",
+  "dependency_contract": "integrations/chatterbox-ptbr/constraints.txt",
+  "human_surface": "TELEGRAM_VOICE_NOTE_REVIEW",
+  "expected_human_delivery": "VOICE_NOTE"
 }
