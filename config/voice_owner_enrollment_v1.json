@@ -10,7 +10,7 @@
   "materialized_reference_count": 0,
   "reference_source": "TELEGRAM",
   "reference_materialization_status": "PENDING_PRIVATE_REFERENCE_MATERIALIZATION",
-  "runtime_activation_status": "PENDING_PRIVATE_REFERENCE_MATERIALIZATION",
+  "runtime_activation_status": "BLOCKED_HUMAN_VOICE_REVIEW",
   "selection_policy": "QUALITY_FIRST_DETERMINISTIC_SHA_TIEBREAK",
   "minimum_aggregate_clean_speech_seconds": 30,
   "recommended_clean_speech_seconds": [
@@ -22,13 +22,25 @@
   "official_voice": "BR_OWNER_V1",
   "official_voice_identity": "BR_OWNER_V1",
   "voice_selection_basis": "EXPLICIT_OWNER_INSTRUCTION",
-  "owner_voice_status": "SELECTED_AWAITING_PRIVATE_REFERENCE_MATERIALIZATION",
-  "human_ab_review": "NOT_REQUIRED_FOR_OWNER_SELECTION",
-  "promotion_allowed": true,
+  "owner_voice_status": "REJECTED_REQUIRES_TELEGRAM_BOUND_PTBR_AUDITION",
+  "human_ab_review": "REQUIRED_FOR_RUNTIME_ACTIVATION",
+  "promotion_allowed": false,
   "raw_voice_in_git": false,
   "raw_prompt_in_public_artifacts": false,
   "voice_policy": "OWNER_VOICE_ONLY",
   "active_voice_identities": [
     "BR_OWNER_V1"
-  ]
+  ],
+  "accent_locale": "pt-BR",
+  "voice_source_policy": "TELEGRAM_REFERENCES_ONLY",
+  "voice_selection_mode": "TELEGRAM_REFERENCE_CLONE",
+  "provider_preset_voice_allowed": false,
+  "provider_default_voice_allowed": false,
+  "generic_voice_fallback": false,
+  "alternate_voice_identities_allowed": false,
+  "ptbr_accent_policy": "HUMAN_CERTIFIED_BRAZILIAN_PORTUGUESE_REQUIRED",
+  "latest_human_voice_review": "REJECTED",
+  "latest_voice_identity_match": "FAIL",
+  "latest_ptbr_accent_review": "FAIL",
+  "latest_human_feedback": "GENERATED_VOICE_NOT_OWNER_AND_NOT_BRAZILIAN_PORTUGUESE"
 }
