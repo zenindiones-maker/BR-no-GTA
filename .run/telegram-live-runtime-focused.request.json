@@ -1,8 +1,8 @@
 {
-  "request": "mission-precedence-green-after-voice-hijack-fix-v1",
-  "source_head": "d8b41166bb25b14053d8893ef0f254d048830fd9",
-  "objective": "Verify literal Natural Swarm mission precedence, direct narration contrast, and context-bound audio correction after the minimal planner fix.",
-  "expected_first_state": "GREEN_EXCEPT_NEWLY_EXPOSED_DOWNSTREAM_BLOCKER",
+  "request": "mission-precedence-green-after-observe-policy-fix-v2",
+  "source_head": "2064b20abbd9aa7ce8c02fc2d71b38598d2395c5",
+  "objective": "Verify mission precedence plus least-privilege normalization of read-only OBSERVE subtasks under SYSTEM_IMPROVEMENT.",
+  "expected_first_state": "GREEN",
   "authority": "DEEPSEEK_HARNESS",
   "publication": false
 }
