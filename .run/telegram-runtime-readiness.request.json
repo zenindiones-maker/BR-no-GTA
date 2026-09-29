@@ -3,5 +3,11 @@
   "source_head": "6501607b2e9e13717873479b30e9be5734b52671",
   "control_validation_run_id": 36600275476,
   "root_ci_run_id": 36600276211,
-  "purpose": "verify Telegram Bot API group/readiness prerequisites and Termux A15 runtime reconciliation contract after live control-surface fixes"
+  "focused_runtime_run_id": 36600026290,
+  "purpose": "verify Telegram Bot API group/readiness prerequisites and Termux A15 runtime reconciliation contract after human-surface presentation fixes",
+  "expected": [
+    "BOT_API_GROUP_PREREQUISITES=PASS",
+    "WEBHOOK_CONFLICT=NO",
+    "A15_RUNTIME_RECONCILE_CONTRACT=PASS"
+  ]
 }
