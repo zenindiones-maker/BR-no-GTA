@@ -19,7 +19,10 @@ def _payload(*, state: str = "success", age_seconds: int = 30, description: str 
                 "context": "telegram-a15-runtime",
                 "state": state,
                 "description": description
-                or f"pid=123 instances=1 local={prefix} runtime={prefix} remote={prefix}",
+                or (
+                    f"pid=123 instances=1 sha={SHA} "
+                    f"local={prefix} runtime={prefix} remote={prefix}"
+                ),
                 "updated_at": (NOW - timedelta(seconds=age_seconds)).isoformat(),
             }
         ]
