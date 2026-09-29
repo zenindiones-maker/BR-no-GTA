@@ -1,7 +1,7 @@
 {
   "request": "continuous-operation-focused",
-  "source_head": "6c4a4de23279f8a14556b7459b7708c4f82cc165",
-  "scope": "typed-completion-due-true-and-durable-failure-settlement",
+  "source_head": "73444ffeedf9d5b89e43cebde5e5376e15ea854c",
+  "scope": "scheduler-executor-split-exact-sha-deployment-and-durable-attempt-restore",
   "regression_runs": [
     36572055458,
     36527996798,
@@ -9,5 +9,5 @@
     36433392687,
     36382274106
   ],
-  "expected": "CONTINUOUS_FOCUSED_TESTS=PASS"
+  "expected": "CONTINUOUS_FOCUSED_TESTS=PASS; SCHEDULER_EXECUTOR_BOUNDARY=PASS"
 }
