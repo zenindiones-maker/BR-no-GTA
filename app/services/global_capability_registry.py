@@ -1179,6 +1179,63 @@ MEDIA_ANALYSIS_CLOUD_RECORD = CapabilityRecord(
     side_effects=("GitHub Actions workflow dispatch",),
 )
 
+TELEGRAM_OBSIDIAN_ATTACHMENT_RECORD = CapabilityRecord(
+    capability_id="telegram.attachment.obsidian.materialize",
+    capability_type="EXECUTOR",
+    domain="telegram-ingress",
+    implementation=(
+        "Harness-governed materialization of one remotely verified Telegram "
+        "attachment into the configured local Obsidian vault"
+    ),
+    input_contract=(
+        "persisted telegram_user_input identity + staged verified file bytes + "
+        "bounded vault target"
+    ),
+    output_contract=(
+        "content-addressed vault attachment + Markdown companion note + "
+        "CanonicalExecutionResult"
+    ),
+    requirements=(
+        "persisted Harness EXECUTION authorization",
+        "exact Global Capability Registry executor binding",
+        "remotely verified Telegram identity",
+        "configured local Obsidian vault",
+        "bounded staged file <= official Bot API default download limit",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("EXECUTION",),
+    policy_tags=(
+        "telegram", "obsidian", "attachment", "artifact", "provenance", "zero-cost"
+    ),
+    security_boundary=(
+        "DeepSeek Harness remains sole authority. The capability receives staged "
+        "file bytes but no transport credential. It may write only content-addressed "
+        "attachment bytes and a companion note inside the configured vault. "
+        "Owner voice and brand assets are excluded; no canonical memory promotion, "
+        "publication, semantic authority or heavy media analysis is granted."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL",
+    quality_class="CONTENT_ADDRESSED_PROVENANCE_FAIL_CLOSED",
+    evidence_contract="CanonicalExecutionResult + vault-relative artifact refs",
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.telegram_obsidian_attachment_bridge_service."
+        "execute_telegram_obsidian_attachment_capability"
+    ),
+    version="1",
+    provider_id="internal",
+    agent_id="telegram-obsidian-attachment-bridge",
+    side_effects=("bounded Android Obsidian vault artifact write",),
+    authority="NONE",
+    memory_write="FORBIDDEN",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+)
+
 OBSIDIAN_INBOX_RECORD = CapabilityRecord(
     capability_id="memory.obsidian.inbox.ingest",
     capability_type="EXECUTOR",
@@ -1406,6 +1463,7 @@ for _record in (
     SYSTEM_IMPROVEMENT_RECORD,
     GTA6_BRAIN_DECISION_RECORD,
     MEDIA_ANALYSIS_CLOUD_RECORD,
+    TELEGRAM_OBSIDIAN_ATTACHMENT_RECORD,
     OBSIDIAN_INBOX_RECORD,
     OBSIDIAN_EXPORT_RECORD,
     *_YOUTUBE_DEPARTMENT_RECORDS,
