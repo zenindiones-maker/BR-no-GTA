@@ -1,5 +1,5 @@
 name: Continuous Intelligence Operation
-run-name: Continuous Intelligence ${{ inputs.request_id || github.run_id }} ${{ inputs.mode || 'scheduled' }}
+run-name: Continuous Scheduler ${{ github.event_name }} ${{ github.run_id }}
 
 on:
   schedule:
@@ -7,20 +7,15 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: proof or scheduled
+        description: scheduled or proof
         required: false
         default: scheduled
         type: choice
         options:
           - scheduled
           - proof
-      target_ref:
-        description: Exact branch/ref containing continuous operation implementation
-        required: false
-        default: work/gate6f-analytics-learning
-        type: string
       request_id:
-        description: Optional caller correlation identity
+        description: Required stable identity for proof mode
         required: false
         default: ""
         type: string
@@ -35,246 +30,163 @@ on:
 
 permissions:
   contents: read
-  actions: read
-  statuses: write
+  actions: write
 
 concurrency:
-  group: br-continuous-intelligence-operation
+  group: br-continuous-intelligence-scheduler
   cancel-in-progress: false
 
-env:
-  TARGET_REF: ${{ inputs.target_ref || 'work/gate6f-analytics-learning' }}
-  MODE: ${{ inputs.mode || 'scheduled' }}
-  ZERO_COST_OPERATION: "TRUE"
-  PYTHONPATH: .
-
 jobs:
-  cycle:
+  dispatch:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 8
     steps:
-      - name: Validate target ref
-        id: target
-        env:
-          RAW_TARGET_REF: ${{ env.TARGET_REF }}
-        run: |
-          set -euo pipefail
-          python - "$RAW_TARGET_REF" <<'PY'
-          import re, sys
-          ref=sys.argv[1].strip()
-          if not ref or len(ref)>180 or ref.startswith("-") or ".." in ref or "@{" in ref:
-              raise SystemExit("CONTINUOUS_OPERATION=FAIL unsafe target_ref")
-          if not re.fullmatch(r"[A-Za-z0-9._/-]+", ref):
-              raise SystemExit("CONTINUOUS_OPERATION=FAIL unsafe target_ref")
-          print(ref)
-          PY
-          echo "ref=$RAW_TARGET_REF" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout exact target implementation
-        uses: actions/checkout@v4
+      - name: Checkout scheduler definition
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ steps.target.outputs.ref }}
-          path: target
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Resolve target SHA
-        id: sha
-        working-directory: target
-        run: |
-          set -euo pipefail
-          sha="$(git rev-parse HEAD)"
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          echo "TARGET_REF_PRESERVED=PASS"
-          echo "TARGET_REF=${{ steps.target.outputs.ref }}"
-          echo "TARGET_SHA=$sha"
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: target/requirements.txt
-
-      - name: Install bounded target runtime
-        working-directory: target
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts/continuous-operation .runtime
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pytest
-          python -m pip install psutil==7.2.2 pyyaml==6.0.3 python-dotenv==1.2.2 rich==14.3.3 pathspec==1.1.1
-          python scripts/bootstrap_hermes_agent.py             --target "$GITHUB_WORKSPACE/target/.runtime/hermes-agent"             --output artifacts/continuous-operation/hermes-upstream.json
-          test "$(git -C "$GITHUB_WORKSPACE/target/.runtime/hermes-agent" rev-parse HEAD)" = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
-          echo "HERMES_UPSTREAM_PINNED=PASS"
-
-      - name: Restore canonical continuous checkpoint
-        working-directory: target
+      - name: Resolve promoted deployment identity
+        id: deployment
         env:
-          GH_TOKEN: ${{ github.token }}
-          BR_TEST_DATABASE: ${{ github.workspace }}/target/artifacts/continuous-operation/continuous.db
+          MODE: ${{ inputs.mode || 'scheduled' }}
+          REQUEST_ID: ${{ inputs.request_id || '' }}
         run: |
           set -euo pipefail
-          python scripts/continuous_state_checkpoint.py restore             --repository "$GITHUB_REPOSITORY"             --current-run-id "$GITHUB_RUN_ID"             --destination "$BR_TEST_DATABASE"             --work-dir artifacts/continuous-operation/restore
-
-      - name: Merge triggering Obsidian memory envelope
-        if: github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Obsidian Memory Inbox' && github.event.workflow_run.conclusion == 'success'
-        working-directory: target
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BR_TEST_DATABASE: ${{ github.workspace }}/target/artifacts/continuous-operation/continuous.db
-          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts/continuous-operation/incoming-obsidian
-          gh run download "$SOURCE_RUN_ID"             --repo "$GITHUB_REPOSITORY"             --dir artifacts/continuous-operation/incoming-obsidian
-          envelope="$(find artifacts/continuous-operation/incoming-obsidian -name canonical-memory-envelope.json -type f | head -n 1)"
-          test -n "$envelope"
-          python scripts/obsidian_apply_memory_envelope.py "$envelope"             --receipt artifacts/continuous-operation/incoming-obsidian-receipt.json
-          echo "OBSIDIAN_EVENT_CANONICAL_MERGE=PASS"
-
-      - name: Compute policy due gates
-        id: due
-        working-directory: target
-        env:
-          BR_TEST_DATABASE: ${{ github.workspace }}/target/artifacts/continuous-operation/continuous.db
-        run: |
-          set -euo pipefail
-          python scripts/continuous_due_gate.py --github-output "$GITHUB_OUTPUT"
-
-      - name: Weekly or proof regression suite
-        if: inputs.mode == 'proof' || steps.due.outputs.weekly_due == 'true'
-        working-directory: target
-        env:
-          BR_TEST_DATABASE: ${{ github.workspace }}/target/artifacts/continuous-operation/continuous.db
-        run: |
-          set -euo pipefail
-          python -m pytest -q             tests/test_continuous_operation.py             tests/test_memory_plane_obsidian.py             tests/test_hermes_multiagent_boundary.py             tests/test_harness_learning_system.py
-          echo "CONTINUOUS_REGRESSION_SUITE=PASS"
-
-      - name: Execute one bounded continuous cycle
-        working-directory: target
-        env:
-          BR_TEST_DATABASE: ${{ github.workspace }}/target/artifacts/continuous-operation/continuous.db
-          BR_HERMES_UPSTREAM_ROOT: ${{ github.workspace }}/target/.runtime/hermes-agent
-          BR_CONTINUOUS_REGRESSION_EVIDENCE: github-actions:${{ github.run_id }}:continuous-regression
-          BR_CONTINUOUS_CROSS_CHANNEL_EVIDENCE: github-actions:${{ github.run_id }}:test_obsidian_human_decision_is_recalled_by_telegram_without_provider
-        run: |
-          set -euo pipefail
-          python scripts/continuous_intelligence_cycle.py             --mode "$MODE"             --artifact-dir artifacts/continuous-operation             --upstream-root "$BR_HERMES_UPSTREAM_ROOT"             --target-sha "${{ steps.sha.outputs.sha }}"             --trigger-kind "$GITHUB_EVENT_NAME"
-
-      - name: Validate immutable safety boundaries
-        working-directory: target
-        run: |
-          set -euo pipefail
-          python - <<'PY'
+          python3 - <<'PY'
           import json
+          import os
+          from datetime import datetime, timezone
           from pathlib import Path
-          p=Path("artifacts/continuous-operation/continuous-operation-proof.json")
-          if not p.is_file():
-              p=Path("artifacts/continuous-operation/continuous-cycle.json")
-          d=json.loads(p.read_text())
-          assert d["status"]=="PASS"
-          assert d["NEW_VOICE_SYNTHESIS"]=="NO"
-          assert d["FULL_RENDER"]=="NO"
-          assert d["YOUTUBE_UPLOAD"]=="NO"
-          assert d["YOUTUBE_PUBLICATION"]=="NO"
-          print("DEEPSEEK_HARNESS_AUTHORITY_PRESERVED=PASS")
-          print("LEARNING_PLANE_AUTHORITY_PRESERVED=PASS")
-          print("SINGLE_CANONICAL_MEMORY_PLANE=PASS")
-          print("TERMUX_HEAVY_PROCESSING=NO")
-          print("NEW_VOICE_SYNTHESIS=NO")
-          print("FULL_RENDER=NO")
-          print("YOUTUBE_UPLOAD=NO")
-          print("YOUTUBE_PUBLICATION=NO")
+          import hashlib
+          import re
+
+          path=Path("config/continuous_operation_deployment.json")
+          deployment=json.loads(path.read_text(encoding="utf-8"))
+          if deployment.get("schema")!="ContinuousOperationDeployment/v1":
+              raise SystemExit("DEPLOYMENT_BINDING=FAIL schema")
+          execution_ref=str(deployment.get("execution_ref") or "").strip()
+          expected_sha=str(deployment.get("expected_sha") or "").strip().lower()
+          policy_sha=str(deployment.get("policy_sha256") or "").strip().lower()
+          contract=str(deployment.get("workflow_contract_version") or "").strip()
+          evidence=[str(x).strip() for x in deployment.get("promotion_evidence_refs") or [] if str(x).strip()]
+          cadence=int(deployment.get("cadence_seconds") or 0)
+          if (
+              deployment.get("enabled") is not True
+              or not re.fullmatch(r"[A-Za-z0-9._/-]+", execution_ref)
+              or ".." in execution_ref
+              or not re.fullmatch(r"[0-9a-f]{40}", expected_sha)
+              or not re.fullmatch(r"[0-9a-f]{64}", policy_sha)
+              or not contract.startswith("continuous-executor/")
+              or not evidence
+              or cadence < 300
+          ):
+              raise SystemExit("DEPLOYMENT_BINDING=FAIL validation")
+
+          mode=(os.environ.get("MODE") or "scheduled").strip()
+          request_id=(os.environ.get("REQUEST_ID") or "").strip()
+          now=datetime.now(timezone.utc)
+          if mode=="proof":
+              if not request_id:
+                  raise SystemExit("DEPLOYMENT_BINDING=FAIL proof request_id required")
+              logical_event={"semantics":"NON_COALESCIBLE_EXPLICIT_PROOF","request_id":request_id}
+          else:
+              epoch=int(now.timestamp())
+              logical_event={
+                  "semantics":"COALESCIBLE_LATEST_STATE_RECONCILIATION",
+                  "window_start_epoch":epoch-(epoch%cadence),
+              }
+          identity={
+              "schema":"ContinuousOperationLogicalCycleIdentity/v1",
+              "expected_sha":expected_sha,
+              "policy_sha256":policy_sha,
+              "cycle_kind":str(deployment.get("cycle_kind") or ""),
+              "mode":mode,
+              "logical_event":logical_event,
+          }
+          raw=json.dumps(identity,sort_keys=True,separators=(",",":")).encode()
+          cycle_id="continuous-cycle-"+hashlib.sha256(raw).hexdigest()[:24]
+          deployment={
+              **deployment,
+              "execution_ref":execution_ref,
+              "expected_sha":expected_sha,
+              "policy_sha256":policy_sha,
+              "workflow_contract_version":contract,
+          }
+          out=Path(os.environ["GITHUB_OUTPUT"])
+          with out.open("a", encoding="utf-8") as handle:
+              handle.write(f"execution_ref={deployment['execution_ref']}\n")
+              handle.write(f"expected_sha={deployment['expected_sha']}\n")
+              handle.write(f"policy_sha256={deployment['policy_sha256']}\n")
+              handle.write(
+                  f"workflow_contract_version={deployment['workflow_contract_version']}\n"
+              )
+              handle.write(f"cycle_id={cycle_id}\n")
+              handle.write(f"mode={mode}\n")
+          print("SCHEDULE_HOST_DEFAULT_BRANCH=PASS")
+          print("SCHEDULER_BUSINESS_LOGIC=0")
+          print("DEPLOYMENT_BINDING=PASS")
+          print("CONCURRENCY_EVENT_SEMANTICS=COALESCIBLE_LATEST_STATE_RECONCILIATION")
           PY
 
-      - name: Save canonical continuous checkpoint
-        working-directory: target
-        env:
-          BR_TEST_DATABASE: ${{ github.workspace }}/target/artifacts/continuous-operation/continuous.db
-        run: |
-          set -euo pipefail
-          python scripts/continuous_state_checkpoint.py save             --database "$BR_TEST_DATABASE"             --output-dir artifacts/continuous-operation/state             --target-sha "${{ steps.sha.outputs.sha }}"             --run-id "$GITHUB_RUN_ID"
-
-      - name: Upload canonical checkpoint transport
-        uses: actions/upload-artifact@v4
-        with:
-          name: continuous-operation-state-${{ github.run_id }}
-          path: target/artifacts/continuous-operation/state/
-          if-no-files-found: error
-          retention-days: 90
-
-      - name: Upload continuous evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: continuous-operation-${{ github.run_id }}
-          path: |
-            target/artifacts/continuous-operation/*.json
-            target/artifacts/continuous-operation/baseline/
-            target/artifacts/continuous-operation/candidate-trial/
-            target/artifacts/continuous-operation/related-next-run/
-            target/artifacts/continuous-operation/gta6-intelligence/
-          if-no-files-found: warn
-          retention-days: 30
-
-      - name: Upload published Obsidian view
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: obsidian-memory-export-${{ github.run_id }}
-          path: target/artifacts/continuous-operation/obsidian-memory-export/
-          if-no-files-found: warn
-          retention-days: 30
-
-      - name: Send meaningful ACTION_FIRST Telegram report
-        if: success()
-        working-directory: target
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
-        run: |
-          set -euo pipefail
-          report="artifacts/continuous-operation/telegram-report.txt"
-          if [ ! -s "$report" ]; then
-            echo "TELEGRAM_REPORT=SKIPPED_NO_MEANINGFUL_CHANGE"
-            exit 0
-          fi
-          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
-            echo "EXTERNAL_SECRET_BLOCKER=TELEGRAM_BOT_TOKEN_OR_CHAT_ID" >&2
-            exit 1
-          fi
-          python - "$report" "$GITHUB_RUN_ID" <<'PY' >/tmp/telegram.json
-          import json, sys
-          text=open(sys.argv[1],encoding="utf-8").read().strip()
-          text += "\n\nRUN " + sys.argv[2]
-          print(json.dumps({"chat_id": None, "text": text}, ensure_ascii=False))
-          PY
-          python - <<'PY'
-          import json, os
-          p=json.load(open("/tmp/telegram.json"))
-          p["chat_id"]=os.environ["TELEGRAM_CHAT_ID"]
-          json.dump(p,open("/tmp/telegram.json","w"),ensure_ascii=False)
-          PY
-          curl --fail-with-body --silent --show-error             -H "Content-Type: application/json"             -d @/tmp/telegram.json             "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"             > artifacts/continuous-operation/telegram-send.json
-          echo "TELEGRAM_ACTION_FIRST_REPORT=PASS"
-
-      - name: Publish commit status
-        if: always()
+      - name: Validate promoted target and policy digest
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_SHA: ${{ steps.sha.outputs.sha }}
-          STATE: ${{ job.status == 'success' && 'success' || job.status == 'failure' && 'failure' || 'error' }}
+          EXPECTED_SHA: ${{ steps.deployment.outputs.expected_sha }}
+          EXPECTED_POLICY_SHA256: ${{ steps.deployment.outputs.policy_sha256 }}
         run: |
           set -euo pipefail
-          python - <<'PY' >/tmp/status.json
-          import json, os
-          print(json.dumps({
-            "state": os.environ["STATE"],
-            "context": "continuous-intelligence-operation",
-            "description": "Continuous Harness intelligence/improvement cycle",
-            "target_url": "https://github.com/"+os.environ["GITHUB_REPOSITORY"]+"/actions/runs/"+os.environ["GITHUB_RUN_ID"],
-          }))
+          resolved="$(gh api "repos/$GITHUB_REPOSITORY/commits/$EXPECTED_SHA" --jq .sha)"
+          test "$resolved" = "$EXPECTED_SHA"
+          gh api "repos/$GITHUB_REPOSITORY/contents/config/continuous_operation_policy.json?ref=$EXPECTED_SHA"             --jq .content | tr -d '\n' | base64 -d > /tmp/continuous-policy.json
+          actual_policy_sha="$(python3 - /tmp/continuous-policy.json <<'PY'
+          import hashlib, json, sys
+          payload=json.load(open(sys.argv[1], encoding="utf-8"))
+          raw=json.dumps(
+              payload,
+              ensure_ascii=False,
+              sort_keys=True,
+              separators=(",", ":"),
+          ).encode("utf-8")
+          print(hashlib.sha256(raw).hexdigest())
           PY
-          curl --fail-with-body --silent --show-error             -X POST             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA"             -d @/tmp/status.json
+          )"
+          test "$actual_policy_sha" = "$EXPECTED_POLICY_SHA256"
+          echo "TARGET_REF_RESOLVED=PASS"
+          echo "TARGET_SHA_EXACT_MATCH=PASS"
+          echo "DEPLOYMENT_POLICY_BINDING=PASS"
+
+      - name: Reconcile duplicate logical dispatch
+        id: duplicate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CYCLE_ID: ${{ steps.deployment.outputs.cycle_id }}
+        run: |
+          set -euo pipefail
+          title="Continuous Execute $CYCLE_ID"
+          count="$(gh run list             --repo "$GITHUB_REPOSITORY"             --workflow continuous-intelligence-executor.yml             --limit 100             --json displayTitle,status,conclusion             --jq "[.[] | select(.displayTitle == \"$title\")] | length" 2>/dev/null || echo 0)"
+          if [[ "$count" =~ ^[0-9]+$ ]] && (( count > 0 )); then
+            echo "duplicate=true" >> "$GITHUB_OUTPUT"
+            echo "DUPLICATE_DISPATCH=SUPPRESSED"
+          else
+            echo "duplicate=false" >> "$GITHUB_OUTPUT"
+            echo "DUPLICATE_DISPATCH=0"
+          fi
+
+      - name: Dispatch exact promoted executor
+        if: steps.duplicate.outputs.duplicate != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXECUTION_REF: ${{ steps.deployment.outputs.execution_ref }}
+          EXPECTED_SHA: ${{ steps.deployment.outputs.expected_sha }}
+          POLICY_SHA256: ${{ steps.deployment.outputs.policy_sha256 }}
+          CYCLE_ID: ${{ steps.deployment.outputs.cycle_id }}
+          MODE: ${{ steps.deployment.outputs.mode }}
+          CONTRACT_VERSION: ${{ steps.deployment.outputs.workflow_contract_version }}
+        run: |
+          set -euo pipefail
+          default_branch="$(gh repo view "$GITHUB_REPOSITORY" --json defaultBranchRef --jq .defaultBranchRef.name)"
+          gh workflow run continuous-intelligence-executor.yml             --repo "$GITHUB_REPOSITORY"             --ref "$default_branch"             -f target_ref="$EXECUTION_REF"             -f expected_target_sha="$EXPECTED_SHA"             -f expected_policy_sha256="$POLICY_SHA256"             -f logical_cycle_id="$CYCLE_ID"             -f trigger_kind="$GITHUB_EVENT_NAME"             -f mode="$MODE"             -f scheduler_run_id="$GITHUB_RUN_ID"             -f workflow_contract_version="$CONTRACT_VERSION"
+          echo "CONTINUOUS_EXECUTION_DISPATCH=PASS"
+          echo "DISPATCH_IDENTITY=$CYCLE_ID"

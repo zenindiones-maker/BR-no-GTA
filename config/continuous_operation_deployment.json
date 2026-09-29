@@ -1,0 +1,15 @@
+{
+  "schema": "ContinuousOperationDeployment/v1",
+  "execution_ref": "work/gate6f-analytics-learning",
+  "expected_sha": "359b986909e49b991da2b509b242208394cca6ae",
+  "workflow_contract_version": "continuous-executor/v2",
+  "policy_sha256": "70590fe0deaa5fd0bd1b88bca6f97afe0a53e109c1b9d94e7716c6719e135e37",
+  "enabled": true,
+  "promoted_at": "2026-09-29T14:27:19+00:00",
+  "promotion_evidence_refs": [
+    "github-actions:36582660670:continuous-focused",
+    "github-actions:36582661021:br-no-gta-ci"
+  ],
+  "cadence_seconds": 21600,
+  "cycle_kind": "CONTINUOUS_INTELLIGENCE"
+}
