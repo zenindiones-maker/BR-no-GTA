@@ -1805,3 +1805,50 @@ def test_terminal_run_result_vetoes_stale_active_authorization():
     assert activity["result_status"] == "COMPLETED"
     assert activity["terminal_result_veto"] is True
     assert activity["has_active_execution"] is False
+
+
+
+def test_terminal_result_does_not_veto_distinct_new_pending_mission():
+    from app.services.telegram_control_surface_status import (
+        derive_operational_activity_evidence,
+    )
+
+    state = {
+        "active_goal_id": "goal-system-recovery",
+        "waiting_for_human": False,
+        "pending_action": {
+            "kind": "HERMES_CLOUD_RESUME",
+            "mission_id": "mission-new",
+            "task_id": "task-new",
+        },
+        "last_execution_result": {
+            "status": "SUCCESS",
+            "workflow_status": "COMPLETED",
+            "workflow_conclusion": "SUCCESS",
+            "run_id": "36596907553",
+            "workflow_run_id": "36596907553",
+            "mission_id": "mission-old",
+            "authorization_id": "auth-old",
+        },
+    }
+    authorizations = [
+        {
+            "authorization_id": "auth-new",
+            "status": "active",
+            "lineage": {
+                "goal_id": "goal-system-recovery",
+                "mission_id": "mission-new",
+                "run_id": "36599999999",
+            },
+        }
+    ]
+
+    activity = derive_operational_activity_evidence(
+        state,
+        recent_authorizations=authorizations,
+    )
+
+    assert activity["active_authorization"] is True
+    assert activity["authorization_matches_terminal_result"] is False
+    assert activity["terminal_result_veto"] is False
+    assert activity["has_active_execution"] is True
