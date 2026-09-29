@@ -743,6 +743,17 @@ presentation_proof() {
   exec bash scripts/prove_real_telegram_presentation.sh "${2:-}" "${3:-}"
 }
 
+obsidian_bridge() {
+  load_token
+  configure_cloud_routing
+  export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
+  cd "${ROOT}"
+  if [[ -n "${2:-}" ]]; then
+    exec "${PYTHON_BIN}" scripts/telegram_obsidian_bridge.py --input-id "${2}"
+  fi
+  exec "${PYTHON_BIN}" scripts/telegram_obsidian_bridge.py --latest
+}
+
 restart_gateway() {
   # Prevent the persistence supervisor from racing the intentional stop/start.
   : > "${MAINTENANCE_FILE}"
@@ -787,8 +798,11 @@ case "${1:-start}" in
   presentation-proof)
     presentation_proof "$@"
     ;;
+  obsidian-bridge)
+    obsidian_bridge "$@"
+    ;;
   *)
-    echo "uso: $0 {start|stop|restart|reconcile|status|heartbeat|doctor|logs [N]|foreground|source-proof [INPUT_ID]|presentation-proof [TEST_INPUT_ID] [SOURCE_INPUT_ID]}" >&2
+    echo "uso: $0 {start|stop|restart|reconcile|status|heartbeat|doctor|logs [N]|foreground|source-proof [INPUT_ID]|presentation-proof [TEST_INPUT_ID] [SOURCE_INPUT_ID]|obsidian-bridge [INPUT_ID]}" >&2
     exit 2
     ;;
 esac
