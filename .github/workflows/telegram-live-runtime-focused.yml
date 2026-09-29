@@ -12,6 +12,10 @@ on:
       - "app/services/semantic_mission_planner_service.py"
       - "app/services/harness_collaboration_service.py"
       - "app/services/telegram_conversation_service.py"
+      - "app/services/telegram_obsidian_attachment_bridge_service.py"
+      - "app/database/telegram_user_input_repository.py"
+      - "scripts/telegram_obsidian_bridge.py"
+      - "tests/test_telegram_obsidian_attachment_bridge.py"
       - "tests/test_telegram_transport_contract.py"
       - "tests/test_telegram_bot_api_transport.py"
       - "tests/test_telegram_conversation_control.py"
@@ -60,9 +64,11 @@ jobs:
             app/services/telegram_control_surface_status.py \
             app/services/telegram_status_reconciliation_service.py \
             app/services/telegram_conversation_service.py \
+            app/services/telegram_obsidian_attachment_bridge_service.py \
             app/services/harness_ai_provider_service.py \
             scripts/telegram_harness_gateway.py \
-            scripts/telegram_harness_gateway_v2.py
+            scripts/telegram_harness_gateway_v2.py \
+            scripts/telegram_obsidian_bridge.py
           echo "TELEGRAM_RUNTIME_CONTRACT_COMPILE=PASS"
 
       - name: Run live-path focused regressions
@@ -71,6 +77,7 @@ jobs:
           python -m pytest -q \
             tests/test_telegram_transport_contract.py \
             tests/test_telegram_bot_api_transport.py \
+            tests/test_telegram_obsidian_attachment_bridge.py \
             tests/test_telegram_a15_runtime_contract.py \
             tests/test_telegram_gateway_conversation.py::test_progress_reporter_is_audit_only_for_all_stages \
             tests/test_telegram_gateway_conversation.py::test_live_status_sends_no_visible_progress_before_final_answer \
