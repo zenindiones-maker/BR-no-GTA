@@ -59,23 +59,61 @@ jobs:
           import os
           from datetime import datetime, timezone
           from pathlib import Path
-          from app.services.continuous_operation_deployment_service import (
-              build_logical_cycle_id,
-              load_continuous_operation_deployment,
-          )
+          import hashlib
+          import re
 
-          deployment=load_continuous_operation_deployment(
-              Path("config/continuous_operation_deployment.json")
-          )
+          path=Path("config/continuous_operation_deployment.json")
+          deployment=json.loads(path.read_text(encoding="utf-8"))
+          if deployment.get("schema")!="ContinuousOperationDeployment/v1":
+              raise SystemExit("DEPLOYMENT_BINDING=FAIL schema")
+          execution_ref=str(deployment.get("execution_ref") or "").strip()
+          expected_sha=str(deployment.get("expected_sha") or "").strip().lower()
+          policy_sha=str(deployment.get("policy_sha256") or "").strip().lower()
+          contract=str(deployment.get("workflow_contract_version") or "").strip()
+          evidence=[str(x).strip() for x in deployment.get("promotion_evidence_refs") or [] if str(x).strip()]
+          cadence=int(deployment.get("cadence_seconds") or 0)
+          if (
+              deployment.get("enabled") is not True
+              or not re.fullmatch(r"[A-Za-z0-9._/-]+", execution_ref)
+              or ".." in execution_ref
+              or not re.fullmatch(r"[0-9a-f]{40}", expected_sha)
+              or not re.fullmatch(r"[0-9a-f]{64}", policy_sha)
+              or not contract.startswith("continuous-executor/")
+              or not evidence
+              or cadence < 300
+          ):
+              raise SystemExit("DEPLOYMENT_BINDING=FAIL validation")
+
           mode=(os.environ.get("MODE") or "scheduled").strip()
           request_id=(os.environ.get("REQUEST_ID") or "").strip()
-          cycle_id=build_logical_cycle_id(
-              deployment,
-              trigger_kind=os.environ["GITHUB_EVENT_NAME"],
-              mode=mode,
-              request_id=request_id or None,
-              now=datetime.now(timezone.utc),
-          )
+          now=datetime.now(timezone.utc)
+          if mode=="proof":
+              if not request_id:
+                  raise SystemExit("DEPLOYMENT_BINDING=FAIL proof request_id required")
+              logical_event={"semantics":"NON_COALESCIBLE_EXPLICIT_PROOF","request_id":request_id}
+          else:
+              epoch=int(now.timestamp())
+              logical_event={
+                  "semantics":"COALESCIBLE_LATEST_STATE_RECONCILIATION",
+                  "window_start_epoch":epoch-(epoch%cadence),
+              }
+          identity={
+              "schema":"ContinuousOperationLogicalCycleIdentity/v1",
+              "expected_sha":expected_sha,
+              "policy_sha256":policy_sha,
+              "cycle_kind":str(deployment.get("cycle_kind") or ""),
+              "mode":mode,
+              "logical_event":logical_event,
+          }
+          raw=json.dumps(identity,sort_keys=True,separators=(",",":")).encode()
+          cycle_id="continuous-cycle-"+hashlib.sha256(raw).hexdigest()[:24]
+          deployment={
+              **deployment,
+              "execution_ref":execution_ref,
+              "expected_sha":expected_sha,
+              "policy_sha256":policy_sha,
+              "workflow_contract_version":contract,
+          }
           out=Path(os.environ["GITHUB_OUTPUT"])
           with out.open("a", encoding="utf-8") as handle:
               handle.write(f"execution_ref={deployment['execution_ref']}\n")
