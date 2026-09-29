@@ -270,6 +270,7 @@ class OpenCodeNativeAIProvider:
         profile: dict[str, Any],
         repository: str | None = None,
         ref: str | None = None,
+        request_timeout_seconds: float | None = None,
     ) -> None:
         self.routing_decision = routing_decision
         self.authorization = authorization
@@ -279,6 +280,16 @@ class OpenCodeNativeAIProvider:
         self.profile_version = str(profile["version"])
         self.profile_content_ref = str(profile["content_ref"])
         self.profile_checksum = str(profile["checksum"])
+        self.request_timeout_seconds = (
+            float(request_timeout_seconds)
+            if request_timeout_seconds is not None
+            else None
+        )
+        if (
+            self.request_timeout_seconds is not None
+            and self.request_timeout_seconds <= 0
+        ):
+            raise ValueError("request_timeout_seconds must be positive")
         self.last_performance_metrics: dict[str, Any] = {}
         self.repository = (
             repository
@@ -310,10 +321,18 @@ class OpenCodeNativeAIProvider:
         command_runner = run_github_actions_command
         dispatcher = GitHubActionsDispatcher(command_runner)
         tracker = GitHubActionsRunTracker(command_runner)
+        configured_run_timeout = float(
+            os.getenv("BR_OPENCODE_NATIVE_RUN_TIMEOUT", "900")
+        )
+        run_timeout = (
+            min(configured_run_timeout, self.request_timeout_seconds)
+            if self.request_timeout_seconds is not None
+            else configured_run_timeout
+        )
         watcher = GitHubActionsRunWatcher(
             tracker,
             poll_interval=float(os.getenv("BR_OPENCODE_NATIVE_POLL_INTERVAL", "5")),
-            timeout=float(os.getenv("BR_OPENCODE_NATIVE_RUN_TIMEOUT", "900")),
+            timeout=run_timeout,
         )
         artifacts = GitHubActionsArtifactService(command_runner)
         self.command_runner = command_runner
@@ -441,7 +460,12 @@ class OpenCodeNativeAIProvider:
                     if process is not None and process.poll() is None:
                         process.kill()
 
-                timer = threading.Timer(300.0, _kill_timeout)
+                same_runner_timeout = (
+                    min(300.0, self.request_timeout_seconds)
+                    if self.request_timeout_seconds is not None
+                    else 300.0
+                )
+                timer = threading.Timer(same_runner_timeout, _kill_timeout)
                 timer.daemon = True
                 timer.start()
                 try:
