@@ -166,6 +166,92 @@ def test_nvidia_selection_accepts_per_call_bounded_timeout(monkeypatch):
     }]
 
 
+def test_tuxevil_selection_accepts_per_call_bounded_timeout(monkeypatch):
+    _install_free_test_provider(
+        monkeypatch,
+        "tuxevil",
+        model_id="gemini-3-flash",
+    )
+    import app.services.harness_ai_provider_service as service
+
+    decision = route_harness_request(
+        HarnessRoutingRequest(
+            intent="interactive Telegram reasoning",
+            authorized_action="EDITORIAL",
+            required_capability_id="ai.reasoning.text",
+            provider_required=True,
+            preferred_providers=("tuxevil",),
+            fallback_allowed=False,
+            zero_cost_operation=True,
+            learning_required=False,
+        )
+    )
+    calls = []
+
+    class SelectedProvider:
+        pass
+
+    monkeypatch.setattr(
+        service,
+        "create_ai_provider",
+        lambda **kwargs: calls.append(kwargs) or SelectedProvider(),
+    )
+    provider_name, provider = service.select_harness_ai_provider(
+        provider_name="tuxevil",
+        authorization=auth("tuxevil"),
+        routing_decision=decision,
+        request_timeout_seconds=17.5,
+    )
+    assert provider_name == "tuxevil"
+    assert isinstance(provider, SelectedProvider)
+    assert calls == [{
+        "model": decision.selected_model,
+        "timeout_seconds": 17.5,
+    }]
+
+
+def test_opencode_selection_accepts_per_call_bounded_timeout(monkeypatch):
+    _install_free_test_provider(
+        monkeypatch,
+        "opencode",
+        model_id="oc/big-pickle",
+    )
+    import app.services.harness_ai_provider_service as service
+
+    decision = route_harness_request(
+        HarnessRoutingRequest(
+            intent="interactive Telegram reasoning",
+            authorized_action="EDITORIAL",
+            required_capability_id="ai.reasoning.text",
+            provider_required=True,
+            preferred_providers=("opencode",),
+            fallback_allowed=False,
+            zero_cost_operation=True,
+            learning_required=False,
+        )
+    )
+    calls = []
+
+    class SelectedProvider:
+        pass
+
+    monkeypatch.setattr(
+        service,
+        "create_opencode_provider_for_active_profile",
+        lambda **kwargs: calls.append(kwargs) or SelectedProvider(),
+    )
+    provider_name, provider = service.select_harness_ai_provider(
+        provider_name="opencode",
+        authorization=auth("opencode"),
+        routing_decision=decision,
+        request_timeout_seconds=17.5,
+    )
+    assert provider_name == "opencode"
+    assert isinstance(provider, SelectedProvider)
+    assert calls[0]["routing_decision"] == decision
+    assert calls[0]["request_timeout_seconds"] == 17.5
+
+
 def test_tuxevil_selection_requires_governed_concrete_model(monkeypatch):
     _install_free_test_provider(monkeypatch, "tuxevil")
     import app.services.harness_ai_provider_service as service
