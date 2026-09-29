@@ -108,7 +108,7 @@ CHATTERBOX_PTBR_PROFILE = VoiceProviderProfile(
     supports_reference_batch=False,
     supports_reference_fusion=False,
     supports_reusable_clone_prompt=False,
-    ptbr_accent_certified=True,
+    ptbr_accent_certified=False,
 )
 
 
@@ -251,7 +251,10 @@ def _eligible(
         and profile.supports_ptbr
         and profile.requires_owner_reference
         and not profile.provider_preset_voice_allowed
-        and profile.ptbr_accent_certified
+        and (
+            request.usage in {"AUDITION", "PRONUNCIATION_TEST"}
+            or profile.ptbr_accent_certified
+        )
         and (request.usage != "LONG_FORM" or profile.supports_long_form)
     )
 
