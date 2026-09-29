@@ -1,14 +1,15 @@
 {
   "schema": "ContinuousOperationDeployment/v1",
   "execution_ref": "work/gate6f-analytics-learning",
-  "expected_sha": "0a9e51a8f8b5faf4c84024f9d3608345d6723d50",
+  "expected_sha": "a00e024b9365daafc8a25f25576416385d38b1ea",
   "workflow_contract_version": "continuous-executor/v2",
   "policy_sha256": "70590fe0deaa5fd0bd1b88bca6f97afe0a53e109c1b9d94e7716c6719e135e37",
   "enabled": true,
-  "promoted_at": "2026-09-29T14:37:21+00:00",
+  "promoted_at": "2026-09-29T16:16:20+00:00",
   "promotion_evidence_refs": [
-    "github-actions:36583921291:continuous-focused",
-    "github-actions:36583922119:br-no-gta-ci"
+    "github-actions:36589602434:continuous-focused",
+    "github-actions:36589603041:br-no-gta-ci",
+    "github-actions:36587219010:telegram-conversational-control-validation"
   ],
   "cadence_seconds": 21600,
   "cycle_kind": "CONTINUOUS_INTELLIGENCE"
