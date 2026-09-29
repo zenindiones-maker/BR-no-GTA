@@ -1,8 +1,8 @@
 {
-  "request": "mission-precedence-green-after-observe-policy-fix-v2",
-  "source_head": "2064b20abbd9aa7ce8c02fc2d71b38598d2395c5",
-  "objective": "Verify mission precedence plus least-privilege normalization of read-only OBSERVE subtasks under SYSTEM_IMPROVEMENT.",
-  "expected_first_state": "GREEN",
+  "request": "semantic-planner-outage-red-v1",
+  "source_head": "09f7cc7c43c0b0f98088f22ac14b376992b645d6",
+  "objective": "Reproduce live semantic-planner outage fallthrough at the real Telegram mission boundary before production fix.",
+  "expected_first_state": "RED_ON_AI_REASONING_FALLTHROUGH",
   "authority": "DEEPSEEK_HARNESS",
   "publication": false
 }
