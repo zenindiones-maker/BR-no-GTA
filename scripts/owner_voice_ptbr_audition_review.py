@@ -241,12 +241,22 @@ def main() -> int:
 
     from faster_whisper import WhisperModel
 
-    stt_model_id = str(os.environ.get("BR_OWNER_STT_MODEL") or "small").strip()
+    stt_model_path = Path(str(manifest.get("stt_model_path") or "").strip())
+    if not stt_model_path.is_dir():
+        qa_context_path = Path(
+            os.environ.get("BR_OWNER_REFERENCE_QA_CONTEXT")
+            or runner_temp / "br-owner-voice" / "reference-qa-context.json"
+        )
+        qa_context = json.loads(qa_context_path.read_text(encoding="utf-8"))
+        stt_model_path = Path(str(qa_context.get("stt_model_path") or "").strip())
+    if not stt_model_path.is_dir():
+        raise RuntimeError("OWNER_PTBR_STT_LOCAL_MODEL_MISSING")
+
     stt = WhisperModel(
-        stt_model_id,
+        str(stt_model_path),
         device="cpu",
         compute_type="int8",
-        download_root=str(runner_temp / "br-owner-voice" / "stt-models"),
+        local_files_only=True,
     )
 
     expected_text = str(manifest.get("audition_text") or "").strip()
