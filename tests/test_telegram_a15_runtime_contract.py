@@ -212,3 +212,38 @@ def test_gateway_reconcile_can_suppress_owner_voice_handoff_during_runtime_deplo
     )
     assert "BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START" in text
     assert "OWNER_VOICE_REFERENCE_HANDOFF=SUPPRESSED_FOR_RUNTIME_DEPLOY" in text
+
+def test_gateway_start_waits_for_revision_and_ready_proofs():
+    text = (ROOT / "scripts/telegram_termux_control.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "TELEGRAM_GATEWAY_READY_FILE" in text
+    assert "runtime_ready_matches()" in text
+    assert "wait_for_runtime_ready()" in text
+    assert "TELEGRAM_GATEWAY_STARTUP_WAIT_SECONDS" in text
+    start = text.split("start_gateway()", 1)[1].split("stop_gateway()", 1)[0]
+    assert "sleep 2" not in start
+    assert "wait_for_runtime_ready" in start
+    assert "runtime revision/readiness proof mismatch" in start
+
+
+def test_gateway_ready_proof_is_written_after_bot_api_validation():
+    text = (ROOT / "scripts/telegram_harness_gateway_v2.py").read_text(
+        encoding="utf-8"
+    )
+    assert "_write_runtime_ready_proof()" in text
+    assert "TELEGRAM_GATEWAY_READY_FILE" in text
+    get_me = text.index('me = api.call("getMe")')
+    webhook = text.index('webhook = api.call("getWebhookInfo")')
+    ready = text.index("_write_runtime_ready_proof()", webhook)
+    assert get_me < webhook < ready
+
+
+def test_runtime_status_requires_ready_proof_not_only_process_identity():
+    text = (ROOT / "scripts/telegram_termux_control.sh").read_text(
+        encoding="utf-8"
+    )
+    publish = text.split("publish_runtime_status()", 1)[1].split(
+        "heartbeat_gateway()", 1
+    )[0]
+    assert "runtime_ready_matches" in publish
