@@ -63,3 +63,222 @@ def build_variant_qa(
         "human_brazilian_accent_review_required": True,
         "human_voice_identity_review_required": True,
     }
+
+
+def _transcription_confidence(segments) -> float:
+    import math
+
+    word_probabilities: list[float] = []
+    segment_probabilities: list[float] = []
+    for segment in segments:
+        for word in getattr(segment, "words", None) or ():
+            probability = getattr(word, "probability", None)
+            if isinstance(probability, (int, float)) and 0.0 <= float(probability) <= 1.0:
+                word_probabilities.append(float(probability))
+        avg_logprob = getattr(segment, "avg_logprob", None)
+        if isinstance(avg_logprob, (int, float)) and math.isfinite(float(avg_logprob)):
+            segment_probabilities.append(
+                max(0.0, min(1.0, math.exp(float(avg_logprob))))
+            )
+    values = word_probabilities or segment_probabilities
+    return (sum(values) / len(values)) if values else 0.0
+
+
+def _send_document(
+    *,
+    bot_token: str,
+    chat_id: int,
+    path,
+    filename: str,
+    caption: str,
+) -> int:
+    import requests
+
+    with open(path, "rb") as stream:
+        response = requests.post(
+            f"https://api.telegram.org/bot{bot_token}/sendDocument",
+            data={"chat_id": str(chat_id), "caption": caption},
+            files={"document": (filename, stream, "audio/wav")},
+            timeout=120,
+        )
+    if response.status_code != 200:
+        raise RuntimeError("OWNER_PTBR_AUDITION_DELIVERY_FAILED")
+    payload = response.json()
+    result = payload.get("result") if isinstance(payload, dict) else None
+    if payload.get("ok") is not True or not isinstance(result, dict):
+        raise RuntimeError("OWNER_PTBR_AUDITION_DELIVERY_FAILED")
+    message_id = int(result.get("message_id") or 0)
+    if message_id <= 0:
+        raise RuntimeError("OWNER_PTBR_AUDITION_DELIVERY_RECEIPT_INVALID")
+    return message_id
+
+
+def main() -> int:
+    import json
+    import os
+    from pathlib import Path
+
+    from app.services.owner_voice_audio_quality_service import pcm16_quality_metrics
+    from scripts.owner_voice_chatterbox_ptbr_audition import (
+        MODEL_ID,
+        MODEL_REVISION,
+        _load_reference_index_from_environment,
+    )
+
+    runner_temp = Path(os.environ.get("RUNNER_TEMP") or "/tmp").resolve()
+    manifest_path = Path(
+        os.environ.get("BR_OWNER_PTBR_AUDITION_SET")
+        or runner_temp / "br-owner-voice" / "ptbr-audition-set.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if (
+        manifest.get("schema") != "OwnerVoicePtBrAuditionSet/v1"
+        or manifest.get("voice_identity_id") != "BR_OWNER_V1"
+        or manifest.get("reference_source") != "TELEGRAM"
+        or manifest.get("locale") != "pt-BR"
+        or manifest.get("language_id") != "pt"
+        or manifest.get("model_id") != MODEL_ID
+        or manifest.get("model_revision") != MODEL_REVISION
+        or manifest.get("provider_default_voice_used") is not False
+        or manifest.get("provider_preset_voice_used") is not False
+        or manifest.get("generic_voice_fallback") is not False
+    ):
+        raise RuntimeError("OWNER_PTBR_AUDITION_SET_INVALID")
+
+    token = str(os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+    if not token:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN_NOT_MATERIALIZED")
+
+    reference_index = _load_reference_index_from_environment()
+    selected_input_id = int(manifest.get("selected_reference_input_id") or 0)
+    source_row = next(
+        (
+            row for row in reference_index["references"]
+            if int(row["telegram_input_id"]) == selected_input_id
+        ),
+        None,
+    )
+    if not isinstance(source_row, dict):
+        raise RuntimeError("OWNER_PTBR_AUDITION_CHAT_PROVENANCE_MISSING")
+    chat_id = int(source_row["telegram_chat_id"])
+
+    from faster_whisper import WhisperModel
+
+    stt_model_id = str(os.environ.get("BR_OWNER_STT_MODEL") or "small").strip()
+    stt = WhisperModel(
+        stt_model_id,
+        device="cpu",
+        compute_type="int8",
+        download_root=str(runner_temp / "br-owner-voice" / "stt-models"),
+    )
+
+    expected_text = str(manifest.get("audition_text") or "").strip()
+    reviewed: list[dict[str, Any]] = []
+    for row in manifest.get("outputs") or ():
+        path = Path(str(row.get("path") or ""))
+        if not path.is_file() or path.stat().st_size <= 0:
+            raise RuntimeError("OWNER_PTBR_AUDITION_OUTPUT_MISSING")
+        segments_iter, info = stt.transcribe(
+            str(path),
+            language=None,
+            beam_size=5,
+            vad_filter=True,
+            word_timestamps=True,
+            condition_on_previous_text=True,
+        )
+        segments = list(segments_iter)
+        observed_text = " ".join(
+            str(getattr(segment, "text", "") or "").strip()
+            for segment in segments
+            if str(getattr(segment, "text", "") or "").strip()
+        )
+        qa = build_variant_qa(
+            expected_text=expected_text,
+            observed_text=observed_text,
+            detected_language=str(getattr(info, "language", "") or ""),
+            language_probability=float(
+                getattr(info, "language_probability", 0.0) or 0.0
+            ),
+            audio_metrics=pcm16_quality_metrics(path),
+        )
+        qa["transcription_confidence"] = _transcription_confidence(segments)
+        reviewed.append({**dict(row), "qa": qa})
+
+    passing = [row for row in reviewed if row["qa"]["status"] == "PASS"]
+    if not passing:
+        raise RuntimeError("OWNER_PTBR_AUDITION_NO_AUTOMATIC_PASS")
+
+    deliveries: list[dict[str, Any]] = []
+    labels = ("A", "B", "C")
+    for row in passing:
+        variant = int(row["variant"])
+        label = labels[variant - 1]
+        caption = (
+            f"BR_OWNER_V1 · TESTE {label} · Português do Brasil (pt-BR)\n"
+            f"Referência: áudio real do humano no Telegram\n"
+            f"CFG={row['cfg_weight']} · automático=PASS\n"
+            "Verifique: 1) é a sua voz? 2) sotaque brasileiro natural? "
+            "3) fala fluente?\n"
+            "HUMAN_REVIEW=PENDING"
+        )
+        message_id = _send_document(
+            bot_token=token,
+            chat_id=chat_id,
+            path=row["path"],
+            filename=f"BR_OWNER_V1_PTBR_{label}.wav",
+            caption=caption,
+        )
+        deliveries.append({
+            "variant": variant,
+            "label": label,
+            "cfg_weight": float(row["cfg_weight"]),
+            "telegram_message_id": message_id,
+            "automatic_qa": row["qa"],
+            "human_review": "PENDING",
+        })
+
+    receipt = {
+        "schema": "OwnerVoicePtBrAuditionReview/v1",
+        "voice_identity_id": "BR_OWNER_V1",
+        "reference_source": "TELEGRAM",
+        "locale": "pt-BR",
+        "model_id": MODEL_ID,
+        "model_revision": MODEL_REVISION,
+        "automatic_pass_count": len(passing),
+        "deliveries": deliveries,
+        "human_voice_identity_review": "PENDING",
+        "human_brazilian_accent_review": "PENDING",
+        "human_fluency_review": "PENDING",
+        "production_activation": "BLOCKED_PENDING_HUMAN_REVIEW",
+        "observed_transcript_logged": False,
+    }
+    receipt_path = runner_temp / "br-owner-voice" / "ptbr-audition-review.json"
+    receipt_path.write_text(
+        json.dumps(receipt, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+    try:
+        receipt_path.chmod(0o600)
+    except OSError:
+        pass
+
+    print(f"OWNER_PTBR_AUTOMATIC_PASS_COUNT={len(passing)}")
+    print(f"OWNER_PTBR_TELEGRAM_DELIVERY_COUNT={len(deliveries)}")
+    print("OWNER_PTBR_OBSERVED_TRANSCRIPT_LOGGED=NO")
+    print("HUMAN_VOICE_IDENTITY_REVIEW=PENDING")
+    print("HUMAN_BRAZILIAN_ACCENT_REVIEW=PENDING")
+    print("HUMAN_PTBR_FLUENCY_REVIEW=PENDING")
+    print("OWNER_PTBR_AUDITION_REVIEW=PASS")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Exception as exc:
+        print(
+            "OWNER_PTBR_AUDITION_REVIEW=FAIL "
+            f"FAILURE_CLASS={str(exc).split(':', 1)[0]}",
+            file=__import__("sys").stderr,
+        )
+        raise SystemExit(45)
