@@ -1,8 +1,8 @@
 {
-  "request": "semantic-planner-outage-red-v1",
-  "source_head": "09f7cc7c43c0b0f98088f22ac14b376992b645d6",
-  "objective": "Reproduce live semantic-planner outage fallthrough at the real Telegram mission boundary before production fix.",
-  "expected_first_state": "RED_ON_AI_REASONING_FALLTHROUGH",
+  "request": "semantic-planner-outage-green-v1",
+  "source_head": "c7e400564a07b85aa48e2b3e4d9c2d92f13f54ed",
+  "objective": "Verify SYSTEM_IMPROVEMENT contains semantic planner outage without falling through to ai.reasoning.text.",
+  "expected_first_state": "GREEN",
   "authority": "DEEPSEEK_HARNESS",
   "publication": false
 }
