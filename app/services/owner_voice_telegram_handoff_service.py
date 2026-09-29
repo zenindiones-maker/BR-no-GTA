@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import subprocess
@@ -7,7 +9,7 @@ from typing import Any, Callable, Iterable, Mapping
 
 
 OWNER_VOICE_IDENTITY_ID = "BR_OWNER_V1"
-OWNER_VOICE_REFERENCE_SECRET = "BR_OWNER_TELEGRAM_REFERENCE_INDEX"
+OWNER_VOICE_REFERENCE_ENVELOPE_SECRET = "BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64"
 OWNER_VOICE_MATERIALIZATION_WORKFLOW = "owner-voice-private-materialization.yml"
 
 
@@ -19,6 +21,37 @@ def _stable_sha256(payload: Mapping[str, Any]) -> str:
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(rendered).hexdigest()
+
+
+def encode_reference_envelope_b64(index: Mapping[str, Any]) -> str:
+    raw = json.dumps(
+        dict(index),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii")
+
+
+def parse_reference_envelope_b64(raw: str) -> dict[str, Any]:
+    value = str(raw or "").strip()
+    if not value:
+        raise RuntimeError("OWNER_REFERENCE_ENVELOPE_EMPTY")
+    try:
+        decoded = base64.urlsafe_b64decode(value.encode("ascii"))
+        payload = json.loads(decoded.decode("utf-8"))
+    except (UnicodeEncodeError, UnicodeDecodeError, binascii.Error, json.JSONDecodeError) as exc:
+        raise RuntimeError("OWNER_REFERENCE_ENVELOPE_INVALID") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("OWNER_REFERENCE_ENVELOPE_INVALID")
+    return payload
+
+
+def handoff_dispatch_key(index_sha256: str) -> str:
+    digest = str(index_sha256 or "").strip().lower()
+    if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+        raise ValueError("index_sha256 must be a sha256 digest")
+    return f"owner-voice-reference-index/v1:{digest}"
 
 
 def build_owner_voice_reference_index(
@@ -120,17 +153,12 @@ def handoff_reference_index_to_actions(
     if int(index.get("reference_count") or 0) <= 0:
         raise RuntimeError("OWNER_TELEGRAM_REFERENCE_DISCOVERY_EMPTY")
 
-    payload = json.dumps(
-        dict(index),
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
+    payload = encode_reference_envelope_b64(index)
     secret_command = [
         "gh",
         "secret",
         "set",
-        OWNER_VOICE_REFERENCE_SECRET,
+        OWNER_VOICE_REFERENCE_ENVELOPE_SECRET,
         "--repo",
         repository,
     ]
@@ -164,12 +192,13 @@ def handoff_reference_index_to_actions(
         raise RuntimeError("OWNER_REFERENCE_MATERIALIZATION_DISPATCH_FAILED")
 
     return {
-        "schema": "OwnerVoiceReferenceHandoffReceipt/v1",
+        "schema": "OwnerVoiceReferenceHandoffReceipt/v2",
         "status": "DISPATCHED",
         "voice_identity_id": OWNER_VOICE_IDENTITY_ID,
         "reference_count": int(index.get("reference_count") or 0),
         "index_sha256": str(index.get("index_sha256") or ""),
-        "secret_name": OWNER_VOICE_REFERENCE_SECRET,
+        "dispatch_key": handoff_dispatch_key(str(index.get("index_sha256") or "")),
+        "secret_name": OWNER_VOICE_REFERENCE_ENVELOPE_SECRET,
         "workflow": OWNER_VOICE_MATERIALIZATION_WORKFLOW,
         "sensitive_metadata_logged": False,
         "media_bytes_on_a15": False,
