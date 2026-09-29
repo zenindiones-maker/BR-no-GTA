@@ -15,6 +15,7 @@ from app.services.opencode_executor_profile_service import (
     BASELINE_OPENCODE_EXECUTOR_VERSION,
     CANDIDATE_OPENCODE_EXECUTOR_VERSION,
     OPENCODE_EXECUTOR_SKILL_ID,
+    classify_persisted_opencode_profile,
     executable_opencode_executor_profile,
     resolve_active_opencode_executor_profile,
 )
@@ -50,8 +51,12 @@ def hydrate() -> dict:
             status="SUPERSEDED",
             evidence_refs=evidence,
         )
-    elif existing_v1["checksum"] != v1["checksum"] or existing_v1["content_ref"] != v1["content_ref"]:
-        raise RuntimeError("persisted OpenCode v1 profile conflicts with immutable definition")
+        v1_compatibility = "INSERTED_CANONICAL"
+    else:
+        v1_compatibility = classify_persisted_opencode_profile(
+            existing_v1,
+            version=BASELINE_OPENCODE_EXECUTOR_VERSION,
+        )
 
     existing_v2 = get_version(
         table="harness_skill_versions",
@@ -60,7 +65,7 @@ def hydrate() -> dict:
         version=CANDIDATE_OPENCODE_EXECUTOR_VERSION,
     )
     if existing_v2 is None:
-        register_skill_version(
+        existing_v2 = register_skill_version(
             skill_id=OPENCODE_EXECUTOR_SKILL_ID,
             version=CANDIDATE_OPENCODE_EXECUTOR_VERSION,
             parent_version=BASELINE_OPENCODE_EXECUTOR_VERSION,
@@ -69,8 +74,12 @@ def hydrate() -> dict:
             status="ACTIVE",
             evidence_refs=evidence,
         )
-    elif existing_v2["checksum"] != v2["checksum"] or existing_v2["content_ref"] != v2["content_ref"]:
-        raise RuntimeError("persisted OpenCode v2 profile conflicts with immutable definition")
+        v2_compatibility = "INSERTED_CANONICAL"
+    else:
+        v2_compatibility = classify_persisted_opencode_profile(
+            existing_v2,
+            version=CANDIDATE_OPENCODE_EXECUTOR_VERSION,
+        )
 
     active_record = get_active_version(
         table="harness_skill_versions",
@@ -95,6 +104,10 @@ def hydrate() -> dict:
         "promotion_evidence_run_id": PROMOTION_EVIDENCE_RUN_ID,
         "active_profile": active,
         "immutable_profile_checksum": v2["checksum"],
+        "persisted_profile_checksum": str(existing_v2.get("checksum") or ""),
+        "profile_definition_compatibility": v2_compatibility,
+        "baseline_definition_compatibility": v1_compatibility,
+        "profile_migration_required": False,
         "immutable_profile_conflict": False,
         "quality_regression": "NO",
         "fallback_occurred": False,
