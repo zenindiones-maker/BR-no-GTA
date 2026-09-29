@@ -32,7 +32,7 @@ from scripts.real_multi_agent_production import (
     MAX_LONGFORM_WEB_EVIDENCE_SNAPSHOTS,
     MAX_LONGFORM_WEB_SOURCE_ACQUISITIONS,
     PRE_TTS_DURATION_TOLERANCE_MINUTES,
-    VOICE_B_EFFECTIVE_PLANNING_WPM,
+    OWNER_VOICE_EFFECTIVE_PLANNING_WPM,
     _bounded_youtube_semantic_context,
     _build_product,
     _complete_replayed_task,
