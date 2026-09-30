@@ -1933,6 +1933,167 @@ def _migrate_gta6_autonomous_knowledge_plane(connection) -> None:
 
 
 
+
+def _migrate_persistent_intelligence_force(connection) -> None:
+    """Persist bounded persistent responsibilities without creating a second authority plane."""
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS persistent_responsibility_revisions (
+            responsibility_id TEXT NOT NULL,
+            revision INTEGER NOT NULL,
+            payload_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            enabled INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(responsibility_id, revision)
+        );
+
+        CREATE TABLE IF NOT EXISTS persistent_responsibility_heads (
+            responsibility_id TEXT PRIMARY KEY,
+            current_revision INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            enabled INTEGER NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_persistent_responsibility_state
+        ON persistent_responsibility_heads(status, enabled, updated_at);
+
+        CREATE TABLE IF NOT EXISTS persistent_agent_identities (
+            persistent_agent_id TEXT NOT NULL,
+            responsibility_id TEXT NOT NULL,
+            revision INTEGER NOT NULL,
+            agent_instance_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            runtime_family TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            environment_id TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(persistent_agent_id, revision)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_persistent_agent_responsibility
+        ON persistent_agent_identities(responsibility_id, revision DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_persistent_agent_session
+        ON persistent_agent_identities(session_id);
+
+        CREATE TABLE IF NOT EXISTS persistent_agent_activity (
+            activity_id TEXT PRIMARY KEY,
+            responsibility_id TEXT NOT NULL,
+            persistent_agent_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            occurred_at TEXT NOT NULL,
+            task_id TEXT,
+            mission_id TEXT,
+            summary TEXT NOT NULL,
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            payload_digest TEXT NOT NULL,
+            schema_name TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_persistent_activity_feed
+        ON persistent_agent_activity(responsibility_id, occurred_at, activity_id);
+
+        CREATE INDEX IF NOT EXISTS idx_persistent_activity_type
+        ON persistent_agent_activity(event_type, occurred_at);
+
+        CREATE TABLE IF NOT EXISTS persistent_work_usage (
+            responsibility_id TEXT NOT NULL,
+            usage_date TEXT NOT NULL,
+            active_seconds INTEGER NOT NULL DEFAULT 0,
+            agent_turns INTEGER NOT NULL DEFAULT 0,
+            semantic_calls INTEGER NOT NULL DEFAULT 0,
+            provider_calls INTEGER NOT NULL DEFAULT 0,
+            tool_calls INTEGER NOT NULL DEFAULT 0,
+            subagents INTEGER NOT NULL DEFAULT 0,
+            subagent_seconds INTEGER NOT NULL DEFAULT 0,
+            retries INTEGER NOT NULL DEFAULT 0,
+            external_tool_seconds INTEGER NOT NULL DEFAULT 0,
+            cost REAL NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(responsibility_id, usage_date)
+        );
+
+        CREATE TABLE IF NOT EXISTS persistent_responsibility_wakes (
+            wake_id TEXT PRIMARY KEY,
+            responsibility_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            wake_reason TEXT NOT NULL,
+            wake_source TEXT NOT NULL,
+            wake_event_ref TEXT NOT NULL,
+            wake_timestamp TEXT NOT NULL,
+            event_digest TEXT NOT NULL,
+            processed_state TEXT NOT NULL,
+            opportunity_ref TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(responsibility_id, wake_source, wake_event_ref)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_persistent_wake_responsibility
+        ON persistent_responsibility_wakes(responsibility_id, wake_timestamp, wake_id);
+
+        CREATE TABLE IF NOT EXISTS persistent_wake_usage (
+            wake_id TEXT PRIMARY KEY,
+            responsibility_id TEXT NOT NULL,
+            active_seconds INTEGER NOT NULL DEFAULT 0,
+            agent_turns INTEGER NOT NULL DEFAULT 0,
+            semantic_calls INTEGER NOT NULL DEFAULT 0,
+            provider_calls INTEGER NOT NULL DEFAULT 0,
+            tool_calls INTEGER NOT NULL DEFAULT 0,
+            subagents INTEGER NOT NULL DEFAULT 0,
+            subagent_seconds INTEGER NOT NULL DEFAULT 0,
+            retries INTEGER NOT NULL DEFAULT 0,
+            external_tool_seconds INTEGER NOT NULL DEFAULT 0,
+            cost REAL NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS persistent_opportunity_candidates (
+            candidate_id TEXT PRIMARY KEY,
+            responsibility_id TEXT NOT NULL,
+            wake_id TEXT NOT NULL UNIQUE,
+            candidate_type TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            content_digest TEXT NOT NULL,
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_persistent_opportunity_responsibility
+        ON persistent_opportunity_candidates(responsibility_id, created_at, candidate_id);
+
+        CREATE TABLE IF NOT EXISTS persistent_agent_custom_rule_revisions (
+            rule_id TEXT NOT NULL,
+            responsibility_id TEXT NOT NULL,
+            revision INTEGER NOT NULL,
+            effect TEXT NOT NULL,
+            action TEXT NOT NULL,
+            target TEXT NOT NULL,
+            risk_class TEXT NOT NULL,
+            status TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(rule_id, revision)
+        );
+
+        CREATE TABLE IF NOT EXISTS persistent_agent_custom_rule_heads (
+            rule_id TEXT PRIMARY KEY,
+            responsibility_id TEXT NOT NULL,
+            current_revision INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_persistent_custom_rule_responsibility
+        ON persistent_agent_custom_rule_heads(responsibility_id, status, rule_id);
+        """
+    )
+
 def _migrate_youtube_intelligence_revenue_plane(connection) -> None:
     """Persist typed YouTube intelligence/business evidence without creating a second authority plane."""
     connection.executescript(
@@ -2070,6 +2231,7 @@ def initialize_schema() -> None:
         _migrate_youtube_publication_cloud_execution(connection)
         _migrate_youtube_content_packages(connection)
         _migrate_youtube_intelligence_revenue_plane(connection)
+        _migrate_persistent_intelligence_force(connection)
         _migrate_content_segment_asset_identity(connection)
         _migrate_gta6_knowledge(connection)
         _migrate_media_knowledge(connection)

@@ -2196,3 +2196,80 @@ _REGISTRY._records = tuple(
 )
 
 GLOBAL_CAPABILITY_REGISTRY = _REGISTRY
+
+PERSISTENT_RESPONSIBILITY_OBSERVE_RECORD = CapabilityRecord(
+    capability_id="persistent.responsibility.observe",
+    capability_type="EXECUTOR",
+    domain="persistent-intelligence",
+    implementation=(
+        "Harness-governed deterministic bounded observation evaluator for "
+        "PersistentResponsibility/v1"
+    ),
+    input_contract=(
+        "persisted Harness RESEARCH authorization + responsibility_id + "
+        "matching event/interval observation"
+    ),
+    output_contract=(
+        "PersistentResponsibilityObservationResult/v1 + bounded wake decision"
+    ),
+    requirements=(
+        "persisted DeepSeek Harness RESEARCH authorization",
+        "PersistentResponsibility/v1",
+        "ProactiveResearchPolicy/v1",
+        "PersistentWorkTimeBudget/v1",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("RESEARCH",),
+    policy_tags=(
+        "persistent-intelligence",
+        "responsibility",
+        "read-only",
+        "event-driven",
+        "bounded",
+        "harness-subordinate",
+    ),
+    security_boundary=(
+        "DeepSeek Harness remains sole reducer and authorization authority; "
+        "this executor only evaluates whether bounded read-only observation work exists; "
+        "it cannot create side-effect authority, publish, deploy, push, change permissions, "
+        "or mutate external systems."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL",
+    quality_class="DETERMINISTIC_FAIL_CLOSED",
+    evidence_contract=(
+        "app.services.persistent_intelligence_contracts.ResponsibilityWakeDecision/v1"
+    ),
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.persistent_intelligence_force_service."
+        "execute_persistent_responsibility_observation_capability"
+    ),
+    version="1",
+    provider_id="internal",
+    agent_id="persistent-intelligence-observer",
+    side_effects=(),
+    supports_parallelism=True,
+    supports_retry=False,
+    supports_resume=True,
+    supports_review=False,
+    side_effect_class="LOCAL_STATE_ONLY",
+    default_read_scope=(),
+    default_write_scope=(),
+    allowed_tools=(),
+    health_policy="DEFAULT",
+)
+
+if _REGISTRY._by_id.get(PERSISTENT_RESPONSIBILITY_OBSERVE_RECORD.capability_id) is not None:
+    raise ValueError("Duplicate persistent.responsibility.observe Registry record")
+_REGISTRY._by_id[PERSISTENT_RESPONSIBILITY_OBSERVE_RECORD.capability_id] = (
+    PERSISTENT_RESPONSIBILITY_OBSERVE_RECORD
+)
+_REGISTRY._records = tuple(
+    sorted(
+        (*_REGISTRY._records, PERSISTENT_RESPONSIBILITY_OBSERVE_RECORD),
+        key=lambda item: item.capability_id,
+    )
+)
