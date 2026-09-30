@@ -1,0 +1,6 @@
+# A15 Telegram runtime profile.
+# Keep Android/Termux lightweight: ingress, SQLite, local text normalization,
+# durable conversation, and Telegram surface only.
+python-dotenv==1.2.3
+APScheduler==3.11.2
+tzdata==2026.3

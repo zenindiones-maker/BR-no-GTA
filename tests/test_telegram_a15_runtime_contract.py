@@ -279,24 +279,29 @@ def test_runtime_reconcile_suppresses_owner_voice_handoff_by_contract():
     assert "start_gateway" in section
 
 
-def test_a15_runtime_ready_requires_exact_gateway_python_markitdown_and_pip_check():
+def test_a15_runtime_ready_uses_platform_safe_profile_and_optional_markitdown():
     text = (ROOT / "scripts/telegram_termux_control.sh").read_text(
         encoding="utf-8"
     )
     assert 'PYTHON_BIN="${ROOT}/.venv/bin/python"' in text
-    assert "ensure_gateway_python_runtime()" in text
-    assert "runtime_dependency_readiness()" in text
-    assert "MARKITDOWN_IMPORT=PASS" in text
-    assert "MARKITDOWN_VERSION=" in text
-    assert "PIP_CHECK=PASS" in text
-    assert '"${PYTHON_BIN}" -m pip check' in text
-    assert '"${PYTHON_BIN}" -m pip install -r "${ROOT}/requirements.txt"' in text
-    start = text.split("start_gateway()", 1)[1].split("stop_gateway()", 1)[0]
-    assert "runtime_dependency_readiness" in start
-    foreground = text.split("foreground_gateway()", 1)[1].split(
-        "doctor_gateway()", 1
+    assert "A15_RUNTIME_DEPENDENCY_PROFILE=" in text
+    assert 'requirements/a15-telegram.txt' in text
+    assert "A15_REQUIRED_DEPENDENCIES=PASS" in text
+    assert "A15_LOCAL_TEXT_NORMALIZER=PASS" in text
+    assert "MARKITDOWN_AVAILABLE=" in text
+    assert "RICH_DOCUMENT_NORMALIZATION_ROUTE=CLOUD_REQUIRED" in text
+    dependency = text.split("runtime_dependency_probe()", 1)[1].split(
+        "runtime_dependency_readiness()", 1
     )[0]
-    assert "runtime_dependency_readiness" in foreground
+    assert "import markitdown" not in dependency
+    assert "|| return $?" in dependency
+    assert 'pip install -r "${ROOT}/requirements.txt"' not in text
+    reconcile = text.split("reconcile_gateway()", 1)[1].split(
+        "foreground_gateway()", 1
+    )[0]
+    assert reconcile.index("candidate_runtime_preflight") < reconcile.index("stop_gateway")
+    assert 'rm -f "${START_LOCK_DIR}"' not in reconcile
+    assert "release_start_lock" in reconcile
 
 
 def test_termux_heartbeat_publishes_semantic_lineage_attestations_only_on_exact_runtime():

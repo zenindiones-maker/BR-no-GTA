@@ -35,36 +35,90 @@ ensure_gateway_python_runtime() {
   fi
 }
 
-runtime_dependency_probe() {
-  "${PYTHON_BIN}" - <<'PY' >/dev/null
-from importlib.metadata import version
-import markitdown  # noqa: F401
+A15_RUNTIME_DEPENDENCY_PROFILE="a15-telegram-v1"
+A15_REQUIREMENTS_FILE="${ROOT}/requirements/a15-telegram.txt"
 
-installed = version("markitdown")
-if installed != "0.1.7":
-    raise SystemExit(f"unexpected markitdown version: {installed}")
+runtime_dependency_probe() {
+  export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
+  "${PYTHON_BIN}" - <<'PY' >/dev/null || return $?
+import sqlite3
+import tempfile
+from pathlib import Path
+
+import dotenv  # noqa: F401
+import apscheduler  # noqa: F401
+
+from app.services.telegram_obsidian_attachment_bridge_service import (
+    _safe_html_text_fallback,
+)
+import scripts.telegram_harness_gateway_v2  # noqa: F401
+
+connection = sqlite3.connect(":memory:")
+connection.execute("CREATE TABLE readiness_probe(value INTEGER NOT NULL)")
+connection.execute("INSERT INTO readiness_probe(value) VALUES (1)")
+value = connection.execute("SELECT value FROM readiness_probe").fetchone()[0]
+connection.close()
+if value != 1:
+    raise SystemExit("sqlite readiness probe failed")
+
+with tempfile.TemporaryDirectory() as temporary:
+    path = Path(temporary) / "probe.html"
+    path.write_text(
+        "<html><body><h1>A15_RUNTIME_PROBE</h1></body></html>",
+        encoding="utf-8",
+    )
+    if "A15_RUNTIME_PROBE" not in _safe_html_text_fallback(path):
+        raise SystemExit("stdlib html normalizer readiness probe failed")
 PY
-  "${PYTHON_BIN}" -m pip check >/dev/null
+  return 0
 }
 
 runtime_dependency_readiness() {
-  ensure_gateway_python_runtime
+  ensure_gateway_python_runtime || return $?
   if ! runtime_dependency_probe; then
-    echo "TELEGRAM_RUNTIME_DEPENDENCIES=RECONCILING"
-    "${PYTHON_BIN}" -m pip install -r "${ROOT}/requirements.txt"
+    echo "TELEGRAM_RUNTIME_DEPENDENCIES=RECONCILING PROFILE=${A15_RUNTIME_DEPENDENCY_PROFILE}"
+    "${PYTHON_BIN}" -m pip install -r "${A15_REQUIREMENTS_FILE}" || return $?
+    runtime_dependency_probe || return $?
   fi
 
   echo "GATEWAY_PYTHON=$(readlink -f "${PYTHON_BIN}" 2>/dev/null || printf '%s' "${PYTHON_BIN}")"
   echo "PYTHON_BIN=$(readlink -f "${PYTHON_BIN}" 2>/dev/null || printf '%s' "${PYTHON_BIN}")"
+  echo "A15_RUNTIME_DEPENDENCY_PROFILE=${A15_RUNTIME_DEPENDENCY_PROFILE}"
+  echo "A15_REQUIRED_DEPENDENCIES=PASS"
+  echo "A15_LOCAL_TEXT_NORMALIZER=PASS"
   "${PYTHON_BIN}" - <<'PY'
-from importlib.metadata import version
-import markitdown  # noqa: F401
-
-print("MARKITDOWN_IMPORT=PASS")
-print(f"MARKITDOWN_VERSION={version('markitdown')}")
+from importlib.metadata import PackageNotFoundError, version
+try:
+    import markitdown  # noqa: F401
+except Exception:
+    print("MARKITDOWN_AVAILABLE=NO")
+else:
+    try:
+        installed = version("markitdown")
+    except PackageNotFoundError:
+        installed = "unknown"
+    print("MARKITDOWN_AVAILABLE=YES")
+    print(f"MARKITDOWN_VERSION={installed}")
+print("RICH_DOCUMENT_NORMALIZATION_ROUTE=CLOUD_REQUIRED")
 PY
-  "${PYTHON_BIN}" -m pip check
-  echo "PIP_CHECK=PASS"
+  echo "A15_PROFILE_CHECK=PASS"
+}
+
+candidate_runtime_preflight() {
+  runtime_dependency_readiness || return $?
+  load_token || return $?
+  configure_cloud_routing || return $?
+  export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
+  cd "${ROOT}"
+  "${PYTHON_BIN}" - <<'PY' || return $?
+from app.main import initialize_application
+import scripts.telegram_harness_gateway_v2  # noqa: F401
+
+initialize_application()
+print("TELEGRAM_CANDIDATE_IMPORTS=PASS")
+print("TELEGRAM_CANDIDATE_DB_SCHEMA=PASS")
+PY
+  echo "TELEGRAM_CANDIDATE_PREFLIGHT=PASS"
 }
 
 ensure_gateway_python_runtime
@@ -576,9 +630,18 @@ start_gateway() {
     rm -f "${PID_FILE}" "${REVISION_FILE}" "${READY_FILE}"
   fi
 
-  runtime_dependency_readiness
-  load_token
-  configure_cloud_routing
+  if ! runtime_dependency_readiness; then
+    release_start_lock
+    return 1
+  fi
+  if ! load_token; then
+    release_start_lock
+    return 1
+  fi
+  if ! configure_cloud_routing; then
+    release_start_lock
+    return 1
+  fi
   export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
   export TELEGRAM_CONTROL_STATE_FILE="${STATE_DIR}/telegram-control.json"
   export TELEGRAM_GATEWAY_REVISION_FILE="${REVISION_FILE}"
@@ -682,18 +745,28 @@ status_gateway() {
   return "${status}"
 }
 
+cleanup_gateway_deploy_state() {
+  rm -f "${MAINTENANCE_FILE}" 2>/dev/null || true
+  release_start_lock
+}
+
 reconcile_gateway() {
   : > "${MAINTENANCE_FILE}"
-  trap 'rm -f "${MAINTENANCE_FILE}" "${START_LOCK_DIR}"' EXIT INT TERM
+  trap 'cleanup_gateway_deploy_state' EXIT INT TERM
   echo "TELEGRAM_DEPLOY_RECONCILE=START"
   reap_untracked_legacy_supervisors
-  sync_branch_ff_only
+  sync_branch_ff_only || return $?
+  if ! candidate_runtime_preflight; then
+    echo "TELEGRAM_DEPLOY_PREFLIGHT=FAIL known-good listener preserved when available" >&2
+    return 1
+  fi
+  echo "TELEGRAM_DEPLOY_PREFLIGHT=PASS"
   stop_gateway
   BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START=1 start_gateway
   runtime_revision_report
   publish_runtime_status
   echo "TELEGRAM_DEPLOY_RECONCILE=PASS"
-  rm -f "${MAINTENANCE_FILE}"
+  cleanup_gateway_deploy_state
   trap - EXIT INT TERM
 }
 
@@ -838,10 +911,14 @@ obsidian_bridge() {
 restart_gateway() {
   # Prevent the persistence supervisor from racing the intentional stop/start.
   : > "${MAINTENANCE_FILE}"
-  trap 'rm -f "${MAINTENANCE_FILE}" "${START_LOCK_DIR}"' EXIT INT TERM
+  trap 'cleanup_gateway_deploy_state' EXIT INT TERM
+  if ! candidate_runtime_preflight; then
+    echo "TELEGRAM_RESTART_PREFLIGHT=FAIL listener preserved when available" >&2
+    return 1
+  fi
   stop_gateway
   start_gateway
-  rm -f "${MAINTENANCE_FILE}"
+  cleanup_gateway_deploy_state
   trap - EXIT INT TERM
 }
 

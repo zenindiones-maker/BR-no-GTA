@@ -200,6 +200,10 @@ def _safe_html_text_fallback(path: Path) -> str:
     return parser.rendered_text()
 
 
+def _safe_text_fallback(path: Path) -> str:
+    return path.read_bytes().decode("utf-8", errors="replace").strip()
+
+
 def _clip_normalized_text(
     text: str,
     *,
@@ -278,6 +282,31 @@ def _normalize_local_text(
                 if truncated
                 else "LOCAL_TEXT_NORMALIZED",
                 "STDLIB_HTML_FALLBACK",
+                f"markitdown={markitdown_error or 'EMPTY'}",
+            )
+
+    if suffix in {".txt", ".md", ".csv", ".json", ".xml"}:
+        try:
+            fallback = _safe_text_fallback(path)
+        except Exception as exc:
+            fallback_error = type(exc).__name__
+            return (
+                None,
+                "LOCAL_NORMALIZATION_FAILED",
+                None,
+                f"markitdown={markitdown_error or 'EMPTY'};text_fallback={fallback_error}",
+            )
+        if fallback:
+            rendered, truncated = _clip_normalized_text(
+                fallback,
+                max_output_bytes=max_output_bytes,
+            )
+            return (
+                rendered,
+                "LOCAL_TEXT_NORMALIZED_TRUNCATED"
+                if truncated
+                else "LOCAL_TEXT_NORMALIZED",
+                "STDLIB_TEXT_FALLBACK",
                 f"markitdown={markitdown_error or 'EMPTY'}",
             )
 
