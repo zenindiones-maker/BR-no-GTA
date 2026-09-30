@@ -13,8 +13,14 @@ YOUTUBE_ANALYTICS_READ_SCOPE = "https://www.googleapis.com/auth/yt-analytics.rea
 
 
 def _resolved_scopes(scopes: Iterable[str] | None) -> list[str]:
-    requested = list(scopes or ())
-    return list(dict.fromkeys([*YOUTUBE_SCOPES, *requested]))
+    # Least privilege: explicit capability scopes replace the broad publication
+    # default instead of silently inheriting youtube.upload/youtube.readonly.
+    if scopes is None:
+        return list(YOUTUBE_SCOPES)
+    requested = [str(scope).strip() for scope in scopes if str(scope).strip()]
+    if not requested:
+        raise ValueError("explicit YouTube OAuth scope set must not be empty")
+    return list(dict.fromkeys(requested))
 
 
 def create_oauth_flow(*, client_secrets_file: str, scopes: Iterable[str] | None = None) -> Any:

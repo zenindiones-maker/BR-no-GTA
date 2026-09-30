@@ -29,6 +29,8 @@ ANALYTICS_METRICS = (
     "likes",
     "comments",
     "shares",
+    "subscribersGained",
+    "subscribersLost",
 )
 
 

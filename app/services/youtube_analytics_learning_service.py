@@ -14,7 +14,7 @@ from app.services.harness_execution_result import canonical_execution_result
 CAPABILITY_ID = "knowledge.learn.youtube-analytics"
 EXECUTOR_BINDING = "app.services.youtube_analytics_learning_service.execute_youtube_analytics_learning_capability"
 SOURCE_CAPABILITY_ID = "youtube.analytics.read"
-METRICS = ("views", "estimatedMinutesWatched", "averageViewDuration", "averageViewPercentage", "likes", "comments", "shares")
+METRICS = ("views", "estimatedMinutesWatched", "averageViewDuration", "averageViewPercentage", "likes", "comments", "shares", "subscribersGained", "subscribersLost")
 
 
 def _blocked(message: str, stage: str) -> CapabilityExecutionBlocked:

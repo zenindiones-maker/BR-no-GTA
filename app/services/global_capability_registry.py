@@ -2108,6 +2108,28 @@ _REGISTRY._records = tuple(
 )
 
 
+
+
+from app.services.youtube_intelligence_capability_bridge import (
+    youtube_intelligence_capability_records,
+)
+
+_YOUTUBE_INTELLIGENCE_CAPABILITY_RECORDS = youtube_intelligence_capability_records()
+for _youtube_intel_record in _YOUTUBE_INTELLIGENCE_CAPABILITY_RECORDS:
+    if _REGISTRY._by_id.get(_youtube_intel_record.capability_id) is not None:
+        raise ValueError(
+            "Duplicate YouTube intelligence capability id: "
+            + _youtube_intel_record.capability_id
+        )
+    _REGISTRY._by_id[_youtube_intel_record.capability_id] = _youtube_intel_record
+
+_REGISTRY._records = tuple(
+    sorted(
+        (*_REGISTRY._records, *_YOUTUBE_INTELLIGENCE_CAPABILITY_RECORDS),
+        key=lambda item: item.capability_id,
+    )
+)
+
 from app.services.agenttube_capability_bridge import agenttube_capability_records
 
 _AGENTTUBE_CAPABILITY_RECORDS = agenttube_capability_records()

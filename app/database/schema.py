@@ -1932,6 +1932,112 @@ def _migrate_gta6_autonomous_knowledge_plane(connection) -> None:
     )
 
 
+
+def _migrate_youtube_intelligence_revenue_plane(connection) -> None:
+    """Persist typed YouTube intelligence/business evidence without creating a second authority plane."""
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS youtube_intelligence_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            record_id TEXT NOT NULL UNIQUE,
+            schema_name TEXT NOT NULL,
+            subject_type TEXT NOT NULL,
+            subject_id TEXT NOT NULL,
+            period_start TEXT,
+            period_end TEXT,
+            payload_json TEXT NOT NULL,
+            content_digest TEXT NOT NULL,
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            authority TEXT NOT NULL DEFAULT 'DEEPSEEK_HARNESS',
+            source_system TEXT NOT NULL,
+            revision INTEGER NOT NULL DEFAULT 1,
+            supersedes_record_id TEXT,
+            retrieved_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_youtube_intelligence_schema_subject
+        ON youtube_intelligence_records(schema_name, subject_type, subject_id, created_at DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_youtube_intelligence_period
+        ON youtube_intelligence_records(schema_name, period_start, period_end);
+
+        CREATE INDEX IF NOT EXISTS idx_youtube_intelligence_digest
+        ON youtube_intelligence_records(content_digest);
+
+        CREATE TABLE IF NOT EXISTS youtube_quota_budget (
+            api TEXT NOT NULL,
+            operation TEXT NOT NULL,
+            budget_date TEXT NOT NULL,
+            estimated_unit_cost INTEGER NOT NULL,
+            consumed INTEGER NOT NULL DEFAULT 0,
+            hard_limit INTEGER,
+            priority INTEGER NOT NULL DEFAULT 50,
+            cache_state TEXT NOT NULL DEFAULT 'UNKNOWN',
+            last_request_digest TEXT,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(api, operation, budget_date)
+        );
+
+        CREATE TABLE IF NOT EXISTS youtube_revenue_ledger (
+            entry_id TEXT PRIMARY KEY,
+            video_id TEXT,
+            publication_id INTEGER,
+            revenue_class TEXT NOT NULL,
+            source_label TEXT NOT NULL,
+            amount REAL,
+            currency TEXT,
+            amount_status TEXT NOT NULL,
+            period_start TEXT,
+            period_end TEXT,
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            content_digest TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_youtube_revenue_ledger_video
+        ON youtube_revenue_ledger(video_id, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS youtube_external_operations (
+            operation_id TEXT PRIMARY KEY,
+            capability_id TEXT NOT NULL,
+            authorization_ref TEXT NOT NULL,
+            operation TEXT NOT NULL,
+            target TEXT NOT NULL,
+            payload_digest TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            state TEXT NOT NULL,
+            remote_receipt TEXT NOT NULL DEFAULT '{}',
+            last_error TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(authorization_ref, operation, target, payload_digest)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_youtube_external_operations_state
+        ON youtube_external_operations(state, created_at);
+
+        CREATE TABLE IF NOT EXISTS youtube_reporting_snapshots (
+            snapshot_id TEXT PRIMARY KEY,
+            report_id TEXT NOT NULL,
+            report_type TEXT NOT NULL,
+            period_start TEXT NOT NULL,
+            period_end TEXT NOT NULL,
+            retrieved_at TEXT NOT NULL,
+            revision INTEGER NOT NULL,
+            backfill_state TEXT NOT NULL,
+            content_digest TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(report_id, period_start, period_end, revision, content_digest)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_youtube_reporting_period
+        ON youtube_reporting_snapshots(report_type, period_start, period_end, revision DESC);
+        """
+    )
+
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
 
@@ -1948,6 +2054,7 @@ def initialize_schema() -> None:
         _migrate_youtube_publication_file_path(connection)
         _migrate_youtube_publication_cloud_execution(connection)
         _migrate_youtube_content_packages(connection)
+        _migrate_youtube_intelligence_revenue_plane(connection)
         _migrate_content_segment_asset_identity(connection)
         _migrate_gta6_knowledge(connection)
         _migrate_media_knowledge(connection)

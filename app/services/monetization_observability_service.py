@@ -23,6 +23,7 @@ MONETARY_METRICS = (
     "cpm",
     "playbackBasedCpm",
     "monetizedPlaybacks",
+    "adImpressions",
 )
 
 
@@ -42,9 +43,12 @@ class ChannelMonetizationSnapshot:
     watch_time: MetricValue
     subscribers_delta: MetricValue
     estimated_revenue: MetricValue
+    estimated_ad_revenue: MetricValue
     rpm_if_available: MetricValue
     cpm_if_available: MetricValue
+    playback_based_cpm_if_available: MetricValue
     monetized_playbacks_if_available: MetricValue
+    ad_impressions_if_available: MetricValue
     top_videos: tuple[dict[str, Any], ...]
     revenue_by_video_if_available: tuple[dict[str, Any], ...]
     traffic_summary: tuple[dict[str, Any], ...]
@@ -94,8 +98,11 @@ def normalize_monetization_snapshot(
         subscribers_delta = MetricValue(status="UNAVAILABLE", reason="subscriber_components_not_returned")
 
     estimated_revenue = _metric(by_name, "estimatedRevenue", reason="monetary_metric_not_authorized_or_not_returned")
+    estimated_ad_revenue = _metric(by_name, "estimatedAdRevenue", reason="monetary_metric_not_authorized_or_not_returned")
     cpm = _metric(by_name, "cpm", reason="monetary_metric_not_authorized_or_not_returned")
+    playback_based_cpm = _metric(by_name, "playbackBasedCpm", reason="monetary_metric_not_authorized_or_not_returned")
     monetized = _metric(by_name, "monetizedPlaybacks", reason="monetary_metric_not_authorized_or_not_returned")
+    ad_impressions = _metric(by_name, "adImpressions", reason="monetary_metric_not_authorized_or_not_returned")
     rpm = MetricValue(status="UNAVAILABLE", reason="requires_estimatedRevenue_and_views")
     if estimated_revenue.status == "VALUE" and views.status == "VALUE" and views.value:
         rpm = MetricValue(status="DERIVED", value=(float(estimated_revenue.value) / float(views.value)) * 1000.0)
@@ -110,8 +117,11 @@ def normalize_monetization_snapshot(
     combined_limitations = list(limitations)
     for label, metric in (
         ("estimated_revenue", estimated_revenue),
+        ("estimated_ad_revenue", estimated_ad_revenue),
         ("cpm", cpm),
+        ("playback_based_cpm", playback_based_cpm),
         ("monetized_playbacks", monetized),
+        ("ad_impressions", ad_impressions),
     ):
         if metric.status == "UNAVAILABLE":
             combined_limitations.append(f"{label}:{metric.reason}")
@@ -124,9 +134,12 @@ def normalize_monetization_snapshot(
         watch_time=watch_time,
         subscribers_delta=subscribers_delta,
         estimated_revenue=estimated_revenue,
+        estimated_ad_revenue=estimated_ad_revenue,
         rpm_if_available=rpm,
         cpm_if_available=cpm,
+        playback_based_cpm_if_available=playback_based_cpm,
         monetized_playbacks_if_available=monetized,
+        ad_impressions_if_available=ad_impressions,
         top_videos=top_videos,
         revenue_by_video_if_available=revenue_by_video,
         traffic_summary=traffic_summary,
