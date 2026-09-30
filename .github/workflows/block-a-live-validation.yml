@@ -1,0 +1,166 @@
+name: Block A Agent Execution Live Validation
+
+on:
+  push:
+    branches:
+      - staging/block-a-live-20260930
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: block-a-live-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: .
+
+jobs:
+  provider-neutral:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install repository dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q -r requirements.txt pytest
+          mkdir -p artifacts/block-a-provider-neutral
+
+      - name: Run Block A provider-neutral suite
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/test_block_a_agent_execution_foundation.py \
+            tests/test_block_a_capability_reality.py \
+            tests/test_block_a_openai_application_live_canary.py \
+            tests/test_openai_agents_api_runtime_dd2.py \
+            tests/test_openai_agents_dd2_live_canary.py \
+            --junitxml=artifacts/block-a-provider-neutral/pytest.xml
+
+      - name: Compile Block A boundaries
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            app/services/agent_environment_provider.py \
+            app/services/sprite_agent_environment_provider.py \
+            app/services/agent_skill_execution_service.py \
+            app/services/openai_agents_runtime_service.py \
+            app/database/openai_agents_repository.py \
+            app/database/schema.py \
+            scripts/openai_agents_dd2_live_canary.py \
+            scripts/block_a_agent_execution_foundation_proof.py \
+            scripts/block_a_openai_application_live_canary.py \
+            scripts/block_a_self_hosted_live_driver.py
+          git diff --check
+
+      - name: Provider-neutral summary
+        run: |
+          echo "BLOCK_A_PROVIDER_NEUTRAL=PASS"
+          echo "DD3_NOT_STARTED=PASS"
+
+      - name: Upload provider-neutral evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: block-a-provider-neutral-${{ github.run_id }}
+          path: artifacts/block-a-provider-neutral/
+          if-no-files-found: error
+          retention-days: 14
+
+  application-live:
+    needs: provider-neutral
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_WIF_AUDIENCE: ${{ vars.OPENAI_WIF_AUDIENCE }}
+      OPENAI_IDENTITY_PROVIDER_ID: ${{ vars.OPENAI_IDENTITY_PROVIDER_ID }}
+      OPENAI_SERVICE_ACCOUNT_ID: ${{ vars.OPENAI_SERVICE_ACCOUNT_ID }}
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install live dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q -r requirements.txt pytest "openai==3.20.0"
+          mkdir -p artifacts/block-a-application-live
+          python - <<'PY'
+          import openai
+          assert openai.__version__ == "3.20.0"
+          print("BLOCK_A_OPENAI_SDK=3.20.0")
+          PY
+
+      - name: Verify application credential presence without disclosure
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          present = bool(os.environ.get("OPENAI_API_KEY"))
+          print("OPENAI_PROJECT_CREDENTIAL_PRESENT=" + ("1" if present else "0"))
+          if not present:
+              raise SystemExit("OPENAI_APPLICATION_AUTH=EXTERNAL_CONFIGURATION_REQUIRED")
+          PY
+
+      - name: Run A1 through A4 application live canary
+        run: |
+          set -euo pipefail
+          python -m scripts.block_a_openai_application_live_canary \
+            --database artifacts/block-a-application-live/control.db \
+            --artifact-dir artifacts/block-a-application-live \
+            --output artifacts/block-a-application-live/application-live.json
+
+      - name: Validate sanitized application live evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("artifacts/block-a-application-live/application-live.json")
+          if not path.is_file():
+              raise SystemExit("APPLICATION_LIVE_EVIDENCE_MISSING")
+          result = json.loads(path.read_text(encoding="utf-8"))
+          raw = json.dumps(result).lower()
+          for forbidden in (
+              "sk-proj-",
+              "bearer ",
+              '"openai_api_key"',
+              '"openai_executor_api_key"',
+              '"codex_api_key"',
+          ):
+              assert forbidden not in raw, forbidden
+          print("BLOCK_A_APPLICATION_LIVE_STATUS=" + result["status"])
+          if result.get("blocker"):
+              print("BLOCK_A_APPLICATION_TYPED_BLOCKER=" + result["blocker"]["code"])
+          PY
+
+      - name: Upload sanitized application live evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: block-a-application-live-${{ github.run_id }}
+          path: artifacts/block-a-application-live/
+          if-no-files-found: warn
+          retention-days: 14
