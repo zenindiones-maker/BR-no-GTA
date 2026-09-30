@@ -200,6 +200,50 @@ def list_memories(*, status: str | None = "ACTIVE", memory_type: str | None = No
 
 
 
+def add_memory_selection_observation(
+    memory_id: str,
+    *,
+    observation: dict[str, Any],
+) -> dict[str, Any]:
+    """Persist bounded retrieval-selection provenance inside the existing memory row."""
+    memory_id = str(memory_id or "").strip()
+    if not memory_id:
+        raise ValueError("memory_id is required")
+    selection_id = str(observation.get("selection_id") or "").strip()
+    if not selection_id:
+        raise ValueError("selection_id is required")
+
+    connection = get_connection()
+    try:
+        row = connection.execute(
+            "SELECT * FROM harness_memories WHERE memory_id = ?",
+            (memory_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError("memory not found")
+        current = _deserialize(row, _MEMORY_JSON)
+        metadata = dict(current.get("metadata") or {})
+        history = list(metadata.get("selection_history") or [])
+        if any(str(item.get("selection_id") or "") == selection_id for item in history):
+            return current
+        history.append(dict(observation))
+        metadata["selection_history"] = history[-50:]
+        cursor = connection.execute(
+            "UPDATE harness_memories SET metadata = ? WHERE memory_id = ?",
+            (_dump(metadata), memory_id),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("memory selection provenance update failed")
+        connection.commit()
+        updated = connection.execute(
+            "SELECT * FROM harness_memories WHERE memory_id = ?",
+            (memory_id,),
+        ).fetchone()
+        return _deserialize(updated, _MEMORY_JSON)
+    finally:
+        connection.close()
+
+
 def find_failure_memory(
     *,
     domain: str,
