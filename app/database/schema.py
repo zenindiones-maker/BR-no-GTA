@@ -2277,6 +2277,40 @@ def _migrate_openai_agents_dd2(connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_openai_environment_task
         ON openai_agent_environment_leases(task_lease_ref, status, expires_at);
+
+        CREATE TABLE IF NOT EXISTS openai_sprite_environment_bindings (
+            binding_id TEXT PRIMARY KEY,
+            environment_lease_id TEXT NOT NULL,
+            mission_id TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            attempt_id TEXT NOT NULL,
+            openai_session_id TEXT NOT NULL,
+            openai_environment_id TEXT NOT NULL,
+            sprite_id TEXT NOT NULL,
+            sprite_name TEXT NOT NULL,
+            workspace TEXT NOT NULL,
+            repo_sha TEXT NOT NULL,
+            tree_sha TEXT NOT NULL,
+            checkpoint_id TEXT,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            workspace_digest TEXT,
+            executor_credential_ref TEXT,
+            payload_json TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_openai_sprite_binding_session
+        ON openai_sprite_environment_bindings(
+            openai_session_id, task_id, attempt_id, status
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_openai_sprite_one_active_compute
+        ON openai_sprite_environment_bindings(
+            openai_session_id, task_id, attempt_id
+        )
+        WHERE status='ACTIVE';
         """
     )
 
