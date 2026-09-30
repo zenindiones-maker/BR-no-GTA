@@ -299,9 +299,13 @@ def test_a15_runtime_ready_uses_platform_safe_profile_and_optional_markitdown():
     reconcile = text.split("reconcile_gateway()", 1)[1].split(
         "foreground_gateway()", 1
     )[0]
+    cleanup = text.split("cleanup_gateway_deploy_state()", 1)[1].split(
+        "reconcile_gateway()", 1
+    )[0]
     assert reconcile.index("candidate_runtime_preflight") < reconcile.index("stop_gateway")
     assert 'rm -f "${START_LOCK_DIR}"' not in reconcile
-    assert "release_start_lock" in reconcile
+    assert "cleanup_gateway_deploy_state" in reconcile
+    assert "release_start_lock" in cleanup
 
 
 def test_termux_heartbeat_publishes_semantic_lineage_attestations_only_on_exact_runtime():
