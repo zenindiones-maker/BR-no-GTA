@@ -349,7 +349,7 @@ runtime_ready_matches() {
 
 wait_for_runtime_ready() {
   local pid="$1"
-  local wait_seconds="${TELEGRAM_GATEWAY_STARTUP_WAIT_SECONDS:-30}"
+  local wait_seconds="${TELEGRAM_GATEWAY_STARTUP_WAIT_SECONDS:-45}"
   local deadline=$((SECONDS + wait_seconds))
 
   while true; do

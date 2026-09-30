@@ -233,10 +233,10 @@ def test_gateway_ready_proof_is_written_after_bot_api_validation():
     )
     assert "_write_runtime_ready_proof()" in text
     assert "TELEGRAM_GATEWAY_READY_FILE" in text
-    get_me = text.index('me = api.call("getMe")')
-    webhook = text.index('webhook = api.call("getWebhookInfo")')
-    ready = text.index("_write_runtime_ready_proof()", webhook)
-    assert get_me < webhook < ready
+    api = text.index("api = TelegramApi(token)")
+    probe = text.index("me, webhook = _probe_telegram_startup(", api)
+    ready = text.index("_write_runtime_ready_proof()", probe)
+    assert api < probe < ready
 
 
 def test_runtime_status_requires_ready_proof_not_only_process_identity():

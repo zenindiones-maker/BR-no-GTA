@@ -100,6 +100,7 @@ from scripts.telegram_harness_gateway import (
     STATE_FILE,
     TelegramApi,
     TelegramApiError,
+    TelegramRateLimitError,
     TelegramProgressReporter,
     _asset_reply,
     _chat_reply,
@@ -1387,6 +1388,60 @@ def _semantic_worker_loop(
         stop_event.wait(1.0)
 
 
+def _is_transient_startup_telegram_error(exc: BaseException) -> bool:
+    if isinstance(exc, TelegramRateLimitError):
+        return True
+    if isinstance(exc, (TimeoutError, ConnectionError, ConnectionAbortedError)):
+        return True
+    if isinstance(exc, OSError) and not isinstance(exc, TelegramApiError):
+        return True
+    if isinstance(exc, TelegramApiError):
+        text = str(exc).casefold()
+        if "telegram network error:" in text:
+            return True
+        return any(marker in text for marker in (
+            "telegram http 408:", "telegram http 425:", "telegram http 429:",
+            "telegram http 500:", "telegram http 502:", "telegram http 503:", "telegram http 504:",
+        ))
+    return False
+
+
+def _probe_telegram_startup(
+    api: TelegramApi, *, max_attempts: int = 3, per_call_timeout: int = 5, sleep_fn=time.sleep,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    attempts = max(1, min(int(max_attempts), 5))
+    timeout = max(1, min(int(per_call_timeout), 10))
+    def call_with_retry(method: str) -> Any:
+        for attempt in range(1, attempts + 1):
+            try:
+                return api.call(method, timeout=timeout)
+            except BaseException as exc:
+                if not _is_transient_startup_telegram_error(exc):
+                    raise
+                if attempt >= attempts:
+                    raise
+                if isinstance(exc, TelegramRateLimitError):
+                    delay = max(1.0, min(float(exc.retry_after_seconds), 5.0))
+                else:
+                    delay = min(float(2 ** (attempt - 1)), 4.0)
+                print(
+                    "TELEGRAM_STARTUP_TRANSIENT_RETRY "
+                    f"METHOD={method} ATTEMPT={attempt}/{attempts} "
+                    f"ERROR={type(exc).__name__}:{str(exc)[:240]} "
+                    f"DELAY_SECONDS={delay:g}",
+                    flush=True,
+                )
+                sleep_fn(delay)
+        raise RuntimeError("unreachable Telegram startup probe state")
+    me = call_with_retry("getMe")
+    webhook = call_with_retry("getWebhookInfo")
+    if not isinstance(me, dict):
+        raise TelegramApiError("Telegram getMe returned invalid startup payload")
+    if not isinstance(webhook, dict):
+        raise TelegramApiError("Telegram getWebhookInfo returned invalid startup payload")
+    return me, webhook
+
+
 def main() -> int:
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
@@ -1403,8 +1458,11 @@ def main() -> int:
     initialize_application()
     revision_proof = _write_runtime_revision_proof()
     api = TelegramApi(token)
-    me = api.call("getMe")
-    webhook = api.call("getWebhookInfo")
+    me, webhook = _probe_telegram_startup(
+        api,
+        max_attempts=int(os.getenv("TELEGRAM_GATEWAY_STARTUP_API_ATTEMPTS", "3")),
+        per_call_timeout=int(os.getenv("TELEGRAM_GATEWAY_STARTUP_API_TIMEOUT_SECONDS", "5")),
+    )
     webhook_url = str((webhook or {}).get("url") or "").strip()
     if webhook_url:
         print("TELEGRAM_GATEWAY=FAIL", flush=True)
