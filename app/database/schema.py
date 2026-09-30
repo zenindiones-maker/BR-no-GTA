@@ -2214,6 +2214,98 @@ def _migrate_youtube_intelligence_revenue_plane(connection) -> None:
                 f"ALTER TABLE youtube_quota_budget ADD COLUMN {column_name} {column_sql}"
             )
 
+
+def _migrate_openai_agents_dd2(connection) -> None:
+    """Persist subordinate OpenAI Agents sessions without granting mission authority."""
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS openai_agent_session_receipts (
+            session_id TEXT NOT NULL,
+            revision INTEGER NOT NULL,
+            turn_id TEXT,
+            environment_id TEXT,
+            agent_model TEXT NOT NULL,
+            reasoning_effort TEXT NOT NULL,
+            state TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            content_digest TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(session_id, revision)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_openai_agent_session_turn
+        ON openai_agent_session_receipts(session_id, turn_id, revision DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_openai_agent_session_state
+        ON openai_agent_session_receipts(state, updated_at);
+
+        CREATE TABLE IF NOT EXISTS openai_agent_session_heads (
+            session_id TEXT PRIMARY KEY,
+            current_revision INTEGER NOT NULL,
+            latest_turn_id TEXT,
+            state TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS openai_agent_tool_results (
+            session_id TEXT NOT NULL,
+            turn_id TEXT NOT NULL,
+            call_id TEXT NOT NULL,
+            tool_name TEXT NOT NULL,
+            success INTEGER NOT NULL,
+            output_json TEXT NOT NULL,
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            result_digest TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(session_id, turn_id, call_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_openai_agent_tool_result_digest
+        ON openai_agent_tool_results(result_digest);
+
+        CREATE TABLE IF NOT EXISTS openai_agent_environment_leases (
+            lease_id TEXT PRIMARY KEY,
+            environment_type TEXT NOT NULL,
+            environment_id TEXT NOT NULL,
+            task_lease_ref TEXT NOT NULL,
+            status TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_openai_environment_task
+        ON openai_agent_environment_leases(task_lease_ref, status, expires_at);
+        """
+    )
+
+    receipt_columns = {
+        row[1] for row in connection.execute(
+            "PRAGMA table_info(openai_agent_session_receipts)"
+        ).fetchall()
+    }
+    if "content_digest" not in receipt_columns:
+        connection.execute(
+            "ALTER TABLE openai_agent_session_receipts ADD COLUMN content_digest TEXT"
+        )
+
+    head_columns = {
+        row[1] for row in connection.execute(
+            "PRAGMA table_info(openai_agent_session_heads)"
+        ).fetchall()
+    }
+    if "latest_turn_id" not in head_columns:
+        connection.execute(
+            "ALTER TABLE openai_agent_session_heads ADD COLUMN latest_turn_id TEXT"
+        )
+        if "turn_id" in head_columns:
+            connection.execute(
+                "UPDATE openai_agent_session_heads SET latest_turn_id=turn_id "
+                "WHERE latest_turn_id IS NULL"
+            )
+
+
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
 
@@ -2232,6 +2324,7 @@ def initialize_schema() -> None:
         _migrate_youtube_content_packages(connection)
         _migrate_youtube_intelligence_revenue_plane(connection)
         _migrate_persistent_intelligence_force(connection)
+        _migrate_openai_agents_dd2(connection)
         _migrate_content_segment_asset_identity(connection)
         _migrate_gta6_knowledge(connection)
         _migrate_media_knowledge(connection)

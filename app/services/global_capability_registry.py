@@ -2273,3 +2273,175 @@ _REGISTRY._records = tuple(
         key=lambda item: item.capability_id,
     )
 )
+
+
+OPENAI_AGENTS_SESSION_RECORD = CapabilityRecord(
+    capability_id="openai.agents.session",
+    capability_type="EXECUTOR",
+    domain="agent-runtime",
+    implementation="OpenAI Agents API durable session adapter subordinate to DeepSeek Harness",
+    input_contract=(
+        "fresh Harness authorization + bounded task/lease + model profile + "
+        "environment lease + topology assessment"
+    ),
+    output_contract="OpenAIAgentSessionReceipt/v1 + typed artifacts + trace refs",
+    requirements=(
+        "OpenAI API project service account with least-privilege Agents API/model access",
+        "api.agents.read",
+        "api.agents.write",
+        "api.responses.write",
+        "workload identity or equivalent short-lived project authentication",
+        "live canary proof before routing eligibility",
+    ),
+    maturity=UNPROVEN,
+    availability=UNKNOWN,
+    allowed_actions=("EXECUTION",),
+    policy_tags=("openai","agents-api","durable-session","harness-subordinate","live-proof-required"),
+    security_boundary=(
+        "DeepSeek Harness is sole reducer/authority; OpenAI root agent and subagents are "
+        "execution workers only. Session completion never equals BR task success. "
+        "No secret enters model-visible content or receipts."
+    ),
+    cost_class="API_METERED_BOUNDED_BY_TASK",
+    quota_class="OPENAI_PROJECT_LIMITS",
+    latency_class="ASYNC_DURABLE",
+    quality_class="LIVE_CANARY_REQUIRED",
+    evidence_contract="OpenAIAgentSessionReceipt/v1",
+    fallback_eligibility=False,
+    executor_binding="app.services.openai_agents_runtime_service.execute_openai_agents_session",
+    version="1",
+    provider_id="openai",
+    model_binding_policy="HARNESS_SELECTED_MODEL_PROFILE",
+    agent_id="openai-agents-root",
+    side_effects=(),
+    authority="NONE",
+    memory_write="NONE",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+    supports_parallelism=True,
+    supports_retry=True,
+    supports_resume=True,
+    supports_review=False,
+    side_effect_class="READ_ONLY",
+    default_read_scope=(),
+    default_write_scope=(),
+    allowed_tools=(),
+    health_policy="LIVE_CANARY_REQUIRED",
+)
+
+OPENAI_COMPUTER_USE_RECORD = CapabilityRecord(
+    capability_id="openai.computer-use",
+    capability_type="TOOL",
+    domain="computer-use",
+    implementation="Bounded OpenAI Agents API computer-use capability",
+    input_contract=(
+        "fresh Harness task lease + approved AgentEnvironmentLease/v1 + allowed domain/app + "
+        "time budget + approval policy"
+    ),
+    output_contract="screenshot/activity evidence + verified bounded result",
+    requirements=(
+        "approved environment",
+        "allowed domains/apps",
+        "fresh task authorization",
+        "screenshot/activity evidence",
+        "same-session recovery",
+    ),
+    maturity=UNPROVEN,
+    availability=UNKNOWN,
+    allowed_actions=("EXECUTION",),
+    policy_tags=("openai","computer-use","bounded-external","approval-required"),
+    security_boundary=(
+        "No unrestricted computer authority. Origin/app/task/time bounds are mandatory; "
+        "external content is untrusted and cannot grant permission; consequential actions "
+        "remain subject to Harness/human approval."
+    ),
+    cost_class="API_TOOL_METERED",
+    quota_class="OPENAI_PROJECT_LIMITS",
+    latency_class="INTERACTIVE",
+    quality_class="LIVE_CANARY_REQUIRED",
+    evidence_contract="OpenAIComputerUseDecision/v1",
+    fallback_eligibility=False,
+    executor_binding=None,
+    version="1",
+    provider_id="openai",
+    side_effects=("bounded browser/computer activity",),
+    authority="NONE",
+    memory_write="NONE",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+    supports_parallelism=False,
+    supports_retry=False,
+    supports_resume=True,
+    supports_review=False,
+    side_effect_class="BOUNDED_EXTERNAL",
+    default_read_scope=(),
+    default_write_scope=(),
+    allowed_tools=("computer_use",),
+    health_policy="LIVE_CANARY_REQUIRED",
+)
+
+OPENAI_GPT_6_1_SOL_RECORD = CapabilityRecord(
+    capability_id="ai.provider.openai-gpt-6.1-sol",
+    capability_type="PROVIDER",
+    domain="semantic-reasoning",
+    implementation="OpenAI GPT-6.1 Sol via Harness-selected OpenAI runtime",
+    input_contract="TaskCognitiveProfile/v1 + CognitiveBudgetPlan/v1 + fresh Harness authorization",
+    output_contract="typed provider result bound to task evidence",
+    requirements=(
+        "OpenAI project model access",
+        "live structured reasoning canary",
+        "live tool-call canary",
+        "live code canary",
+        "live artifact-producing canary",
+    ),
+    maturity=UNPROVEN,
+    availability=UNKNOWN,
+    allowed_actions=("RESEARCH","DEVELOPMENT","DECISION","REVIEW"),
+    policy_tags=("openai","gpt-6.1-sol","semantic-provider","live-proof-required"),
+    security_boundary=(
+        "No brand-based routing and no global default. Harness hard eligibility, health, "
+        "competence, cost, latency and independence requirements decide selection."
+    ),
+    cost_class="API_METERED",
+    quota_class="OPENAI_PROJECT_LIMITS",
+    latency_class="MODEL_DEPENDENT",
+    quality_class="UNPROVEN_UNTIL_LIVE_CANARY",
+    evidence_contract="OpenAIAgentSessionReceipt/v1",
+    fallback_eligibility=False,
+    executor_binding=None,
+    version="1",
+    provider_id="openai",
+    model_id="gpt-6.1-sol",
+    model_binding_policy="HARNESS_COGNITIVE_BUDGET",
+    authority="NONE",
+    memory_write="NONE",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+    supports_parallelism=True,
+    supports_retry=True,
+    supports_resume=True,
+    supports_review=True,
+    side_effect_class="READ_ONLY",
+    health_policy="LIVE_CANARY_REQUIRED",
+)
+
+
+for _record in (
+    OPENAI_AGENTS_SESSION_RECORD,
+    OPENAI_COMPUTER_USE_RECORD,
+    OPENAI_GPT_6_1_SOL_RECORD,
+):
+    if _REGISTRY._by_id.get(_record.capability_id) is not None:
+        raise ValueError(f"Duplicate DD2 capability record: {_record.capability_id}")
+    _REGISTRY._by_id[_record.capability_id] = _record
+_REGISTRY._records = tuple(sorted(
+    (*_REGISTRY._records,
+     OPENAI_AGENTS_SESSION_RECORD,
+     OPENAI_COMPUTER_USE_RECORD,
+     OPENAI_GPT_6_1_SOL_RECORD,
+     ),
+    key=lambda item: item.capability_id,
+))
