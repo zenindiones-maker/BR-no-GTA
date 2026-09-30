@@ -21,6 +21,13 @@ def test_live_failure_classifier_is_typed_and_sanitized():
     assert classify_live_failure(_Error("bad", 403))[0] == "PERMISSION_DENIED"
     assert classify_live_failure(_Error("bad", 429))[0] == "RATE_LIMITED"
     assert classify_live_failure(_Error("payment required", 400))[0] == "BILLING_REQUIRED"
+    assert classify_live_failure(
+        _Error(
+            "You have no credits remaining. type=insufficient_quota "
+            "code=credit_balance_exhausted",
+            429,
+        )
+    )[0] == "BILLING_REQUIRED"
     assert classify_live_failure(_Error("model not found", 400))[0] == "MODEL_UNAVAILABLE"
     code, message = classify_live_failure(_Error("Bearer sk-proj-secret", 401))
     assert code == "AUTHENTICATION_DENIED"
