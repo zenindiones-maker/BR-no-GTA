@@ -94,16 +94,21 @@ def classify_live_failure(exc: Exception) -> tuple[str, str]:
         return "AUTHENTICATION_DENIED", _safe_message(exc)
     if status == 403 or "permissiondenied" in name or "permission denied" in message:
         return "PERMISSION_DENIED", _safe_message(exc)
-    if status == 429 or "ratelimit" in name or "rate limit" in message:
-        return "RATE_LIMITED", _safe_message(exc)
+    # OpenAI can return HTTP 429 for exhausted project credits. Classify the
+    # causal quota/billing condition before generic rate limiting so we do not
+    # mislabel a deterministic billing blocker as a transient throttling event.
     if status == 402 or any(term in message for term in (
         "billing",
         "insufficient_quota",
         "insufficient quota",
         "credit balance",
+        "credit_balance_exhausted",
+        "no credits remaining",
         "payment required",
     )):
         return "BILLING_REQUIRED", _safe_message(exc)
+    if status == 429 or "ratelimit" in name or "rate limit" in message:
+        return "RATE_LIMITED", _safe_message(exc)
     if any(term in message for term in (
         "model_not_found",
         "model not found",
