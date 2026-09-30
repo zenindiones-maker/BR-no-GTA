@@ -3,7 +3,11 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any, Mapping, Sequence
 
-from app.contracts.youtube_intelligence_contracts import YouTubePublicationSpec
+from app.contracts.youtube_intelligence_contracts import (
+    SyntheticMediaDisclosureDecision,
+    YouTubePublicationSpec,
+)
+from app.services.youtube_platform_foundation_service import decide_synthetic_media_disclosure
 
 
 def build_youtube_publication_spec(
@@ -22,6 +26,9 @@ def build_youtube_publication_spec(
     publish_at: str | None=None,
     monetization_intent: str="UNKNOWN",
     contains_synthetic_media: bool | None=None,
+    synthetic_media_disclosure_decision: SyntheticMediaDisclosureDecision | Mapping[str,Any] | None=None,
+    originality_review_ref: str | None=None,
+    ypp_transformative_value_status: str="UNKNOWN",
     related_videos: Sequence[str]=(),
     end_screen_plan: Mapping[str,Any] | None=None,
     cards_plan: Sequence[Mapping[str,Any]]=(),
@@ -40,6 +47,45 @@ def build_youtube_publication_spec(
         raise ValueError("publication spec requires title and thumbnail")
     if language!="pt-BR":
         raise ValueError("BR-no-GTA canonical publication language is pt-BR")
+
+    if synthetic_media_disclosure_decision is None:
+        if contains_synthetic_media is True:
+            raise PermissionError(
+                "synthetic media disclosure decision is required when synthetic media is present"
+            )
+        synthetic_media_disclosure_decision = decide_synthetic_media_disclosure(
+            realistic_media=False,
+            meaningfully_altered_or_generated=False,
+            uncertain=contains_synthetic_media is None,
+            rationale=(
+                "explicitly declared no realistic synthetic media"
+                if contains_synthetic_media is False
+                else "master disclosure state not yet resolved"
+            ),
+        )
+    disclosure = (
+        synthetic_media_disclosure_decision.to_dict()
+        if hasattr(synthetic_media_disclosure_decision, "to_dict")
+        else dict(synthetic_media_disclosure_decision)
+    )
+    decision = str(disclosure.get("decision") or "")
+    if decision not in {"NOT_REQUIRED","REQUIRED","UNCERTAIN_REVIEW_REQUIRED"}:
+        raise ValueError("invalid synthetic media disclosure decision")
+    if decision == "REQUIRED":
+        contains_synthetic_media = True
+    elif decision == "NOT_REQUIRED":
+        contains_synthetic_media = False
+
+    ypp_status = str(ypp_transformative_value_status or "UNKNOWN").upper()
+    if privacy != "PRIVATE":
+        if not originality_review_ref or ypp_status != "PASS":
+            raise PermissionError(
+                "non-PRIVATE publication requires originality review with YPP transformative value PASS"
+            )
+        if decision == "UNCERTAIN_REVIEW_REQUIRED":
+            raise PermissionError(
+                "non-PRIVATE publication requires resolved synthetic media disclosure"
+            )
     return YouTubePublicationSpec(
         video_id=str(video_id),
         master_artifact_sha=str(master_artifact_sha).lower(),
@@ -55,6 +101,9 @@ def build_youtube_publication_spec(
         publish_at=publish_at,
         monetization_intent=monetization_intent,
         contains_synthetic_media=contains_synthetic_media,
+        synthetic_media_disclosure=disclosure,
+        originality_review_ref=originality_review_ref,
+        ypp_transformative_value_status=ypp_status,
         related_videos=tuple(str(x) for x in related_videos),
         end_screen_plan=dict(end_screen_plan or {}),
         cards_plan=tuple(dict(x) for x in cards_plan),

@@ -45,6 +45,7 @@ from app.services.youtube_competitor_audience_service import (
     cluster_comment_intelligence,
     build_editorial_gap_map,
 )
+from app.services.youtube_platform_foundation_service import decide_synthetic_media_disclosure
 from app.services.youtube_publication_spec_v1_service import (
     build_youtube_publication_spec,
     publication_spec_to_private_upload,
@@ -387,6 +388,7 @@ def test_credential_broker_scope_profiles_are_operation_local():
         "https://www.googleapis.com/auth/youtube.readonly",
     )
     assert scopes_for_operation("ANALYTICS_MONETARY_READ")==(
+        "https://www.googleapis.com/auth/youtube.readonly",
         "https://www.googleapis.com/auth/yt-analytics-monetary.readonly",
     )
     assert "youtube.upload" not in scopes_for_operation("COMMENT_READ")[0]
@@ -516,9 +518,18 @@ def test_non_private_publication_spec_requires_explicit_human_approval():
     )
     with pytest.raises(PermissionError,match="human approval"):
         build_youtube_publication_spec(**kwargs)
+    disclosure=decide_synthetic_media_disclosure(
+        realistic_media=False,
+        meaningfully_altered_or_generated=False,
+        uncertain=False,
+        rationale="no realistic synthetic media",
+    )
     spec=build_youtube_publication_spec(
         **kwargs,
         human_approval_ref="owner-approval:action-123",
+        synthetic_media_disclosure_decision=disclosure,
+        originality_review_ref="originality:video-2",
+        ypp_transformative_value_status="PASS",
     )
     assert spec.privacy=="PUBLIC"
 

@@ -33,7 +33,7 @@ def search_youtube_official(
     page_token: str | None=None,
     cache_lookup: Callable[[str],dict[str,Any] | None] | None=None,
     cache_store: Callable[[str,dict[str,Any]],None] | None=None,
-    hard_daily_search_limit: int=100,
+    hard_daily_search_limit: int | None=None,
 ) -> dict[str,Any]:
     query=str(query or "").strip()
     if not query:
@@ -94,7 +94,6 @@ def fetch_videos_official(
     consume_quota(
         api="youtube_data",operation="videos.list",
         request_identity=identity,
-        hard_limit=10000,
         priority=80,
         cache_state="HIT" if cached is not None else "MISS",
     )

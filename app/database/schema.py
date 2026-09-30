@@ -2038,6 +2038,21 @@ def _migrate_youtube_intelligence_revenue_plane(connection) -> None:
         """
     )
 
+    quota_columns = {
+        row[1] for row in connection.execute("PRAGMA table_info(youtube_quota_budget)").fetchall()
+    }
+    for column_name, column_sql in (
+        ("quota_bucket", "TEXT"),
+        ("policy_id", "TEXT"),
+        ("policy_digest", "TEXT"),
+        ("reset_time", "TEXT"),
+        ("pagination_cost", "INTEGER NOT NULL DEFAULT 1"),
+    ):
+        if column_name not in quota_columns:
+            connection.execute(
+                f"ALTER TABLE youtube_quota_budget ADD COLUMN {column_name} {column_sql}"
+            )
+
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
 

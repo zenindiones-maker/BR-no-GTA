@@ -10,6 +10,8 @@ on:
       - "app/database/youtube_intelligence_repository.py"
       - "app/services/global_capability_registry.py"
       - "app/services/google_oauth.py"
+      - "app/services/google_youtube_analytics_client.py"
+      - "app/services/google_youtube_reporting_client.py"
       - "app/services/monetization_observability_service.py"
       - "app/services/youtube_analytics_service.py"
       - "app/services/youtube_analytics_learning_service.py"
@@ -19,13 +21,21 @@ on:
       - "app/services/youtube_intelligence_capability_bridge.py"
       - "app/services/youtube_intelligence_revenue_plane_service.py"
       - "app/services/youtube_intelligence_service.py"
+      - "app/services/youtube_platform_foundation_service.py"
+      - "app/services/youtube_policy_registry_service.py"
       - "app/services/youtube_opportunity_business_service.py"
       - "app/services/youtube_publication_spec_v1_service.py"
       - "app/services/youtube_quota_service.py"
       - "app/services/youtube_reporting_warehouse_service.py"
       - "app/services/youtube_retention_lifecycle_service.py"
+      - "config/youtube_policy_snapshots_v1.json"
       - "scripts/youtube_intelligence_revenue_operational_proof.py"
+      - "scripts/youtube_platform_foundation_live_canary.py"
       - "tests/test_youtube_intelligence_revenue_plane.py"
+      - "tests/test_youtube_platform_foundation_block1.py"
+      - "tests/test_youtube_platform_foundation_live_canary.py"
+      - "tests/test_youtube_readonly_credential_broker_runtime.py"
+      - "tests/test_youtube_reporting_live_adapter.py"
       - ".github/workflows/youtube-intelligence-revenue-validation.yml"
   workflow_dispatch:
 
@@ -67,13 +77,13 @@ jobs:
       - name: Compile YouTube intelligence boundaries
         run: |
           set -euo pipefail
-          python -m py_compile             app/contracts/youtube_intelligence_contracts.py             app/database/schema.py             app/database/youtube_intelligence_repository.py             app/services/global_capability_registry.py             app/services/google_oauth.py             app/services/monetization_observability_service.py             app/services/youtube_analytics_service.py             app/services/youtube_analytics_learning_service.py             app/services/youtube_competitor_audience_service.py             app/services/youtube_credential_broker_service.py             app/services/youtube_data_intelligence_service.py             app/services/youtube_intelligence_capability_bridge.py             app/services/youtube_intelligence_revenue_plane_service.py             app/services/youtube_intelligence_service.py             app/services/youtube_opportunity_business_service.py             app/services/youtube_publication_spec_v1_service.py             app/services/youtube_quota_service.py             app/services/youtube_reporting_warehouse_service.py             app/services/youtube_retention_lifecycle_service.py             scripts/youtube_intelligence_revenue_operational_proof.py
+          python -m py_compile             app/contracts/youtube_intelligence_contracts.py             app/database/schema.py             app/database/youtube_intelligence_repository.py             app/services/global_capability_registry.py             app/services/google_oauth.py             app/services/google_youtube_analytics_client.py             app/services/google_youtube_reporting_client.py             app/services/monetization_observability_service.py             app/services/youtube_analytics_service.py             app/services/youtube_analytics_learning_service.py             app/services/youtube_competitor_audience_service.py             app/services/youtube_credential_broker_service.py             app/services/youtube_data_intelligence_service.py             app/services/youtube_intelligence_capability_bridge.py             app/services/youtube_intelligence_revenue_plane_service.py             app/services/youtube_intelligence_service.py             app/services/youtube_opportunity_business_service.py             app/services/youtube_platform_foundation_service.py             app/services/youtube_policy_registry_service.py             app/services/youtube_publication_spec_v1_service.py             app/services/youtube_quota_service.py             app/services/youtube_reporting_warehouse_service.py             app/services/youtube_retention_lifecycle_service.py             scripts/youtube_intelligence_revenue_operational_proof.py             scripts/youtube_platform_foundation_live_canary.py
           echo "YOUTUBE_INTELLIGENCE_COMPILE=PASS"
 
       - name: Run focused regression suite
         run: |
           set -euo pipefail
-          python -m pytest -q             tests/test_youtube_intelligence_revenue_plane.py             tests/test_google_oauth.py             tests/test_youtube_analytics_service.py             tests/test_youtube_analytics_learning_service.py             tests/test_monetization_observability_service.py             tests/test_agenttube_capability_bridge.py             tests/test_youtube_publication_orchestration.py             tests/test_youtube_publication_readiness_service.py             --junitxml=artifacts/youtube-intelligence/pytest.xml
+          python -m pytest -q             tests/test_youtube_intelligence_revenue_plane.py             tests/test_youtube_platform_foundation_block1.py             tests/test_youtube_platform_foundation_live_canary.py             tests/test_youtube_readonly_credential_broker_runtime.py             tests/test_youtube_reporting_live_adapter.py             tests/test_google_oauth.py             tests/test_youtube_analytics_service.py             tests/test_youtube_analytics_learning_service.py             tests/test_monetization_observability_service.py             tests/test_agenttube_capability_bridge.py             tests/test_youtube_publication_orchestration.py             tests/test_youtube_publication_readiness_service.py             --junitxml=artifacts/youtube-intelligence/pytest.xml
           echo "YOUTUBE_INTELLIGENCE_FOCUSED_TESTS=PASS"
 
       - name: Run provider-free closed-loop proof

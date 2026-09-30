@@ -145,7 +145,7 @@ def test_missing_metrics_are_not_coerced_to_zero(monkeypatch):
 
 def test_no_data_is_explicit(monkeypatch):
     result, _ = _call(monkeypatch, response={"columnHeaders": [], "rows": []})
-    assert result["status"] == "NO_DATA"
+    assert result["status"] == "NO_ELIGIBLE_DATA"
     assert all(item["status"] == "MISSING" for item in result["metrics"].values())
 
 

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from typing import Any, Callable
+from hashlib import sha256
+import json
+from typing import Any, Callable, Sequence
 
 from app.database.youtube_repository import get_youtube_publication
+from app.database.youtube_intelligence_repository import persist_intelligence_record
+from app.contracts.youtube_intelligence_contracts import YouTubeRetentionSeries
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.google_oauth import get_youtube_credentials
 from app.services.google_youtube_analytics_client import (
     YOUTUBE_ANALYTICS_READ_SCOPE,
+    YOUTUBE_ANALYTICS_REQUIRED_SCOPES,
     YouTubeAnalyticsScopeError,
     create_youtube_analytics_service,
 )
@@ -146,7 +151,7 @@ def read_publication_analytics(
         client_secrets_file=resolved_secrets,
         authorization_runner=authorization_runner,
         request=request,
-        scopes=(YOUTUBE_ANALYTICS_READ_SCOPE,),
+        scopes=YOUTUBE_ANALYTICS_REQUIRED_SCOPES,
     )
     result = execute_youtube_analytics_read_capability(
         record, youtube_video_id=youtube_video_id, start_date=start_date, end_date=end_date,
@@ -162,7 +167,7 @@ def read_publication_analytics(
         "metric_window": {"start_date": start_date, "end_date": end_date},
         "retrieved_at": retrieved_at,
         "metrics": result["metrics"],
-        "status": "SUCCESS" if result["has_data"] else "NO_DATA",
+        "status": "SUCCESS" if result["has_data"] else "NO_ELIGIBLE_DATA",
         "execution_id": authorization.execution_id,
         "authorization_id": authorization.authorization_id,
         "capability_id": ANALYTICS_CAPABILITY_ID,
@@ -186,3 +191,133 @@ __all__ = [
     "ANALYTICS_CAPABILITY_ID", "ANALYTICS_EXECUTOR_BINDING", "ANALYTICS_METRICS",
     "YouTubeAnalyticsScopeError", "read_publication_analytics",
 ]
+
+
+RETENTION_DIMENSION = "elapsedVideoTimeRatio"
+RETENTION_METRICS = ("audienceWatchRatio", "relativeRetentionPerformance")
+
+
+def retention_query_parameters(*, video_id: str, start_date: str, end_date: str) -> dict[str, str]:
+    video = str(video_id or "").strip()
+    if not video:
+        raise ValueError("video_id is required")
+    start = _validate_date(start_date, "start_date")
+    end = _validate_date(end_date, "end_date")
+    if start > end:
+        raise ValueError("start_date must not be after end_date")
+    return {
+        "ids": "channel==MINE",
+        "startDate": start,
+        "endDate": end,
+        "dimensions": RETENTION_DIMENSION,
+        "metrics": ",".join(RETENTION_METRICS),
+        "filters": f"video=={video}",
+        "sort": RETENTION_DIMENSION,
+    }
+
+
+def normalize_retention_series(
+    *,
+    video_id: str,
+    start_date: str,
+    end_date: str,
+    response: dict[str, Any],
+    evidence_refs: Sequence[str],
+) -> YouTubeRetentionSeries:
+    if not isinstance(response, dict):
+        raise ValueError("retention response must be an object")
+    names = [
+        item.get("name")
+        for item in (response.get("columnHeaders") or ())
+        if isinstance(item, dict)
+    ]
+    required = (RETENTION_DIMENSION, *RETENTION_METRICS)
+    if any(name not in names for name in required):
+        raise ValueError("retention response missing required dimension/metrics")
+    points: list[dict[str, Any]] = []
+    for row in response.get("rows") or ():
+        if not isinstance(row, list):
+            continue
+        mapped = {
+            name: row[index]
+            for index, name in enumerate(names)
+            if isinstance(name, str) and index < len(row)
+        }
+        points.append({name: mapped.get(name) for name in required})
+    payload = {
+        "schema": "YouTubeRetentionSeries/v1",
+        "video_id": str(video_id),
+        "period_start": _validate_date(start_date, "start_date"),
+        "period_end": _validate_date(end_date, "end_date"),
+        "points": points,
+        "metric_provenance": {
+            RETENTION_METRICS[0]: "OWNED_PRIVATE_METRIC",
+            RETENTION_METRICS[1]: "OWNED_PRIVATE_METRIC",
+        },
+        "source": "YOUTUBE_ANALYTICS_API",
+    }
+    digest = sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+    return YouTubeRetentionSeries(
+        video_id=payload["video_id"],
+        period_start=payload["period_start"],
+        period_end=payload["period_end"],
+        points=tuple(points),
+        metric_provenance=dict(payload["metric_provenance"]),
+        content_digest=digest,
+        evidence_refs=tuple(str(x) for x in evidence_refs if str(x)),
+    )
+
+
+def persist_retention_series(snapshot: YouTubeRetentionSeries) -> dict[str, Any]:
+    record_id = f"yt-retention-{snapshot.content_digest[:24]}"
+    row, created = persist_intelligence_record(
+        record_id=record_id,
+        schema_name=snapshot.schema,
+        subject_type="owned_video",
+        subject_id=snapshot.video_id,
+        period_start=snapshot.period_start,
+        period_end=snapshot.period_end,
+        payload=snapshot.to_dict(),
+        source_system="YOUTUBE_ANALYTICS_API",
+        evidence_refs=snapshot.evidence_refs,
+        retrieved_at=datetime.now(timezone.utc).isoformat(),
+    )
+    return {"record": row, "created": created}
+
+
+def execute_youtube_retention_read_capability(
+    capability: Any,
+    *,
+    youtube_video_id: str,
+    start_date: str,
+    end_date: str,
+    credentials: Any,
+    evidence_refs: Sequence[str] = (),
+    service_factory: Callable[[Any], Any] = create_youtube_analytics_service,
+    persist: bool = True,
+) -> dict[str, Any]:
+    if getattr(capability, "capability_id", None) != ANALYTICS_CAPABILITY_ID:
+        raise PermissionError("retention executor received a different capability")
+    analytics = service_factory(credentials)
+    params = retention_query_parameters(
+        video_id=youtube_video_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    response = analytics.reports().query(**params).execute()
+    snapshot = normalize_retention_series(
+        video_id=youtube_video_id,
+        start_date=start_date,
+        end_date=end_date,
+        response=response,
+        evidence_refs=tuple(evidence_refs),
+    )
+    persisted = persist_retention_series(snapshot) if persist and snapshot.points else None
+    return {
+        "schema": "YouTubeRetentionReadResult/v1",
+        "status": "PASS" if snapshot.points else "NO_ELIGIBLE_DATA",
+        "snapshot": snapshot.to_dict(),
+        "persisted": persisted,
+    }

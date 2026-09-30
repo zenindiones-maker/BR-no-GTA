@@ -126,6 +126,11 @@ def reserve_quota(
     priority: int,
     cache_state: str,
     request_digest: str,
+    quota_bucket: str | None = None,
+    policy_id: str | None = None,
+    policy_digest: str | None = None,
+    reset_time: str | None = None,
+    pagination_cost: int = 1,
 ) -> dict[str, Any]:
     if estimated_unit_cost < 0:
         raise ValueError("estimated_unit_cost must be >= 0")
@@ -145,8 +150,9 @@ def reserve_quota(
                 """
                 INSERT INTO youtube_quota_budget(
                     api,operation,budget_date,estimated_unit_cost,consumed,
-                    hard_limit,priority,cache_state,last_request_digest
-                ) VALUES (?,?,?,?,?,?,?,?,?)
+                    hard_limit,priority,cache_state,last_request_digest,
+                    quota_bucket,policy_id,policy_digest,reset_time,pagination_cost
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     api,
@@ -158,6 +164,11 @@ def reserve_quota(
                     priority,
                     cache_state,
                     request_digest,
+                    quota_bucket,
+                    policy_id,
+                    policy_digest,
+                    reset_time,
+                    int(pagination_cost),
                 ),
             )
         else:
@@ -165,7 +176,9 @@ def reserve_quota(
                 """
                 UPDATE youtube_quota_budget
                 SET estimated_unit_cost=?, consumed=?, hard_limit=?, priority=?,
-                    cache_state=?, last_request_digest=?, updated_at=CURRENT_TIMESTAMP
+                    cache_state=?, last_request_digest=?, quota_bucket=?, policy_id=?,
+                    policy_digest=?, reset_time=?, pagination_cost=?,
+                    updated_at=CURRENT_TIMESTAMP
                 WHERE api=? AND operation=? AND budget_date=?
                 """,
                 (
@@ -175,6 +188,11 @@ def reserve_quota(
                     priority,
                     cache_state,
                     request_digest,
+                    quota_bucket,
+                    policy_id,
+                    policy_digest,
+                    reset_time,
+                    int(pagination_cost),
                     api,
                     operation,
                     budget_date,

@@ -133,3 +133,85 @@ def persist_report_revision(
         content_digest=row["content_digest"],
         row_count=len(rows),
     )
+
+
+def list_reporting_jobs(
+    *,
+    service: Any,
+    page_size: int = 100,
+) -> dict[str, Any]:
+    if page_size < 1 or page_size > 100:
+        raise ValueError("Reporting jobs page_size must be in [1,100]")
+    response = service.jobs().list(
+        includeSystemManaged=True,
+        pageSize=page_size,
+    ).execute()
+    if not isinstance(response, dict):
+        raise RuntimeError("YouTube Reporting jobs.list returned invalid response")
+    jobs = []
+    for raw in response.get("jobs") or ():
+        if not isinstance(raw, dict):
+            continue
+        jobs.append({
+            "job_id": str(raw.get("id") or ""),
+            "name": str(raw.get("name") or ""),
+            "report_type_id": str(raw.get("reportTypeId") or ""),
+            "create_time": str(raw.get("createTime") or ""),
+            "expire_time": str(raw.get("expireTime") or ""),
+            "system_managed": bool(raw.get("systemManaged")),
+        })
+    return {
+        "schema": "YouTubeReportingJobsRead/v1",
+        "status": "PASS" if jobs else "NO_ELIGIBLE_DATA",
+        "jobs": jobs,
+        "next_page_token": response.get("nextPageToken"),
+        "source": "YOUTUBE_REPORTING_API",
+    }
+
+
+def list_reporting_reports(
+    *,
+    service: Any,
+    job_id: str,
+    created_after: str | None = None,
+    start_time_at_or_after: str | None = None,
+    page_size: int = 100,
+) -> dict[str, Any]:
+    job = str(job_id or "").strip()
+    if not job:
+        raise ValueError("Reporting job_id is required")
+    if page_size < 1 or page_size > 100:
+        raise ValueError("Reporting reports page_size must be in [1,100]")
+    kwargs: dict[str, Any] = {"jobId": job, "pageSize": page_size}
+    if created_after:
+        kwargs["createdAfter"] = str(created_after)
+    if start_time_at_or_after:
+        kwargs["startTimeAtOrAfter"] = str(start_time_at_or_after)
+    response = service.reports().list(**kwargs).execute()
+    if not isinstance(response, dict):
+        raise RuntimeError("YouTube Reporting reports.list returned invalid response")
+    reports = []
+    for raw in response.get("reports") or ():
+        if not isinstance(raw, dict):
+            continue
+        reports.append({
+            "report_id": str(raw.get("id") or ""),
+            "job_id": str(raw.get("jobId") or job),
+            "start_time": str(raw.get("startTime") or ""),
+            "end_time": str(raw.get("endTime") or ""),
+            "created_at": str(raw.get("createTime") or ""),
+            "download_url": str(raw.get("downloadUrl") or ""),
+        })
+    reports.sort(key=lambda item: (item["created_at"], item["report_id"]))
+    newest = reports[-1] if reports else None
+    return {
+        "schema": "YouTubeReportingReportsRead/v1",
+        "status": "PASS" if reports else "NO_ELIGIBLE_DATA",
+        "reports": reports,
+        "cursor": {
+            "newest_created_at": newest["created_at"] if newest else created_after,
+            "newest_report_id": newest["report_id"] if newest else None,
+        },
+        "next_page_token": response.get("nextPageToken"),
+        "source": "YOUTUBE_REPORTING_API",
+    }

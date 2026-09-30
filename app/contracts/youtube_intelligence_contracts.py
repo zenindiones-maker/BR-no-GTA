@@ -391,6 +391,9 @@ class YouTubePublicationSpec(EvidenceLinkedRecord):
     publish_at: str | None = None
     monetization_intent: str = "UNKNOWN"
     contains_synthetic_media: bool | None = None
+    synthetic_media_disclosure: dict[str, Any] = field(default_factory=dict)
+    originality_review_ref: str | None = None
+    ypp_transformative_value_status: str = "UNKNOWN"
     related_videos: tuple[str, ...] = ()
     end_screen_plan: dict[str, Any] = field(default_factory=dict)
     cards_plan: tuple[dict[str, Any], ...] = ()
@@ -465,3 +468,87 @@ class SponsorFitCandidate(EvidenceLinkedRecord):
     rate_or_value: str = "UNKNOWN"
     audience_trust_risk: str = "UNKNOWN"
     schema: str = "SponsorFitCandidate/v1"
+
+
+@dataclass(frozen=True)
+class YouTubePolicySnapshot(EvidenceLinkedRecord):
+    policy_id: str = ""
+    policy_family: str = ""
+    source_url: str = ""
+    observed_at: str = ""
+    effective_from: str = ""
+    effective_until: str | None = None
+    jurisdiction_or_market: str | None = None
+    structured_values: dict[str, Any] = field(default_factory=dict)
+    content_digest: str = ""
+    status: str = "CURRENT"
+    schema: str = "YouTubePolicySnapshot/v1"
+
+
+@dataclass(frozen=True)
+class MetricEvidenceClass(EvidenceLinkedRecord):
+    metric_name: str = ""
+    evidence_class: str = "UNKNOWN"
+    subject_scope: str = ""
+    source_system: str = ""
+    provider: str | None = None
+    retrieval_method: str | None = None
+    compliance_status: str | None = None
+    observed_at: str = ""
+    source_ref: str = ""
+    confidence: str = "UNKNOWN"
+    schema: str = "MetricEvidenceClass/v1"
+
+
+@dataclass(frozen=True)
+class ChannelOriginalityPolicy(EvidenceLinkedRecord):
+    policy_id: str = "br-no-gta-originality-v1"
+    required_value_signals: tuple[str, ...] = ()
+    prohibited_patterns: tuple[str, ...] = ()
+    policy_snapshot_refs: tuple[str, ...] = ()
+    schema: str = "ChannelOriginalityPolicy/v1"
+
+
+@dataclass(frozen=True)
+class VideoOriginalityReview(EvidenceLinkedRecord):
+    video_id: str = ""
+    copyright_status: str = "UNKNOWN"
+    ypp_transformative_value_status: str = "UNKNOWN"
+    original_value_signals: tuple[str, ...] = ()
+    risk_flags: tuple[str, ...] = ()
+    policy_snapshot_refs: tuple[str, ...] = ()
+    decision: str = "REVIEW_REQUIRED"
+    schema: str = "VideoOriginalityReview/v1"
+
+
+@dataclass(frozen=True)
+class SyntheticMediaDisclosureDecision(EvidenceLinkedRecord):
+    decision: str = "UNCERTAIN_REVIEW_REQUIRED"
+    realistic_media: bool = False
+    meaningfully_altered_or_generated: bool = False
+    rationale: str = ""
+    policy_snapshot_ref: str = ""
+    schema: str = "SyntheticMediaDisclosureDecision/v1"
+
+
+@dataclass(frozen=True)
+class YouTubeOperationSurface(EvidenceLinkedRecord):
+    operation: str = ""
+    surface: str = "UNAVAILABLE"
+    documented: bool = False
+    source_url: str = ""
+    policy_snapshot_ref: str | None = None
+    notes: str = ""
+    schema: str = "YouTubeOperationSurface/v1"
+
+
+@dataclass(frozen=True)
+class YouTubeRetentionSeries(EvidenceLinkedRecord):
+    video_id: str = ""
+    period_start: str = ""
+    period_end: str = ""
+    points: tuple[dict[str, Any], ...] = ()
+    metric_provenance: dict[str, str] = field(default_factory=dict)
+    content_digest: str = ""
+    source: str = "YOUTUBE_ANALYTICS_API"
+    schema: str = "YouTubeRetentionSeries/v1"

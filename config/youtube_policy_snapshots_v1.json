@@ -1,0 +1,249 @@
+{
+  "generated_from_official_sources_only": true,
+  "schema": "YouTubePolicyRegistry/v1",
+  "snapshots": [
+    {
+      "content_digest": "45be228dfe3e0f91288abeb8a002fdd145117d6af8730e64fe8b74abb8e71792",
+      "effective_from": "2026-06-01",
+      "effective_until": null,
+      "jurisdiction_or_market": null,
+      "observed_at": "2026-09-30T00:00:00Z",
+      "policy_family": "API_QUOTA",
+      "policy_id": "youtube-api-quota-2026-06-01",
+      "source_url": "https://developers.google.com/youtube/v3/determine_quota_cost",
+      "status": "CURRENT",
+      "structured_values": {
+        "api_families": {
+          "youtube_analytics": {
+            "buckets": {
+              "default": {
+                "hard_limit": null,
+                "operation_cost": 1,
+                "pagination_cost": 1,
+                "quota_bucket": "analytics_requests"
+              }
+            },
+            "reset_time": null
+          },
+          "youtube_data": {
+            "buckets": {
+              "default": {
+                "documented_default_limit": 10000,
+                "hard_limit": 10000,
+                "limit_unit": "UNITS_PER_DAY",
+                "pagination_cost": 1,
+                "quota_bucket": "STANDARD_PROJECT_QUOTA"
+              },
+              "search.list": {
+                "documented_default_limit": 100,
+                "hard_limit": 100,
+                "limit_unit": "CALLS_PER_DAY",
+                "operation_cost": 1,
+                "pagination_cost": 1,
+                "quota_bucket": "SEARCH_QUERIES"
+              },
+              "videos.insert": {
+                "documented_default_limit": 100,
+                "hard_limit": 100,
+                "limit_unit": "CALLS_PER_DAY",
+                "operation_cost": 1,
+                "pagination_cost": 1,
+                "quota_bucket": "VIDEO_UPLOADS"
+              }
+            },
+            "effective_project_limit_observation_source": "GOOGLE_CLOUD_CONSOLE",
+            "operation_costs": {
+              "activities.list": 1,
+              "channels.list": 1,
+              "commentThreads.insert": 50,
+              "commentThreads.list": 1,
+              "comments.insert": 50,
+              "comments.list": 1,
+              "playlistItems.insert": 50,
+              "playlistItems.list": 1,
+              "playlists.list": 1,
+              "search.list": 1,
+              "thumbnails.set": 50,
+              "videos.insert": 1,
+              "videos.list": 1,
+              "videos.update": 50
+            },
+            "project_limit_may_be_overridden": true,
+            "public_documentation_exposes_current_project_limit": false,
+            "public_documentation_exposes_documented_default_limits": true,
+            "quota_limit_source": "GOOGLE_CLOUD_CONSOLE",
+            "reset_semantics": "PROJECT_QUOTA_WINDOW_MANAGED_BY_GOOGLE_CLOUD",
+            "reset_time": "MIDNIGHT_PT"
+          },
+          "youtube_reporting": {
+            "buckets": {
+              "default": {
+                "hard_limit": null,
+                "operation_cost": 1,
+                "pagination_cost": 1,
+                "quota_bucket": "reporting_requests"
+              }
+            },
+            "reset_time": null
+          }
+        },
+        "supporting_source_urls": [
+          "https://developers.google.com/youtube/v3/revision_history"
+        ]
+      }
+    },
+    {
+      "content_digest": "fb7b91cc027b37e627c0ba99dc1f01d97dc6f77a3f4a8303441f9d75d8910965",
+      "effective_from": "2026-09-30",
+      "effective_until": "2027-01-31",
+      "jurisdiction_or_market": "GLOBAL_WHERE_YPP_AVAILABLE",
+      "observed_at": "2026-09-30T00:00:00Z",
+      "policy_family": "YPP_ELIGIBILITY",
+      "policy_id": "youtube-ypp-entry-current-2026-09-30",
+      "source_url": "https://support.google.com/youtube/answer/72851",
+      "status": "CURRENT_OBSERVED",
+      "structured_values": {
+        "ads_premium_entry": {
+          "qualified_shorts_views_90d": 10000000,
+          "qualified_watch_hours_365d": 4000,
+          "subscribers": 1000
+        }
+      }
+    },
+    {
+      "content_digest": "6542de9f3fc54ab797edd6451afcf7dfb305717554f44f4eadc79e0434be1f99",
+      "effective_from": "2027-02-01",
+      "effective_until": null,
+      "jurisdiction_or_market": "GLOBAL_WHERE_YPP_AVAILABLE",
+      "observed_at": "2026-09-30T00:00:00Z",
+      "policy_family": "YPP_ELIGIBILITY",
+      "policy_id": "youtube-ypp-entry-2027-02-01",
+      "source_url": "https://support.google.com/youtube/answer/12843009",
+      "status": "SCHEDULED",
+      "structured_values": {
+        "ads_premium_entry": {
+          "qualified_shorts_views_90d": 20000000,
+          "qualified_watch_hours_365d": 8000,
+          "subscribers": 1000
+        },
+        "existing_ypp_status_impacted": false
+      }
+    },
+    {
+      "content_digest": "3d967d8143cfdc6850e339dcbf0d57e75f47bfc5e2e6586783d6d185b541c18c",
+      "effective_from": "2026-09-30",
+      "effective_until": null,
+      "jurisdiction_or_market": "GLOBAL",
+      "observed_at": "2026-09-30T00:00:00Z",
+      "policy_family": "ADVERTISER_FRIENDLY",
+      "policy_id": "youtube-advertiser-friendly-2026-09",
+      "source_url": "https://support.google.com/youtube/answer/9725604",
+      "status": "CURRENT_OBSERVED_SEPTEMBER_2026_UPDATE",
+      "structured_values": {
+        "gaming_graphic_violence_first_8_to_15_seconds": "AD_REVENUE_ELIGIBLE_PER_SEPTEMBER_2026_CLARIFICATION",
+        "policy_interpretation": "SOURCE_CONTROLLED"
+      }
+    },
+    {
+      "content_digest": "4f8e04bdb12e1235991ee172bdab45682bb1ac316d7c0d78d52bb65cbbe2f998",
+      "effective_from": "2026-09-30",
+      "effective_until": null,
+      "jurisdiction_or_market": "GLOBAL",
+      "observed_at": "2026-09-30T00:00:00Z",
+      "policy_family": "AI_DISCLOSURE",
+      "policy_id": "youtube-ai-disclosure-2026-05",
+      "source_url": "https://support.google.com/youtube/answer/14328491",
+      "status": "CURRENT_OBSERVED",
+      "structured_values": {
+        "clearly_unrealistic_or_minor_edit": "DISCLOSURE_NOT_REQUIRED",
+        "data_api_field": "status.containsSyntheticMedia",
+        "data_api_supported": true,
+        "realistic_meaningfully_altered_or_generated": "DISCLOSURE_REQUIRED"
+      }
+    },
+    {
+      "content_digest": "ba468137ac2cd8a85546a56e83d11f5d20798023280142ef9dc33bab706bd6c1",
+      "effective_from": "2025-07-15",
+      "effective_until": null,
+      "jurisdiction_or_market": "GLOBAL",
+      "observed_at": "2026-09-30T00:00:00Z",
+      "policy_family": "INAUTHENTIC_CONTENT",
+      "policy_id": "youtube-inauthentic-content-2025-07-15",
+      "source_url": "https://support.google.com/youtube/answer/1311392",
+      "status": "CURRENT",
+      "structured_values": {
+        "generic_ai_template_content_without_original_perspective": "INELIGIBLE_FOR_MONETIZATION",
+        "mass_produced_repetitive_template_content": "INELIGIBLE_FOR_MONETIZATION"
+      }
+    },
+    {
+      "content_digest": "b87322010ea1c5c34d8b354f27e19d4b7b1ff8afadae79e7acc8b50797863e6e",
+      "effective_from": "2026-09-30",
+      "effective_until": null,
+      "jurisdiction_or_market": "GLOBAL",
+      "observed_at": "2026-09-30T00:00:00Z",
+      "policy_family": "REUSED_CONTENT",
+      "policy_id": "youtube-reused-content-current-2026-09-30",
+      "source_url": "https://support.google.com/youtube/answer/1311392",
+      "status": "CURRENT_OBSERVED",
+      "structured_values": {
+        "copyright_clearance_is_not_equivalent_to_ypp_transformative_value": true,
+        "requires_significant_original_commentary_or_substantive_modification_or_value": true
+      }
+    },
+    {
+      "content_digest": "2ac9303fce717363b9d1ae6914c766f55a382be9707b21b9fcc541fe94e0167d",
+      "effective_from": "2026-09-30",
+      "effective_until": null,
+      "jurisdiction_or_market": "GLOBAL",
+      "observed_at": "2026-09-30T00:00:00Z",
+      "policy_family": "MIDROLL",
+      "policy_id": "youtube-midroll-current-2026-09-30",
+      "source_url": "https://support.google.com/youtube/answer/6175006",
+      "status": "CURRENT_OBSERVED",
+      "structured_values": {
+        "manual_slot_management_surface": "YOUTUBE_STUDIO_DESKTOP",
+        "minimum_monetized_video_minutes": 8,
+        "natural_breakpoints_preferred": true,
+        "slot_guarantees_ad_serving": false
+      }
+    },
+    {
+      "content_digest": "2e687f675aba4badec6e7f53ef199dc212c5ec8dccc70ad9a8c64895d8e64332",
+      "effective_from": "2026-09-30",
+      "effective_until": null,
+      "jurisdiction_or_market": "GLOBAL",
+      "observed_at": "2026-09-30T00:00:00Z",
+      "policy_family": "A_B_ELIGIBILITY",
+      "policy_id": "youtube-ab-current-2026-09-30",
+      "source_url": "https://support.google.com/youtube/answer/16391400",
+      "status": "CURRENT_OBSERVED",
+      "structured_values": {
+        "advanced_features_required": true,
+        "max_variants": 3,
+        "private_videos_eligible": false,
+        "scheduled_live_eligible": false,
+        "shorts_eligible": false,
+        "surface": "YOUTUBE_STUDIO_DESKTOP",
+        "winner_basis": "WATCH_TIME"
+      }
+    },
+    {
+      "content_digest": "5e7a3353f99d49ba08d317c8d9af82eff90346543ee878206591b074e276c016",
+      "effective_from": "2026-09-30",
+      "effective_until": null,
+      "jurisdiction_or_market": "BRAZIL_AND_OTHER_ELIGIBLE_MARKETS",
+      "observed_at": "2026-09-30T00:00:00Z",
+      "policy_family": "SHOPPING",
+      "policy_id": "youtube-shopping-current-2026-09-30",
+      "source_url": "https://support.google.com/youtube/answer/13376398",
+      "status": "CURRENT_OBSERVED",
+      "structured_values": {
+        "brazil_affiliate_program_listed_as_available": true,
+        "made_for_kids_restriction": true,
+        "studio_enrollment_required": true,
+        "ypp_required": true
+      }
+    }
+  ]
+}
