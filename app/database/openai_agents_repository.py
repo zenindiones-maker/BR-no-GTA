@@ -269,6 +269,91 @@ def get_agent_environment_lease(lease_id: str) -> dict[str, Any] | None:
     return None if row is None else json.loads(row["payload_json"])
 
 
+def persist_sprite_environment_binding(binding: Any) -> dict[str, Any]:
+    payload = binding.to_dict() if hasattr(binding, "to_dict") else dict(binding)
+    _assert_no_secret(payload)
+    required = (
+        "binding_id", "environment_lease_id", "mission_id", "task_id", "attempt_id",
+        "openai_session_id", "openai_environment_id", "sprite_id", "sprite_name",
+        "workspace", "repo_sha", "tree_sha", "status", "created_at", "updated_at",
+        "expires_at",
+    )
+    missing = [name for name in required if not str(payload.get(name) or "").strip()]
+    if missing:
+        raise ValueError("Sprite binding missing required fields: " + ",".join(missing))
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO openai_sprite_environment_bindings(
+                binding_id,environment_lease_id,mission_id,task_id,attempt_id,
+                openai_session_id,openai_environment_id,sprite_id,sprite_name,
+                workspace,repo_sha,tree_sha,checkpoint_id,status,created_at,
+                updated_at,expires_at,workspace_digest,executor_credential_ref,payload_json
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(binding_id) DO UPDATE SET
+                checkpoint_id=excluded.checkpoint_id,
+                status=excluded.status,
+                updated_at=excluded.updated_at,
+                workspace_digest=excluded.workspace_digest,
+                executor_credential_ref=excluded.executor_credential_ref,
+                payload_json=excluded.payload_json
+            """,
+            (
+                payload["binding_id"],
+                payload["environment_lease_id"],
+                payload["mission_id"],
+                payload["task_id"],
+                payload["attempt_id"],
+                payload["openai_session_id"],
+                payload["openai_environment_id"],
+                payload["sprite_id"],
+                payload["sprite_name"],
+                payload["workspace"],
+                payload["repo_sha"],
+                payload["tree_sha"],
+                payload.get("checkpoint_id"),
+                payload["status"],
+                payload["created_at"],
+                payload["updated_at"],
+                payload["expires_at"],
+                payload.get("workspace_digest"),
+                payload.get("executor_credential_ref"),
+                json.dumps(payload, ensure_ascii=False, sort_keys=True),
+            ),
+        )
+        connection.commit()
+    return payload
+
+
+def get_sprite_environment_binding(binding_id: str) -> dict[str, Any] | None:
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT payload_json FROM openai_sprite_environment_bindings WHERE binding_id=?",
+            (binding_id,),
+        ).fetchone()
+    return None if row is None else json.loads(row["payload_json"])
+
+
+def get_active_sprite_environment_binding(
+    *,
+    openai_session_id: str,
+    task_id: str,
+    attempt_id: str,
+) -> dict[str, Any] | None:
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT payload_json
+            FROM openai_sprite_environment_bindings
+            WHERE openai_session_id=? AND task_id=? AND attempt_id=? AND status='ACTIVE'
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (openai_session_id, task_id, attempt_id),
+        ).fetchone()
+    return None if row is None else json.loads(row["payload_json"])
+
+
 def persist_openai_agent_session_receipt(
     receipt: OpenAIAgentSessionReceipt,
     *,
@@ -300,9 +385,12 @@ __all__ = [
     "next_openai_agent_session_revision",
     "get_openai_agent_session_head",
     "get_agent_environment_lease",
+    "get_active_sprite_environment_binding",
+    "get_sprite_environment_binding",
     "get_latest_openai_session_receipt",
     "get_openai_tool_result",
     "persist_agent_environment_lease",
+    "persist_sprite_environment_binding",
     "persist_openai_session_receipt",
     "persist_openai_tool_result",
 ]
