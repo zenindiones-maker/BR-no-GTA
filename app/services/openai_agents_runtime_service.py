@@ -199,6 +199,9 @@ def authorize_openai_execution_scope(
     requested_tools:Sequence[str],
     requested_skills:Sequence[str],
     risk_class:str,
+    environment_lease:AgentEnvironmentLease|None=None,
+    skill_allowed_tools:Sequence[str]|None=None,
+    tool_policy_allowed_tools:Sequence[str]|None=None,
 )->dict[str,Any]:
     """Compute effective OpenAI runtime authority strictly by intersection."""
     task_lease.assert_active()
@@ -221,6 +224,27 @@ def authorize_openai_execution_scope(
     lease_tools=set(str(x) for x in task_lease.allowed_tools)
     responsibility_tools=set(str(x) for x in responsibility.allowed_tools)
     effective_tools=task_tools & lease_tools & responsibility_tools
+
+    if environment_lease is not None:
+        environment_lease.assert_active()
+        if environment_lease.task_lease_ref!=f"delegated-task:{task_lease.task_id}":
+            raise PermissionError("AgentEnvironmentLease does not bind selected Task lease")
+        environment_tools=set(str(x) for x in environment_lease.allowed_capabilities)
+        # An environment never adds permission. When explicit capability/tool names
+        # are supplied, it can only narrow the already-authorized tool set.
+        if environment_tools:
+            effective_tools={
+                tool for tool in effective_tools
+                if tool in environment_tools
+                or tool.upper() in environment_tools
+                or "SANDBOX" in environment_tools
+            }
+
+    if skill_allowed_tools is not None:
+        effective_tools &= set(str(x) for x in skill_allowed_tools)
+    if tool_policy_allowed_tools is not None:
+        effective_tools &= set(str(x) for x in tool_policy_allowed_tools)
+
     requested_tool_set=set(str(x) for x in requested_tools)
     if not requested_tool_set.issubset(effective_tools):
         raise PermissionError("requested tool escapes authorization intersection")
@@ -254,6 +278,10 @@ def authorize_openai_execution_scope(
         "allowed_tools":sorted(requested_tool_set),
         "allowed_skills":sorted(requested_skill_set),
         "matched_rule_ids":sorted(set(matched_rule_ids)),
+        "environment_lease_id":(
+            environment_lease.lease_id if environment_lease is not None else None
+        ),
+        "authorization_semantics":"INTERSECTION_ONLY",
         "grants_authority":False,
     }
 
@@ -285,6 +313,32 @@ def verify_openai_task_completion(
     if not required.issubset(produced):
         raise PermissionError("required output artifact is missing")
     return _mark_openai_task_verified(receipt,verification_ref=verification_ref)
+
+
+def validate_application_secret_isolation(value:Any)->dict[str,Any]:
+    """Fail closed if application OpenAI credentials enter agent-visible state."""
+    import json
+    raw=json.dumps(value,ensure_ascii=False,sort_keys=True,default=str)
+    lowered=raw.lower()
+    forbidden=(
+        "openai_api_key",
+        "authorization: bearer",
+        '"authorization":"bearer',
+        "sk-proj-",
+        '"api_key"',
+        '"access_token"',
+        '"refresh_token"',
+    )
+    matched=tuple(item for item in forbidden if item in lowered)
+    if matched:
+        raise PermissionError("application OpenAI secret entered agent-visible state")
+    return {
+        "schema":"ApplicationSecretIsolationDecision/v1",
+        "APPLICATION_OPENAI_API_KEY_IN_AGENT_CONTEXT":0,
+        "APPLICATION_OPENAI_API_KEY_IN_ARTIFACTS":0,
+        "matched_secret_patterns":[],
+        "status":"PASS",
+    }
 
 
 def require_bounded_computer_use(
@@ -430,10 +484,16 @@ def execute_openai_agents_session(
 
 
 class OpenAIAgentsRuntime:
-    def __init__(self,*,transport:Any)->None:
+    def __init__(
+        self,
+        *,
+        transport:Any,
+        environment_provider:Any|None=None,
+    )->None:
         if not callable(transport):
             raise TypeError("OpenAI Agents transport must be callable")
         self.transport=transport
+        self.environment_provider=environment_provider
 
     def create_session(
         self,
@@ -449,6 +509,8 @@ class OpenAIAgentsRuntime:
         runtime_revision:str="dd2-runtime-v1",
         provider:str="openai",
         subagent_refs:tuple[str,...]=(),
+        environment_lease:AgentEnvironmentLease|None=None,
+        environment_context:Mapping[str,Any]|None=None,
     )->OpenAIAgentSessionReceipt:
         auth=validate_harness_authorization(
             authorization_ref,
@@ -458,6 +520,36 @@ class OpenAIAgentsRuntime:
         )
         model=str(agent_config.get("model") or "")
         require_registered_openai_model(model)
+
+        environment_payload=dict(environment)
+        self_hosted=str(environment_payload.get("type") or "").lower()=="self_hosted"
+        if self_hosted:
+            if self.environment_provider is None:
+                raise PermissionError(
+                    "self-hosted OpenAI Agents session requires AgentEnvironmentProvider"
+                )
+            if environment_lease is None:
+                raise PermissionError(
+                    "self-hosted OpenAI Agents session requires AgentEnvironmentLease"
+                )
+            environment_lease.assert_active()
+            context=dict(environment_context or {})
+            required_context=(
+                "mission_id","goal_id","workspace","repo_sha","tree_sha",
+            )
+            missing=tuple(
+                name for name in required_context
+                if not str(context.get(name) or "").strip()
+            )
+            if missing:
+                raise ValueError(
+                    "self-hosted environment context missing: "+",".join(missing)
+                )
+            if environment_lease.task_lease_ref!=f"delegated-task:{str(task_id or execution_id)}":
+                raise PermissionError(
+                    "AgentEnvironmentLease does not bind selected OpenAI task"
+                )
+
         body={
             "agent":dict(agent_config),
             "environment":dict(environment),
@@ -499,6 +591,44 @@ class OpenAIAgentsRuntime:
         )
         from app.database.openai_agents_repository import persist_openai_agent_session_receipt
         persist_openai_agent_session_receipt(receipt)
+
+        # For self-hosted sessions, persist the provider session identity first.
+        # Only then bind external compute. The application OpenAI API key remains
+        # in the application-side transport and is never passed to the provider.
+        if self_hosted:
+            from app.services.agent_environment_provider import AgentEnvironmentAcquireRequest
+            context=dict(environment_context or {})
+            openai_environment_id=str(receipt.environment_id or "").strip()
+            if not openai_environment_id:
+                raise RuntimeError(
+                    "OpenAI self-hosted session omitted environment identity"
+                )
+            request=AgentEnvironmentAcquireRequest(
+                environment_lease=environment_lease,
+                mission_id=str(context["mission_id"]),
+                goal_id=str(context["goal_id"]),
+                task_id=str(task_id or execution_id),
+                attempt_id=str(attempt_id or execution_id),
+                openai_session_id=receipt.session_id,
+                openai_environment_id=openai_environment_id,
+                workspace=str(context["workspace"]),
+                repo_sha=str(context["repo_sha"]),
+                tree_sha=str(context["tree_sha"]),
+                mutating=bool(context.get("mutating",False)),
+            )
+            binding=self.environment_provider.acquire(request)
+            binding_ref=f"sprite-binding:{getattr(binding,'binding_id','')}"
+            receipt=replace(
+                receipt,
+                trace_refs=tuple(dict.fromkeys((*receipt.trace_refs,binding_ref))),
+                updated_at=_now(),
+                revision=receipt.revision+1,
+            )
+            persist_openai_agent_session_receipt(
+                receipt,
+                expected_current_revision=1,
+            )
+
         consume_harness_authorization(auth)
         return receipt
 
@@ -632,5 +762,6 @@ __all__=[
     "gpt_6_1_sol_profile",
     "require_bounded_computer_use",
     "require_registered_openai_model",
+    "validate_application_secret_isolation",
     "verify_openai_task_completion",
 ]
