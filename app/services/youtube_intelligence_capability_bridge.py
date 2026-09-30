@@ -3,20 +3,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 import json
-from typing import Any, Iterable, Mapping
+from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
-from app.database import youtube_intelligence_repository as yt_repo
 from app.services.global_capability_registry_base import (
     AVAILABLE,
     FUNCTIONAL,
     PARTIAL,
     CapabilityRecord,
 )
-from app.services.harness_authorization_service import validate_harness_authorization
-from app.services.youtube_credential_broker_service import (
-    YouTubeCredentialBrokerClient,
-    YouTubeRemoteStateUnknown,
-)
+
+if TYPE_CHECKING:
+    from app.services.youtube_credential_broker_service import YouTubeCredentialBrokerClient
 
 
 ROLE_EXECUTOR="app.services.youtube_intelligence_capability_bridge.execute_youtube_intelligence_role_capability"
@@ -235,6 +232,8 @@ def youtube_intelligence_capability_records() -> tuple[CapabilityRecord,...]:
 
 
 def _validate_authorization(capability: Any,payload: Mapping[str,Any]) -> Any:
+    from app.services.harness_authorization_service import validate_harness_authorization
+
     capability_id=str(getattr(capability,"capability_id","") or "")
     authorization_ref=str(payload.get("authorization_ref") or "").strip()
     task_id=str(payload.get("task_id") or "").strip()
@@ -316,7 +315,10 @@ def execute_youtube_platform_capability(
     if not resource_binding:
         raise ValueError("exact resource_binding is required")
 
-    broker=broker or YouTubeCredentialBrokerClient()
+    if broker is None:
+        from app.services.youtube_credential_broker_service import YouTubeCredentialBrokerClient
+
+        broker=YouTubeCredentialBrokerClient()
     handle=broker.request_handle(
         operation=operation,
         authorization_ref=auth.authorization_id,
@@ -327,6 +329,9 @@ def execute_youtube_platform_capability(
     operation_id=f"yt-op-{sha256((auth.authorization_id+'|'+operation+'|'+target+'|'+payload_digest).encode()).hexdigest()[:24]}"
 
     if side_effect_class=="EXTERNAL_MUTATION":
+        from app.database import youtube_intelligence_repository as yt_repo
+        from app.services.youtube_credential_broker_service import YouTubeRemoteStateUnknown
+
         existing=yt_repo.get_external_operation(operation_id)
         if existing is not None:
             if existing["state"]=="CONFIRMED":
