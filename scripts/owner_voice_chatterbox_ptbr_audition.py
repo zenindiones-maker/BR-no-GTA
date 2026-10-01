@@ -45,6 +45,19 @@ def build_generation_kwargs(
     }
 
 
+
+
+def resolve_audition_manifest_path(runner_temp: str | Path) -> Path:
+    import os
+
+    configured=str(os.environ.get("BR_OWNER_PTBR_AUDITION_SET") or "").strip()
+    if configured:
+        path=Path(configured).expanduser().resolve()
+    else:
+        path=Path(runner_temp).resolve()/"br-owner-voice"/"ptbr-audition-set.json"
+    path.parent.mkdir(parents=True,exist_ok=True)
+    return path
+
 def _sha256_file(path: str | Path) -> str:
     import hashlib
 
@@ -346,7 +359,7 @@ def main() -> int:
         "audition_text": text,
         "outputs": outputs,
     }
-    manifest_path = runner_temp / "br-owner-voice" / "ptbr-audition-set.json"
+    manifest_path = resolve_audition_manifest_path(runner_temp)
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, sort_keys=True),
         encoding="utf-8",
