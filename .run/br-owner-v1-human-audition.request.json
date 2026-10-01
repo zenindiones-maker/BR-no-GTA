@@ -8,8 +8,12 @@
   "production_activation": "FORBIDDEN_PENDING_HUMAN_REVIEW",
   "provider_default_voice_allowed": false,
   "provider_preset_voice_allowed": false,
+  "request_revision": "pyav-fix-001",
+  "retry_of_run_id": 36934833795,
+  "retry_reason": "PYAV_19_METADATA_ERRORS_INCOMPATIBILITY_FIXED",
   "same_script_for_all_candidates": true,
   "schema_version": "OwnerVoiceHumanAuditionRequest/v1",
   "send_real_reference": true,
+  "stt_runtime_contract": "faster-whisper==1.2.0 + av==18.0.0",
   "voice_identity_id": "BR_OWNER_V1"
 }
