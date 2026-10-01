@@ -1,0 +1,48 @@
+{
+  "agent_execution_identity": "crash-agent",
+  "artifact_refs": [],
+  "authorization_id": "auth",
+  "canonical_base_sha": "daaaa3cabfa1118e5a2384a867e7f787cf28b5d1",
+  "canonical_branch": "work/gate6f-analytics-learning",
+  "checkpoint_digest": "8a16ee57ad895bbc57f969b7d999559e3218231b8d7acd69329116f8343f5f7e",
+  "checkpoint_id": "crash-live-cp-000001-53ee5e44",
+  "checkpoint_kind": "RECOVERY",
+  "checkpoint_sequence": 1,
+  "completed_steps": [],
+  "content_digest": "44f316bc5835e189c565a9c086c81a6e9711c71cf51d7247d813bec54f4d934c",
+  "created_at": "2026-10-01T15:48:24.551144+00:00",
+  "current_step": "initial",
+  "development_state": "REMOTE_CHECKPOINT_PENDING",
+  "evidence_refs": [],
+  "excluded_paths": [],
+  "failure_state": {},
+  "included_paths": [
+    "tests/crash_live.py"
+  ],
+  "large_evidence": [],
+  "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
+  "mission_id": "crash-live",
+  "next_step": "crash",
+  "open_blockers": [],
+  "previous_checkpoint_sha": null,
+  "progress_ledger_digest": "e64d6e53b92172bf6d1d1b3ccb50778959f13e6d82874634e42a2dde16214173",
+  "recovery_ref": "recovery/dev/dev-continuity-crash-before-remote-write-001",
+  "remote_readback_status": "PENDING",
+  "remote_write_status": "PENDING",
+  "resume_instructions": "Load ledger, reconcile canonical and side effects, continue first incomplete authorized step.",
+  "runtime_namespace": "crash",
+  "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
+  "side_effect_state": {
+    "known_completed": [],
+    "unknown_requires_reconciliation": []
+  },
+  "sprite_id": "disposable",
+  "task_id": "initial",
+  "test_state": {
+    "affected_subgraph": "NOT_RUN",
+    "root": "NOT_RUN",
+    "targeted": "PASS"
+  },
+  "validation_state": "PARTIAL",
+  "workspace_id": "crash"
+}
