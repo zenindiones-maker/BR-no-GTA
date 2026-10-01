@@ -76,3 +76,15 @@ def test_pack_message_is_action_first_and_review_markup_has_causal_rejections():
     assert "ov1:reject_robotic:ALL" in callbacks
     assert "ov1:reject_prosody:ALL" in callbacks
     assert "ov1:reject_pronunciation:ALL" in callbacks
+
+
+def test_blind_selection_treats_zero_error_as_best_not_infinity():
+    candidates=[
+        {"candidate_id":"perfect","audio_sha256":"1"*64,"eligible":True,"word_error_rate":0.0,"character_error_rate":0.0,"language_probability":0.99,"clipping_ratio":0.0},
+        {"candidate_id":"worse","audio_sha256":"2"*64,"eligible":True,"word_error_rate":0.20,"character_error_rate":0.15,"language_probability":0.99,"clipping_ratio":0.0},
+    ]
+    public,private=select_blind_candidates(candidates,pack_id="zero-error-pack")
+    labels={v["candidate_id"]:k for k,v in private["mapping"].items()}
+    assert "perfect" in labels
+    # Internal shortlist is sorted by QA before blind label randomization.
+    assert private["shortlist_ranked_candidate_ids"][0]=="perfect"

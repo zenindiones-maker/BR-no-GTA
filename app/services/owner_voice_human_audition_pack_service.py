@@ -147,14 +147,19 @@ def select_blind_candidates(
     pack_id: str,
 ) -> tuple[list[dict[str, Any]],dict[str, Any]]:
     eligible=[dict(x) for x in candidates if x.get("eligible") is True]
+    def metric(row: Mapping[str, Any], key: str, default: float) -> float:
+        value=row.get(key)
+        return default if value is None else float(value)
+
     eligible.sort(key=lambda x:(
-        float(x.get("word_error_rate") or math.inf),
-        float(x.get("character_error_rate") or math.inf),
-        -float(x.get("language_probability") or 0.0),
-        float(x.get("clipping_ratio") or 0.0),
+        metric(x,"word_error_rate",math.inf),
+        metric(x,"character_error_rate",math.inf),
+        -metric(x,"language_probability",0.0),
+        metric(x,"clipping_ratio",math.inf),
         str(x.get("candidate_id") or ""),
     ))
     top=eligible[:3]
+    ranked_ids=[str(x.get("candidate_id") or "") for x in top]
     top.sort(key=lambda x:sha256((pack_id+"\n"+str(x.get("candidate_id") or "")).encode()).hexdigest())
     public=[]
     mapping={}
@@ -176,6 +181,7 @@ def select_blind_candidates(
     return public,{
         "pack_id":pack_id,
         "mapping":mapping,
+        "shortlist_ranked_candidate_ids":ranked_ids,
         "mapping_private":True,
         "provider_parameters_hidden_until_human_decision":True,
     }

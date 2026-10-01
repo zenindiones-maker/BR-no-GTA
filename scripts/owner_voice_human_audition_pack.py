@@ -235,7 +235,10 @@ def main() -> int:
         "raw_owner_audio_in_public_artifact":0,
         "clone_audio_in_public_artifact":0,
     }
-    receipt_path=temp/"br-owner-human-pack"/"audition-pack-receipt.json"
+    receipt_path=Path(
+        os.environ.get("BR_OWNER_AUDITION_PUBLIC_RECEIPT")
+        or temp/"br-owner-audition-public"/"owner-voice-human-audition-pack.json"
+    ).resolve()
     receipt_path.parent.mkdir(parents=True,exist_ok=True)
     receipt_path.write_text(json.dumps(receipt,ensure_ascii=False,sort_keys=True,indent=2)+"\n",encoding="utf-8")
     try: receipt_path.chmod(0o600)
