@@ -9,7 +9,7 @@ on:
       - ".run/br-owner-v1-human-audition.request.json"
 
 concurrency:
-  group: br-owner-v1-human-audition-${{ github.ref }}
+  group: br-owner-v1-human-audition-${{ github.sha }}
   cancel-in-progress: false
 
 permissions:
@@ -98,10 +98,11 @@ jobs:
       - name: Install strong private STT runtime
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get install -y -qq ffmpeg
+          fi
           python -m venv /tmp/br-owner-stt-venv
-          /tmp/br-owner-stt-venv/bin/python -m pip install --disable-pip-version-check -q             "faster-whisper==1.2.0" "requests>=2.32,<3"
+          /tmp/br-owner-stt-venv/bin/python -m pip install --disable-pip-version-check --prefer-binary -q             "faster-whisper==1.2.0" "requests>=2.32,<3"
 
       - name: Quality-rank real Telegram owner references with strong ASR
         env:

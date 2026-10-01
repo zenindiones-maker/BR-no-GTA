@@ -28,3 +28,9 @@ def test_materialization_workflow_remains_audit_only():
     text=Path(".github/workflows/owner-voice-private-materialization.yml").read_text(encoding="utf-8")
     assert "scripts/owner_voice_chatterbox_ptbr_audition.py" not in text
     assert "scripts/owner_voice_human_audition_pack.py" not in text
+
+
+def test_stt_install_is_reuse_first_and_does_not_unconditionally_apt_update():
+    text=WORKFLOW.read_text(encoding="utf-8")
+    assert "command -v ffmpeg" in text
+    assert "sudo apt-get update -qq" not in text

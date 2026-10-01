@@ -1,12 +1,15 @@
 {
-  "schema_version": "OwnerVoiceHumanAuditionRequest/v1",
-  "voice_identity_id": "BR_OWNER_V1",
+  "attempt": 2,
   "blind_review": true,
-  "send_real_reference": true,
-  "same_script_for_all_candidates": true,
-  "max_candidates": 3,
+  "causal_fix": "STT_RUNTIME_INSTALL_REUSE_FIRST",
   "generic_voice_fallback": false,
-  "provider_preset_voice_allowed": false,
+  "max_candidates": 3,
+  "previous_run_id": 36933939917,
+  "production_activation": "FORBIDDEN_PENDING_HUMAN_REVIEW",
   "provider_default_voice_allowed": false,
-  "production_activation": "FORBIDDEN_PENDING_HUMAN_REVIEW"
+  "provider_preset_voice_allowed": false,
+  "same_script_for_all_candidates": true,
+  "schema_version": "OwnerVoiceHumanAuditionRequest/v1",
+  "send_real_reference": true,
+  "voice_identity_id": "BR_OWNER_V1"
 }
