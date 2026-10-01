@@ -1,19 +1,20 @@
 {
-  "agent_execution_identity": "seed",
+  "agent_execution_identity": "after",
   "artifact_refs": [],
   "authorization_id": "crash-canary",
   "canonical_base_sha": "84f4158a80a7210ee3c375b00a67767305b86fe9",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "bed0944182679affb84387d165524e016ba1774d0fab0ef0644bce8cc3f1b160",
-  "checkpoint_id": "continuity-promotion-crash-001-cp-000001-ad15cc0e",
+  "checkpoint_digest": "98c55502b31f3c1e2c775632eb9943ae9942593abdd233d0f2e197552acf38ae",
+  "checkpoint_id": "continuity-promotion-crash-001-cp-000002-9b2bb738",
   "checkpoint_kind": "RECOVERY",
-  "checkpoint_sequence": 1,
+  "checkpoint_sequence": 2,
   "completed_steps": [
-    "seed"
+    "seed",
+    "before-write"
   ],
-  "content_digest": "f9500f0044870a89c897887a6f9149b1d2b4cccb0007ec12ce6fba5b63465f7d",
-  "created_at": "2026-10-01T21:33:50.859722+00:00",
-  "current_step": "before-write",
+  "content_digest": "d8fee36269873306988954f59bb3e9578281a2f787ffb123783adaadfb4ff976",
+  "created_at": "2026-10-01T21:33:56.529646+00:00",
+  "current_step": "after-write",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [],
   "excluded_paths": [],
@@ -26,8 +27,8 @@
   "mission_id": "continuity-promotion-crash-001",
   "next_step": "resume",
   "open_blockers": [],
-  "previous_checkpoint_sha": null,
-  "progress_ledger_digest": "5524f4ea3ff282d2c147ba188a40c4d21dbc2db3763b2243e078c12fdc4cff81",
+  "previous_checkpoint_sha": "c338d7d3ef18a2d5f97100e3fba74c965adac751",
+  "progress_ledger_digest": "046a2f2e2631c7a64d104c67cecdd179bdf8f13633875a7500f14260ebe00324",
   "recovery_ref": "recovery/dev/continuity-promotion-crash-001",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
@@ -39,7 +40,7 @@
     "unknown_requires_reconciliation": []
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "seed",
+  "task_id": "after",
   "test_state": {
     "affected_subgraph": "PASS",
     "root": "PASS_BASELINE",

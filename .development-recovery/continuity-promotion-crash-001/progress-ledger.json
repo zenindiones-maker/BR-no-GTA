@@ -2,20 +2,22 @@
   "artifact_refs": [],
   "canonical_base_sha": "84f4158a80a7210ee3c375b00a67767305b86fe9",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 0,
+  "checkpoint_sequence": 1,
   "completed_steps": [
-    "seed"
+    "seed",
+    "before-write"
   ],
-  "current_step": "before-write",
+  "current_step": "after-write",
   "decisions": [],
   "do_not_repeat": [
-    "seed"
+    "seed",
+    "before-write"
   ],
   "evidence_refs": [],
   "goal_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   "known_failures": [],
-  "latest_verified_checkpoint_id": null,
-  "latest_verified_checkpoint_sha": null,
+  "latest_verified_checkpoint_id": "continuity-promotion-crash-001-cp-000001-ad15cc0e",
+  "latest_verified_checkpoint_sha": "c338d7d3ef18a2d5f97100e3fba74c965adac751",
   "mission_id": "continuity-promotion-crash-001",
   "next_step": "resume",
   "open_blockers": [],
@@ -37,6 +39,6 @@
     "root": "PASS_BASELINE",
     "targeted": "PASS"
   },
-  "updated_at": "2026-10-01T21:32:00+00:00",
+  "updated_at": "2026-10-01T21:34:00+00:00",
   "validation_state": "PARTIAL"
 }
