@@ -137,3 +137,64 @@ def build_coalition_waves(
             completed.add(task.task_id)
 
     return tuple(waves)
+
+
+MAX_PARALLEL_CODEX_WORKERS = 2
+_PARALLEL_TOPOLOGIES = {"PARALLEL_INDEPENDENT", "PARALLEL_WITH_REDUCTION", "HYBRID"}
+
+
+@dataclass(frozen=True)
+class EffectiveParallelismDecision:
+    effective_parallelism: int
+    subagent_count: int
+    serialized_for_conflict: bool
+    limit_source: str
+    schema: str = "EffectiveParallelismDecision/v1"
+
+
+def effective_parallelism(
+    *,
+    topology: TaskTopologyAssessment,
+    topology_safe_parallelism: int,
+    conflict_safe_parallelism: int,
+    execution_budget: int,
+    runtime_allowance: int,
+    empirically_proven_parallelism: int,
+) -> EffectiveParallelismDecision:
+    values = (
+        topology_safe_parallelism,
+        conflict_safe_parallelism,
+        execution_budget,
+        runtime_allowance,
+        empirically_proven_parallelism,
+    )
+    if any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in values):
+        raise ValueError("parallelism inputs must be non-negative integers")
+    name = str(topology.topology or "").upper()
+    conflict = bool(
+        topology.evidence.get("write_set_overlap")
+        or topology.evidence.get("shared_mutable_state")
+        or conflict_safe_parallelism <= 1
+    )
+    if name not in _PARALLEL_TOPOLOGIES or conflict:
+        return EffectiveParallelismDecision(
+            effective_parallelism=1,
+            subagent_count=0,
+            serialized_for_conflict=conflict,
+            limit_source="TASK_TOPOLOGY_OR_CONFLICT",
+        )
+    effective = min(
+        MAX_PARALLEL_CODEX_WORKERS,
+        topology_safe_parallelism,
+        conflict_safe_parallelism,
+        execution_budget,
+        runtime_allowance,
+        empirically_proven_parallelism,
+    )
+    effective = max(1, effective)
+    return EffectiveParallelismDecision(
+        effective_parallelism=effective,
+        subagent_count=effective if effective > 1 else 0,
+        serialized_for_conflict=False,
+        limit_source="MAX_PARALLEL_CODEX_WORKERS" if effective == MAX_PARALLEL_CODEX_WORKERS else "LOWER_BOUND",
+    )

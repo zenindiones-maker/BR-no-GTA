@@ -100,3 +100,47 @@ def test_harness_only_reduction_is_not_assignable_task_role():
             tasks=(task,),
             effort_budget=AgentEffortBudget.for_complexity("STANDARD"),
         )
+
+def test_effective_parallelism_caps_codex_workers_at_two_and_sequential_has_no_subagents():
+    from app.services.harness_coalition_execution_service import effective_parallelism
+    parallel=effective_parallelism(
+        topology=_topology("PARALLEL_INDEPENDENT"),
+        topology_safe_parallelism=5,
+        conflict_safe_parallelism=4,
+        execution_budget=4,
+        runtime_allowance=8,
+        empirically_proven_parallelism=3,
+    )
+    assert parallel.effective_parallelism==2
+    assert parallel.subagent_count==2
+    assert parallel.limit_source=="MAX_PARALLEL_CODEX_WORKERS"
+
+    sequential=effective_parallelism(
+        topology=_topology("SEQUENTIAL"),
+        topology_safe_parallelism=1,
+        conflict_safe_parallelism=1,
+        execution_budget=4,
+        runtime_allowance=8,
+        empirically_proven_parallelism=3,
+    )
+    assert sequential.effective_parallelism==1
+    assert sequential.subagent_count==0
+
+
+def test_effective_parallelism_serializes_write_conflict():
+    from app.services.harness_coalition_execution_service import effective_parallelism
+    decision=effective_parallelism(
+        topology=TaskTopologyAssessment(
+            topology="HYBRID",
+            reasons=("write-overlap",),
+            evidence={"write_set_overlap":True,"shared_mutable_state":False},
+        ),
+        topology_safe_parallelism=2,
+        conflict_safe_parallelism=1,
+        execution_budget=2,
+        runtime_allowance=2,
+        empirically_proven_parallelism=2,
+    )
+    assert decision.effective_parallelism==1
+    assert decision.subagent_count==0
+    assert decision.serialized_for_conflict is True

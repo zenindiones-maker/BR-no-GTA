@@ -141,7 +141,7 @@ def test_agent_office_device_auth_rechecks_same_runner_state(tmp_path):
     provider = _StubAuthProvider([(1, ""), (0, "Logged in using ChatGPT")])
     state = provider.bootstrap(cwd=tmp_path, allow_device_auth=True)
     assert state.available is True
-    assert state.method == "device_auth"
+    assert state.method == "CHATGPT_SUBSCRIPTION"
     assert provider.commands == [["codex", "login", "--device-auth"]]
 
 
@@ -188,7 +188,7 @@ def test_auth_control_preflight_existing_auth_continues(tmp_path):
     assert state.auth_timeout_path_repeated is False
 
 
-def test_auth_control_missing_cloud_wif_is_not_misreported_as_local_login_request(tmp_path):
+def test_auth_control_missing_chatgpt_subscription_requires_private_human_gate(tmp_path):
     state = classify_codex_auth(
         mission_id="mission-auth-human-gate",
         cwd=tmp_path,
@@ -199,17 +199,13 @@ def test_auth_control_missing_cloud_wif_is_not_misreported_as_local_login_reques
         },
         provider_factory=_provider_factory([(1, "")]),
     )
-    assert state.state == AUTH_BLOCKED
+    assert state.state == AUTH_USER_ACTION_REQUIRED
     assert state.auth_available is False
-    assert state.user_action_required is False
+    assert state.user_action_required is True
     assert state.local_codex_auth_context == "SEPARATE_USER_CONTEXT"
     assert state.cloud_runner_codex_auth_context == "EPHEMERAL_RUNNER"
-    assert state.missing_auth_configuration == (
-        "OPENAI_FEDERATION_RULE_ID",
-        "OPENAI_IDENTITY_TOKEN_FILE",
-        "OPENAI_FEDERATION_AUDIENCE",
-    )
-    assert "does not invalidate or disconnect" in state.reason
+    assert state.missing_auth_configuration == ()
+    assert "ChatGPT subscription authentication requires human authorization" in state.reason
     assert state.auth_timeout_path_repeated is False
 
     checkpoint = build_mission_checkpoint(
@@ -244,7 +240,7 @@ def test_auth_control_unavailable_without_paired_human_fails_fast(tmp_path):
         },
         provider_factory=_provider_factory([(1, "")]),
     )
-    assert state.state == AUTH_BLOCKED
+    assert state.state == AUTH_UNAVAILABLE
     assert state.auth_available is False
     assert state.user_action_required is False
     assert state.paired_human_available is False
@@ -306,7 +302,7 @@ def test_legacy_device_auth_refuses_review_group_fallback(tmp_path):
     )
     state = provider.bootstrap(cwd=tmp_path, allow_device_auth=True, timeout=0.01)
     assert state.available is False
-    assert state.method == "device_auth"
+    assert state.method == "CHATGPT_SUBSCRIPTION"
     assert state.user_action_required is True
     assert provider.commands == []
 

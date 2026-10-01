@@ -19,17 +19,37 @@ REQUIRED_WIF_ENV = (
 
 def configuration_state(env: dict[str, str] | None = None) -> dict[str, Any]:
     values = env if env is not None else dict(os.environ)
-    missing = tuple(name for name in REQUIRED_WIF_ENV if not values.get(name))
-    if missing:
+    missing_wif = tuple(name for name in REQUIRED_WIF_ENV if not values.get(name))
+    if not missing_wif:
         return {
-            "status": "EXTERNAL_CONFIGURATION_REQUIRED",
-            "reason": "OPENAI_WIF_CONFIGURATION_INCOMPLETE",
-            "missing": missing,
+            "status": "PASS",
+            "reason": "OPENAI_WIF_CONFIGURATION_PRESENT",
+            "authentication_mode": "WIF",
+            "credential_present": True,
+            "credential_source_class": "GITHUB_OIDC_FEDERATED_IDENTITY",
+            "missing": (),
+        }
+    if values.get("OPENAI_API_KEY"):
+        return {
+            "status": "PASS",
+            "reason": "OPENAI_PROJECT_API_KEY_PRESENT",
+            "authentication_mode": "PROJECT_API_KEY",
+            "credential_present": True,
+            "credential_source_class": "GITHUB_ACTIONS_SECRET",
+            "missing": (),
         }
     return {
-        "status": "PASS",
-        "reason": "OPENAI_WIF_CONFIGURATION_PRESENT",
-        "missing": (),
+        "status": "EXTERNAL_CONFIGURATION_REQUIRED",
+        "reason": "OPENAI_PROJECT_CREDENTIAL_UNAVAILABLE",
+        "authentication_mode": "NONE",
+        "credential_present": False,
+        "credential_source_class": "NONE",
+        "missing": ("OPENAI_API_KEY",),
+        "minimum_required_permissions": (
+            "api.agents.read",
+            "api.agents.write",
+            "api.responses.write",
+        ),
     }
 
 
@@ -64,6 +84,11 @@ def _github_oidc_subject_provider(audience: str):
 def _client():
     from openai import OpenAI
 
+    config=configuration_state()
+    if config.get("authentication_mode")=="PROJECT_API_KEY":
+        return OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    if config.get("authentication_mode")!="WIF":
+        raise RuntimeError("OpenAI live authentication is not configured")
     return OpenAI(
         workload_identity={
             "identity_provider_id": os.environ["OPENAI_IDENTITY_PROVIDER_ID"],
@@ -218,7 +243,14 @@ def _agent_code_artifact_probe(client: Any) -> dict[str, Any]:
 def run_live_canary() -> dict[str, Any]:
     config = configuration_state()
     gates = {
-        "OPENAI_WIF": config["status"],
+        "OPENAI_WIF": (
+            "PASS" if config.get("authentication_mode")=="WIF"
+            else "NOT_SELECTED"
+        ),
+        "OPENAI_PROJECT_API_KEY": (
+            "PASS" if config.get("authentication_mode")=="PROJECT_API_KEY"
+            else ("EXTERNAL_CONFIGURATION_REQUIRED" if config["status"]!="PASS" else "NOT_SELECTED")
+        ),
         "GPT_6_1_SOL_STRUCTURED_REASONING": "NOT_PROVEN",
         "GPT_6_1_SOL_TOOL_CALL": "NOT_PROVEN",
         "AGENTS_API_SESSION": "NOT_PROVEN",
@@ -227,7 +259,7 @@ def run_live_canary() -> dict[str, Any]:
     }
     evidence: dict[str, Any] = {
         "configuration": config,
-        "authentication_mode": "GITHUB_OIDC_OPENAI_WIF",
+        "authentication_mode": config.get("authentication_mode", "NONE"),
         "model": "gpt-6.1-sol",
     }
     if config["status"] != "PASS":

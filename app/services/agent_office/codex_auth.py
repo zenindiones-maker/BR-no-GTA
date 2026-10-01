@@ -51,7 +51,7 @@ def _stored_method(status_text: str) -> tuple[str, str]:
     if "access token" in lowered:
         return "access_token_cached", "workspace_entitlement"
     if "chatgpt" in lowered:
-        return "chatgpt_cached", "subscription_or_workspace"
+        return "CHATGPT_SUBSCRIPTION", "subscription_or_workspace"
     return "cached_login", "unknown_existing"
 
 
@@ -302,7 +302,7 @@ class CodexAuthenticationProvider:
             print("DEVICE_AUTH_REVIEW_GROUP_FALLBACK=NO", flush=True)
             return CodexAuthenticationState(
                 available=False,
-                method="device_auth",
+                method="CHATGPT_SUBSCRIPTION",
                 cost_class="subscription_or_workspace",
                 user_action_required=True,
                 exit_code=4,
@@ -310,7 +310,7 @@ class CodexAuthenticationProvider:
         if device_returncode != 0:
             return CodexAuthenticationState(
                 available=False,
-                method="device_auth",
+                method="CHATGPT_SUBSCRIPTION",
                 cost_class="subscription_or_workspace",
                 user_action_required=True,
                 exit_code=device_returncode,
@@ -318,7 +318,7 @@ class CodexAuthenticationProvider:
         status = self._status(cwd=cwd, timeout=timeout, env=trusted_env)
         return CodexAuthenticationState(
             available=status.returncode == 0,
-            method="device_auth",
+            method="CHATGPT_SUBSCRIPTION",
             cost_class="subscription_or_workspace",
             user_action_required=status.returncode != 0,
             exit_code=status.returncode,

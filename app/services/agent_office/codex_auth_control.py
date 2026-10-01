@@ -219,37 +219,24 @@ def classify_codex_auth(
             reason="trusted noninteractive or cached Codex authentication is available",
         )
 
-    federation_rule = source.get("OPENAI_FEDERATION_RULE_ID", "").strip()
-    identity_file = source.get("OPENAI_IDENTITY_TOKEN_FILE", "").strip()
-    configured_audience = source.get("OPENAI_FEDERATION_AUDIENCE", "").strip()
-    missing_configuration: list[str] = []
-    if not federation_rule:
-        missing_configuration.append("OPENAI_FEDERATION_RULE_ID")
-    if not identity_file:
-        missing_configuration.append("OPENAI_IDENTITY_TOKEN_FILE")
-    if not configured_audience and not identity_file:
-        # The workflow needs the audience only to mint the GitHub OIDC token file.
-        missing_configuration.append("OPENAI_FEDERATION_AUDIENCE")
-    if missing_configuration:
+    # Block A active route is ChatGPT-subscription Codex in a persistent worker.
+    # Workload identity / Platform API credentials are optional future routes and
+    # must not block device-auth or cached ChatGPT subscription authentication.
+    if state.cost_class == "paid_api":
         auth_state = AUTH_BLOCKED
-        reason = (
-            "cloud runner has no reusable Codex workload identity configuration; "
-            "this does not invalidate or disconnect the human's existing local Codex session"
-        )
-    elif state.cost_class == "paid_api":
-        auth_state = AUTH_BLOCKED
-        reason = "paid API authentication is not eligible under ZERO_COST_OPERATION"
+        reason = "paid API authentication is ineligible by owner cost policy"
     elif paired:
         auth_state = AUTH_USER_ACTION_REQUIRED
         reason = (
-            "no trusted resumable noninteractive Codex authentication is available; "
-            "mission must checkpoint before any heavy development bootstrap"
+            "ChatGPT subscription authentication requires human authorization; "
+            "mission must checkpoint before device auth and resume the same mission afterward"
         )
     else:
         auth_state = AUTH_UNAVAILABLE
         reason = (
-            "no trusted Codex authentication and no paired Telegram human destination"
+            "no cached ChatGPT subscription authentication and no paired private human destination"
         )
+    missing_configuration: list[str] = []
 
     return CodexAuthPreflight(
         state=auth_state,
