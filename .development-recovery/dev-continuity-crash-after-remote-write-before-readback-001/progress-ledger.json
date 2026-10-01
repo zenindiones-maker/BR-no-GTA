@@ -2,18 +2,22 @@
   "artifact_refs": [],
   "canonical_base_sha": "daaaa3cabfa1118e5a2384a867e7f787cf28b5d1",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 0,
-  "completed_steps": [],
-  "current_step": "initial",
+  "checkpoint_sequence": 1,
+  "completed_steps": [
+    "initial"
+  ],
+  "current_step": "after_remote_write_before_readback",
   "decisions": [],
-  "do_not_repeat": [],
+  "do_not_repeat": [
+    "initial"
+  ],
   "evidence_refs": [],
   "goal_digest": "3333333333333333333333333333333333333333333333333333333333333333",
   "known_failures": [],
-  "latest_verified_checkpoint_id": null,
-  "latest_verified_checkpoint_sha": null,
+  "latest_verified_checkpoint_id": "initial",
+  "latest_verified_checkpoint_sha": "a6ebdda7618d18ed3bc9dc1df5c4edd672ba8333",
   "mission_id": "crash-live",
-  "next_step": "crash",
+  "next_step": null,
   "open_blockers": [],
   "plan_steps": [
     "initial",
@@ -31,6 +35,6 @@
     "root": "NOT_RUN",
     "targeted": "PASS"
   },
-  "updated_at": "2026-10-01T15:40:00+00:00",
+  "updated_at": "2026-10-01T15:41:00+00:00",
   "validation_state": "PARTIAL"
 }

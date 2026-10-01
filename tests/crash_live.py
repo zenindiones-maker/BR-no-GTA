@@ -1,1 +1,1 @@
-VALUE="initial"
+VALUE="after_remote_write_before_readback"
