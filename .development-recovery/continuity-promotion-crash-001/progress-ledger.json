@@ -1,0 +1,42 @@
+{
+  "artifact_refs": [],
+  "canonical_base_sha": "84f4158a80a7210ee3c375b00a67767305b86fe9",
+  "canonical_branch": "work/gate6f-analytics-learning",
+  "checkpoint_sequence": 0,
+  "completed_steps": [
+    "seed"
+  ],
+  "current_step": "before-write",
+  "decisions": [],
+  "do_not_repeat": [
+    "seed"
+  ],
+  "evidence_refs": [],
+  "goal_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "known_failures": [],
+  "latest_verified_checkpoint_id": null,
+  "latest_verified_checkpoint_sha": null,
+  "mission_id": "continuity-promotion-crash-001",
+  "next_step": "resume",
+  "open_blockers": [],
+  "plan_steps": [
+    "seed",
+    "before-write",
+    "after-write",
+    "resume"
+  ],
+  "recovery_ref": "recovery/dev/continuity-promotion-crash-001",
+  "rejected_directions": [],
+  "schema_version": "DevelopmentProgressLedger/v1",
+  "side_effects": {
+    "known_completed": [],
+    "unknown_requires_reconciliation": []
+  },
+  "tests": {
+    "affected_subgraph": "PASS",
+    "root": "PASS_BASELINE",
+    "targeted": "PASS"
+  },
+  "updated_at": "2026-10-01T21:32:00+00:00",
+  "validation_state": "PARTIAL"
+}

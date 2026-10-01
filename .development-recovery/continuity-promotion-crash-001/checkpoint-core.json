@@ -1,0 +1,50 @@
+{
+  "agent_execution_identity": "seed",
+  "artifact_refs": [],
+  "authorization_id": "crash-canary",
+  "canonical_base_sha": "84f4158a80a7210ee3c375b00a67767305b86fe9",
+  "canonical_branch": "work/gate6f-analytics-learning",
+  "checkpoint_digest": "bed0944182679affb84387d165524e016ba1774d0fab0ef0644bce8cc3f1b160",
+  "checkpoint_id": "continuity-promotion-crash-001-cp-000001-ad15cc0e",
+  "checkpoint_kind": "RECOVERY",
+  "checkpoint_sequence": 1,
+  "completed_steps": [
+    "seed"
+  ],
+  "content_digest": "f9500f0044870a89c897887a6f9149b1d2b4cccb0007ec12ce6fba5b63465f7d",
+  "created_at": "2026-10-01T21:33:50.859722+00:00",
+  "current_step": "before-write",
+  "development_state": "REMOTE_CHECKPOINT_PENDING",
+  "evidence_refs": [],
+  "excluded_paths": [],
+  "failure_state": {},
+  "included_paths": [
+    "tests/recovery_canary/crash.py"
+  ],
+  "large_evidence": [],
+  "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
+  "mission_id": "continuity-promotion-crash-001",
+  "next_step": "resume",
+  "open_blockers": [],
+  "previous_checkpoint_sha": null,
+  "progress_ledger_digest": "5524f4ea3ff282d2c147ba188a40c4d21dbc2db3763b2243e078c12fdc4cff81",
+  "recovery_ref": "recovery/dev/continuity-promotion-crash-001",
+  "remote_readback_status": "PENDING",
+  "remote_write_status": "PENDING",
+  "resume_instructions": "Load ledger, reconcile canonical and side effects, continue first incomplete authorized step.",
+  "runtime_namespace": "promo-crash",
+  "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
+  "side_effect_state": {
+    "known_completed": [],
+    "unknown_requires_reconciliation": []
+  },
+  "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
+  "task_id": "seed",
+  "test_state": {
+    "affected_subgraph": "PASS",
+    "root": "PASS_BASELINE",
+    "targeted": "PASS"
+  },
+  "validation_state": "PARTIAL",
+  "workspace_id": "promo-crash"
+}
