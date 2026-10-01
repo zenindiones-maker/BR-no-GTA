@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 1,
+  "checkpoint_sequence": 2,
   "completed_steps": [],
   "current_step": "reference-audit",
   "decisions": [
@@ -11,35 +11,35 @@
       "id": "owner-only"
     },
     {
-      "decision": "Raw owner audio remains private and never enters Git/public artifacts/logs.",
+      "decision": "Raw owner audio and private transcripts remain outside Git/public artifacts/logs.",
       "id": "privacy"
     },
     {
-      "decision": "Pipeline code promotion and voice profile activation are separate gates.",
-      "id": "activation"
+      "decision": "Private materialization must complete professional corpus audit before provider bake-off.",
+      "id": "audit-first"
     },
     {
-      "decision": "Professional corpus targets are 30 minute floor, 90 minute target, 180 minute max target, 300 utterances.",
-      "id": "professional-corpus"
+      "decision": "Reference audit uses Whisper large-v3 class ASR; ASR is QA, not final transcript authority.",
+      "id": "strong-asr"
     },
     {
-      "decision": "Provider/model is implementation; BR_OWNER_V1 identity remains stable.",
-      "id": "provider-separation"
+      "decision": "Unknown single-speaker status is pending verification, not a false hard rejection.",
+      "id": "speaker-pending"
     }
   ],
   "do_not_repeat": [
-    "rebuild-initial-continuity-checkpoint",
-    "recreate-professional-corpus-contract-tests"
+    "rebuild-professional-corpus-contracts",
+    "reintroduce-bakeoff-before-corpus-audit"
   ],
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
     "ci:36930519179",
-    "staging:c4cb4772f57973039e9b2b7db3aa32a9a961dac2"
+    "staging:f5e2d863349e675ef1d2d3219368cf6853b5ea80"
   ],
   "goal_digest": "2b8f10962dd2d81d67ab0c26d5f9223fb0ce02fd52433055ed819428dd4e4a3f",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000001-313360a1",
-  "latest_verified_checkpoint_sha": "e4d622e44d7fec204523dff975c41643d81a1401",
+  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000002-7f5ec8a0",
+  "latest_verified_checkpoint_sha": "9ec810ae734c40a6ae7e4b2d94cf29ea86cdb454",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
   "next_step": "corpus-gap-analysis",
   "open_blockers": [],
@@ -59,7 +59,8 @@
     "provider preset/default voice",
     "raw owner audio in Git",
     "professional-readiness claim without human review",
-    "single 8-second reference as professional corpus proof"
+    "materialize-and-immediately-synthesize",
+    "Whisper tiny/medium as final transcript authority"
   ],
   "schema_version": "DevelopmentProgressLedger/v1",
   "side_effects": {
@@ -69,8 +70,8 @@
   "tests": {
     "affected_subgraph": "PENDING",
     "root": "PASS_BASELINE",
-    "targeted": "12_PASS"
+    "targeted": "21_PASS"
   },
-  "updated_at": "2026-10-01T21:55:00+00:00",
+  "updated_at": "2026-10-01T22:02:00+00:00",
   "validation_state": "PARTIAL"
 }

@@ -37,70 +37,96 @@ def _digest(value: Any) -> str:
 
 
 def build_recording_script() -> dict[str, Any]:
-    core = [
-        "Hoje eu vou explicar uma novidade com calma e clareza.",
-        "A gente conversa de forma natural, sem correr e sem exagerar.",
-        "Minha voz fica firme quando eu quero destacar um ponto importante.",
-        "Quando eu faço uma pausa, a ideia continua conectada ao contexto.",
-        "Nem toda informação precisa soar urgente para ser interessante.",
-        "É melhor explicar direito agora do que corrigir confusão depois.",
-        "Amanhã eu volto com mais detalhes, exemplos e comparações úteis.",
-        "O caminho mais seguro é confirmar os dados antes de tirar conclusões.",
-        "Minha irmã trouxe pão quentinho para o café da manhã.",
-        "O carro vermelho passou rápido pela rua molhada.",
-        "A chuva caiu devagar, depois ficou forte de repente.",
-        "Tenho uma pergunta: será que isso muda alguma coisa de verdade?",
-        "Que surpresa boa encontrar uma solução simples para esse problema!",
-        "Em vinte e cinco de outubro, às oito e meia, começa a revisão.",
-        "O projeto avançou trinta e dois por cento nesta etapa.",
-        "O orçamento estimado ficou em mil duzentos e cinquenta reais.",
-        "A sigla API aparece bastante, mas eu prefiro explicar o contexto.",
-        "CPU, GPU e SSD são termos comuns quando falamos de desempenho.",
-        "João, Mariana e Rafael chegaram cedo para organizar o material.",
-        "Por favor, confira o resultado, compare as versões e anote as diferenças.",
+    domain_terms = [
+        "GTA 6","GTA VI","Grand Theft Auto","Vice City","Leonida",
+        "Rockstar","Rockstar Games","Lucia","Jason","Vice-Dale","BR no GTA 6",
     ]
-    domain = [
-        "GTA 6 continua sendo o centro da conversa de hoje.",
-        "GTA VI aparece em muitos materiais oficiais e discussões da comunidade.",
-        "Grand Theft Auto ganhou força por misturar liberdade, narrativa e sátira.",
-        "Vice City precisa soar natural dentro de uma frase em português brasileiro.",
-        "Leonida aparece no universo de GTA 6 e merece pronúncia consistente.",
-        "Rockstar anunciou novidades, e a gente confere o que foi realmente mostrado.",
-        "Rockstar Games costuma divulgar materiais oficiais em etapas.",
-        "Lucia é uma personagem importante para esta análise.",
-        "Jason também aparece em cenas que ajudam a entender a história.",
-        "Vice-Dale deve ser lido com contexto e sem mudar o texto editorial.",
-        "BR no GTA 6 é o nome do canal e precisa soar natural na abertura.",
+    subjects = [
+        "a gente","eu","o canal","esta análise","o projeto","a equipe",
+        "a conversa","a explicação","o vídeo","a revisão",
+    ]
+    verbs = [
+        "confere","explica","compara","organiza","observa","destaca",
+        "questiona","resume","avalia","apresenta",
+    ]
+    objects = [
+        "os detalhes com calma","as diferenças mais importantes","o contexto antes da conclusão",
+        "os números sem pressa","as evidências disponíveis","a mudança de ritmo na frase",
+        "os nomes próprios com naturalidade","a pausa antes do ponto principal",
+        "a informação técnica em linguagem simples","o resultado de forma objetiva",
+    ]
+    tails = [
+        "antes de seguir.","sem perder o sentido.","com português brasileiro natural.",
+        "e depois faz uma pausa curta.","mantendo um tom confiante.",
+        "sem exagerar na interpretação.","com articulação clara.",
+        "como numa conversa de verdade.","sem acelerar o final.","com energia moderada.",
     ]
     styles = [
-        ("CORE_IDENTITY", "Natural e confiante: "),
-        ("ENERGETIC_HOOK", "Com energia controlada: "),
-        ("SERIOUS_EXPLANATION", "Em tom sério e explicativo: "),
-        ("CURIOUS_DISCOVERY", "Com curiosidade genuína: "),
-        ("CALM_INFORMATIONAL", "Com calma informativa: "),
-        ("CLOSING_CONFIDENT", "Para fechar com confiança: "),
+        "CORE_IDENTITY","ENERGETIC_HOOK","SERIOUS_EXPLANATION",
+        "CURIOUS_DISCOVERY","CALM_INFORMATIONAL","CLOSING_CONFIDENT",
     ]
+
     utterances=[]
+    seen=set()
     number=1
-    seeds=core+domain
-    for cycle in range(10):
-        for idx,text in enumerate(seeds):
-            style,prefix=styles[(cycle+idx)%len(styles)]
-            variants=[
-                text,
-                prefix+text[0].lower()+text[1:],
-                text.replace(".", ", e isso merece atenção.") if text.endswith(".") else text,
-            ]
-            chosen=variants[cycle%3]
-            utterances.append({
-                "number":number,
-                "utterance_id":f"BRV1-{number:04d}",
-                "text":chosen,
-                "style":style,
-                "bank":"CORE_IDENTITY" if style=="CORE_IDENTITY" else "SUPPLEMENTAL_STYLE",
-                "coverage_tags":["pt-BR","natural-speech"],
-            })
-            number+=1
+
+    def add(text: str, style: str, tags: list[str]) -> None:
+        nonlocal number
+        normalized=" ".join(text.split())
+        if normalized in seen:
+            return
+        seen.add(normalized)
+        utterances.append({
+            "number":number,
+            "utterance_id":f"BRV1-{number:04d}",
+            "text":normalized,
+            "style":style,
+            "bank":"CORE_IDENTITY" if style=="CORE_IDENTITY" else "SUPPLEMENTAL_STYLE",
+            "coverage_tags":["pt-BR","natural-speech",*tags],
+        })
+        number+=1
+
+    curated = [
+        ("Minha irmã trouxe pão quentinho para o café da manhã.","CORE_IDENTITY",["nasal-vowels","nh"]),
+        ("Amanhã eu caminho devagar pela rua e volto antes do almoço.","CORE_IDENTITY",["nasal-vowels","lh"]),
+        ("O carro vermelho parou perto da praça, e o rapaz correu para atravessar.","SERIOUS_EXPLANATION",["rhotics","plosives"]),
+        ("Tenho uma pergunta: será que isso muda alguma coisa de verdade?","CURIOUS_DISCOVERY",["question-intonation"]),
+        ("Que surpresa boa encontrar uma solução simples para esse problema!","ENERGETIC_HOOK",["exclamation-intonation"]),
+        ("Em vinte e cinco de outubro, às oito e meia, começa a revisão.","CALM_INFORMATIONAL",["dates","times"]),
+        ("O projeto avançou trinta e dois por cento nesta etapa.","CALM_INFORMATIONAL",["percentages","numbers"]),
+        ("O orçamento estimado ficou em mil duzentos e cinquenta reais.","CALM_INFORMATIONAL",["currency","numbers"]),
+        ("CPU, GPU e SSD aparecem bastante quando a gente fala de desempenho.","SERIOUS_EXPLANATION",["acronyms"]),
+        ("Por favor, confira o resultado, compare as versões e anote as diferenças.","CORE_IDENTITY",["commas","pauses"]),
+    ]
+    for text,style,tags in curated:
+        add(text,style,tags)
+
+    for i,subject in enumerate(subjects):
+        for j,verb in enumerate(verbs):
+            for k,obj in enumerate(objects):
+                tail=tails[(i+j+k)%len(tails)]
+                style=styles[(i*3+j+k)%len(styles)]
+                punctuation="?" if (i+j+k)%13==0 else ("!" if (i+j+k)%17==0 else "")
+                base=f"{subject.capitalize()} {verb} {obj}, {tail}"
+                if punctuation:
+                    base=base.rstrip(".")+punctuation
+                add(base,style,["general-phonetics","sentence-final-intonation"])
+                if len(utterances)>=320:
+                    break
+            if len(utterances)>=320:
+                break
+        if len(utterances)>=320:
+            break
+
+    domain_templates = [
+        "{term} aparece no contexto da análise, sem mudar o sotaque brasileiro da frase.",
+        "Quando eu digo {term}, mantenho o ritmo natural do português brasileiro.",
+        "Hoje o assunto inclui {term}, mas a explicação continua clara e conversada.",
+    ]
+    for idx,term in enumerate(domain_terms):
+        for tpl in domain_templates:
+            add(tpl.format(term=term),styles[idx%len(styles)],["domain-term",term])
+
     return {
         "schema_version":"OwnerVoiceRecordingScript/v1",
         "voice_identity_id":BR_OWNER_VOICE_ID,
@@ -138,8 +164,12 @@ def phonetic_coverage(transcripts: Iterable[str]) -> dict[str, Any]:
 
 def grade_reference(row: Mapping[str, Any]) -> dict[str, Any]:
     reasons=[]
+    pending=[]
     if row.get("provenance_verified") is not True: reasons.append("PRIVATE_PROVENANCE_FAILURE")
-    if row.get("single_speaker") is not True: reasons.append("MULTIPLE_SPEAKERS")
+    if row.get("single_speaker") is False:
+        reasons.append("MULTIPLE_SPEAKERS")
+    elif row.get("single_speaker") is None:
+        pending.append("SINGLE_SPEAKER_VERIFICATION_PENDING")
     if float(row.get("clipping_ratio") or 0) > 0.01: reasons.append("CLIPPING")
     if row.get("background_speech") is True: reasons.append("BACKGROUND_SPEECH")
     if row.get("music_contamination") is True: reasons.append("MUSIC_CONTAMINATION")
@@ -155,7 +185,10 @@ def grade_reference(row: Mapping[str, Any]) -> dict[str, Any]:
     speech=float(row.get("speech_duration_seconds") or 0)
     duration=max(float(row.get("duration_seconds") or 0),1e-9)
     grades={
-        "IDENTITY_GRADE":"A" if not any(x in reasons for x in ("MULTIPLE_SPEAKERS","WRONG_SPEAKER_OR_PROVENANCE","PRIVATE_PROVENANCE_FAILURE")) else "F",
+        "IDENTITY_GRADE":(
+            "F" if any(x in reasons for x in ("MULTIPLE_SPEAKERS","WRONG_SPEAKER_OR_PROVENANCE","PRIVATE_PROVENANCE_FAILURE"))
+            else ("A" if row.get("single_speaker") is True else "B_PENDING_SINGLE_SPEAKER_VERIFICATION")
+        ),
         "ACOUSTIC_GRADE":"A" if snr>=25 and clip<=0.001 else ("B" if snr>=15 and clip<=0.01 else "F"),
         "TRANSCRIPT_GRADE":"A" if tx>=0.9 else ("B" if tx>=0.75 else "F"),
         "LANGUAGE_GRADE":"A" if pt>=0.95 else ("B" if pt>=0.8 else "F"),
@@ -165,7 +198,9 @@ def grade_reference(row: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "schema_version":"OwnerVoiceReferenceGrade/v1",
         "eligible":not reasons,
+        "certifiable":not reasons and not pending,
         "hard_reject_reasons":reasons,
+        "pending_reasons":pending,
         "grades":grades,
     }
 
@@ -180,7 +215,7 @@ def build_corpus_gap_report(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]
     graded=[(r,grade_reference(r)) for r in unique.values()]
     eligible=[r for r,g in graded if g["eligible"]]
     clean_seconds=sum(max(0.0,float(r.get("speech_duration_seconds") or 0)) for r in eligible)
-    utterances=len(eligible)
+    utterances=sum(max(1,int(r.get("utterance_count") or 1)) for r in eligible)
     clean_minutes=clean_seconds/60.0
     missing_minutes=max(0.0,OWNER_CORPUS_PROFESSIONAL_TARGET_MINUTES-clean_minutes)
     missing_utts=max(0,OWNER_CORPUS_MINIMUM_UTTERANCES-utterances)
@@ -188,10 +223,18 @@ def build_corpus_gap_report(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]
     domain_missing=[k for k,v in coverage["coverage"]["domain_terms"].items() if v==0]
     quality_gaps=[]
     if len(eligible)<len(unique): quality_gaps.append("ONE_OR_MORE_REFERENCES_HARD_REJECTED")
+    if any(grade_reference(r)["pending_reasons"] for r in eligible):
+        quality_gaps.append("SINGLE_SPEAKER_VERIFICATION_PENDING")
     style_present={str(r.get("style") or "") for r in eligible}
     required_styles={"CORE_IDENTITY","ENERGETIC_HOOK","SERIOUS_EXPLANATION","CURIOUS_DISCOVERY","CALM_INFORMATIONAL","CLOSING_CONFIDENT"}
     style_gaps=sorted(required_styles-style_present)
-    corpus_sufficient=clean_minutes>=OWNER_CORPUS_MINIMUM_CLEAN_DURATION_MINUTES and utterances>=OWNER_CORPUS_MINIMUM_UTTERANCES and not domain_missing
+    corpus_sufficient=(
+        clean_minutes>=OWNER_CORPUS_MINIMUM_CLEAN_DURATION_MINUTES
+        and utterances>=OWNER_CORPUS_MINIMUM_UTTERANCES
+        and not domain_missing
+        and not quality_gaps
+        and not style_gaps
+    )
     return {
         "schema_version":"OwnerVoiceCorpusGapReport/v1",
         "voice_identity_id":BR_OWNER_VOICE_ID,
@@ -353,3 +396,66 @@ def synthesis_cache_fingerprint(*, text: str, profile_revision: str, provider: s
         "pronunciation_plan_digest":pronunciation_plan_digest,"lexicon_revision":lexicon_revision,
         "generation_parameters":dict(generation_parameters),"seed":seed,
     })
+
+
+def build_corpus_inventory(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    public_rows=[]
+    valid=0
+    for raw in rows:
+        row=dict(raw)
+        grade=grade_reference(row)
+        if grade["eligible"]:
+            valid += 1
+        transcript=str(row.get("transcript") or "")
+        safe={
+            "telegram_input_id":int(row.get("telegram_input_id") or 0),
+            "sha256":str(row.get("sha256") or ""),
+            "duration_seconds":float(row.get("duration_seconds") or 0),
+            "speech_duration_seconds":float(row.get("speech_duration_seconds") or 0),
+            "silence_duration_seconds":float(row.get("silence_duration_seconds") or 0),
+            "codec":str(row.get("codec") or row.get("mime_type") or ""),
+            "sample_rate_hz":int(row.get("sample_rate_hz") or 0),
+            "channels":int(row.get("channels") or 0),
+            "single_speaker":row.get("single_speaker"),
+            "clipping_ratio":float(row.get("clipping_ratio") or 0),
+            "snr_db":float(row.get("snr_db") or 0),
+            "noise_grade":str(row.get("noise_grade") or "UNKNOWN"),
+            "reverberation_grade":str(row.get("reverberation_grade") or "UNKNOWN"),
+            "ptbr_probability":float(row.get("ptbr_probability") or 0),
+            "transcript_digest":sha256(transcript.encode("utf-8")).hexdigest(),
+            "transcript_confidence":float(row.get("transcript_confidence") or 0),
+            "quality_grade":grade,
+            "style":str(row.get("style") or "UNCLASSIFIED"),
+            "private_audio_ref":str(row.get("private_audio_ref") or ""),
+        }
+        public_rows.append(safe)
+    payload={
+        "schema_version":"OwnerVoiceCorpusInventory/v1",
+        "voice_identity_id":BR_OWNER_VOICE_ID,
+        "declared_reference_count":len(public_rows),
+        "materialized_reference_count":len(public_rows),
+        "valid_reference_count":valid,
+        "references":public_rows,
+        "raw_audio_embedded":False,
+        "transcripts_embedded":False,
+    }
+    return payload
+
+
+def render_recording_request_message(request: Mapping[str, Any]) -> str:
+    minutes=float(request.get("requested_clean_minutes") or 0)
+    utterances=int(request.get("requested_utterances") or 0)
+    style_gaps=list(request.get("style_gaps") or [])
+    domain_gaps=list(request.get("domain_vocabulary_gaps") or [])
+    blocks=[
+        f"AÇÃO: preciso de mais {minutes:.1f} minutos de voz limpa para fechar a voz profissional BR_OWNER_V1.",
+        "Grave em PT-BR natural, sozinho, sem música/TV/eco.",
+        "Preferência: envie como arquivo WAV/FLAC de alta qualidade no grupo, sem denoise/compressão/limiter agressivos.",
+        f"Meta restante: {utterances} utterances/frases úteis.",
+    ]
+    if domain_gaps:
+        blocks.append("Termos ainda sem cobertura: " + ", ".join(domain_gaps[:12]) + ".")
+    if style_gaps:
+        blocks.append("Blocos de estilo ainda faltando: " + ", ".join(style_gaps) + ".")
+    blocks.append("Não use outra pessoa na gravação.")
+    return "\n".join(blocks)
