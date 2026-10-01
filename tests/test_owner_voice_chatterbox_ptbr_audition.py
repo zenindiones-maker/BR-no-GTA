@@ -12,6 +12,7 @@ from scripts.owner_voice_chatterbox_ptbr_audition import (
     VE_SHA256,
     build_generation_kwargs,
     build_ptbr_audition_text,
+    resolve_audition_manifest_path,
 )
 
 
@@ -59,3 +60,18 @@ def test_audition_text_is_explicit_brazilian_portuguese():
     assert "a gente" in text
     assert "você" in text
     assert "BR no GTA 6" in text
+
+
+def test_manifest_path_honors_workflow_contract_env(monkeypatch, tmp_path):
+    expected=tmp_path/"shared"/"ptbr-audition-set.json"
+    monkeypatch.setenv("BR_OWNER_PTBR_AUDITION_SET",str(expected))
+    resolved=resolve_audition_manifest_path(tmp_path/"runner-temp")
+    assert resolved==expected.resolve()
+    assert resolved.parent.is_dir()
+
+
+def test_manifest_path_falls_back_under_runner_temp(monkeypatch, tmp_path):
+    monkeypatch.delenv("BR_OWNER_PTBR_AUDITION_SET",raising=False)
+    resolved=resolve_audition_manifest_path(tmp_path/"runner-temp")
+    assert resolved==(tmp_path/"runner-temp"/"br-owner-voice"/"ptbr-audition-set.json").resolve()
+    assert resolved.parent.is_dir()

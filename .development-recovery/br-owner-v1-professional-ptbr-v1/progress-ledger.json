@@ -2,49 +2,68 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 3,
+  "checkpoint_sequence": 4,
   "completed_steps": [
     "professional-corpus-contracts",
     "private-corpus-audit-contract",
-    "human-audition-pack-contract"
+    "human-audition-pack-contract",
+    "strong-asr-reference-qa",
+    "three-comparable-candidate-generation",
+    "manifest-handoff-root-cause-fix"
   ],
   "current_step": "human-audition-pack",
   "decisions": [
     {
-      "decision": "Patch bootstrap exposure before retry.",
-      "id": "no-blind-rerun"
+      "decision": "Do not dispatch another audition run after 36936161771 without explicit owner order.",
+      "id": "no-blind-retry"
     },
     {
-      "decision": "Ignored local request variant is non-authoritative; authoritative request remains staging commit 6f3532f9.",
-      "id": "request-experiment"
+      "decision": "Generator now honors BR_OWNER_PTBR_AUDITION_SET and creates the shared parent path.",
+      "id": "handoff-contract"
+    },
+    {
+      "decision": "No identity/accent/naturalness PASS without actual Telegram listening review.",
+      "id": "human-gate"
+    },
+    {
+      "decision": "Generated candidates from failed run were ephemeral and cleanup completed; no audio entered Git/public artifact.",
+      "id": "privacy"
     }
   ],
   "do_not_repeat": [
-    "blind-rerun-36933939917"
+    "blind-rerun-36936161771",
+    "re-diagnose-PyAV-19-after-pin-18",
+    "treat-generated-candidates-as-human-reviewed"
   ],
   "evidence_refs": [
-    "staging:6f3532f902ecbb212dbb8e919d9e1b76298b848f",
-    "run:36933939917",
-    "job:110609848750"
+    "staging:d52c6bddb81e2bdf9b4c07ad2783738620d7e8fe",
+    "run:36936161771",
+    "job:110616862466",
+    "run-log:NO_TELEGRAM_DELIVERY_RECEIPT_LINES"
   ],
   "goal_digest": "2b8f10962dd2d81d67ab0c26d5f9223fb0ce02fd52433055ed819428dd4e4a3f",
   "known_failures": [
     {
-      "audio_delivery": "NONE",
-      "failure": "CANCELLED_DURING_INSTALL_STRONG_PRIVATE_STT_RUNTIME",
-      "run_id": 36933939917
+      "cleanup": "COMPLETED",
+      "failure": "AUDITION_MANIFEST_PATH_MISMATCH",
+      "generation": "3_CANDIDATES_COMPLETED",
+      "job_id": 110616862466,
+      "public_receipt": "NONE",
+      "run_id": 36936161771,
+      "telegram_delivery": "NONE"
     }
   ],
-  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000003-279d2617",
-  "latest_verified_checkpoint_sha": "cbc9db020287c32a9a89c25f1a971ceb685e72ee",
+  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000004-f9a634b2",
+  "latest_verified_checkpoint_sha": "2f9db3a776d952e2d57d0cada47f173b7199f6da",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
-  "next_step": "recover-from-cancelled-audition-run",
+  "next_step": "causal-audition-retry-only-after-explicit-owner-order",
   "open_blockers": [
     {
-      "cause": "external operation cancellation during STT bootstrap",
-      "id": "run-36933939917",
-      "side_effects": "NONE_AUDIO_DELIVERED",
-      "status": "CANCELLED_BEFORE_AUDIO"
+      "cause": "Chatterbox wrote the audition manifest under RUNNER_TEMP while the pack consumed BR_OWNER_PTBR_AUDITION_SET=/tmp/br-owner-voice/ptbr-audition-set.json.",
+      "fix_sha": "d52c6bddb81e2bdf9b4c07ad2783738620d7e8fe",
+      "id": "run-36936161771-delivery",
+      "side_effects": "NO_TELEGRAM_DELIVERY",
+      "status": "FIXED_NOT_RETRIED"
     }
   ],
   "plan_steps": [
@@ -58,9 +77,9 @@
   ],
   "recovery_ref": "recovery/dev/br-owner-v1-professional-ptbr-v1",
   "rejected_directions": [
-    "blind rerun of 36933939917",
-    "claim audio sent from cancelled run",
-    "promote ignored request experiment"
+    "blind-rerun-36936161771",
+    "claim Telegram delivery from generated-but-not-delivered candidates",
+    "claim voice quality PASS from machine-only QA"
   ],
   "schema_version": "DevelopmentProgressLedger/v1",
   "side_effects": {
@@ -68,10 +87,10 @@
     "unknown_requires_reconciliation": []
   },
   "tests": {
-    "affected_subgraph": "69_PASS",
+    "affected_subgraph": "100_PASS",
     "root": "PASS_BASELINE",
-    "targeted": "69_PASS"
+    "targeted": "18_PASS"
   },
-  "updated_at": "2026-10-01T22:26:00+00:00",
-  "validation_state": "PARTIAL"
+  "updated_at": "2026-10-01T23:32:50.243829+00:00",
+  "validation_state": "FIX_GREEN_AWAITING_CAUSAL_RETRY"
 }

@@ -1,53 +1,53 @@
 {
   "agent_execution_identity": "voice-pipeline-development",
   "artifact_refs": [],
-  "authorization_id": "47325ac7-f702-43d5-9b43-2a699072168b",
+  "authorization_id": "4b913e8f-52e3-4e16-8147-0eda9cee4e2a",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "586df1fad28ddda4edeff110427d832f0cf6d440885a74a5799920751f963760",
-  "checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000004-f9a634b2",
+  "checkpoint_digest": "5d4a23e5e58242d8497ad5f41d4b6632c421b93a11821b0693680104f5b2a0fe",
+  "checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000005-3b70b924",
   "checkpoint_kind": "RECOVERY",
-  "checkpoint_sequence": 4,
+  "checkpoint_sequence": 5,
   "completed_steps": [
     "professional-corpus-contracts",
     "private-corpus-audit-contract",
-    "human-audition-pack-contract"
+    "human-audition-pack-contract",
+    "strong-asr-reference-qa",
+    "three-comparable-candidate-generation",
+    "manifest-handoff-root-cause-fix"
   ],
-  "content_digest": "7fca1b0f2205dfea545e192d6a552235fabec669729c50e892e80445d7607ea3",
-  "created_at": "2026-10-01T22:26:57.021683+00:00",
+  "content_digest": "9f9db84b6a0cf2bf6f8b269dab90f2e68d57cd45f5d4e006edc6f93587766ef7",
+  "created_at": "2026-10-01T23:32:51.202617+00:00",
   "current_step": "human-audition-pack",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
-    "staging:6f3532f902ecbb212dbb8e919d9e1b76298b848f",
-    "run:36933939917",
-    "job:110609848750"
+    "staging:d52c6bddb81e2bdf9b4c07ad2783738620d7e8fe",
+    "run:36936161771",
+    "job:110616862466",
+    "run-log:NO_TELEGRAM_DELIVERY_RECEIPT_LINES"
   ],
-  "excluded_paths": [
-    ".run/owner-voice-human-audition.request.json"
-  ],
+  "excluded_paths": [],
   "failure_state": {},
   "included_paths": [
-    ".github/workflows/owner-voice-human-audition-pack.yml",
-    ".github/workflows/owner-voice-private-materialization.yml",
-    "app/services/owner_voice_human_audition_pack_service.py",
-    "scripts/owner_voice_professional_reference_audit.py",
-    "tests/test_owner_voice_human_audition_pack_service.py",
-    "tests/test_owner_voice_professional_materialization_workflow.py"
+    "scripts/owner_voice_chatterbox_ptbr_audition.py",
+    "tests/test_owner_voice_chatterbox_ptbr_audition.py",
+    "tests/test_owner_voice_human_audition_bootstrap.py"
   ],
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
-  "next_step": "recover-from-cancelled-audition-run",
+  "next_step": "causal-audition-retry-only-after-explicit-owner-order",
   "open_blockers": [
     {
-      "cause": "external operation cancellation during STT bootstrap",
-      "id": "run-36933939917",
-      "side_effects": "NONE_AUDIO_DELIVERED",
-      "status": "CANCELLED_BEFORE_AUDIO"
+      "cause": "Chatterbox wrote the audition manifest under RUNNER_TEMP while the pack consumed BR_OWNER_PTBR_AUDITION_SET=/tmp/br-owner-voice/ptbr-audition-set.json.",
+      "fix_sha": "d52c6bddb81e2bdf9b4c07ad2783738620d7e8fe",
+      "id": "run-36936161771-delivery",
+      "side_effects": "NO_TELEGRAM_DELIVERY",
+      "status": "FIXED_NOT_RETRIED"
     }
   ],
-  "previous_checkpoint_sha": "cbc9db020287c32a9a89c25f1a971ceb685e72ee",
-  "progress_ledger_digest": "d427407d5b3f7158f6b92914244f0e5a209feca7dc11eca8b44ab65e6d8c9366",
+  "previous_checkpoint_sha": "2f9db3a776d952e2d57d0cada47f173b7199f6da",
+  "progress_ledger_digest": "886f46747e1ec958792b82ee16924d27a6d91a10e2c0828b63932f3fdd7e8302",
   "recovery_ref": "recovery/dev/br-owner-v1-professional-ptbr-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
@@ -59,12 +59,12 @@
     "unknown_requires_reconciliation": []
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "preserve-post-cancel-local-state",
+  "task_id": "post-run-36936161771-causal-fix",
   "test_state": {
-    "affected_subgraph": "69_PASS",
+    "affected_subgraph": "100_PASS",
     "root": "PASS_BASELINE",
-    "targeted": "69_PASS"
+    "targeted": "18_PASS"
   },
-  "validation_state": "PARTIAL",
+  "validation_state": "FIX_GREEN_AWAITING_CAUSAL_RETRY",
   "workspace_id": "br-owner-v1-professional-ptbr-v1"
 }
