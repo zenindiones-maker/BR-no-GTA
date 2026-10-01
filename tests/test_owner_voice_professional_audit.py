@@ -68,3 +68,12 @@ def test_recording_script_has_no_duplicate_utterance_texts():
     texts=[u["text"] for u in script["utterances"]]
     assert len(texts)>=300
     assert len(texts)==len(set(texts))
+
+
+def test_unverified_single_speaker_is_pending_not_hard_rejected():
+    from app.services.owner_voice_professional_pipeline_service import grade_reference
+    grade=grade_reference(_row(1,single_speaker=None))
+    assert grade["eligible"] is True
+    assert grade["certifiable"] is False
+    assert grade["hard_reject_reasons"] == []
+    assert grade["pending_reasons"] == ["SINGLE_SPEAKER_VERIFICATION_PENDING"]

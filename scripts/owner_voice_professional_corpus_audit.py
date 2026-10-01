@@ -139,6 +139,8 @@ def main() -> int:
             "ptbr_probability":pt_prob,
             "detected_language":str(getattr(info,"language","") or ""),
             "transcript":transcript,
+            "transcript_status":"ASR_FIRST_PASS_NOT_HUMAN_AUTHORITY",
+            "utterance_count":len(segments),
             "transcript_confidence":_transcription_confidence(segments),
             "style":"UNCLASSIFIED",
             "background_speech":False,
@@ -160,6 +162,7 @@ def main() -> int:
     (private_out/"owner-voice-corpus-inventory-private.json").chmod(0o600)
 
     public_inventory=build_corpus_inventory(rows)
+    public_inventory["declared_reference_count"]=int(index["reference_count"])
     public_inventory["stt_model_id"]=model_id
     public_inventory["reference_index_sha256"]=index["index_sha256"]
     gap=build_corpus_gap_report(rows)

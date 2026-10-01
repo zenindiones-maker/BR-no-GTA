@@ -164,8 +164,12 @@ def phonetic_coverage(transcripts: Iterable[str]) -> dict[str, Any]:
 
 def grade_reference(row: Mapping[str, Any]) -> dict[str, Any]:
     reasons=[]
+    pending=[]
     if row.get("provenance_verified") is not True: reasons.append("PRIVATE_PROVENANCE_FAILURE")
-    if row.get("single_speaker") is False: reasons.append("MULTIPLE_SPEAKERS")
+    if row.get("single_speaker") is False:
+        reasons.append("MULTIPLE_SPEAKERS")
+    elif row.get("single_speaker") is None:
+        pending.append("SINGLE_SPEAKER_VERIFICATION_PENDING")
     if float(row.get("clipping_ratio") or 0) > 0.01: reasons.append("CLIPPING")
     if row.get("background_speech") is True: reasons.append("BACKGROUND_SPEECH")
     if row.get("music_contamination") is True: reasons.append("MUSIC_CONTAMINATION")
@@ -194,7 +198,9 @@ def grade_reference(row: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "schema_version":"OwnerVoiceReferenceGrade/v1",
         "eligible":not reasons,
+        "certifiable":not reasons and not pending,
         "hard_reject_reasons":reasons,
+        "pending_reasons":pending,
         "grades":grades,
     }
 
@@ -209,7 +215,7 @@ def build_corpus_gap_report(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]
     graded=[(r,grade_reference(r)) for r in unique.values()]
     eligible=[r for r,g in graded if g["eligible"]]
     clean_seconds=sum(max(0.0,float(r.get("speech_duration_seconds") or 0)) for r in eligible)
-    utterances=len(eligible)
+    utterances=sum(max(1,int(r.get("utterance_count") or 1)) for r in eligible)
     clean_minutes=clean_seconds/60.0
     missing_minutes=max(0.0,OWNER_CORPUS_PROFESSIONAL_TARGET_MINUTES-clean_minutes)
     missing_utts=max(0,OWNER_CORPUS_MINIMUM_UTTERANCES-utterances)
@@ -217,10 +223,18 @@ def build_corpus_gap_report(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]
     domain_missing=[k for k,v in coverage["coverage"]["domain_terms"].items() if v==0]
     quality_gaps=[]
     if len(eligible)<len(unique): quality_gaps.append("ONE_OR_MORE_REFERENCES_HARD_REJECTED")
+    if any(grade_reference(r)["pending_reasons"] for r in eligible):
+        quality_gaps.append("SINGLE_SPEAKER_VERIFICATION_PENDING")
     style_present={str(r.get("style") or "") for r in eligible}
     required_styles={"CORE_IDENTITY","ENERGETIC_HOOK","SERIOUS_EXPLANATION","CURIOUS_DISCOVERY","CALM_INFORMATIONAL","CLOSING_CONFIDENT"}
     style_gaps=sorted(required_styles-style_present)
-    corpus_sufficient=clean_minutes>=OWNER_CORPUS_MINIMUM_CLEAN_DURATION_MINUTES and utterances>=OWNER_CORPUS_MINIMUM_UTTERANCES and not domain_missing
+    corpus_sufficient=(
+        clean_minutes>=OWNER_CORPUS_MINIMUM_CLEAN_DURATION_MINUTES
+        and utterances>=OWNER_CORPUS_MINIMUM_UTTERANCES
+        and not domain_missing
+        and not quality_gaps
+        and not style_gaps
+    )
     return {
         "schema_version":"OwnerVoiceCorpusGapReport/v1",
         "voice_identity_id":BR_OWNER_VOICE_ID,
