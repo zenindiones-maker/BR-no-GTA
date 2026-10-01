@@ -51,3 +51,10 @@ def test_faster_whisper_runtime_pins_pyav_compatible_with_metadata_errors():
     assert '"av==18.0.0"' in install
     assert '"faster-whisper==1.2.0"' in install
     assert 'metadata_errors="ignore"' in Path("tests/fixtures/faster_whisper_pyav_contract.txt").read_text(encoding="utf-8")
+
+
+def test_stt_python_command_is_not_double_prefixed():
+    text=WORKFLOW.read_text(encoding="utf-8")
+    assert "/tmp/br-owner-stt-venv/bin//tmp/br-owner-stt-venv/bin/python" not in text
+    assert text.count("/tmp/br-owner-stt-venv/bin/python scripts/owner_voice_reference_qa.py") == 1
+    assert text.count("/tmp/br-owner-stt-venv/bin/python scripts/owner_voice_human_audition_pack.py") == 1
