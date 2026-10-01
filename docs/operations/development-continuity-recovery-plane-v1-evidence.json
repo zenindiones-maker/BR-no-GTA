@@ -1,0 +1,52 @@
+{
+  "schema_version": "DevelopmentContinuityRecoveryEvidence/v2",
+  "canonical_base_sha": "84f4158a80a7210ee3c375b00a67767305b86fe9",
+  "baseline_green_ci_run_id": 36928496717,
+  "preserved_recovery_ref": "staging/development-continuity-recovery-v1",
+  "preserved_recovery_head": "b574b6dee184783be7fbf920fcffe99b712e333f",
+  "implementation_candidate_sha": "9a3fc90404b50a3ddbf59c289fdc401da31cbb0a",
+  "implementation_candidate_tree": "09b71181ddc7e2f60f288f42ba01fb4fb34b31cd",
+  "deterministic_validation": {
+    "continuity_tests": {"passed": 38, "failed": 0, "status": "PASS"},
+    "affected_subgraph": {"passed": 65, "failed": 0, "status": "PASS"},
+    "secret_scan_hits": 0,
+    "recovery_ref_production_side_effects": 0,
+    "openai_platform_api_calls": 0,
+    "openai_platform_api_spend": 0
+  },
+  "remote_write_readback_canary": {
+    "status": "PASS",
+    "recovery_ref": "recovery/dev/continuity-promotion-canary-001",
+    "checkpoint_id": "continuity-promotion-canary-001-cp-000001-d140adc7",
+    "recovery_commit_sha": "e43e6a9f47d5a6f7d5a6e81fd6d4da3dd0ebe13e",
+    "recovery_tree_sha": "4b11d7a3d1a0aeab2e328458f67e0657d09b882c",
+    "persist_artifact_sha256": "2c881cc9406d3902cbf018a8ce04f870af71bd7cc41eeed5de3f21ede9798b5a",
+    "resume_artifact_sha256": "66a65e802590ff844ec34a65b91eeb6e4cf4881f43af85cfb9140fdd81bbda9f",
+    "remote_only_resume": "PASS",
+    "worktree_loss_recovery": "PASS"
+  },
+  "concurrent_writer_canary": {
+    "status": "PASS",
+    "recovery_ref": "recovery/dev/continuity-promotion-concurrency-001",
+    "seed_sha": "4cd1efd20d8b5b909785dd2358141f987985cd63",
+    "winner_sha": "e81ea660a8fb208f4ddb4497f0104d3ee31f87ff",
+    "loser_outcome": "RECOVERY_REF_CONFLICT",
+    "winner_artifact_sha256": "0b91952be84a837d7eb6daa4a7f10146f6d44ef7da97e7887c9e1d6d41c83216",
+    "loser_artifact_sha256": "9a4af7c5aabd3fe47cc856664730405ecd44f19c101bada5a865848190eac47f"
+  },
+  "crash_consistency_canary": {
+    "status": "PASS",
+    "recovery_ref": "recovery/dev/continuity-promotion-crash-001",
+    "seed_sha": "c338d7d3ef18a2d5f97100e3fba74c965adac751",
+    "remote_after_prewrite_crash": "c338d7d3ef18a2d5f97100e3fba74c965adac751",
+    "remote_after_postwrite_crash": "fb6d5144e55c6a324ac58555e6e6d91c48487750",
+    "prewrite_log_sha256": "3d3dc247a1b08e2b1f297a8ab5ab6b1a000018477702b229d89eec960ff35505",
+    "postwrite_log_sha256": "8b9c8bf8458abf901ad802af414c0b9445eef09138b26d78ec30ddbf19f37486",
+    "resume_artifact_sha256": "df9bef312f518a18db67d2721b40174b9efa87de65597883aaba26c3fcf5b03e",
+    "ambiguous_checkpoint": 0
+  },
+  "promotion_gates": {
+    "independent_review": "PENDING_ON_FINAL_CANDIDATE_SHA",
+    "official_root_ci": "PENDING_ON_FINAL_CANDIDATE_SHA"
+  }
+}
