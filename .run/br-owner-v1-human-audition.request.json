@@ -1,0 +1,12 @@
+{
+  "schema_version": "OwnerVoiceHumanAuditionRequest/v1",
+  "voice_identity_id": "BR_OWNER_V1",
+  "blind_review": true,
+  "send_real_reference": true,
+  "same_script_for_all_candidates": true,
+  "max_candidates": 3,
+  "generic_voice_fallback": false,
+  "provider_preset_voice_allowed": false,
+  "provider_default_voice_allowed": false,
+  "production_activation": "FORBIDDEN_PENDING_HUMAN_REVIEW"
+}
