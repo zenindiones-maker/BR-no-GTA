@@ -15,6 +15,10 @@ def test_static_readiness_preserves_green_editorial_but_fails_audio_and_visual()
     assert result["LEONIDA_PRONUNCIATION"]=="FAIL"
     assert result["PRODUCTION_READINESS"]=="FAIL"
     assert result["FULL_RENDER_AUTHORIZED"]=="NO"
+    assert result["OWNER_VOICE_GATE"]=="FAIL_CURRENT_STATE"
+    assert result["OWNER_VOICE_IDENTITY"]=="BR_OWNER_V1"
+    assert result["OWNER_REFERENCE_SOURCE"]=="TELEGRAM"
+    assert result["OWNER_REFERENCE_COUNT"]==0
     assert result["chunking"]["CURRENT_SEGMENT_STRATEGY"]=="microsegment-v1"
     assert result["chunking"]["BASELINE_SEGMENT_STRATEGY"]=="semantic-section-v1"
     assert result["chunking"]["NARRATION_SEGMENTS_TOTAL"] > result["chunking"]["BASELINE_NARRATION_SEGMENTS_TOTAL"]

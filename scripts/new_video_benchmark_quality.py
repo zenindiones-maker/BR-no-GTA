@@ -231,7 +231,7 @@ def main() -> int:
         "ROBOTICNESS":"HUMAN_REVIEW_PENDING",
         "MONOTONY":"HUMAN_REVIEW_PENDING",
         "UNNATURAL_PAUSES":"PASS_MACHINE_GUARD" if float(narration.get("longest_silence_seconds") or 0.0)<4.0 else "REVIEW_REQUIRED",
-        "VOICE_B_PRESERVED":"PASS" if voice.get("voice")=="pt-BR-ThalitaMultilingualNeural" else "FAIL",
+        "OWNER_VOICE_PRESERVED":"PASS" if voice.get("voice")=="BR_OWNER_V1" else "FAIL",
     }
     report={
         "status":"PASS" if machine_video_pass and narration_quality["NARRATION_QA"]=="PASS" else "FAIL",

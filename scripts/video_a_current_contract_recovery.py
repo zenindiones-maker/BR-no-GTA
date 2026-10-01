@@ -329,9 +329,11 @@ def _build_current_job(product: dict[str, Any], old_state: dict[str, Any]) -> tu
         },
     )
     context = authorization_to_context(authorization)
-    profile_path = Path(".run001/official-narration-profile.json")
-    profile = json.loads(profile_path.read_text(encoding="utf-8"))
-    profile_sha = __import__("hashlib").sha256(profile_path.read_bytes()).hexdigest()
+    profile = {
+        "profile_id": audio["VOICE_IDENTITY_ID"],
+        "status": "READY" if audio["OWNER_REFERENCE_READY"] else "BLOCKED_OWNER_REFERENCE_AND_HUMAN_REVIEW",
+    }
+    profile_sha = audio["CURRENT_AUDIO_CONTRACT_FINGERPRINT"]
     job = {
         "render_job_id": SUCCESSOR_RENDER_JOB_ID,
         "id": SUCCESSOR_RENDER_JOB_ID,
@@ -365,9 +367,9 @@ def _build_current_job(product: dict[str, Any], old_state: dict[str, Any]) -> tu
         "media_sources": [{"asset_ref": MEDIA_REF, "source_url": MEDIA_URL}],
         "scenes": list(old_job.get("scenes") or []),
         "audio_requirements": [
-            "Voice B pt-BR narration is mandatory on A1 VOICE.",
-            "Current pronunciation lexicon 2026.09.19.3 is mandatory.",
-            "Human-approved closing G-brand-mixed must be reused without regeneration.",
+            "BR_OWNER_V1 Telegram-reference owner narration is mandatory on A1 VOICE.",
+            "Current pronunciation lexicon is mandatory.",
+            "Owner voice runtime remains fail-closed until private reference materialization and human review pass.",
         ],
         "visual_requirements": list(old_job.get("visual_requirements") or []),
         "brand_assets": [dict(item) for item in OFFICIAL_BRAND_ASSETS],
@@ -426,14 +428,15 @@ def _print_audio_gate(job: dict[str, Any]) -> None:
         and audio["PRONUNCIATION_LEXICON_VERSION"] == "2026.09.19.3"
     )
     vice_ok = (
-        audio["VICE_CITY_LOCALE"] == "en-US"
+        audio["VICE_CITY_LOCALE"] == "pt-BR"
         and audio["VICE_CITY_TARGET_IPA"] == "vaɪs ˈsɪti"
     )
     checks = {
         "PRODUCT_PROFILE": job.get("product_profile") == "professional_ptbr_v1",
-        "VOICE_B_USED": job["narration"].get("voice") == "pt-BR-ThalitaMultilingualNeural",
-        "FLUID2_ONLY_RUNTIME": contract.get("selected_opening_take_id") == "take-2",
-        "APPROVED_G_CLOSING_REUSED": contract.get("selected_closing_fallback_take_id") == "G-brand-mixed",
+        "OWNER_VOICE_BOUND": job["narration"].get("voice") == audio["VOICE_IDENTITY_ID"],
+        "OWNER_OPENING_BOUND": contract.get("selected_opening_take_id") == audio["OPENING_TAKE"],
+        "OWNER_CLOSING_BOUND": contract.get("selected_closing_take_id") == audio["CLOSING_TAKE"],
+        "OWNER_REFERENCE_READY": audio["OWNER_REFERENCE_READY"] is True,
         "GTA6_PRONUNCIATION_CURRENT": lexicon_ok,
         "VICE_CITY_LANGUAGE_RESOLUTION": vice_ok,
         "OPENING_TEXT_CANONICAL": contract.get("opening_text") == canonical_opening_text(OPENING_THEME),
@@ -441,11 +444,10 @@ def _print_audio_gate(job: dict[str, Any]) -> None:
         "OFFICIAL_INTRO_ASSET_ID": any(item.get("asset_id") == 1 and item.get("asset_type") == "intro" for item in job["brand_assets"]),
         "WATERMARK_ASSET_ID": any(item.get("asset_id") == 2 and item.get("asset_type") == "watermark" for item in job["brand_assets"]),
         "BRAND_AUDIO_QA": (
-            audio["APPROVED_G_SHA256"] == "9e2e7a2d9717f460dd45cf0d07e96a4596e4f61372c6d87028b8809a052c59ca"
-            and isinstance(audio.get("DERIVED_CLOSING_SHA256"), str)
-            and len(audio["DERIVED_CLOSING_SHA256"]) == 64
-            and contract.get("selected_opening_take_id") == "take-2"
-            and contract.get("selected_closing_fallback_take_id") == "G-brand-mixed"
+            audio["OWNER_REFERENCE_READY"] is True
+            and audio["GENERIC_VOICE_FALLBACK"] is False
+            and audio["PROVIDER_PRESET_VOICE_ALLOWED"] is False
+            and contract.get("official_voice_profile") == audio["VOICE_IDENTITY_ID"]
         ),
         "BURNED_SUBTITLES": job["subtitles"].get("enabled") is False,
         "RENDER_PROFILE_V4": (
@@ -457,7 +459,7 @@ def _print_audio_gate(job: dict[str, Any]) -> None:
         raise RuntimeError(f"CURRENT_AUDIO_PRE_RENDER_GATE failed: {checks}")
     print("PRODUCT_PROFILE=professional_ptbr_v1")
     for key in (
-        "VOICE_B_USED", "FLUID2_ONLY_RUNTIME", "APPROVED_G_CLOSING_REUSED",
+        "OWNER_VOICE_BOUND", "OWNER_OPENING_BOUND", "OWNER_CLOSING_BOUND", "OWNER_REFERENCE_READY",
         "GTA6_PRONUNCIATION_CURRENT", "VICE_CITY_LANGUAGE_RESOLUTION",
         "OPENING_TEXT_CANONICAL", "CLOSING_TEXT_CANONICAL", "BRAND_AUDIO_QA",
     ):

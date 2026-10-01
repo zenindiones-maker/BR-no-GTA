@@ -32,7 +32,13 @@ def test_recovery_manifest_is_forward_only_and_audio_fingerprinted(tmp_path: Pat
     assert invalidated==["Narration","Brand Audio","EditPlan","RenderJob","Render"]
     preserved=manifest["invalidation_rules"]["audio_contract_mismatch"]["preserves_if_fingerprint_valid"]
     assert "Research" in preserved and "MediaKnowledge" in preserved
-    assert manifest["human_approved_asset_hashes"]["assets/branding/audio/g-brand-mixed-approved-20260919.mp3"]=="9e2e7a2d9717f460dd45cf0d07e96a4596e4f61372c6d87028b8809a052c59ca"
+    voice=manifest["current_owner_voice_state"]
+    assert voice["voice_identity_id"]=="BR_OWNER_V1"
+    assert voice["reference_source"]=="TELEGRAM"
+    assert voice["materialized_reference_count"]==0
+    assert voice["promotion_allowed"] is False
+    assert voice["generic_voice_fallback"] is False
+    assert manifest["historical_voice_lineage"]["current_production_eligible"] is False
 
 
 def test_recovery_manifest_records_final_private_youtube_and_telegram_milestone(tmp_path: Path):
@@ -59,3 +65,19 @@ def test_recovery_manifest_records_final_private_youtube_and_telegram_milestone(
     assert final["human_review_status"]=="PENDING"
     assert final["render_media_sha256"]=="7cfbca3f36ec66b832c93df80dc929ca931c5d70fa63a6a3c74d64824e369436"
     assert manifest["database_checkpoint"]["artifact_id"]==10596163504
+
+
+def test_recovery_manifest_has_no_obsolete_voice_b_asset_dependency(tmp_path: Path):
+    repo=Path.cwd()
+    manifest=build_recovery_manifest(
+        repo_root=repo,
+        branch="work/gate6f-analytics-learning",
+        head_sha="c"*40,
+        checkpoint_type="owner-voice-contract",
+        git_tag="br-owner-voice-current",
+        tests_passed=list(FOCUSED_TESTS),
+        created_at="2026-10-01T16:00:00+00:00",
+    )
+    assert manifest["official_voice_profile"]["VOICE_IDENTITY_ID"]=="BR_OWNER_V1"
+    assert manifest["current_owner_voice_state"]["reference_materialization_status"]=="PENDING_PRIVATE_REFERENCE_MATERIALIZATION"
+    assert "human_approved_asset_hashes" not in manifest

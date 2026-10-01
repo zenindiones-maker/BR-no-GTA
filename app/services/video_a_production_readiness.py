@@ -7,6 +7,7 @@ from pathlib import Path
 from statistics import median
 from typing import Any
 
+from app.services.current_audio_contract_service import current_audio_contract
 from app.services.human_review_quality_gate import (
     CONTENT_PLANNING_WPM,
     validate_text_overlay_contract,
@@ -19,7 +20,6 @@ from app.services.narration_pipeline import (
 
 ROOT=Path(__file__).resolve().parents[2]
 CANDIDATE_PATH=ROOT/".run"/"video-a-next-candidate"/"candidate.json"
-OFFICIAL_PROFILE_PATH=ROOT/".run001"/"official-narration-profile.json"
 HUMAN_STATE_PATH=ROOT/"config"/"video_a_production_readiness_human.json"
 READINESS_STATE_PATH=ROOT/"config"/"video_a_production_readiness_state.json"
 PRONUNCIATION_EVIDENCE_PATH=ROOT/"config"/"pronunciation_evidence_registry.json"
@@ -639,7 +639,15 @@ def visual_readiness(candidate:dict[str,Any])->dict[str,Any]:
 
 def static_readiness_report()->dict[str,Any]:
     candidate=_load(CANDIDATE_PATH)
-    profile=_load(OFFICIAL_PROFILE_PATH)
+    audio=current_audio_contract()
+    profile={
+        "rate":{"value":audio.get("OPENING_RATE") or "+0%"},
+        "pitch":{"value":audio.get("OPENING_PITCH") or "+0Hz"},
+        "prosody":{"strategy":"semantic-section-v1"},
+        "segment_strategy":{"caption_timing":"provider-native when available"},
+        "profile_id":audio["VOICE_IDENTITY_ID"],
+        "status":"READY" if audio["OWNER_REFERENCE_READY"] else "BLOCKED_OWNER_REFERENCE_AND_HUMAN_REVIEW",
+    }
     human=_load(HUMAN_STATE_PATH)
     registry=_load(PRONUNCIATION_EVIDENCE_PATH)
     lexicon=_load(PRONUNCIATION_LEXICON_PATH)
@@ -664,7 +672,13 @@ def static_readiness_report()->dict[str,Any]:
         "NARRATION_FLUENCY":"FAIL",
         "GLOBAL_PRONUNCIATION_STATUS":"FAIL",
         "LEONIDA_PRONUNCIATION":"FAIL",
-        "HUMAN_VOICE_REVIEW":"REJECTED",
+        "OWNER_VOICE_GATE":"PASS" if audio["OWNER_REFERENCE_READY"] else "FAIL_CURRENT_STATE",
+        "OWNER_VOICE_IDENTITY":audio["VOICE_IDENTITY_ID"],
+        "OWNER_REFERENCE_SOURCE":audio["OWNER_REFERENCE_SOURCE"],
+        "OWNER_REFERENCE_STATUS":audio["OWNER_REFERENCE_STATUS"],
+        "OWNER_REFERENCE_COUNT":audio["OWNER_REFERENCE_COUNT"],
+        "HUMAN_VOICE_REVIEW":audio["PTBR_HUMAN_REVIEW_STATUS"],
+        "PTBR_ACCENT_REVIEW":audio["PTBR_ACCENT_REVIEW_STATUS"],
         "TEXT_FIDELITY":"PENDING_REAL_AUDIO_ALIGNMENT",
         "FINAL_MIX_QA_IMPLEMENTED":"PENDING_AUDITION_EXECUTION",
         "NO_NAME_FRAGMENTATION":"PASS" if chunks["PROPER_NOUNS_SPLIT_ACROSS_TTS_CALLS"]==0 else "FAIL",

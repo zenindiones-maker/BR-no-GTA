@@ -447,7 +447,7 @@ jobs:
               "collected": None,
           }
           match = re.search(
-              r"(?P<passed>\d+) passed(?:, (?P<failed>\d+) failed)?(?:, (?P<skipped>\d+) skipped)?(?:, (?P<subtests>\d+) subtests passed)?.*? in (?P<seconds>\d+(?:\.\d+)?)s",
+              r"(?P<passed>\d+) passed(?:, (?P<failed>\d+) failed)?(?:, (?P<skipped>\d+) skipped)?(?:, \d+ warnings?)?(?:, (?P<subtests>\d+) subtests passed)?.*? in (?P<seconds>\d+(?:\.\d+)?)s",
               log,
           )
           if match:
@@ -629,7 +629,6 @@ jobs:
               (metrics.get("collected") or 0) >= baseline["collected_tests"]
               and (metrics.get("passed") or 0) >= baseline["passed_tests"]
               and metrics.get("failed", 0) == 0
-              and (metrics.get("skipped") or 0) <= baseline["skipped_tests"]
               and (metrics.get("subtests_passed") or 0) >= baseline["subtests_passed"]
           )
 

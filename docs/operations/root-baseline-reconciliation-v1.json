@@ -1,0 +1,171 @@
+{
+  "canonical_base_sha": "daaaa3cabfa1118e5a2384a867e7f787cf28b5d1",
+  "failures": [
+    {
+      "affected_runtime_surface": [],
+      "classification": "TEST_EXPECTATION_DRIFT",
+      "evidence_refs": [
+        "BR-no-GTA-CI:36892709532",
+        "canonical-base:daaaa3cabfa1118e5a2384a867e7f787cf28b5d1"
+      ],
+      "failure_fingerprint": "81af4cf9a44629d6714fac85e8820180d255448e714a36b1b626ca35168af553",
+      "fix_strategy": "Assert semantic preservation, owner pt-BR lane, alias and punctuation rather than span-internal punctuation placement",
+      "node_id": "tests/test_character_name_pronunciation_candidate.py::test_vice_city_target_sound_does_not_create_foreign_language_chunk",
+      "normative_contract": "Pronunciation semantic span contract; punctuation may coalesce with adjacent synthesis span",
+      "production_impact": "No product defect; preserve current segmentation",
+      "review_required": true,
+      "schema_version": "RootFailureClassification/v1",
+      "test_impact": "Deterministic canonical root failure"
+    },
+    {
+      "affected_runtime_surface": [],
+      "classification": "TEST_EXPECTATION_DRIFT",
+      "evidence_refs": [
+        "BR-no-GTA-CI:36892709532",
+        "canonical-base:daaaa3cabfa1118e5a2384a867e7f787cf28b5d1"
+      ],
+      "failure_fingerprint": "0cd7e5ddee3c3af7820fee3fe330a0187c22e8cf027721d535e8c9491b67d862",
+      "fix_strategy": "Migrate workflow assertion to credential-free proof and retain separate auth-preflight tests",
+      "node_id": "tests/test_claude_auth_boundary.py::ClaudeAuthBoundaryTests::test_workflow_maps_only_repository_secrets_and_runs_no_prompt",
+      "normative_contract": "Claude Code Gateway Boundary is credential-free static proof; auth preflight is separate",
+      "production_impact": "No paid/model call introduced",
+      "review_required": true,
+      "schema_version": "RootFailureClassification/v1",
+      "test_impact": "Deterministic canonical root failure"
+    },
+    {
+      "affected_runtime_surface": [],
+      "classification": "PRODUCTION_CONTRACT_MIGRATION_DEBT",
+      "evidence_refs": [
+        "BR-no-GTA-CI:36892709532",
+        "canonical-base:daaaa3cabfa1118e5a2384a867e7f787cf28b5d1"
+      ],
+      "failure_fingerprint": "81ae35dad15f67e4c6db03eab83db70ce5d0709b5c16a4dee88e1c09fc83c4b0",
+      "fix_strategy": "Migrate recovery manifest schema to owner-voice state",
+      "node_id": "tests/test_recovery_manifest_service.py::test_recovery_manifest_is_forward_only_and_audio_fingerprinted",
+      "normative_contract": "Current owner voice BR_OWNER_V1 contract",
+      "production_impact": "Recovery manifest raises on obsolete Voice-B keys",
+      "review_required": true,
+      "schema_version": "RootFailureClassification/v1",
+      "test_impact": "Deterministic canonical root failure"
+    },
+    {
+      "affected_runtime_surface": [],
+      "classification": "PRODUCTION_CONTRACT_MIGRATION_DEBT",
+      "evidence_refs": [
+        "BR-no-GTA-CI:36892709532",
+        "canonical-base:daaaa3cabfa1118e5a2384a867e7f787cf28b5d1"
+      ],
+      "failure_fingerprint": "9747f31696d72dd6d23348ec2bbfe7f3aff08aa5ac18a5272a7bbef13f5a69ff",
+      "fix_strategy": "Migrate recovery manifest schema to owner-voice state",
+      "node_id": "tests/test_recovery_manifest_service.py::test_recovery_manifest_records_final_private_youtube_and_telegram_milestone",
+      "normative_contract": "Current owner voice BR_OWNER_V1 contract",
+      "production_impact": "Recovery manifest raises on obsolete Voice-B keys",
+      "review_required": true,
+      "schema_version": "RootFailureClassification/v1",
+      "test_impact": "Deterministic canonical root failure"
+    },
+    {
+      "affected_runtime_surface": [],
+      "classification": "RETIRED_SURFACE_EXPECTATION",
+      "evidence_refs": [
+        "BR-no-GTA-CI:36892709532",
+        "canonical-base:daaaa3cabfa1118e5a2384a867e7f787cf28b5d1"
+      ],
+      "failure_fingerprint": "5637b076a74191809e155ed4ef1c75c45096898c83386086de4906de94181b10",
+      "fix_strategy": "Replace with retirement/security assertions and audit neighboring stale tests",
+      "node_id": "tests/test_run001_longform_editorial_controller.py::test_video_a_live_bridge_runs_editorial_controller_then_official_render_worker",
+      "normative_contract": "RUN-001 legacy voice workflow is retired/fail-closed",
+      "production_impact": "Stale test expects unreachable legacy dispatch",
+      "review_required": true,
+      "schema_version": "RootFailureClassification/v1",
+      "test_impact": "Deterministic canonical root failure"
+    },
+    {
+      "affected_runtime_surface": [],
+      "classification": "TEST_EXPECTATION_DRIFT",
+      "evidence_refs": [
+        "BR-no-GTA-CI:36892709532",
+        "canonical-base:daaaa3cabfa1118e5a2384a867e7f787cf28b5d1"
+      ],
+      "failure_fingerprint": "0772bee74deaf9ad99c663729d15ca47fc53f79589b9cd118891b525e5bf2f81",
+      "fix_strategy": "Assert current owner-only contract and blocked readiness",
+      "node_id": "tests/test_video_a_current_contract_e2e.py::test_current_audio_contract_hash_and_voice_are_pinned",
+      "normative_contract": "BR_OWNER_V1 owner-only current audio contract",
+      "production_impact": "Stale Voice B expectation",
+      "review_required": true,
+      "schema_version": "RootFailureClassification/v1",
+      "test_impact": "Deterministic canonical root failure"
+    },
+    {
+      "affected_runtime_surface": [],
+      "classification": "RETIRED_SURFACE_EXPECTATION",
+      "evidence_refs": [
+        "BR-no-GTA-CI:36892709532",
+        "canonical-base:daaaa3cabfa1118e5a2384a867e7f787cf28b5d1"
+      ],
+      "failure_fingerprint": "d3bc714b9335c4e40f4c0b51a01584a554a40d73944773e50323e81a0b0aadc8",
+      "fix_strategy": "Replace with owner-voice activation gate coverage",
+      "node_id": "tests/test_video_a_final_audio_approval.py::test_g_brand_mixed_is_locked_as_human_approved_final_end_signature",
+      "normative_contract": "BR_OWNER_V1 requires Telegram-bound references + human review",
+      "production_impact": "Deleted legacy fixture is intentionally absent",
+      "review_required": true,
+      "schema_version": "RootFailureClassification/v1",
+      "test_impact": "Deterministic canonical root failure"
+    },
+    {
+      "affected_runtime_surface": [],
+      "classification": "NON_HERMETIC_TEST_INPUT",
+      "evidence_refs": [
+        "BR-no-GTA-CI:36892709532",
+        "canonical-base:daaaa3cabfa1118e5a2384a867e7f787cf28b5d1"
+      ],
+      "failure_fingerprint": "04c517d10bdf044e79a21ff8face55eb5a8c3946998dbe019d7859f14be1f660",
+      "fix_strategy": "Remove undeclared runtime fixture dependency",
+      "node_id": "tests/test_video_a_production_readiness.py::test_static_readiness_preserves_green_editorial_but_fails_audio_and_visual",
+      "normative_contract": "Static readiness must work in clean checkout from versioned/current state",
+      "production_impact": "Production service hardcodes deleted .run001 fixture",
+      "review_required": true,
+      "schema_version": "RootFailureClassification/v1",
+      "test_impact": "Deterministic canonical root failure"
+    },
+    {
+      "affected_runtime_surface": [],
+      "classification": "ACTIVE_RUNTIME_LEGACY_RESIDUE",
+      "evidence_refs": [
+        "BR-no-GTA-CI:36892709532",
+        "canonical-base:daaaa3cabfa1118e5a2384a867e7f787cf28b5d1"
+      ],
+      "failure_fingerprint": "ad639746779ea1f7f0b5187c3f028b15c830f813f7ccfbea5bc71e219743c9cc",
+      "fix_strategy": "Replace with reachability inventory; migrate/retire active legacy paths",
+      "node_id": "tests/test_voice_runtime_cleanliness.py::test_legacy_voice_artifacts_and_references_are_absent_from_current_tree",
+      "normative_contract": "Active runtime must have zero legacy voice bindings; history/docs may remain truthful",
+      "production_impact": "Whole-repo grep conflates history/docs/tests with executable reachability and also reveals active residue",
+      "review_required": true,
+      "schema_version": "RootFailureClassification/v1",
+      "test_impact": "Deterministic canonical root failure"
+    }
+  ],
+  "schema_version": "RootBaselineReconciliationFailureSet/v1",
+  "source_ci_run_id": 36892709532,
+  "supplemental_failures": [
+    {
+      "affected_runtime_surface": [
+        ".github/workflows/ci.yml"
+      ],
+      "classification": "ENVIRONMENT_DEFECT",
+      "evidence_refs": [
+        "BR-no-GTA-CI:36920729306",
+        "candidate:67f13b50fb7b42d8002f2643911ee696de1f5234"
+      ],
+      "failure_fingerprint": "6baa571e25e7062b5fd4aa5589f9479623d9632acf8ae93b5516be28adcea206",
+      "fix_strategy": "Parse warnings before subtests; preserve zero failures plus monotonic collection/passed/subtests and focused membership; remove stale absolute skip ceiling",
+      "node_id": "BR-no-GTA-CI:36920729306::Final Gate::Derive final gate and before/after metrics",
+      "normative_contract": "Final Gate must faithfully aggregate successful canonical full-suite metrics without treating suite growth or parser loss as QA regression",
+      "production_impact": "None; Canonical Full Suite was SUCCESS. CI aggregate incorrectly reported FAIL.",
+      "review_required": true,
+      "schema_version": "RootFailureClassification/v1",
+      "test_impact": "Official CI Final Gate false negative after root became green"
+    }
+  ]
+}

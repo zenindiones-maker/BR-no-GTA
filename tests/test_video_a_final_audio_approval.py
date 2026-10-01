@@ -3,32 +3,24 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from app.services.current_audio_contract_service import current_audio_contract
 
 ROOT = Path(__file__).resolve().parents[1]
-APPROVAL = ROOT / ".run001" / "video-a-final-audio-approval.json"
 
 
-def test_g_brand_mixed_is_locked_as_human_approved_final_end_signature():
-    data = json.loads(APPROVAL.read_text(encoding="utf-8"))
-    assert data["status"] == "HUMAN_APPROVED"
-    assert data["role"] == "FINAL_END_SIGNATURE"
-    assert data["sample_id"] == "G-brand-mixed"
-    assert data["source_run_id"] == 35444013735
-    assert data["source_artifact_id"] == 10585440542
-    assert data["artifact_relative_path"] == "samples/G-brand-mixed.mp3"
-    assert data["approved_asset_path"] == "assets/branding/audio/g-brand-mixed-approved-20260919.mp3"
-    assert data["approved_asset_sha256"] == "9e2e7a2d9717f460dd45cf0d07e96a4596e4f61372c6d87028b8809a052c59ca"
-    assert data["approval_manifest_path"] == "assets/branding/audio/human-approval-manifest.json"
-    assert data["artifact_source_preserved_for_provenance"] is True
-    assert data["runtime_dependency_on_historical_artifact"] is False
-    assert data["canonical_audio_text"] == "BR no GTA 6. E BR não dorme em Vice City."
-    assert data["canonical_closing_line"] == "E BR não dorme em Vice City"
-    assert data["voice"] == "Voice B"
-    assert data["voice_short_name"] == "pt-BR-ThalitaMultilingualNeural"
-    assert data["gta6_pronunciation_human_approved"] is True
-    assert data["vice_city_pronunciation_human_approved"] is True
-    assert data["contains_canonical_closing_line"] is True
-    assert data["automatic_substitution_allowed"] is False
-    assert data["regeneration_allowed_without_new_human_review"] is False
-    assert data["youtube_publication"] is False
-    assert data["job18_frozen"] is True
+def test_legacy_g_brand_approval_cannot_activate_current_owner_voice():
+    assert not (ROOT / ".run001" / "video-a-final-audio-approval.json").exists()
+    contract = current_audio_contract()
+    enrollment = json.loads((ROOT / "config" / "voice_owner_enrollment_v1.json").read_text(encoding="utf-8"))
+    assert contract["VOICE_IDENTITY_ID"] == "BR_OWNER_V1"
+    assert contract["OWNER_REFERENCE_SOURCE"] == "TELEGRAM"
+    assert contract["OWNER_REFERENCE_COUNT"] == 0
+    assert contract["OWNER_REFERENCE_READY"] is False
+    assert enrollment["runtime_activation_status"] == "BLOCKED_HUMAN_VOICE_REVIEW"
+    assert enrollment["promotion_allowed"] is False
+    assert enrollment["latest_human_voice_review"] == "REJECTED"
+    assert enrollment["latest_voice_identity_match"] == "FAIL"
+    assert enrollment["latest_ptbr_accent_review"] == "FAIL"
+    assert enrollment["generic_voice_fallback"] is False
+    assert enrollment["provider_preset_voice_allowed"] is False
+    assert enrollment["provider_default_voice_allowed"] is False
