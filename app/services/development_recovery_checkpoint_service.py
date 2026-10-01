@@ -179,6 +179,7 @@ class DevelopmentRecoveryCheckpointService:
         side_effect_state: dict[str, Any] | None = None,
         failure_state: dict[str, Any] | None = None,
         resume_instructions: str | None = None,
+        expected_previous_remote_oid: str | None = None,
     ) -> dict[str, Any]:
         recovery_ref = validate_recovery_ref(recovery_ref)
         validate_ledger(ledger)
@@ -196,6 +197,21 @@ class DevelopmentRecoveryCheckpointService:
             raise CheckpointConflict(
                 f"RECONCILIATION_REQUIRED canonical moved: base={canonical_base_sha} current={current_canonical}"
             )
+
+        observed_remote_before = self._remote_oid(recovery_ref)
+        if expected_previous_remote_oid is not None:
+            if observed_remote_before != expected_previous_remote_oid:
+                raise CheckpointConflict(
+                    "RECOVERY_REF_CONFLICT expected_previous_remote_oid mismatch: "
+                    f"expected={expected_previous_remote_oid} actual={observed_remote_before}"
+                )
+        elif observed_remote_before is not None and ledger.get("latest_verified_checkpoint_sha"):
+            ledger_expected = str(ledger["latest_verified_checkpoint_sha"])
+            if observed_remote_before != ledger_expected:
+                raise CheckpointConflict(
+                    "RECOVERY_REF_CONFLICT ledger latest_verified_checkpoint_sha mismatch: "
+                    f"expected={ledger_expected} actual={observed_remote_before}"
+                )
 
         paths, large = self._candidate_files(included_paths, excluded_paths)
         content_digest = self._content_digest(paths)
