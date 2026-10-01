@@ -30,6 +30,7 @@ Required: `app/services/global_capability_registry.py`
 Required: `app/services/harness_authorization_service.py`
 Required: `app/services/task_execution_foundation_service.py`
 See: `docs/architecture/br-no-gta-professionalization-master-plan-v1.md`
+Required for long-running development: `docs/architecture/development-continuity-recovery-plane-v1.md`
 See: `docs/agent-execution/gta6-agent-domain-guidance.md`
 See: `docs/superpowers/specs/2026-09-28-agent-skills-pack-design.md`
 
