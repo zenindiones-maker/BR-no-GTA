@@ -1,21 +1,23 @@
 {
-  "agent_execution_identity": "seed",
+  "agent_execution_identity": "writer-a",
   "artifact_refs": [],
-  "authorization_id": "3c968161-1e0f-430d-a9a2-eb57d73adc93",
+  "authorization_id": "df6cd5be-ef20-497c-88ce-f1c160523a18",
   "canonical_base_sha": "daaaa3cabfa1118e5a2384a867e7f787cf28b5d1",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "70959b73de4ee190b825f1d1ffefcd736a1706415e94ad26b2ca0d814d82aa5a",
-  "checkpoint_id": "continuity-concurrency-canary-001-cp-000001-f3538558",
+  "checkpoint_digest": "047ac424049f98169cfd8822d4193c909759f471c25ddee977e23a18b492f6d4",
+  "checkpoint_id": "continuity-concurrency-canary-001-cp-000002-7e890bbc",
   "checkpoint_kind": "RECOVERY",
-  "checkpoint_sequence": 1,
+  "checkpoint_sequence": 2,
   "completed_steps": [
     "seed"
   ],
-  "content_digest": "a95fd0215b4f5e3b47b992d8e67ab40a1709dcc78dba8912daa052d139a15105",
-  "created_at": "2026-10-01T15:47:36.221135+00:00",
+  "content_digest": "cb617fc82dc1478c6704d0696a885656e709a4ae88289599ec2dab7480f7abc1",
+  "created_at": "2026-10-01T15:47:40.450707+00:00",
   "current_step": "compete",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
-  "evidence_refs": [],
+  "evidence_refs": [
+    "git:40c0c7c68ce9cbd682050a70bc9719dc59faca81"
+  ],
   "excluded_paths": [],
   "failure_state": {},
   "included_paths": [
@@ -26,20 +28,20 @@
   "mission_id": "continuity-concurrency-canary-001",
   "next_step": "reconcile",
   "open_blockers": [],
-  "previous_checkpoint_sha": null,
-  "progress_ledger_digest": "9a7df0da31d7ee10639ba06c73b93c331bea38295c4fb65d504186148ba3af5c",
+  "previous_checkpoint_sha": "40c0c7c68ce9cbd682050a70bc9719dc59faca81",
+  "progress_ledger_digest": "bd924b2a65422287416fa8c9d07dede0acef77a24483d8f1e7c32161ce1c887e",
   "recovery_ref": "recovery/dev/continuity-concurrency-canary-001",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
   "resume_instructions": "Load ledger, reconcile canonical and side effects, continue first incomplete authorized step.",
-  "runtime_namespace": "concurrency",
+  "runtime_namespace": "concurrency-writer-a",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
     "known_completed": [],
     "unknown_requires_reconciliation": []
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "seed",
+  "task_id": "compete-writer-a",
   "test_state": {
     "affected_subgraph": "NOT_RUN",
     "root": "NOT_RUN",

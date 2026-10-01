@@ -2,20 +2,26 @@
   "artifact_refs": [],
   "canonical_base_sha": "daaaa3cabfa1118e5a2384a867e7f787cf28b5d1",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 0,
+  "checkpoint_sequence": 1,
   "completed_steps": [
     "seed"
   ],
   "current_step": "compete",
-  "decisions": [],
+  "decisions": [
+    {
+      "writer": "writer-a"
+    }
+  ],
   "do_not_repeat": [
     "seed"
   ],
-  "evidence_refs": [],
+  "evidence_refs": [
+    "git:40c0c7c68ce9cbd682050a70bc9719dc59faca81"
+  ],
   "goal_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
   "known_failures": [],
-  "latest_verified_checkpoint_id": null,
-  "latest_verified_checkpoint_sha": null,
+  "latest_verified_checkpoint_id": "continuity-concurrency-canary-001-cp-000001-f3538558",
+  "latest_verified_checkpoint_sha": "40c0c7c68ce9cbd682050a70bc9719dc59faca81",
   "mission_id": "continuity-concurrency-canary-001",
   "next_step": "reconcile",
   "open_blockers": [],
@@ -36,6 +42,6 @@
     "root": "NOT_RUN",
     "targeted": "PASS"
   },
-  "updated_at": "2026-10-01T15:50:00+00:00",
+  "updated_at": "2026-10-01T15:51:00+00:00",
   "validation_state": "PARTIAL"
 }
