@@ -147,5 +147,25 @@
     }
   ],
   "schema_version": "RootBaselineReconciliationFailureSet/v1",
-  "source_ci_run_id": 36892709532
+  "source_ci_run_id": 36892709532,
+  "supplemental_failures": [
+    {
+      "affected_runtime_surface": [
+        ".github/workflows/ci.yml"
+      ],
+      "classification": "ENVIRONMENT_DEFECT",
+      "evidence_refs": [
+        "BR-no-GTA-CI:36920729306",
+        "candidate:67f13b50fb7b42d8002f2643911ee696de1f5234"
+      ],
+      "failure_fingerprint": "6baa571e25e7062b5fd4aa5589f9479623d9632acf8ae93b5516be28adcea206",
+      "fix_strategy": "Parse warnings before subtests; preserve zero failures plus monotonic collection/passed/subtests and focused membership; remove stale absolute skip ceiling",
+      "node_id": "BR-no-GTA-CI:36920729306::Final Gate::Derive final gate and before/after metrics",
+      "normative_contract": "Final Gate must faithfully aggregate successful canonical full-suite metrics without treating suite growth or parser loss as QA regression",
+      "production_impact": "None; Canonical Full Suite was SUCCESS. CI aggregate incorrectly reported FAIL.",
+      "review_required": true,
+      "schema_version": "RootFailureClassification/v1",
+      "test_impact": "Official CI Final Gate false negative after root became green"
+    }
+  ]
 }
