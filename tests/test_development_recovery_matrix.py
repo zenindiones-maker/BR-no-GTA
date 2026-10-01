@@ -98,3 +98,41 @@ def test_corrupt_progress_ledger_returns_explicit_corrupt(tmp_path: Path):
     cp=persist(svc,repo,base)
     _corrupt_remote(repo,cp["recovery_commit_sha"],".development-recovery/m1/progress-ledger.json",b"{}")
     assert DevelopmentRecoveryCheckpointService(repo).resume("recovery/dev/m1",canonical_branch="work/gate6f-analytics-learning")["outcome"]=="CHECKPOINT_CORRUPT"
+
+
+def test_resume_rejects_wrong_expected_remote_sha_and_tree(tmp_path: Path):
+    repo,_=init_repo(tmp_path); base=run(repo,"git","rev-parse","HEAD"); svc=DevelopmentRecoveryCheckpointService(repo)
+    cp=persist(svc,repo,base)
+    stale=svc.resume(
+        "recovery/dev/m1",canonical_branch="work/gate6f-analytics-learning",
+        expected_recovery_commit_sha="f"*40,
+    )
+    assert stale["outcome"]=="CHECKPOINT_STALE"
+    corrupt=svc.resume(
+        "recovery/dev/m1",canonical_branch="work/gate6f-analytics-learning",
+        expected_recovery_commit_sha=cp["recovery_commit_sha"],
+        expected_recovery_tree_sha="f"*40,
+    )
+    assert corrupt["outcome"]=="CHECKPOINT_CORRUPT"
+
+
+def test_resume_wrong_canonical_branch_identity_is_stale(tmp_path: Path):
+    repo,_=init_repo(tmp_path); base=run(repo,"git","rev-parse","HEAD"); svc=DevelopmentRecoveryCheckpointService(repo)
+    persist(svc,repo,base)
+    # Create a second remote branch only to make lookup valid; identity must still fail closed.
+    run(repo,"git","push","origin",f"{base}:refs/heads/other")
+    result=svc.resume("recovery/dev/m1",canonical_branch="other")
+    assert result["outcome"]=="CHECKPOINT_STALE"
+
+
+def test_large_evidence_has_full_durable_locator_provenance(tmp_path: Path):
+    repo,_=init_repo(tmp_path); base=run(repo,"git","rev-parse","HEAD")
+    (repo/"logs").mkdir(); (repo/"logs"/"trace.log").write_text("trace\n")
+    cp=persist(DevelopmentRecoveryCheckpointService(repo),repo,base,included_paths=["app","logs"])
+    item=cp["large_evidence"][0]
+    assert item["locator"]=="workspace:logs/trace.log"
+    assert item["producer"]=="development.checkpoint.persist"
+    assert item["session_identity"]=="rt"
+    assert item["retention"]=="external-evidence-policy"
+    assert item["rematerialization_policy"]=="locator+sha256+provenance"
+    assert item["created_at"]==cp["created_at"]

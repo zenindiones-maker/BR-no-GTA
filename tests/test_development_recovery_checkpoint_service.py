@@ -92,6 +92,9 @@ def test_shadow_index_untracked_red_checkpoint_readback_and_dedupe(tmp_path: Pat
     )
     assert second["checkpoint_write"] == "SKIPPED_UNCHANGED"
     assert second["recovery_commit_sha"] == first["recovery_commit_sha"]
+    assert second["development_state"] == "DURABLE"
+    assert second["remote_write_status"] == "COMPLETE"
+    assert second["remote_readback_status"] == "VERIFIED"
 
 
 def test_secret_candidate_blocks_without_silent_drop(tmp_path: Path):

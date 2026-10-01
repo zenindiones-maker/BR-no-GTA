@@ -224,19 +224,42 @@ class DevelopmentRecoveryCheckpointService:
         previous_oid, previous_core, _ = self._latest(recovery_ref)
 
         if previous_core:
+            previous_sequence = int(previous_core.get("checkpoint_sequence", 0))
             if (
                 previous_core.get("content_digest") == content_digest
                 and previous_core.get("progress_ledger_digest") == progress_digest
             ):
                 logical = self._assemble(previous_oid, previous_core, ledger)
+                logical["development_state"] = "DURABLE"
+                logical["remote_write_status"] = "COMPLETE"
+                logical["remote_readback_status"] = "VERIFIED"
                 logical["checkpoint_write"] = "SKIPPED_UNCHANGED"
                 return logical
-            sequence = int(previous_core.get("checkpoint_sequence", 0)) + 1
+            if int(ledger.get("checkpoint_sequence", -1)) != previous_sequence:
+                raise CheckpointConflict(
+                    "CHECKPOINT_STALE ledger checkpoint_sequence mismatch: "
+                    f"expected={previous_sequence} actual={ledger.get('checkpoint_sequence')}"
+                )
+            sequence = previous_sequence + 1
         else:
             sequence = max(1, int(ledger.get("checkpoint_sequence", 0)) + 1)
 
         checkpoint_id = f"{mission_id}-cp-{sequence:06d}-{uuid4().hex[:8]}"
         created_at = datetime.now(timezone.utc).isoformat()
+        large = [
+            {
+                **item,
+                "artifact_id": None,
+                "locator": f"workspace:{item['path']}",
+                "producer": "development.checkpoint.persist",
+                "session_identity": runtime_namespace,
+                "created_at": created_at,
+                "retention": "external-evidence-policy",
+                "expires_at": None,
+                "rematerialization_policy": "locator+sha256+provenance",
+            }
+            for item in large
+        ]
         state_rel = f".development-recovery/{recovery_ref.split('/')[-1]}"
         ledger_rel = f"{state_rel}/progress-ledger.json"
         ledger_bytes = (json.dumps(ledger, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
@@ -475,7 +498,14 @@ class DevelopmentRecoveryCheckpointService:
         result["workspace_base_sha"] = base
         return result
 
-    def resume(self, recovery_ref: str, *, canonical_branch: str) -> dict[str, Any]:
+    def resume(
+        self,
+        recovery_ref: str,
+        *,
+        canonical_branch: str,
+        expected_recovery_commit_sha: str | None = None,
+        expected_recovery_tree_sha: str | None = None,
+    ) -> dict[str, Any]:
         recovery_ref = validate_recovery_ref(recovery_ref)
         try:
             oid, core, ledger = self._latest(recovery_ref)
@@ -483,6 +513,18 @@ class DevelopmentRecoveryCheckpointService:
             return {"outcome": "CHECKPOINT_CORRUPT"}
         if oid is None or core is None or ledger is None:
             return {"outcome": "NO_RECOVERY_STATE"}
+        if expected_recovery_commit_sha is not None and oid != expected_recovery_commit_sha:
+            return {
+                "outcome": "CHECKPOINT_STALE",
+                "expected_recovery_commit_sha": expected_recovery_commit_sha,
+                "observed_recovery_commit_sha": oid,
+            }
+        if core.get("canonical_branch") != canonical_branch:
+            return {
+                "outcome": "CHECKPOINT_STALE",
+                "checkpoint_canonical_branch": core.get("canonical_branch"),
+                "requested_canonical_branch": canonical_branch,
+            }
         try:
             self._verify_core(core)
             validate_ledger(ledger)
@@ -493,6 +535,13 @@ class DevelopmentRecoveryCheckpointService:
         observed_tree = _run(self.repo, "git", "rev-parse", f"{oid}^{{tree}}")
         if not _SHA40.fullmatch(observed_tree):
             return {"outcome": "CHECKPOINT_CORRUPT"}
+        if expected_recovery_tree_sha is not None and observed_tree != expected_recovery_tree_sha:
+            return {
+                "outcome": "CHECKPOINT_CORRUPT",
+                "reason": "RECOVERY_TREE_SHA_MISMATCH",
+                "expected_recovery_tree_sha": expected_recovery_tree_sha,
+                "observed_recovery_tree_sha": observed_tree,
+            }
         current = self._canonical_oid(canonical_branch)
         if current != core.get("canonical_base_sha"):
             return {"outcome": "RECONCILIATION_REQUIRED", "canonical_head": current, "canonical_base_sha": core.get("canonical_base_sha")}
