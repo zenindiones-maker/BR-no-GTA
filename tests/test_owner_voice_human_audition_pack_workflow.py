@@ -34,3 +34,20 @@ def test_stt_install_is_reuse_first_and_does_not_unconditionally_apt_update():
     text=WORKFLOW.read_text(encoding="utf-8")
     assert "command -v ffmpeg" in text
     assert "sudo apt-get update -qq" not in text
+
+
+def test_stt_bootstrap_avoids_unconditional_apt_and_is_bounded_observable():
+    text=WORKFLOW.read_text(encoding="utf-8")
+    assert 'if ! command -v ffmpeg >/dev/null 2>&1; then' in text
+    assert 'timeout 300' in text
+    assert '--progress-bar off' in text
+    assert 'STT_RUNTIME_INSTALL=PASS' in text
+
+
+def test_faster_whisper_runtime_pins_pyav_compatible_with_metadata_errors():
+    text=WORKFLOW.read_text(encoding="utf-8")
+    install=text[text.index("Install strong private STT runtime"):]
+    install=install[:install.index("Quality-rank real Telegram owner references")]
+    assert '"av==18.0.0"' in install
+    assert '"faster-whisper==1.2.0"' in install
+    assert 'metadata_errors="ignore"' in Path("tests/fixtures/faster_whisper_pyav_contract.txt").read_text(encoding="utf-8")

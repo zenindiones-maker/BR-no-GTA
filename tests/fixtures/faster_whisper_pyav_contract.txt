@@ -1,0 +1,1 @@
+faster-whisper 1.2.0 decodes with av.open(input_file, mode="r", metadata_errors="ignore")

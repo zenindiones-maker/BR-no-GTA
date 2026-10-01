@@ -102,14 +102,29 @@ jobs:
             sudo apt-get install -y -qq ffmpeg
           fi
           python -m venv /tmp/br-owner-stt-venv
-          /tmp/br-owner-stt-venv/bin/python -m pip install --disable-pip-version-check --prefer-binary -q             "faster-whisper==1.2.0" "requests>=2.32,<3"
+          timeout 300 /tmp/br-owner-stt-venv/bin/python -m pip install             --disable-pip-version-check             --prefer-binary             --progress-bar off             "faster-whisper==1.2.0"             "av==18.0.0"             "requests>=2.32,<3"
+          /tmp/br-owner-stt-venv/bin/python - <<'PY'
+          from importlib.metadata import version
+          import av
+          import faster_whisper
+          major=int(version("av").split(".",1)[0])
+          assert version("av") == "18.0.0", version("av")
+          assert major < 19, version("av")
+          assert version("faster-whisper") == "1.2.0"
+          print("PYAV_VERSION=" + version("av"))
+          print("FASTER_WHISPER_VERSION=" + version("faster-whisper"))
+          print("STT_PYAV_COMPATIBILITY=PASS")
+          print("PYAV_FASTER_WHISPER_COMPATIBILITY=PASS")
+          PY
+          /tmp/br-owner-stt-venv/bin/python -c 'import faster_whisper, av; print("STT_IMPORT_SMOKE=PASS")'
+          echo "STT_RUNTIME_INSTALL=PASS"
 
       - name: Quality-rank real Telegram owner references with strong ASR
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          /tmp/br-owner-stt-venv/bin/python scripts/owner_voice_reference_qa.py
+          /tmp/br-owner-stt-venv/bin//tmp/br-owner-stt-venv/bin/python scripts/owner_voice_reference_qa.py
 
       - name: Install isolated pinned Chatterbox PT-BR runtime
         run: |
@@ -134,7 +149,7 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          /tmp/br-owner-stt-venv/bin/python scripts/owner_voice_human_audition_pack.py
+          /tmp/br-owner-stt-venv/bin//tmp/br-owner-stt-venv/bin/python scripts/owner_voice_human_audition_pack.py
           echo "VOICE_IDENTITY_HUMAN_GATE=PENDING"
           echo "PTBR_ACCENT_HUMAN_GATE=PENDING"
           echo "NATURALNESS_HUMAN_GATE=PENDING"
