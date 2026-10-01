@@ -265,8 +265,8 @@ def run_canary(root: Path) -> dict[str, Any]:
         "brand_assets": assets,
         "spoken_branding": build_spoken_branding_contract(theme="canário da identidade oficial"),
         "narration": {
-            "voice": "pt-BR-ThalitaMultilingualNeural",
-            "human_quality_baseline": "Voice B",
+            "voice": "BR_OWNER_V1",
+            "human_quality_baseline": "BR_OWNER_V1",
         },
         "script_sections": [{"section_id":"CANARY_HOOK","role":"hook"}],
         "edit_plan": {
@@ -277,7 +277,7 @@ def run_canary(root: Path) -> dict[str, Any]:
                         "order":2,
                         "phase":"spoken_channel_opening",
                         "text":"Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de canário da identidade oficial!",
-                        "voice":"Voice B",
+                        "voice":"BR_OWNER_V1",
                         "duration_seconds":2.0,
                     },
                     {"order":3,"phase":"editorial_hook","section_id":"CANARY_HOOK"},
@@ -286,7 +286,7 @@ def run_canary(root: Path) -> dict[str, Any]:
                         "order":5,
                         "phase":"spoken_channel_closing",
                         "text":"E BR não dorme em Vice City",
-                        "voice":"Voice B",
+                        "voice":"BR_OWNER_V1",
                         "duration_seconds":1.0,
                     },
                 ]

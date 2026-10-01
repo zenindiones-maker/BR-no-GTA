@@ -160,10 +160,10 @@ def main() -> int:
     contract=job["spoken_branding"]
     metadata["timeline_sequence"]=[
         {"order":1,"phase":"official_intro","asset_id":1},
-        {"order":2,"phase":"spoken_channel_opening","voice":"Voice B","text":contract["opening_text"],"duration_seconds":2.0},
+        {"order":2,"phase":"spoken_channel_opening","voice":"BR_OWNER_V1","text":contract["opening_text"],"duration_seconds":2.0},
         {"order":3,"phase":"editorial_hook","section_id":"A01"},
         {"order":4,"phase":"editorial_content"},
-        {"order":5,"phase":"spoken_channel_closing","voice":"Voice B","text":contract["closing_line"],"duration_seconds":1.0},
+        {"order":5,"phase":"spoken_channel_closing","voice":"BR_OWNER_V1","text":contract["closing_line"],"duration_seconds":1.0},
     ]
     edit_plan["metadata"]=metadata
     job["edit_plan"]=edit_plan

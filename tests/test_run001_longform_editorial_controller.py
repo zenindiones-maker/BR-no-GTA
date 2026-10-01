@@ -9,6 +9,7 @@ import pytest
 from scripts.run001_longform_editorial_controller import PROFESSIONAL_RENDER_CONFIG, validate_config
 from scripts.run001_longform_no_padding_qa import validate_no_padding
 from scripts.run001_final_product_dispatch import OFFICIAL_BRAND_ASSETS
+from app.services.current_audio_contract_service import current_audio_contract
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,17 +38,17 @@ def test_video_a_contract_is_independent_longform_ptbr_and_review_only():
     assert len({section["section_id"] for section in config["script_sections"]}) == len(config["script_sections"])
 
 
-def test_video_a_uses_human_locked_official_voice_b_profile():
+def test_retired_video_a_fixture_is_historical_not_current_voice_authority():
     config = _config()
     narration = config["narration"]
-    assert narration["human_quality_baseline"] == "Voice B"
-    assert narration["voice"] == "pt-BR-ThalitaMultilingualNeural"
-    assert narration["rate"] == "+0%"
-    assert narration["pitch"] == "+0Hz"
-    assert narration["rate_locked"] is True
-    assert narration["segment_strategy"] == "semantic-section-v1"
-    assert narration["performance_candidates_auto_promote"] is False
-    assert narration["official_profile_sha256"] == "f3bc54c57b0bf57f44eef3c9f5d0fe64945c2a8da46e4d07dd36e927ab741755"
+    current = current_audio_contract()
+    workflow = LONGFORM_BRIDGE.read_text(encoding="utf-8")
+    assert narration["human_quality_baseline"] != current["OFFICIAL_VOICE"]
+    assert narration["voice"] != current["VOICE_SHORT_NAME"]
+    assert current["OFFICIAL_VOICE"] == "BR_OWNER_V1"
+    assert current["OWNER_REFERENCE_SOURCE"] == "TELEGRAM"
+    assert "Legacy Long-form Voice Path — RETIRED" in workflow
+    assert "GENERIC_VOICE_FALLBACK=0" in workflow
 
 
 def test_video_a_spoken_branding_theme_is_only_editorial_variable():
@@ -152,17 +153,18 @@ def test_official_render_worker_enforces_no_padding_before_final_qa_and_telegram
     assert '"no-artificial-padding-qa.json", "NO_PADDING_QA"' in telegram
 
 
-def test_video_a_live_bridge_runs_editorial_controller_then_official_render_worker():
+def test_legacy_longform_voice_workflow_is_retired_and_cannot_dispatch_render():
     workflow = LONGFORM_BRIDGE.read_text(encoding="utf-8")
-    assert "scripts/run001_longform_editorial_controller.py" in workflow
-    assert ".run001/video-a-investigative-longform.json" in workflow
-    assert "video-a-canonical-config.json" in workflow
-    assert "evidence-lineage-reconciliation.json" in workflow
-    assert "DERIVED_FROM_CANONICAL_CLAIM_LEDGER" in workflow
-    assert "actions/workflows/render-worker.yml/dispatches" in workflow
-    assert "run001-e2e-canary" not in workflow
-    assert "'render_job_id': 920101" in workflow
-    assert "'youtube_publication': False" in workflow
+    assert "RUN-001 Legacy Long-form Voice Path — RETIRED" in workflow
+    assert "LEGACY_VOICE_WORKFLOW=RETIRED" in workflow
+    assert "OFFICIAL_VOICE=BR_OWNER_V1" in workflow
+    assert "VOICE_REFERENCE_SOURCE=TELEGRAM" in workflow
+    assert "VOICE_LANGUAGE=pt-BR" in workflow
+    assert "VOICE_ACCENT_LOCALE=pt-BR" in workflow
+    assert "GENERIC_VOICE_FALLBACK=0" in workflow
+    assert "ONLY_TELEGRAM_BOUND_BR_OWNER_V1_MAY_SYNTHESIZE" in workflow
+    assert "scripts/run001_longform_editorial_controller.py" not in workflow
+    assert "actions/workflows/render-worker.yml/dispatches" not in workflow
 
 
 def test_video_a_uses_complete_governed_brand_asset_snapshots():

@@ -3,11 +3,22 @@ from pathlib import Path
 from app.services.current_audio_contract_service import current_audio_contract
 
 
-def test_current_audio_contract_hash_and_voice_are_pinned():
+def test_current_audio_contract_is_owner_only_and_fail_closed_until_private_review():
     contract=current_audio_contract()
-    assert contract["OFFICIAL_VOICE"]=="Voice B"
-    assert contract["VOICE_SHORT_NAME"]=="pt-BR-ThalitaMultilingualNeural"
-    assert contract["APPROVED_G_SHA256"]=="9e2e7a2d9717f460dd45cf0d07e96a4596e4f61372c6d87028b8809a052c59ca"
+    assert contract["OFFICIAL_VOICE"]=="BR_OWNER_V1"
+    assert contract["VOICE_SHORT_NAME"]=="BR_OWNER_V1"
+    assert contract["VOICE_IDENTITY_ID"]=="BR_OWNER_V1"
+    assert contract["VOICE_POLICY"]=="OWNER_VOICE_ONLY"
+    assert contract["OWNER_REFERENCE_SOURCE"]=="TELEGRAM"
+    assert contract["OWNER_LANGUAGE"]=="pt-BR"
+    assert contract["OWNER_ACCENT_LOCALE"]=="pt-BR"
+    assert contract["PROVIDER_PRESET_VOICE_ALLOWED"] is False
+    assert contract["PROVIDER_DEFAULT_VOICE_ALLOWED"] is False
+    assert contract["GENERIC_VOICE_FALLBACK"] is False
+    assert contract["OWNER_REFERENCE_COUNT"]==0
+    assert contract["OWNER_REFERENCE_READY"] is False
+    assert contract["PTBR_HUMAN_REVIEW_STATUS"]=="REJECTED"
+    assert contract["PTBR_ACCENT_REVIEW_STATUS"]=="FAIL"
 
 
 def test_professional_worker_has_no_burned_brand_caption_track():

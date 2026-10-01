@@ -29,7 +29,7 @@ REVIEW = {
 
 FAILURES = (
     ("unplanned-text-overlay", "Remove implicit structural/debug/editorial text from MASTER_FINAL and fail closed on unplanned text."),
-    ("narration-fluency", "Measure and eliminate audible TTS/chunk boundaries while preserving Voice B and PT-BR prosody."),
+    ("narration-fluency", "Measure and eliminate audible TTS/chunk boundaries while preserving the BR_OWNER_V1 owner-only identity and PT-BR prosody."),
     ("content-duration", "Require at least 20 minutes of real supported editorial/narration content before render."),
     ("editorial-novelty", "Compare claims/topics against previous BR-no-GTA products and reject stale/repeated editorial packages."),
     ("media-novelty", "Use asset identity/history and diversity budgets so non-overlapping windows from one old source cannot pass."),

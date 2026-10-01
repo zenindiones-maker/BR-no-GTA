@@ -17,7 +17,7 @@ from app.services.video_a_production_readiness import (
     pronunciation_inventory,
 )
 
-VOICE="pt-BR-ThalitaMultilingualNeural"
+VOICE="BR_OWNER_V1"
 AUDITION_RUN_ID=35527492016
 AUDITION_ARTIFACT_ID=10610442121
 MIXED_STRESS_BLOCK="E-mixed-stress"

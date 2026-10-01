@@ -94,6 +94,7 @@ def build_recovery_manifest(
     save_request_path=root/".run/checkpoint-save.request.json"
     save_request=_read_json(save_request_path) if save_request_path.is_file() else {}
     audio=current_audio_contract()
+    enrollment=_read_json(root/"config/voice_owner_enrollment_v1.json")
 
     state: dict[str, Any]={}
     if runtime_state_path is not None and runtime_state_path.is_file():
@@ -195,23 +196,48 @@ def build_recovery_manifest(
         "official_voice_profile": {
             "OFFICIAL_VOICE": audio["OFFICIAL_VOICE"],
             "VOICE_SHORT_NAME": audio["VOICE_SHORT_NAME"],
+            "VOICE_IDENTITY_ID": audio["VOICE_IDENTITY_ID"],
+            "VOICE_POLICY": audio["VOICE_POLICY"],
             "SINGLE_VOICE_ONLY": audio["SINGLE_VOICE_ONLY"],
             "ALTERNATIVE_VOICE_CASTING": audio["ALTERNATIVE_VOICE_CASTING"],
-            "OPENING_REFERENCE": audio["OPENING_REFERENCE"],
-            "OPENING_TAKE": audio["OPENING_TAKE"],
-            "OPENING_RATE": audio["OPENING_RATE"],
-            "OPENING_PITCH": audio["OPENING_PITCH"],
-            "CLOSING_ASSET": audio["CLOSING_ASSET"],
-            "CLOSING_ASSET_POLICY": audio["CLOSING_ASSET_POLICY"],
-            "GTA_6_SYNTHESIS": audio["GTA_6_SYNTHESIS"],
-            "VICE_CITY_LOCALE": audio["VICE_CITY_LOCALE"],
-            "VICE_CITY_TARGET_IPA": audio["VICE_CITY_TARGET_IPA"],
+            "OWNER_REFERENCE_SOURCE": audio["OWNER_REFERENCE_SOURCE"],
+            "OWNER_REFERENCE_STATUS": audio["OWNER_REFERENCE_STATUS"],
+            "OWNER_REFERENCE_COUNT": audio["OWNER_REFERENCE_COUNT"],
+            "OWNER_REFERENCE_READY": audio["OWNER_REFERENCE_READY"],
+            "OWNER_LANGUAGE": audio["OWNER_LANGUAGE"],
+            "OWNER_ACCENT_LOCALE": audio["OWNER_ACCENT_LOCALE"],
+            "OWNER_VOICE_SELECTION_MODE": audio["OWNER_VOICE_SELECTION_MODE"],
+            "PROVIDER_PRESET_VOICE_ALLOWED": audio["PROVIDER_PRESET_VOICE_ALLOWED"],
+            "PROVIDER_DEFAULT_VOICE_ALLOWED": audio["PROVIDER_DEFAULT_VOICE_ALLOWED"],
+            "GENERIC_VOICE_FALLBACK": audio["GENERIC_VOICE_FALLBACK"],
+            "PTBR_HUMAN_REVIEW_STATUS": audio["PTBR_HUMAN_REVIEW_STATUS"],
+            "PTBR_ACCENT_REVIEW_STATUS": audio["PTBR_ACCENT_REVIEW_STATUS"],
+            "runtime_activation_status": enrollment.get("runtime_activation_status"),
+            "owner_voice_status": enrollment.get("owner_voice_status"),
+            "promotion_allowed": enrollment.get("promotion_allowed"),
+            "latest_voice_identity_match": enrollment.get("latest_voice_identity_match"),
         },
         "spoken_branding_contract": audio["SPOKEN_BRANDING_CONTRACT"],
         "pronunciation_lexicon_version": audio["PRONUNCIATION_LEXICON_VERSION"],
-        "human_approved_asset_hashes": {
-            "assets/branding/audio/g-brand-mixed-approved-20260919.mp3": audio["APPROVED_G_SHA256"],
-            "assets/branding/audio/closing-from-g-approved-20260919.flac": audio["DERIVED_CLOSING_SHA256"],
+        "current_owner_voice_state": {
+            "voice_identity_id": audio["VOICE_IDENTITY_ID"],
+            "reference_source": audio["OWNER_REFERENCE_SOURCE"],
+            "reference_materialization_status": audio["OWNER_REFERENCE_STATUS"],
+            "materialized_reference_count": audio["OWNER_REFERENCE_COUNT"],
+            "runtime_activation_status": enrollment.get("runtime_activation_status"),
+            "owner_voice_status": enrollment.get("owner_voice_status"),
+            "latest_human_voice_review": enrollment.get("latest_human_voice_review"),
+            "latest_voice_identity_match": enrollment.get("latest_voice_identity_match"),
+            "latest_ptbr_accent_review": enrollment.get("latest_ptbr_accent_review"),
+            "promotion_allowed": enrollment.get("promotion_allowed"),
+            "generic_voice_fallback": audio["GENERIC_VOICE_FALLBACK"],
+            "provider_preset_voice_allowed": audio["PROVIDER_PRESET_VOICE_ALLOWED"],
+            "provider_default_voice_allowed": audio["PROVIDER_DEFAULT_VOICE_ALLOWED"],
+        },
+        "historical_voice_lineage": {
+            "status": "HISTORICAL_ONLY_NOT_RUNTIME_AUTHORITY",
+            "legacy_assets_preserved_in_history": True,
+            "current_production_eligible": False,
         },
         "agent_office_contract_version": dict(AGENT_OFFICE_CONTRACT_VERSION),
         "delegated_autonomy_proof_run_id": DELEGATED_AUTONOMY_PROOF_RUN_ID,
@@ -269,7 +295,7 @@ def build_recovery_manifest(
         "artifact_ids","artifact_sha256","database_checkpoint",
         "current_audio_contract_fingerprint","official_voice_profile",
         "spoken_branding_contract","pronunciation_lexicon_version",
-        "human_approved_asset_hashes","agent_office_contract_version",
+        "current_owner_voice_state","historical_voice_lineage","agent_office_contract_version",
         "delegated_autonomy_proof_run_id","harness_authority_contract",
         "tests_required","tests_passed","validity","invalidation_rules",
     ]
