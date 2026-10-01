@@ -2,11 +2,13 @@
   "artifact_refs": [],
   "canonical_base_sha": "daaaa3cabfa1118e5a2384a867e7f787cf28b5d1",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 0,
+  "checkpoint_sequence": 1,
   "completed_steps": [
-    "bootstrap"
+    "bootstrap",
+    "red-checkpoint",
+    "diagnosis"
   ],
-  "current_step": "red-checkpoint",
+  "current_step": "resume",
   "decisions": [
     {
       "decision": "remote-only recovery",
@@ -14,15 +16,19 @@
     }
   ],
   "do_not_repeat": [
-    "bootstrap"
+    "bootstrap",
+    "red-checkpoint",
+    "diagnosis"
   ],
-  "evidence_refs": [],
+  "evidence_refs": [
+    "git:0d957e9ca10646fbe9bf0f4fe0929daa3c4cd9d6"
+  ],
   "goal_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
   "known_failures": [],
-  "latest_verified_checkpoint_id": null,
-  "latest_verified_checkpoint_sha": null,
+  "latest_verified_checkpoint_id": "continuity-real-canary-001-cp-000001-0b7015ea",
+  "latest_verified_checkpoint_sha": "0d957e9ca10646fbe9bf0f4fe0929daa3c4cd9d6",
   "mission_id": "continuity-real-canary-001",
-  "next_step": "diagnosis",
+  "next_step": null,
   "open_blockers": [],
   "plan_steps": [
     "bootstrap",
@@ -43,8 +49,8 @@
   "tests": {
     "affected_subgraph": "NOT_RUN",
     "root": "NOT_RUN",
-    "targeted": "RED"
+    "targeted": "PASS"
   },
-  "updated_at": "2026-10-01T15:30:00+00:00",
-  "validation_state": "RED_ALLOWED"
+  "updated_at": "2026-10-01T15:31:00+00:00",
+  "validation_state": "PARTIAL"
 }

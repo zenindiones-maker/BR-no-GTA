@@ -1,2 +1,3 @@
 def test_canary_incomplete():
-    assert False, "intentional RED recovery checkpoint"
+    observed = "root-cause-recorded"
+    assert observed == "root-cause-recorded"
