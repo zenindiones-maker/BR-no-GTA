@@ -1,32 +1,36 @@
 {
   "agent_execution_identity": "voice-pipeline-development",
   "artifact_refs": [],
-  "authorization_id": "5e14ed29-062e-4194-adbe-f5d45396b27e",
+  "authorization_id": "acc191bc-2b45-4238-88e4-20875e150700",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "8a5f0797f28733cd311f47e82e38e952036fd43864db1d9b5834dd93b406f3d5",
-  "checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000001-313360a1",
-  "checkpoint_kind": "RECOVERY",
-  "checkpoint_sequence": 1,
+  "checkpoint_digest": "f91a7297ad04d4976c55746c0c49edc97f0476cf17d4f5b478d8dec175b03bd6",
+  "checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000002-7f5ec8a0",
+  "checkpoint_kind": "MILESTONE",
+  "checkpoint_sequence": 2,
   "completed_steps": [],
-  "content_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "created_at": "2026-10-01T21:49:01.879475+00:00",
+  "content_digest": "50421052650e8e68ff609cadf15f4afc440a6fe2237c951bc9d3dc328f512aad",
+  "created_at": "2026-10-01T21:55:24.029271+00:00",
   "current_step": "reference-audit",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
-    "ci:36930519179"
+    "ci:36930519179",
+    "staging:c4cb4772f57973039e9b2b7db3aa32a9a961dac2"
   ],
   "excluded_paths": [],
   "failure_state": {},
-  "included_paths": [],
+  "included_paths": [
+    "app/services/owner_voice_professional_pipeline_service.py",
+    "tests/test_owner_voice_professional_pipeline.py"
+  ],
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
   "next_step": "corpus-gap-analysis",
   "open_blockers": [],
-  "previous_checkpoint_sha": null,
-  "progress_ledger_digest": "8dcac47f4d3d479f06b328397405f2f1065db08bc75359197e35aa850d0486d0",
+  "previous_checkpoint_sha": "e4d622e44d7fec204523dff975c41643d81a1401",
+  "progress_ledger_digest": "63996f42b98c871e65b2dd668172c5f0f062db1627b66e2a5a6c2f20ffcc491f",
   "recovery_ref": "recovery/dev/br-owner-v1-professional-ptbr-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
@@ -38,12 +42,12 @@
     "unknown_requires_reconciliation": []
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "initialize-professional-owner-voice-mission",
+  "task_id": "professional-corpus-contracts-v1",
   "test_state": {
     "affected_subgraph": "PENDING",
     "root": "PASS_BASELINE",
-    "targeted": "PENDING"
+    "targeted": "12_PASS"
   },
-  "validation_state": "NOT_STARTED",
+  "validation_state": "PARTIAL",
   "workspace_id": "br-owner-v1-professional-ptbr-v1"
 }

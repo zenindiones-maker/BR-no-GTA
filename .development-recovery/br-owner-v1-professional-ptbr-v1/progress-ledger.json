@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 0,
+  "checkpoint_sequence": 1,
   "completed_steps": [],
   "current_step": "reference-audit",
   "decisions": [
@@ -17,17 +17,29 @@
     {
       "decision": "Pipeline code promotion and voice profile activation are separate gates.",
       "id": "activation"
+    },
+    {
+      "decision": "Professional corpus targets are 30 minute floor, 90 minute target, 180 minute max target, 300 utterances.",
+      "id": "professional-corpus"
+    },
+    {
+      "decision": "Provider/model is implementation; BR_OWNER_V1 identity remains stable.",
+      "id": "provider-separation"
     }
   ],
-  "do_not_repeat": [],
+  "do_not_repeat": [
+    "rebuild-initial-continuity-checkpoint",
+    "recreate-professional-corpus-contract-tests"
+  ],
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
-    "ci:36930519179"
+    "ci:36930519179",
+    "staging:c4cb4772f57973039e9b2b7db3aa32a9a961dac2"
   ],
   "goal_digest": "2b8f10962dd2d81d67ab0c26d5f9223fb0ce02fd52433055ed819428dd4e4a3f",
   "known_failures": [],
-  "latest_verified_checkpoint_id": null,
-  "latest_verified_checkpoint_sha": null,
+  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000001-313360a1",
+  "latest_verified_checkpoint_sha": "e4d622e44d7fec204523dff975c41643d81a1401",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
   "next_step": "corpus-gap-analysis",
   "open_blockers": [],
@@ -46,7 +58,8 @@
     "Voice B/C/Thalita fallback",
     "provider preset/default voice",
     "raw owner audio in Git",
-    "professional-readiness claim without human review"
+    "professional-readiness claim without human review",
+    "single 8-second reference as professional corpus proof"
   ],
   "schema_version": "DevelopmentProgressLedger/v1",
   "side_effects": {
@@ -56,8 +69,8 @@
   "tests": {
     "affected_subgraph": "PENDING",
     "root": "PASS_BASELINE",
-    "targeted": "PENDING"
+    "targeted": "12_PASS"
   },
-  "updated_at": "2026-10-01T21:48:00+00:00",
-  "validation_state": "NOT_STARTED"
+  "updated_at": "2026-10-01T21:55:00+00:00",
+  "validation_state": "PARTIAL"
 }
