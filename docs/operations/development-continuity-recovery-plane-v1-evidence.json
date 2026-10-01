@@ -1,0 +1,89 @@
+{
+  "authorized_crash_consistency": {
+    "ambiguous_checkpoint": 0,
+    "postwrite_log_sha256": "9cf2254b8f320fabf6efa6cdf333f19665e55c48d15c96a2dba3a5974c511021",
+    "prewrite_log_sha256": "cf5e81ed801ef0ca330e834fb6c790425b61f8a715b060106b2e0aab568b91a4",
+    "recovery_ref": "recovery/dev/continuity-crash-auth-canary-002",
+    "remote_after_postwrite_crash": "14dfc1e412432de2d5143064260eb7e2279fb9a1",
+    "remote_after_prewrite_crash": "0fbb63208cbdc70c55abbcacf4bc10eb4a4f4ac3",
+    "resume_json_sha256": "f303a08590a8ee744768f490e77281a9df3380ba0ee77d9f858eabaa8d3da25c",
+    "seed_json_sha256": "75bc30e96c798f7609a4ece41bdb6bc2d6ffb139743f90541ecd93b93743140d",
+    "seed_sha": "0fbb63208cbdc70c55abbcacf4bc10eb4a4f4ac3",
+    "status": "PASS"
+  },
+  "canonical_base_sha": "daaaa3cabfa1118e5a2384a867e7f787cf28b5d1",
+  "concurrent_writer_fencing": {
+    "loser_artifact_sha256": "9a4af7c5aabd3fe47cc856664730405ecd44f19c101bada5a865848190eac47f",
+    "loser_outcome": "RECOVERY_REF_CONFLICT",
+    "recovery_ref": "recovery/dev/continuity-concurrency-canary-001",
+    "status": "PASS",
+    "winner_artifact_sha256": "bcd0f62e04a63c83fe622c7f206d990c797d50eff5c9d601358fa20daaeed62c",
+    "winner_sha": "8e5489c9c9d0243dcc21aa9e55eb1449d3dc46ee"
+  },
+  "dd3_not_started": true,
+  "deterministic_validation": {
+    "command": "python3 -m pytest -q tests/test_development_*.py",
+    "failed": 0,
+    "passed": 38,
+    "status": "PASS"
+  },
+  "evidence_digest": "f0c5c7817724924fbc91bcfa9f8b78efdd998290889732d96899e707df9e325e",
+  "implementation_staging_head": "4e191c634dfbb628af16537f0b98874f86e9b97e",
+  "implementation_staging_ref": "staging/development-continuity-recovery-v1",
+  "invariants": {
+    "active_index_corruption": 0,
+    "ambiguous_checkpoint": 0,
+    "duplicate_completed_work": 0,
+    "duplicate_external_side_effect": 0,
+    "material_progress_lost": 0,
+    "openai_platform_api_calls": 0,
+    "openai_platform_api_spend": 0,
+    "recovery_ref_production_side_effects": 0,
+    "recovery_ref_provider_spend": 0
+  },
+  "loss_recovery": {
+    "context_loss_recovery": "PASS",
+    "duplicate_completed_work": 0,
+    "duplicate_external_side_effect": 0,
+    "first_restore_rto_seconds": 1,
+    "material_progress_lost": 0,
+    "process_loss_recovery": "PASS",
+    "remote_only_resume": "PASS",
+    "restored_source_sha256": "c1f3e72b74fed9854d1d98520f3a40884643ae23c4a31f02ef3d7cfc9116ca8d",
+    "second_restore_rto_seconds": 1,
+    "sprite_loss_recovery": "PASS",
+    "worktree_loss_recovery": "PASS"
+  },
+  "policy": {
+    "checkpoint_history_in_canonical": "FORBIDDEN",
+    "development_continuity_required": true,
+    "force_push_recovery": "FORBIDDEN",
+    "heartbeat_interval_seconds": 90,
+    "recovery_ref_can_trigger_production": false,
+    "recovery_ref_fast_forward_only": true,
+    "remote_read_after_write_required": true,
+    "resume_rto_target_seconds": 600,
+    "rpo_hard_max_seconds": 600,
+    "rpo_target_seconds": 300,
+    "side_effect_replay_from_dev_checkpoint": "FORBIDDEN"
+  },
+  "remote_canary": {
+    "artifact_digests": {
+      "checkpoint_1_json": "d97df1e20f609b957b3ec105387f53104430f40c3df224bdebe727908bfc9453",
+      "checkpoint_2_json": "e5aa2b145ebe03ca0c104510a02f9dfadbad7485a40afa5e4b267d21617052d3",
+      "resume_json": "a7f8e67edda7d279b768e45df2972a0584b6e8eeb3bf09172bd375063fceff40"
+    },
+    "checkpoint_id": "continuity-real-canary-001-cp-000002-eea5cf88",
+    "recovery_commit_sha": "2335fa8e9d433386229615b5b159db0cbf35a251",
+    "recovery_ref": "recovery/dev/continuity-real-canary-001",
+    "recovery_tree_sha": "51a842b3decd2adb8f95c03f8999f57e42b27c10",
+    "remote_readback_status": "VERIFIED",
+    "resume_outcome": "RESUME_READY"
+  },
+  "remote_ref_readback": {
+    "authorized_crash_canary": "14dfc1e412432de2d5143064260eb7e2279fb9a1",
+    "concurrency_canary": "8e5489c9c9d0243dcc21aa9e55eb1449d3dc46ee",
+    "continuity_real_canary": "2335fa8e9d433386229615b5b159db0cbf35a251"
+  },
+  "schema_version": "DevelopmentContinuityRecoveryEvidence/v1"
+}
