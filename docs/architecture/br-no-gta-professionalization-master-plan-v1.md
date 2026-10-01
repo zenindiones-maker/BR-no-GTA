@@ -32,6 +32,10 @@ Maximize sustainable expected YouTube profit and audience value over time, subje
 - **L14 — Analytics / Revenue / Experimentation / Learning:** Appeal-engagement-satisfaction-revenue learning, A/B experiments, postmortems, competence/memory Primary output: VideoBusinessOutcome, Experiment, LearningEpisode. Build order: Continuous.
 - **L15 — Natural Swarm End-to-End Certification:** One literal human goal traverses the entire system with fresh lineage to PRIVATE review Primary output: BRNoGTAOperationalReadinessCertification/v1. Build order: LAST.
 
+## Development continuity foundation
+
+Before Wave B feature work, every long-running development mission uses Development Continuity & Recovery Plane v1: isolated workspace, optional execution snapshot, forward-only recovery/dev/** journal, DevelopmentProgressLedger/v1, shadow-index checkpointing, remote readback verification, optimistic writer fencing and fail-closed canonical promotion. Sprite state is acceleration only, never the sole system of record. Development checkpoint resume cannot replay external side effects.
+
 ## Build waves
 - **Wave A — Execution substrate (L1 + L2):** Prove one real Codex worker, atomic task compiler, context/Skill routing, independent review, durable resume, eval foundation. No DD3 yet.
 - **Wave B — Integrity (L3):** Resolve/classify root-suite failures; full-SHA Actions; reproducibility; secret/supply-chain controls; close G0.

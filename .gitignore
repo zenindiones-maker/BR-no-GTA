@@ -64,3 +64,5 @@ runtime/
 !.checkpoints/current-system-state.json
 !.checkpoints/history/
 !.checkpoints/history/*.json
+
+!docs/operations/development-continuity-recovery-plane-v1-evidence.json

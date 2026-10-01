@@ -100,6 +100,60 @@ AGENT_OFFICE_RECORD = CapabilityRecord(
     health_policy="EXECUTOR_RUNTIME_REQUIRED",
 )
 
+DEVELOPMENT_CHECKPOINT_PERSIST_RECORD = CapabilityRecord(
+    capability_id="development.checkpoint.persist",
+    capability_type="EXECUTOR",
+    domain="development-continuity",
+    implementation="Harness-authorized fail-closed remote development recovery checkpoint persistence",
+    input_contract="DevelopmentProgressLedger/v1 + bounded recovery request + expected previous remote OID",
+    output_contract="DevelopmentRecoveryCheckpoint/v1 with remote write/readback evidence",
+    requirements=(
+        "persisted DeepSeek Harness DEVELOPMENT authorization",
+        "recovery/dev/** target only",
+        "governed path classification and secret scan",
+        "shadow Git index",
+        "remote fast-forward write + readback verification",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("DEVELOPMENT",),
+    policy_tags=("development","continuity","recovery","checkpoint","git","fail-closed"),
+    security_boundary=(
+        "DeepSeek Harness remains sole authority; executor can write only recovery/dev/**, "
+        "never canonical branches, publication, deployment, provider spend or external side-effect replay"
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="GITHUB_GIT_REMOTE",
+    latency_class="LOCAL_PLUS_REMOTE_GIT",
+    quality_class="REMOTE_READBACK_VERIFIED_FAIL_CLOSED",
+    evidence_contract="DevelopmentRecoveryCheckpoint/v1",
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.development_checkpoint_capability_service."
+        "execute_development_checkpoint_persist_capability"
+    ),
+    version="1",
+    provider_id="github-git",
+    side_effects=("recovery ref fast-forward update",),
+    authority="NONE",
+    memory_write="DEVELOPMENT_RECOVERY_ONLY",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+    supports_parallelism=False,
+    supports_retry=True,
+    supports_resume=True,
+    supports_review=True,
+    side_effect_class="BOUNDED_MUTATION",
+    default_read_scope=("app","tests","scripts","docs",".github","config","schemas"),
+    default_write_scope=("recovery/dev/**",),
+    allowed_tools=("git","python"),
+    health_policy="REMOTE_GIT_READBACK_REQUIRED",
+    execution_kind="MUTATION_EXECUTOR",
+    functional_roles=("DEVELOPMENT_CONTINUITY",),
+)
+
+
 HERMES_MULTIAGENT_RUNTIME_RECORD = CapabilityRecord(
     capability_id="collaboration.hermes.execute",
     capability_type="EXECUTOR",
@@ -1432,6 +1486,7 @@ _YOUTUBE_DEPARTMENT_RECORDS = youtube_department_records()
 
 for _record in (
     AGENT_OFFICE_RECORD,
+    DEVELOPMENT_CHECKPOINT_PERSIST_RECORD,
     HERMES_MULTIAGENT_RUNTIME_RECORD,
     ARTIFACT_EVIDENCE_REUSE_RECORD,
     WEB_SEARCH_DISCOVER_RECORD,
