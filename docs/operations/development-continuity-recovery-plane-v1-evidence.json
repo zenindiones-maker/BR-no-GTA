@@ -27,7 +27,7 @@
     "passed": 38,
     "status": "PASS"
   },
-  "evidence_digest": "f0c5c7817724924fbc91bcfa9f8b78efdd998290889732d96899e707df9e325e",
+  "evidence_digest": "7e542aad12de9e75bed7f9db462d79c56b9da1a0f1c219f0dc6f8001b40f5d30",
   "implementation_staging_head": "4e191c634dfbb628af16537f0b98874f86e9b97e",
   "implementation_staging_ref": "staging/development-continuity-recovery-v1",
   "invariants": {
@@ -67,6 +67,13 @@
     "rpo_target_seconds": 300,
     "side_effect_replay_from_dev_checkpoint": "FORBIDDEN"
   },
+  "promotion": {
+    "canonical_head_unchanged": "daaaa3cabfa1118e5a2384a867e7f787cf28b5d1",
+    "checkpoint_history_in_canonical": 0,
+    "dd3_started": false,
+    "first_wave_b_checkpoint_created": false,
+    "status": "BLOCKED"
+  },
   "remote_canary": {
     "artifact_digests": {
       "checkpoint_1_json": "d97df1e20f609b957b3ec105387f53104430f40c3df224bdebe727908bfc9453",
@@ -84,6 +91,31 @@
     "authorized_crash_canary": "14dfc1e412432de2d5143064260eb7e2279fb9a1",
     "concurrency_canary": "8e5489c9c9d0243dcc21aa9e55eb1449d3dc46ee",
     "continuity_real_canary": "2335fa8e9d433386229615b5b159db0cbf35a251"
+  },
+  "root_verification": {
+    "baseline_comparison": {
+      "canonical_base_sha": "daaaa3cabfa1118e5a2384a867e7f787cf28b5d1",
+      "classification": "PRE_EXISTING_BASELINE_FAILURES_NOT_CONTINUITY_REGRESSION",
+      "command_scope": "the exact nine failures from candidate canonical full suite",
+      "exact_same_nine_tests_failed": true,
+      "failed": 9,
+      "result": "9 failed"
+    },
+    "candidate_head": "13f2f306f9f0f7bc7d643f13d30c3052c6c32ba1",
+    "canonical_full_suite": {
+      "duration_seconds": 136.01,
+      "failed": 9,
+      "passed": 3738,
+      "skipped": 7,
+      "status": "FAIL",
+      "subtests_passed": 16,
+      "warnings": 6
+    },
+    "fail_closed_reason": "canonical promotion requires root/integrity verification; baseline is red and failures are not masked or waived",
+    "promotion_blocked": true,
+    "run_id": 36892709532,
+    "status": "BLOCKED_BASELINE_RED",
+    "workflow": "BR-no-GTA CI"
   },
   "schema_version": "DevelopmentContinuityRecoveryEvidence/v1"
 }
