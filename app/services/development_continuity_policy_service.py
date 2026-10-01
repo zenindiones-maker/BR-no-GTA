@@ -70,3 +70,16 @@ def classify_path(path: str) -> str:
     if low.startswith(RECOVERABLE_PREFIXES) or low in {"agents.md", "requirements.txt", "pytest.ini", "pyproject.toml"}:
         return "RECOVERABLE_SOURCE"
     return "UNCLASSIFIED"
+
+
+def recovery_gc_state(
+    *, promoted: bool, current_head_verified: bool,
+    evidence_resolvable: bool, retention_elapsed: bool,
+) -> str:
+    if not promoted:
+        return "ACTIVE"
+    if not current_head_verified:
+        return "PROMOTED"
+    if not retention_elapsed or not evidence_resolvable:
+        return "RETENTION_WINDOW"
+    return "GC_ELIGIBLE"

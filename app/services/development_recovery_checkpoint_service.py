@@ -66,9 +66,14 @@ def _digest_without(payload: dict[str, Any], *keys: str) -> str:
 
 
 class DevelopmentRecoveryCheckpointService:
-    def __init__(self, repo_root: Path | str, *, remote: str = "origin"):
+    def __init__(self, repo_root: Path | str, *, remote: str = "origin", fault_injector=None):
         self.repo = Path(repo_root).resolve()
         self.remote = remote
+        self._fault_injector = fault_injector
+
+    def _fault(self, stage: str) -> None:
+        if self._fault_injector is not None:
+            self._fault_injector(stage)
         if not (self.repo / ".git").exists() and not _run(self.repo, "git", "rev-parse", "--git-dir", check=False):
             raise ValueError("repo_root must be a git worktree")
 
@@ -281,6 +286,7 @@ class DevelopmentRecoveryCheckpointService:
         shadow_paths = sorted(set(paths))
         parent = previous_oid or canonical_base_sha
 
+        self._fault("before_local_snapshot")
         active_index_before = _run(self.repo, "git", "write-tree")
         status_before = _run(self.repo, "git", "status", "--porcelain=v1", "-uall")
         with tempfile.TemporaryDirectory(prefix="br-dev-checkpoint-") as td:
@@ -320,6 +326,7 @@ class DevelopmentRecoveryCheckpointService:
             if cp.returncode != 0:
                 raise RuntimeError((cp.stderr or cp.stdout).strip())
             commit = cp.stdout.strip()
+        self._fault("after_local_snapshot")
 
         if _run(self.repo, "git", "write-tree") != active_index_before:
             raise RuntimeError("ACTIVE_GIT_INDEX_PRESERVED invariant violated")
@@ -334,6 +341,7 @@ class DevelopmentRecoveryCheckpointService:
         expected = self._remote_oid(recovery_ref)
         if expected != previous_oid:
             raise CheckpointConflict("RECOVERY_REF_CONFLICT before remote write")
+        self._fault("before_remote_write")
         push = subprocess.run(
             ["git", "push", self.remote, f"{commit}:refs/heads/{recovery_ref}"],
             cwd=self.repo, text=True, capture_output=True, check=False,
@@ -341,6 +349,7 @@ class DevelopmentRecoveryCheckpointService:
         if push.returncode != 0:
             raise CheckpointConflict("RECOVERY_REF_CONFLICT non-fast-forward remote update rejected")
 
+        self._fault("after_remote_write_before_readback")
         remote_oid = self._remote_oid(recovery_ref)
         if remote_oid != commit:
             raise RuntimeError(f"remote write verification failed: expected={commit} actual={remote_oid}")
@@ -349,6 +358,7 @@ class DevelopmentRecoveryCheckpointService:
         if remote_tree != tree:
             raise RuntimeError("remote tree readback mismatch")
 
+        self._fault("after_readback_before_local_confirmation")
         read_core = self._show_json(remote_oid, core_rel)
         read_ledger = self._show_json(remote_oid, ledger_rel)
         if read_core is None or read_ledger is None:
@@ -364,6 +374,7 @@ class DevelopmentRecoveryCheckpointService:
         read_core["remote_readback_status"] = "VERIFIED"
         logical = self._assemble(remote_oid, read_core, read_ledger, tree_sha=remote_tree)
         logical["checkpoint_write"] = "WRITTEN"
+        self._fault("after_confirmation")
         return logical
 
     def _verify_core(self, core: dict[str, Any]) -> None:
@@ -390,7 +401,10 @@ class DevelopmentRecoveryCheckpointService:
 
     def resume(self, recovery_ref: str, *, canonical_branch: str) -> dict[str, Any]:
         recovery_ref = validate_recovery_ref(recovery_ref)
-        oid, core, ledger = self._latest(recovery_ref)
+        try:
+            oid, core, ledger = self._latest(recovery_ref)
+        except CheckpointCorrupt:
+            return {"outcome": "CHECKPOINT_CORRUPT"}
         if oid is None or core is None or ledger is None:
             return {"outcome": "NO_RECOVERY_STATE"}
         try:
