@@ -1,0 +1,50 @@
+{
+  "artifact_refs": [],
+  "canonical_base_sha": "daaaa3cabfa1118e5a2384a867e7f787cf28b5d1",
+  "canonical_branch": "work/gate6f-analytics-learning",
+  "checkpoint_sequence": 0,
+  "completed_steps": [
+    "bootstrap"
+  ],
+  "current_step": "red-checkpoint",
+  "decisions": [
+    {
+      "decision": "remote-only recovery",
+      "id": "canary"
+    }
+  ],
+  "do_not_repeat": [
+    "bootstrap"
+  ],
+  "evidence_refs": [],
+  "goal_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "known_failures": [],
+  "latest_verified_checkpoint_id": null,
+  "latest_verified_checkpoint_sha": null,
+  "mission_id": "continuity-real-canary-001",
+  "next_step": "diagnosis",
+  "open_blockers": [],
+  "plan_steps": [
+    "bootstrap",
+    "red-checkpoint",
+    "diagnosis",
+    "resume"
+  ],
+  "recovery_ref": "recovery/dev/continuity-real-canary-001",
+  "rejected_directions": [
+    "no external side effects",
+    "no canonical mutation"
+  ],
+  "schema_version": "DevelopmentProgressLedger/v1",
+  "side_effects": {
+    "known_completed": [],
+    "unknown_requires_reconciliation": []
+  },
+  "tests": {
+    "affected_subgraph": "NOT_RUN",
+    "root": "NOT_RUN",
+    "targeted": "RED"
+  },
+  "updated_at": "2026-10-01T15:30:00+00:00",
+  "validation_state": "RED_ALLOWED"
+}

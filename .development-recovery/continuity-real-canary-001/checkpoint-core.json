@@ -1,0 +1,50 @@
+{
+  "agent_execution_identity": "fresh-process",
+  "artifact_refs": [],
+  "authorization_id": "7bc4a97f-19ef-4699-956f-70df26e6751e",
+  "canonical_base_sha": "daaaa3cabfa1118e5a2384a867e7f787cf28b5d1",
+  "canonical_branch": "work/gate6f-analytics-learning",
+  "checkpoint_digest": "c99bd9ff357fe732217118acfd74cb5b2465cd13704fdd931ba3875d985ecc45",
+  "checkpoint_id": "continuity-real-canary-001-cp-000001-0b7015ea",
+  "checkpoint_kind": "RECOVERY",
+  "checkpoint_sequence": 1,
+  "completed_steps": [
+    "bootstrap"
+  ],
+  "content_digest": "36b26b43af49ee27abc8db8a49d47df5a0bb89f0a4620da1d108671559bb0688",
+  "created_at": "2026-10-01T15:46:41.875633+00:00",
+  "current_step": "red-checkpoint",
+  "development_state": "REMOTE_CHECKPOINT_PENDING",
+  "evidence_refs": [],
+  "excluded_paths": [],
+  "failure_state": {},
+  "included_paths": [
+    "tests/recovery_canary/test_continuity_canary.py"
+  ],
+  "large_evidence": [],
+  "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
+  "mission_id": "continuity-real-canary-001",
+  "next_step": "diagnosis",
+  "open_blockers": [],
+  "previous_checkpoint_sha": null,
+  "progress_ledger_digest": "f8a5933a426921118c4e978d25365951087c33464e20e959d1a1191b22a39a8b",
+  "recovery_ref": "recovery/dev/continuity-real-canary-001",
+  "remote_readback_status": "PENDING",
+  "remote_write_status": "PENDING",
+  "resume_instructions": "Load ledger, reconcile canonical and side effects, continue first incomplete authorized step.",
+  "runtime_namespace": "continuity-canary-001",
+  "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
+  "side_effect_state": {
+    "known_completed": [],
+    "unknown_requires_reconciliation": []
+  },
+  "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
+  "task_id": "canary-task",
+  "test_state": {
+    "affected_subgraph": "NOT_RUN",
+    "root": "NOT_RUN",
+    "targeted": "RED"
+  },
+  "validation_state": "RED_ALLOWED",
+  "workspace_id": "canary-worktree-001"
+}
