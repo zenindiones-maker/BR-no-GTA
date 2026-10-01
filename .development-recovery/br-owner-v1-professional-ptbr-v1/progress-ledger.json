@@ -1,0 +1,63 @@
+{
+  "artifact_refs": [],
+  "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
+  "canonical_branch": "work/gate6f-analytics-learning",
+  "checkpoint_sequence": 0,
+  "completed_steps": [],
+  "current_step": "reference-audit",
+  "decisions": [
+    {
+      "decision": "BR_OWNER_V1 is the only production voice identity; no fallback.",
+      "id": "owner-only"
+    },
+    {
+      "decision": "Raw owner audio remains private and never enters Git/public artifacts/logs.",
+      "id": "privacy"
+    },
+    {
+      "decision": "Pipeline code promotion and voice profile activation are separate gates.",
+      "id": "activation"
+    }
+  ],
+  "do_not_repeat": [],
+  "evidence_refs": [
+    "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
+    "ci:36930519179"
+  ],
+  "goal_digest": "2b8f10962dd2d81d67ab0c26d5f9223fb0ce02fd52433055ed819428dd4e4a3f",
+  "known_failures": [],
+  "latest_verified_checkpoint_id": null,
+  "latest_verified_checkpoint_sha": null,
+  "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
+  "next_step": "corpus-gap-analysis",
+  "open_blockers": [],
+  "plan_steps": [
+    "reference-audit",
+    "corpus-gap-analysis",
+    "pipeline-contracts-and-tests",
+    "provider-provenance-and-bakeoff",
+    "automatic-qa",
+    "blind-human-review",
+    "longform-certification",
+    "pipeline-code-promotion"
+  ],
+  "recovery_ref": "recovery/dev/br-owner-v1-professional-ptbr-v1",
+  "rejected_directions": [
+    "Voice B/C/Thalita fallback",
+    "provider preset/default voice",
+    "raw owner audio in Git",
+    "professional-readiness claim without human review"
+  ],
+  "schema_version": "DevelopmentProgressLedger/v1",
+  "side_effects": {
+    "known_completed": [],
+    "unknown_requires_reconciliation": []
+  },
+  "tests": {
+    "affected_subgraph": "PENDING",
+    "root": "PASS_BASELINE",
+    "targeted": "PENDING"
+  },
+  "updated_at": "2026-10-01T21:48:00+00:00",
+  "validation_state": "NOT_STARTED"
+}
