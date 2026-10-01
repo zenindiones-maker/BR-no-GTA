@@ -27,9 +27,29 @@
     "passed": 38,
     "status": "PASS"
   },
-  "evidence_digest": "7e542aad12de9e75bed7f9db462d79c56b9da1a0f1c219f0dc6f8001b40f5d30",
+  "evidence_digest": "b0a96c294b5230d7c11f5be0b65ae4870245e610b694128684a36a6627cffccb",
   "implementation_staging_head": "4e191c634dfbb628af16537f0b98874f86e9b97e",
   "implementation_staging_ref": "staging/development-continuity-recovery-v1",
+  "independent_read_only_review": {
+    "checks": {
+      "capability_authority": "NONE",
+      "capability_publication_authority": "NONE",
+      "capability_write_scope": [
+        "recovery/dev/**"
+      ],
+      "changed_python_compile": "PASS",
+      "changed_python_file_count": 16,
+      "checkpoint_history_in_canonical": 0,
+      "production_code_canonical_mutation_literals": 0,
+      "recovery_workflow_trigger_matches": 0
+    },
+    "findings": [],
+    "note": "canonical full-suite baseline blocker remains authoritative and prevents promotion",
+    "repository_mutation": false,
+    "review_environment": "fresh disposable Sprite br-continuity-readonly-review-001",
+    "review_range": "daaaa3cabfa1118e5a2384a867e7f787cf28b5d1..33073a188f2c80b98cdeaef90b470bc2af1dd8f0",
+    "status": "PASS_WITH_ROOT_BLOCKER_UNCHANGED"
+  },
   "invariants": {
     "active_index_corruption": 0,
     "ambiguous_checkpoint": 0,
