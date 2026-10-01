@@ -83,3 +83,60 @@ def recovery_gc_state(
     if not retention_elapsed or not evidence_resolvable:
         return "RETENTION_WINDOW"
     return "GC_ELIGIBLE"
+
+
+SEMANTIC_CHECKPOINT_EVENTS = frozenset({
+    "BEFORE_FIRST_RISKY_MUTATION",
+    "AFTER_ATOMIC_TASK_COMPLETION",
+    "AFTER_CAUSAL_DIAGNOSIS",
+    "AFTER_SIGNIFICANT_IMPLEMENTATION",
+    "BEFORE_LONG_VALIDATION",
+    "AFTER_MATERIAL_VALIDATION",
+    "BEFORE_AGENT_HANDOFF",
+    "BEFORE_ENVIRONMENT_SWITCH",
+    "BEFORE_SESSION_SHUTDOWN",
+    "BEFORE_ENVIRONMENT_DESTRUCTION",
+    "BEFORE_HUMAN_WAIT_WITH_DIRTY_WORK",
+    "CONTEXT_EXHAUSTION_APPROACHING",
+    "AFTER_MAJOR_GATE_CLOSURE",
+})
+
+
+@dataclass(frozen=True)
+class CheckpointTriggerDecision:
+    should_checkpoint: bool
+    mandatory: bool
+    reason: str
+    run_tests: bool = False
+    implies_durability: bool = False
+
+
+def checkpoint_trigger_decision(
+    *,
+    event: str,
+    dirty: bool,
+    seconds_since_verified_remote: int,
+    policy: DevelopmentContinuityPolicy | None = None,
+) -> CheckpointTriggerDecision:
+    p = policy or DevelopmentContinuityPolicy()
+    normalized = str(event or "").strip().upper()
+    if normalized == "HEARTBEAT":
+        return CheckpointTriggerDecision(False, False, "HEARTBEAT_LIVENESS_ONLY")
+    if not dirty:
+        return CheckpointTriggerDecision(False, False, "NO_DIRTY_MATERIAL_WORK")
+    if normalized in SEMANTIC_CHECKPOINT_EVENTS:
+        mandatory = normalized in {
+            "BEFORE_AGENT_HANDOFF",
+            "BEFORE_SESSION_SHUTDOWN",
+            "BEFORE_ENVIRONMENT_DESTRUCTION",
+            "BEFORE_FIRST_RISKY_MUTATION",
+        }
+        return CheckpointTriggerDecision(True, mandatory, normalized)
+    if normalized == "WATCHDOG":
+        age = max(0, int(seconds_since_verified_remote))
+        if age >= p.rpo_hard_max_seconds:
+            return CheckpointTriggerDecision(True, True, "RPO_HARD_MAX_REACHED")
+        if age >= p.rpo_target_seconds:
+            return CheckpointTriggerDecision(True, False, "RPO_TARGET_REACHED")
+        return CheckpointTriggerDecision(False, False, "RPO_WITHIN_TARGET")
+    return CheckpointTriggerDecision(False, False, "NO_SEMANTIC_CHECKPOINT_TRIGGER")
