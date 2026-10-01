@@ -2,18 +2,24 @@
   "artifact_refs": [],
   "canonical_base_sha": "daaaa3cabfa1118e5a2384a867e7f787cf28b5d1",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 0,
-  "completed_steps": [],
-  "current_step": "seed",
+  "checkpoint_sequence": 1,
+  "completed_steps": [
+    "seed",
+    "prewrite-crash"
+  ],
+  "current_step": "postwrite-crash",
   "decisions": [],
-  "do_not_repeat": [],
+  "do_not_repeat": [
+    "seed",
+    "prewrite-crash"
+  ],
   "evidence_refs": [],
   "goal_digest": "0453758326b5a09eb0c2df5f73365ab9eac1879fe6a3bdbc7e6154fe6aba343e",
   "known_failures": [],
-  "latest_verified_checkpoint_id": null,
-  "latest_verified_checkpoint_sha": null,
+  "latest_verified_checkpoint_id": "continuity-crash-auth-canary-002-cp-000001-c884e858",
+  "latest_verified_checkpoint_sha": "0fbb63208cbdc70c55abbcacf4bc10eb4a4f4ac3",
   "mission_id": "continuity-crash-auth-canary-002",
-  "next_step": "prewrite-crash",
+  "next_step": "resume",
   "open_blockers": [],
   "plan_steps": [
     "seed",
@@ -33,6 +39,6 @@
     "root": "NOT_RUN",
     "targeted": "PASS"
   },
-  "updated_at": "2026-10-01T16:10:00+00:00",
+  "updated_at": "2026-10-01T16:12:00+00:00",
   "validation_state": "PARTIAL"
 }
