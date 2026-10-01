@@ -77,11 +77,15 @@ class ClaudeAuthBoundaryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("REASON=AUTH_STATUS_REJECTED", result.stderr)
 
-    def test_workflow_maps_only_repository_secrets_and_runs_no_prompt(self):
+    def test_gateway_workflow_is_credential_free_static_proof_with_no_model_call(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("secrets.CLAUDE_CODE_OAUTH_TOKEN", text)
-        self.assertIn("secrets.ANTHROPIC_API_KEY", text)
-        self.assertIn("claude_auth_preflight.sh", text)
+        self.assertIn("Claude Code Gateway Boundary", text)
+        self.assertIn("Validate pinned CLI without credentials or model call", text)
+        self.assertIn("claude_omniroute_contract.py", text)
+        self.assertIn("--proof-mode", text)
+        self.assertNotIn("secrets.CLAUDE_CODE_OAUTH_TOKEN", text)
+        self.assertNotIn("secrets.ANTHROPIC_API_KEY", text)
+        self.assertNotIn("claude_auth_preflight.sh", text)
         self.assertNotIn("claude -p", text)
         self.assertNotIn("dangerously-skip-permissions", text)
 

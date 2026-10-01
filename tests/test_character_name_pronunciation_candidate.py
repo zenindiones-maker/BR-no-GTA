@@ -47,8 +47,13 @@ def test_vice_city_target_sound_does_not_create_foreign_language_chunk():
         if span.pronunciation_identity == "vice-city"
     ]
     assert len(vice) == 1
+    assert plan.canonical_text == "A ação continua em Vice City."
+    assert plan.canonical_text_preserved is True
+    assert vice[0].pronunciation_identity == "vice-city"
     assert vice[0].locale == "pt-BR"
-    assert vice[0].synthesis_text == "Váis Síti"
+    assert vice[0].synthesis_text.startswith("Váis Síti")
+    assert vice[0].synthesis_text.endswith(".")
+    assert plan.rendered_text.endswith(".")
     assert plan.foreign_span_count == 0
 
 
