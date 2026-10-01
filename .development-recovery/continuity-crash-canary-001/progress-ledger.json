@@ -2,20 +2,22 @@
   "artifact_refs": [],
   "canonical_base_sha": "daaaa3cabfa1118e5a2384a867e7f787cf28b5d1",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 0,
+  "checkpoint_sequence": 1,
   "completed_steps": [
-    "seed"
+    "seed",
+    "prewrite-crash"
   ],
-  "current_step": "prewrite-crash",
+  "current_step": "postwrite-crash",
   "decisions": [],
   "do_not_repeat": [
-    "seed"
+    "seed",
+    "prewrite-crash"
   ],
   "evidence_refs": [],
   "goal_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
   "known_failures": [],
-  "latest_verified_checkpoint_id": null,
-  "latest_verified_checkpoint_sha": null,
+  "latest_verified_checkpoint_id": "continuity-crash-canary-001-cp-000001-612fda36",
+  "latest_verified_checkpoint_sha": "24f55c21d02fbe1071bb7ead07241c63debc88d9",
   "mission_id": "continuity-crash-canary-001",
   "next_step": "resume",
   "open_blockers": [],
@@ -37,6 +39,6 @@
     "root": "NOT_RUN",
     "targeted": "PASS"
   },
-  "updated_at": "2026-10-01T15:55:00+00:00",
+  "updated_at": "2026-10-01T15:57:00+00:00",
   "validation_state": "PARTIAL"
 }

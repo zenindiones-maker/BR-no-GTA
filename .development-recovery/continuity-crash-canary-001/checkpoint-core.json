@@ -1,19 +1,20 @@
 {
-  "agent_execution_identity": "seed",
+  "agent_execution_identity": "after",
   "artifact_refs": [],
   "authorization_id": "harness-canary-auth",
   "canonical_base_sha": "daaaa3cabfa1118e5a2384a867e7f787cf28b5d1",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "d62d0aa690e5c384f0571e83523ff4920ff00c5a0b5984291d85c2dc2b3d527d",
-  "checkpoint_id": "continuity-crash-canary-001-cp-000001-612fda36",
+  "checkpoint_digest": "9c5fea68e2236f4886075bb8da43094f47748ba49c3fad2b40a7c37d262134e2",
+  "checkpoint_id": "continuity-crash-canary-001-cp-000002-9628429a",
   "checkpoint_kind": "RECOVERY",
-  "checkpoint_sequence": 1,
+  "checkpoint_sequence": 2,
   "completed_steps": [
-    "seed"
+    "seed",
+    "prewrite-crash"
   ],
-  "content_digest": "8b0a02957aa8bfd38c4a5c5e136101e6e351c0a038a6750ca01fc01b171d2aaa",
-  "created_at": "2026-10-01T15:48:14.379837+00:00",
-  "current_step": "prewrite-crash",
+  "content_digest": "8cd5dd7f8c805d263bc3c34c975bae3b193b8d541b21b92dcd55d68df727abb8",
+  "created_at": "2026-10-01T15:48:22.183022+00:00",
+  "current_step": "postwrite-crash",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [],
   "excluded_paths": [],
@@ -26,8 +27,8 @@
   "mission_id": "continuity-crash-canary-001",
   "next_step": "resume",
   "open_blockers": [],
-  "previous_checkpoint_sha": null,
-  "progress_ledger_digest": "661da5dfd653b42c7373a2e2e0d62efaa88fb97ed06d0144d986a9c6f843059f",
+  "previous_checkpoint_sha": "24f55c21d02fbe1071bb7ead07241c63debc88d9",
+  "progress_ledger_digest": "ef7c69dba1308e0e79585d205be2e5a7aaf8651b4182d31e5b957ca40f4b83a2",
   "recovery_ref": "recovery/dev/continuity-crash-canary-001",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
@@ -39,7 +40,7 @@
     "unknown_requires_reconciliation": []
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "seed",
+  "task_id": "after",
   "test_state": {
     "affected_subgraph": "NOT_RUN",
     "root": "NOT_RUN",
