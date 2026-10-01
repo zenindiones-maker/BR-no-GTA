@@ -2,20 +2,24 @@
   "artifact_refs": [],
   "canonical_base_sha": "84f4158a80a7210ee3c375b00a67767305b86fe9",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 0,
-  "completed_steps": [],
-  "current_step": "seed",
+  "checkpoint_sequence": 1,
+  "completed_steps": [
+    "seed"
+  ],
+  "current_step": "compete",
   "decisions": [
     {
-      "writer": "seed"
+      "writer": "writer-a"
     }
   ],
-  "do_not_repeat": [],
+  "do_not_repeat": [
+    "seed"
+  ],
   "evidence_refs": [],
   "goal_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "known_failures": [],
   "latest_verified_checkpoint_id": null,
-  "latest_verified_checkpoint_sha": null,
+  "latest_verified_checkpoint_sha": "4cd1efd20d8b5b909785dd2358141f987985cd63",
   "mission_id": "continuity-promotion-concurrency-001",
   "next_step": null,
   "open_blockers": [],
