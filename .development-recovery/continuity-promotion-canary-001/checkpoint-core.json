@@ -1,0 +1,52 @@
+{
+  "agent_execution_identity": "fresh-persist-process",
+  "artifact_refs": [],
+  "authorization_id": "5bfb011c-d9cd-4dcc-ba85-a2e6b1224ede",
+  "canonical_base_sha": "84f4158a80a7210ee3c375b00a67767305b86fe9",
+  "canonical_branch": "work/gate6f-analytics-learning",
+  "checkpoint_digest": "6c1565c965b6ff7ff717cc91814ae6d18fc8b4fe8dc962cacd208ac0b9cee329",
+  "checkpoint_id": "continuity-promotion-canary-001-cp-000001-d140adc7",
+  "checkpoint_kind": "RECOVERY",
+  "checkpoint_sequence": 1,
+  "completed_steps": [
+    "controlled-change"
+  ],
+  "content_digest": "5dd835f3ae3eb193962def01c9a64139c2aeb156140bec1c0a974554ee367595",
+  "created_at": "2026-10-01T21:32:27.214961+00:00",
+  "current_step": "checkpoint",
+  "development_state": "REMOTE_CHECKPOINT_PENDING",
+  "evidence_refs": [
+    "implementation:9a3fc90404b50a3ddbf59c289fdc401da31cbb0a"
+  ],
+  "excluded_paths": [],
+  "failure_state": {},
+  "included_paths": [
+    "tests/recovery_canary/promotion_canary.py"
+  ],
+  "large_evidence": [],
+  "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
+  "mission_id": "continuity-promotion-canary-001",
+  "next_step": "destroy-worktree",
+  "open_blockers": [],
+  "previous_checkpoint_sha": null,
+  "progress_ledger_digest": "203c7498765d35907cd442db6ac4db58c1c12c691bc8a50aaa12bf9e74071dac",
+  "recovery_ref": "recovery/dev/continuity-promotion-canary-001",
+  "remote_readback_status": "PENDING",
+  "remote_write_status": "PENDING",
+  "resume_instructions": "Load ledger, reconcile canonical and side effects, continue first incomplete authorized step.",
+  "runtime_namespace": "continuity-promo-canary",
+  "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
+  "side_effect_state": {
+    "known_completed": [],
+    "unknown_requires_reconciliation": []
+  },
+  "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
+  "task_id": "fresh-write-readback",
+  "test_state": {
+    "affected_subgraph": "PASS",
+    "root": "PASS_BASELINE",
+    "targeted": "PASS"
+  },
+  "validation_state": "PARTIAL",
+  "workspace_id": "promo-canary-wt"
+}
