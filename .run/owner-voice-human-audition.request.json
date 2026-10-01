@@ -1,0 +1,17 @@
+{
+  "schema_version": "OwnerVoiceHumanAuditionRequest/v1",
+  "voice_identity_id": "BR_OWNER_V1",
+  "requested_action": "SEND_PRIVATE_BLIND_HUMAN_AUDITION_PACK",
+  "requested_by": "OWNER",
+  "human_review_required": true,
+  "production_activation_allowed": false,
+  "shortform_script_policy": "SAME_SCRIPT_45_90_SECONDS_TARGET",
+  "include_real_owner_reference": true,
+  "blind_labels": [
+    "A",
+    "B",
+    "C"
+  ],
+  "longform_optional_after_shortform": true,
+  "requested_at": "2026-10-01"
+}
