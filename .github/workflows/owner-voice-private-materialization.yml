@@ -76,7 +76,7 @@ jobs:
       TOKENIZERS_PARALLELISM: "false"
       BR_OWNER_REFERENCE_QA_CONTEXT: /tmp/br-owner-voice/reference-qa-context.json
       BR_OWNER_PTBR_AUDITION_SET: /tmp/br-owner-voice/ptbr-audition-set.json
-      BR_OWNER_STT_MODEL: large-v3
+      BR_OWNER_STT_MODEL: large-v3-turbo
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -172,6 +172,7 @@ jobs:
           set -euo pipefail
           test -z "$(git status --porcelain --untracked-files=all -- '*.wav' '*.flac' '*.ogg' '*.oga' '*.opus' '*.mp3' '*.m4a' '*.pt')"
           echo "RAW_OWNER_AUDIO_IN_GIT=0"
+          echo "RAW_OWNER_AUDIO_IN_PUBLIC_ARTIFACT=0"
           echo "VOICE_PROMPT_IN_GIT=0"
           echo "OWNER_BIOMETRIC_ACTION_ARTIFACTS=0"
 

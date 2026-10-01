@@ -1,40 +1,53 @@
 {
   "agent_execution_identity": "voice-pipeline-development",
   "artifact_refs": [],
-  "authorization_id": "4f537f24-73fc-4ec5-8534-e0c1b2760d5c",
+  "authorization_id": "47325ac7-f702-43d5-9b43-2a699072168b",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "87411ae8875cc3b83a498485648632cfd2892f01b97f98d1f7c5b21560f1a1b9",
-  "checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000003-279d2617",
-  "checkpoint_kind": "MILESTONE",
-  "checkpoint_sequence": 3,
-  "completed_steps": [],
-  "content_digest": "473aa3c4e81d135764f2d87e63988414f078f5e0df3837e377f672f13dab6336",
-  "created_at": "2026-10-01T22:05:04.570498+00:00",
-  "current_step": "reference-audit",
+  "checkpoint_digest": "586df1fad28ddda4edeff110427d832f0cf6d440885a74a5799920751f963760",
+  "checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000004-f9a634b2",
+  "checkpoint_kind": "RECOVERY",
+  "checkpoint_sequence": 4,
+  "completed_steps": [
+    "professional-corpus-contracts",
+    "private-corpus-audit-contract",
+    "human-audition-pack-contract"
+  ],
+  "content_digest": "7fca1b0f2205dfea545e192d6a552235fabec669729c50e892e80445d7607ea3",
+  "created_at": "2026-10-01T22:26:57.021683+00:00",
+  "current_step": "human-audition-pack",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
-    "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
-    "ci:36930519179",
-    "staging:f5e2d863349e675ef1d2d3219368cf6853b5ea80"
+    "staging:6f3532f902ecbb212dbb8e919d9e1b76298b848f",
+    "run:36933939917",
+    "job:110609848750"
   ],
-  "excluded_paths": [],
+  "excluded_paths": [
+    ".run/owner-voice-human-audition.request.json"
+  ],
   "failure_state": {},
   "included_paths": [
+    ".github/workflows/owner-voice-human-audition-pack.yml",
     ".github/workflows/owner-voice-private-materialization.yml",
-    "app/services/owner_voice_professional_pipeline_service.py",
-    "scripts/owner_voice_professional_corpus_audit.py",
-    "tests/test_owner_voice_professional_audit.py",
-    "tests/test_owner_voice_professional_audit_workflow.py",
-    "tests/test_owner_voice_professional_pipeline.py"
+    "app/services/owner_voice_human_audition_pack_service.py",
+    "scripts/owner_voice_professional_reference_audit.py",
+    "tests/test_owner_voice_human_audition_pack_service.py",
+    "tests/test_owner_voice_professional_materialization_workflow.py"
   ],
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
-  "next_step": "corpus-gap-analysis",
-  "open_blockers": [],
-  "previous_checkpoint_sha": "9ec810ae734c40a6ae7e4b2d94cf29ea86cdb454",
-  "progress_ledger_digest": "e2f26bd2f99997f39d28ee7dda12b5b5ca97528200a671e4f66f1babda325d1c",
+  "next_step": "recover-from-cancelled-audition-run",
+  "open_blockers": [
+    {
+      "cause": "external operation cancellation during STT bootstrap",
+      "id": "run-36933939917",
+      "side_effects": "NONE_AUDIO_DELIVERED",
+      "status": "CANCELLED_BEFORE_AUDIO"
+    }
+  ],
+  "previous_checkpoint_sha": "cbc9db020287c32a9a89c25f1a971ceb685e72ee",
+  "progress_ledger_digest": "d427407d5b3f7158f6b92914244f0e5a209feca7dc11eca8b44ab65e6d8c9366",
   "recovery_ref": "recovery/dev/br-owner-v1-professional-ptbr-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
@@ -46,11 +59,11 @@
     "unknown_requires_reconciliation": []
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "professional-private-corpus-audit-v1",
+  "task_id": "preserve-post-cancel-local-state",
   "test_state": {
-    "affected_subgraph": "PENDING",
+    "affected_subgraph": "69_PASS",
     "root": "PASS_BASELINE",
-    "targeted": "21_PASS"
+    "targeted": "69_PASS"
   },
   "validation_state": "PARTIAL",
   "workspace_id": "br-owner-v1-professional-ptbr-v1"

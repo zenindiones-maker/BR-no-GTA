@@ -2,52 +2,55 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 2,
-  "completed_steps": [],
-  "current_step": "reference-audit",
+  "checkpoint_sequence": 3,
+  "completed_steps": [
+    "professional-corpus-contracts",
+    "private-corpus-audit-contract",
+    "human-audition-pack-contract"
+  ],
+  "current_step": "human-audition-pack",
   "decisions": [
     {
-      "decision": "BR_OWNER_V1 is the only production voice identity; no fallback.",
-      "id": "owner-only"
+      "decision": "Patch bootstrap exposure before retry.",
+      "id": "no-blind-rerun"
     },
     {
-      "decision": "Raw owner audio and private transcripts remain outside Git/public artifacts/logs.",
-      "id": "privacy"
-    },
-    {
-      "decision": "Private materialization must complete professional corpus audit before provider bake-off.",
-      "id": "audit-first"
-    },
-    {
-      "decision": "Reference audit uses Whisper large-v3 class ASR; ASR is QA, not final transcript authority.",
-      "id": "strong-asr"
-    },
-    {
-      "decision": "Unknown single-speaker status is pending verification, not a false hard rejection.",
-      "id": "speaker-pending"
+      "decision": "Ignored local request variant is non-authoritative; authoritative request remains staging commit 6f3532f9.",
+      "id": "request-experiment"
     }
   ],
   "do_not_repeat": [
-    "rebuild-professional-corpus-contracts",
-    "reintroduce-bakeoff-before-corpus-audit"
+    "blind-rerun-36933939917"
   ],
   "evidence_refs": [
-    "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
-    "ci:36930519179",
-    "staging:f5e2d863349e675ef1d2d3219368cf6853b5ea80"
+    "staging:6f3532f902ecbb212dbb8e919d9e1b76298b848f",
+    "run:36933939917",
+    "job:110609848750"
   ],
   "goal_digest": "2b8f10962dd2d81d67ab0c26d5f9223fb0ce02fd52433055ed819428dd4e4a3f",
-  "known_failures": [],
-  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000002-7f5ec8a0",
-  "latest_verified_checkpoint_sha": "9ec810ae734c40a6ae7e4b2d94cf29ea86cdb454",
+  "known_failures": [
+    {
+      "audio_delivery": "NONE",
+      "failure": "CANCELLED_DURING_INSTALL_STRONG_PRIVATE_STT_RUNTIME",
+      "run_id": 36933939917
+    }
+  ],
+  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000003-279d2617",
+  "latest_verified_checkpoint_sha": "cbc9db020287c32a9a89c25f1a971ceb685e72ee",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
-  "next_step": "corpus-gap-analysis",
-  "open_blockers": [],
+  "next_step": "recover-from-cancelled-audition-run",
+  "open_blockers": [
+    {
+      "cause": "external operation cancellation during STT bootstrap",
+      "id": "run-36933939917",
+      "side_effects": "NONE_AUDIO_DELIVERED",
+      "status": "CANCELLED_BEFORE_AUDIO"
+    }
+  ],
   "plan_steps": [
     "reference-audit",
     "corpus-gap-analysis",
-    "pipeline-contracts-and-tests",
-    "provider-provenance-and-bakeoff",
+    "human-audition-pack",
     "automatic-qa",
     "blind-human-review",
     "longform-certification",
@@ -55,12 +58,9 @@
   ],
   "recovery_ref": "recovery/dev/br-owner-v1-professional-ptbr-v1",
   "rejected_directions": [
-    "Voice B/C/Thalita fallback",
-    "provider preset/default voice",
-    "raw owner audio in Git",
-    "professional-readiness claim without human review",
-    "materialize-and-immediately-synthesize",
-    "Whisper tiny/medium as final transcript authority"
+    "blind rerun of 36933939917",
+    "claim audio sent from cancelled run",
+    "promote ignored request experiment"
   ],
   "schema_version": "DevelopmentProgressLedger/v1",
   "side_effects": {
@@ -68,10 +68,10 @@
     "unknown_requires_reconciliation": []
   },
   "tests": {
-    "affected_subgraph": "PENDING",
+    "affected_subgraph": "69_PASS",
     "root": "PASS_BASELINE",
-    "targeted": "21_PASS"
+    "targeted": "69_PASS"
   },
-  "updated_at": "2026-10-01T22:02:00+00:00",
+  "updated_at": "2026-10-01T22:26:00+00:00",
   "validation_state": "PARTIAL"
 }
