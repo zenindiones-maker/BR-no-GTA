@@ -1,0 +1,48 @@
+{
+  "agent_execution_identity": "deepseek-harness/crash-seed",
+  "artifact_refs": [],
+  "authorization_id": "8b36976a-3a6c-4044-8dfa-51d105a4f54b",
+  "canonical_base_sha": "daaaa3cabfa1118e5a2384a867e7f787cf28b5d1",
+  "canonical_branch": "work/gate6f-analytics-learning",
+  "checkpoint_digest": "d693baefa01148a5253ee67cbe0630f38f0021a8fb9a66d088239121c915771b",
+  "checkpoint_id": "continuity-crash-auth-canary-002-cp-000001-c884e858",
+  "checkpoint_kind": "RECOVERY",
+  "checkpoint_sequence": 1,
+  "completed_steps": [],
+  "content_digest": "be08d56a09cd7b47d44009e498eefbf7f05b7d6313aedb58e5adc63367ca4163",
+  "created_at": "2026-10-01T16:09:22.111343+00:00",
+  "current_step": "seed",
+  "development_state": "REMOTE_CHECKPOINT_PENDING",
+  "evidence_refs": [],
+  "excluded_paths": [],
+  "failure_state": {},
+  "included_paths": [
+    "tests/recovery_canary/crash_auth.py"
+  ],
+  "large_evidence": [],
+  "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
+  "mission_id": "continuity-crash-auth-canary-002",
+  "next_step": "prewrite-crash",
+  "open_blockers": [],
+  "previous_checkpoint_sha": null,
+  "progress_ledger_digest": "08ea0c3df1e4497a781db4d1583b201cbe28706a47ccf82f836ae9a028d0eb2c",
+  "recovery_ref": "recovery/dev/continuity-crash-auth-canary-002",
+  "remote_readback_status": "PENDING",
+  "remote_write_status": "PENDING",
+  "resume_instructions": "Load ledger, reconcile canonical and side effects, continue first incomplete authorized step.",
+  "runtime_namespace": "crash-auth",
+  "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
+  "side_effect_state": {
+    "known_completed": [],
+    "unknown_requires_reconciliation": []
+  },
+  "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
+  "task_id": "seed",
+  "test_state": {
+    "affected_subgraph": "NOT_RUN",
+    "root": "NOT_RUN",
+    "targeted": "PASS"
+  },
+  "validation_state": "PARTIAL",
+  "workspace_id": "crash-auth-wt"
+}

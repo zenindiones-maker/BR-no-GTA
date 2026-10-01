@@ -1,0 +1,38 @@
+{
+  "artifact_refs": [],
+  "canonical_base_sha": "daaaa3cabfa1118e5a2384a867e7f787cf28b5d1",
+  "canonical_branch": "work/gate6f-analytics-learning",
+  "checkpoint_sequence": 0,
+  "completed_steps": [],
+  "current_step": "seed",
+  "decisions": [],
+  "do_not_repeat": [],
+  "evidence_refs": [],
+  "goal_digest": "0453758326b5a09eb0c2df5f73365ab9eac1879fe6a3bdbc7e6154fe6aba343e",
+  "known_failures": [],
+  "latest_verified_checkpoint_id": null,
+  "latest_verified_checkpoint_sha": null,
+  "mission_id": "continuity-crash-auth-canary-002",
+  "next_step": "prewrite-crash",
+  "open_blockers": [],
+  "plan_steps": [
+    "seed",
+    "prewrite-crash",
+    "postwrite-crash",
+    "resume"
+  ],
+  "recovery_ref": "recovery/dev/continuity-crash-auth-canary-002",
+  "rejected_directions": [],
+  "schema_version": "DevelopmentProgressLedger/v1",
+  "side_effects": {
+    "known_completed": [],
+    "unknown_requires_reconciliation": []
+  },
+  "tests": {
+    "affected_subgraph": "NOT_RUN",
+    "root": "NOT_RUN",
+    "targeted": "PASS"
+  },
+  "updated_at": "2026-10-01T16:10:00+00:00",
+  "validation_state": "PARTIAL"
+}
