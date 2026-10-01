@@ -17,12 +17,9 @@ ALLOWED_CFG_WEIGHTS = (0.3, 0.5, 0.7)
 
 
 def build_ptbr_audition_text() -> str:
-    return (
-        "Booooa meu povo, aqui é BR no GTA 6. "
-        "Hoje a gente vai testar esta voz em português do Brasil, do jeito que você fala no dia a dia. "
-        "Vice City, Leônida, Rockstar, Lucia e Jason. "
-        "E BR não dorme em Vice City."
-    )
+    from app.services.owner_voice_human_audition_pack_service import build_audition_script
+
+    return build_audition_script(theme="as novidades de GTA 6")
 
 
 def build_generation_kwargs(

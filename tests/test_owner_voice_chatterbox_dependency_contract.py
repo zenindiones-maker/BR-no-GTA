@@ -8,7 +8,7 @@ from packaging.version import Version
 
 ROOT = Path(__file__).resolve().parents[1]
 CONSTRAINTS = ROOT / "integrations/chatterbox-ptbr/constraints.txt"
-WORKFLOW = ROOT / ".github/workflows/owner-voice-private-materialization.yml"
+WORKFLOW = ROOT / ".github/workflows/owner-voice-human-audition-pack.yml"
 
 
 def _constraints() -> dict[str, str]:

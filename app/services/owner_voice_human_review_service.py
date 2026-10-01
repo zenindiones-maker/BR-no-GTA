@@ -11,8 +11,11 @@ _ALLOWED_ACTIONS = {
     "approve": ("APPROVED_PENDING_ACTIVATION", "BLOCKED_PENDING_PROMOTION"),
     "reject_identity": ("REJECTED_IDENTITY", "BLOCKED_REJECTED"),
     "reject_ptbr": ("REJECTED_PTBR", "BLOCKED_REJECTED"),
+    "reject_robotic": ("REJECTED_ROBOTIC", "BLOCKED_REJECTED"),
+    "reject_prosody": ("REJECTED_PROSODY", "BLOCKED_REJECTED"),
+    "reject_pronunciation": ("REJECTED_PRONUNCIATION", "BLOCKED_REJECTED"),
 }
-_ALLOWED_VARIANTS = {"A", "B", "C"}
+_ALLOWED_VARIANTS = {"A", "B", "C", "ALL"}
 
 
 def _default_state_path() -> Path:
