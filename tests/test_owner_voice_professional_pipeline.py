@@ -171,3 +171,12 @@ def test_cache_fingerprint_binds_identity_profile_model_reference_and_pronunciat
         generation_parameters={"temperature":0.9},seed=42)
     assert a != b
     assert len(a)==64
+
+
+def test_unverified_single_speaker_is_pending_not_false_hard_reject():
+    row=_row(10)
+    row["single_speaker"]=None
+    grade=grade_reference(row)
+    assert grade["eligible"] is True
+    assert grade["grades"]["IDENTITY_GRADE"]=="B_PENDING_SINGLE_SPEAKER_VERIFICATION"
+    assert "MULTIPLE_SPEAKERS" not in grade["hard_reject_reasons"]
