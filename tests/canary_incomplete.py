@@ -1,1 +1,1 @@
-VALUE = "checkpoint-one"
+VALUE = "checkpoint-two"

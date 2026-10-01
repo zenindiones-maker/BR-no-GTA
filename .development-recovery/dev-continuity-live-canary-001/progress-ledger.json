@@ -2,18 +2,29 @@
   "artifact_refs": [],
   "canonical_base_sha": "daaaa3cabfa1118e5a2384a867e7f787cf28b5d1",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 0,
-  "completed_steps": [],
-  "current_step": "checkpoint-one",
-  "decisions": [],
-  "do_not_repeat": [],
-  "evidence_refs": [],
+  "checkpoint_sequence": 1,
+  "completed_steps": [
+    "checkpoint-one"
+  ],
+  "current_step": "checkpoint-two",
+  "decisions": [
+    {
+      "decision": "remote-only resume",
+      "id": "d1"
+    }
+  ],
+  "do_not_repeat": [
+    "checkpoint-one"
+  ],
+  "evidence_refs": [
+    "canary:checkpoint-one"
+  ],
   "goal_digest": "1111111111111111111111111111111111111111111111111111111111111111",
   "known_failures": [],
-  "latest_verified_checkpoint_id": null,
-  "latest_verified_checkpoint_sha": null,
+  "latest_verified_checkpoint_id": "prior",
+  "latest_verified_checkpoint_sha": "49392af61a2343a45bdea4ad1f731bac9b2cee1c",
   "mission_id": "dev-continuity-live-canary-001",
-  "next_step": "checkpoint-two",
+  "next_step": "resume",
   "open_blockers": [],
   "plan_steps": [
     "checkpoint-one",
@@ -30,8 +41,8 @@
   "tests": {
     "affected_subgraph": "NOT_RUN",
     "root": "NOT_RUN",
-    "targeted": "RED_ALLOWED"
+    "targeted": "PASS"
   },
-  "updated_at": "2026-10-01T15:30:00+00:00",
-  "validation_state": "RED_ALLOWED"
+  "updated_at": "2026-10-01T15:31:00+00:00",
+  "validation_state": "PARTIAL"
 }
