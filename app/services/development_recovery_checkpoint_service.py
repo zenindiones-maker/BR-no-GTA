@@ -342,6 +342,7 @@ class DevelopmentRecoveryCheckpointService:
         if expected != previous_oid:
             raise CheckpointConflict("RECOVERY_REF_CONFLICT before remote write")
         self._fault("before_remote_write")
+        self._fault("during_remote_write")
         push = subprocess.run(
             ["git", "push", self.remote, f"{commit}:refs/heads/{recovery_ref}"],
             cwd=self.repo, text=True, capture_output=True, check=False,
@@ -397,6 +398,81 @@ class DevelopmentRecoveryCheckpointService:
         result["recovery_commit_sha"] = oid
         result["recovery_tree_sha"] = tree
         result["progress_ledger"] = ledger
+        return result
+
+    def restore(self, recovery_ref: str, *, canonical_branch: str) -> dict[str, Any]:
+        recovery_ref = validate_recovery_ref(recovery_ref)
+        status = _run(self.repo, "git", "status", "--porcelain=v1", "-uall")
+        if status:
+            return {
+                "outcome": "RECONCILIATION_REQUIRED",
+                "reason": "DIRTY_WORKSPACE",
+                "dirty_status": status.splitlines(),
+            }
+
+        resumed = self.resume(recovery_ref, canonical_branch=canonical_branch)
+        if resumed.get("outcome") != "RESUME_READY":
+            return resumed
+
+        checkpoint = dict(resumed["checkpoint"])
+        base = str(checkpoint["canonical_base_sha"])
+        oid = str(checkpoint["recovery_commit_sha"])
+        local_head = _run(self.repo, "git", "rev-parse", "HEAD")
+        if local_head != base:
+            return {
+                "outcome": "RECONCILIATION_REQUIRED",
+                "reason": "WORKSPACE_BASE_MISMATCH",
+                "workspace_head": local_head,
+                "canonical_base_sha": base,
+            }
+
+        restored_paths: list[str] = []
+        for rel in checkpoint.get("included_paths", []):
+            rel = normalize_repo_path(str(rel))
+            if rel.startswith(".development-recovery/"):
+                continue
+            target = self.repo / rel
+            ls = _run(self.repo, "git", "ls-tree", oid, "--", rel, check=False)
+            if not ls:
+                if target.is_symlink() or target.is_file():
+                    target.unlink()
+                elif target.is_dir():
+                    import shutil
+                    shutil.rmtree(target)
+                restored_paths.append(rel)
+                continue
+
+            first = ls.splitlines()[0]
+            try:
+                mode, obj_type, obj_sha, _name = first.split(None, 3)
+            except ValueError as exc:
+                raise CheckpointCorrupt(f"invalid tree entry for {rel}") from exc
+            if obj_type != "blob":
+                raise CheckpointCorrupt(f"non-blob recovery path unsupported: {rel}")
+            blob = subprocess.run(
+                ["git", "cat-file", "blob", obj_sha],
+                cwd=self.repo, capture_output=True, check=False,
+            )
+            if blob.returncode != 0:
+                raise CheckpointCorrupt(f"missing recovery blob: {rel}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists() or target.is_symlink():
+                if target.is_dir() and not target.is_symlink():
+                    import shutil
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+            if mode == "120000":
+                os.symlink(blob.stdout.decode("utf-8"), target)
+            else:
+                target.write_bytes(blob.stdout)
+                target.chmod(0o755 if mode == "100755" else 0o644)
+            restored_paths.append(rel)
+
+        result = dict(resumed)
+        result["restored"] = True
+        result["restored_paths"] = restored_paths
+        result["workspace_base_sha"] = base
         return result
 
     def resume(self, recovery_ref: str, *, canonical_branch: str) -> dict[str, Any]:
