@@ -1,4 +1,4 @@
-name: Owner Voice Private Materialization
+name: Owner Voice Private Materialization & Professional Corpus Audit
 
 on:
   workflow_dispatch:
@@ -64,7 +64,7 @@ jobs:
           echo "OWNER_VOICE_PRIVATE_MATERIALIZATION_CONTRACT=PASS"
 
   materialize:
-    name: Materialize Telegram owner voice and synthesize pt-BR auditions
+    name: Materialize Telegram owner voice and audit professional corpus
     needs: contract
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -76,7 +76,7 @@ jobs:
       TOKENIZERS_PARALLELISM: "false"
       BR_OWNER_REFERENCE_QA_CONTEXT: /tmp/br-owner-voice/reference-qa-context.json
       BR_OWNER_PTBR_AUDITION_SET: /tmp/br-owner-voice/ptbr-audition-set.json
-      BR_OWNER_STT_MODEL: medium
+      BR_OWNER_STT_MODEL: large-v3
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -149,83 +149,22 @@ jobs:
             "faster-whisper==1.2.0" \
             "requests>=2.32,<3"
 
-      - name: Quality-rank all real Telegram owner references
+      - name: Audit complete private owner corpus with strong PT-BR ASR
         env:
           PYTHONPATH: ${{ github.workspace }}
+          BR_OWNER_PROFESSIONAL_PUBLIC_OUT: /tmp/br-owner-professional-public
         run: |
           set -euo pipefail
-          /tmp/br-owner-stt-venv/bin/python scripts/owner_voice_reference_qa.py
+          /tmp/br-owner-stt-venv/bin/python scripts/owner_voice_professional_corpus_audit.py
+          echo "OWNER_VOICE_BAKEOFF=BLOCKED_UNTIL_CORPUS_AUDIT_RECONCILED"
 
-      - name: Install isolated Chatterbox Brazilian Portuguese clone runtime
-        run: |
-          set -euo pipefail
-          python -m venv /tmp/br-owner-chatterbox-venv
-          PY=/tmp/br-owner-chatterbox-venv/bin/python
-          CONSTRAINTS=integrations/chatterbox-ptbr/constraints.txt
-
-          "$PY" -m pip install --disable-pip-version-check -q \
-            --constraint "$CONSTRAINTS" \
-            --report /tmp/br-owner-chatterbox-install-report.json \
-            numpy \
-            librosa \
-            s3tokenizer \
-            torch \
-            torchaudio \
-            transformers \
-            diffusers \
-            conformer \
-            safetensors \
-            spacy-pkuseg \
-            pykakasi \
-            gradio \
-            pyloudnorm \
-            omegaconf \
-            "resemble-perth @ git+https://github.com/resemble-ai/Perth.git@ff1c8ac55a976971245cdd53c18d6131ca00d993"
-
-          "$PY" -m pip install --disable-pip-version-check -q --no-deps \
-            "git+https://github.com/resemble-ai/chatterbox.git@5de7a54aa4e5e2baadb0182dde554908b48b85c2"
-
-          "$PY" -m pip check
-
-          "$PY" - <<'PY'
-          from importlib.metadata import version
-          import torch
-          import chatterbox
-          import transformers
-          import huggingface_hub
-          import diffusers
-
-          assert version("transformers") == "5.2.0"
-          assert version("huggingface-hub") == "1.3.5"
-          assert version("diffusers") == "0.29.0"
-          assert version("torch") == "2.6.0"
-          assert version("torchaudio") == "2.6.0"
-
-          print("CHATTERBOX_IMPORT=PASS")
-          print("CHATTERBOX_DEPENDENCY_CHECK=PASS")
-          print("TRANSFORMERS_VERSION=" + transformers.__version__)
-          print("HUGGINGFACE_HUB_VERSION=" + huggingface_hub.__version__)
-          print("DIFFUSERS_VERSION=" + diffusers.__version__)
-          print("TORCH_VERSION=" + torch.__version__)
-          print("CUDA_AVAILABLE=" + str(torch.cuda.is_available()).lower())
-          print("CHATTERBOX_CODE_REVISION=5de7a54aa4e5e2baadb0182dde554908b48b85c2")
-          print("CHATTERBOX_TARGET_MODEL=ResembleAI/Chatterbox-Multilingual-pt-br")
-          print("CHATTERBOX_TARGET_LOCALE=pt-BR")
-          PY
-
-      - name: Clone owner voice with dedicated Brazilian Portuguese model
-        env:
-          PYTHONPATH: ${{ github.workspace }}
-        run: |
-          set -euo pipefail
-          /tmp/br-owner-chatterbox-venv/bin/python scripts/owner_voice_chatterbox_ptbr_audition.py
-
-      - name: Verify Portuguese output and deliver only passing auditions
-        env:
-          PYTHONPATH: ${{ github.workspace }}
-        run: |
-          set -euo pipefail
-          /tmp/br-owner-stt-venv/bin/python scripts/owner_voice_ptbr_audition_review.py
+      - name: Upload sanitized professional corpus evidence only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: owner-voice-professional-corpus-audit-public
+          path: /tmp/br-owner-professional-public
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Verify repository contains no owner biometric material
         if: ${{ always() }}
