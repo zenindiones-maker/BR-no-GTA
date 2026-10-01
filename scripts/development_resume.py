@@ -17,9 +17,13 @@ def main() -> int:
     p.add_argument("--repo-root", default=".")
     p.add_argument("--recovery-ref", required=True)
     p.add_argument("--canonical-branch", default="work/gate6f-analytics-learning")
+    p.add_argument("--restore", action="store_true", help="materialize verified recoverable source into a clean base workspace")
     args=p.parse_args()
-    result=DevelopmentRecoveryCheckpointService(Path(args.repo_root)).resume(
-        args.recovery_ref,canonical_branch=args.canonical_branch
+    service=DevelopmentRecoveryCheckpointService(Path(args.repo_root))
+    result=(
+        service.restore(args.recovery_ref,canonical_branch=args.canonical_branch)
+        if args.restore
+        else service.resume(args.recovery_ref,canonical_branch=args.canonical_branch)
     )
     print(json.dumps(result,ensure_ascii=False,sort_keys=True,indent=2))
     print("DEVELOPMENT_RESUME_OUTCOME=" + str(result["outcome"]))
