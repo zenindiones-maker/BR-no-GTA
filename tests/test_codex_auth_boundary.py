@@ -344,7 +344,12 @@ def test_current_plus_ci_auth_prioritizes_existing_tuxevil_route_without_wif_reg
     assert "AUTH_JSON_COPIED_TO_GITHUB=NO" in current
     assert "DEVICE_AUTH_IN_CI=NO" in current
 
-    assert "uses: openai/codex-action@v1" in tuxevil
+    pinned_codex_action = (
+        "uses: openai/codex-action@"
+        "86365089eb2b84e0a8fb0717b304f8bdcb13b20e # v1"
+    )
+    assert pinned_codex_action in tuxevil
+    assert "uses: openai/codex-action@v1" not in tuxevil
     assert (
         'responses-api-endpoint: "http://127.0.0.1:51200/v1/responses"'
         in tuxevil

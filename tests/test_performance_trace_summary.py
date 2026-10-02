@@ -186,7 +186,9 @@ def test_dependency_cache_reuses_exact_canonical_environment_fail_closed():
     assert "base_manifest=requirements.txt" in contract
     assert "bootstrap=python -m venv .venv;" in contract
 
-    assert "uses: actions/cache@v4" in operational
+    pinned_cache = "uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4"
+    assert pinned_cache in operational
+    assert "uses: actions/cache@v4" not in operational
     assert "id: canonical-venv-cache" in operational
     cache_block = operational[
         operational.index("Restore content-addressed canonical test environment"):

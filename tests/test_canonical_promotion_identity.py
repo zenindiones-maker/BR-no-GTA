@@ -37,9 +37,10 @@ def request(**overrides):
     return CanonicalPromotionRequest.create(**data)
 
 
-def test_canonical_promotion_request_accepts_only_canonical_refs():
+def test_canonical_promotion_request_accepts_only_development_canonical_ref():
     assert request().target_ref == WORK_REF
-    assert request(target_ref=MAIN_REF).target_ref == MAIN_REF
+    with pytest.raises(ValueError, match="TARGET_REF_NOT_ALLOWED"):
+        request(target_ref=MAIN_REF)
     with pytest.raises(ValueError, match="TARGET_REF_NOT_ALLOWED"):
         request(target_ref="refs/heads/staging/security-guardian-foundation-v1")
 
@@ -190,7 +191,6 @@ def test_final_ruleset_targets_only_canonical_branches_and_only_deploy_key_bypas
     assert payload["target"] == "branch"
     assert payload["enforcement"] == "active"
     assert payload["conditions"]["ref_name"]["include"] == [
-        "~DEFAULT_BRANCH",
         "refs/heads/work/gate6f-analytics-learning",
     ]
     assert payload["conditions"]["ref_name"]["exclude"] == []
@@ -202,3 +202,35 @@ def test_final_ruleset_targets_only_canonical_branches_and_only_deploy_key_bypas
     }
     assert all(actor["actor_type"] not in {"User", "RepositoryRole", "OrganizationAdmin"}
                for actor in payload["bypass_actors"])
+
+
+def test_canonical_promotion_workflow_pins_official_github_ed25519_host_key():
+    text = PROMOTION_WORKFLOW.read_text(encoding="utf-8")
+    assert "ssh-keyscan" not in text
+    assert "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" in text
+    assert "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU" in text
+    assert "StrictHostKeyChecking=yes" in text
+    assert "refs/heads/main" not in text
+
+
+def test_canonical_acceptance_ruleset_is_layered_without_deploy_key_bypass():
+    from app.services.canonical_promotion_identity_service import canonical_acceptance_ruleset_payload
+    payload = canonical_acceptance_ruleset_payload()
+    assert payload["name"] == "BR canonical development acceptance"
+    assert payload["target"] == "branch"
+    assert payload["enforcement"] == "active"
+    assert payload["bypass_actors"] == []
+    assert payload["conditions"]["ref_name"]["include"] == [
+        "refs/heads/work/gate6f-analytics-learning",
+    ]
+    rules = {rule["type"]: rule for rule in payload["rules"]}
+    assert "deletion" in rules
+    assert "non_fast_forward" in rules
+    assert rules["required_status_checks"]["parameters"]["required_status_checks"] == [
+        {"context": "Deterministic policy contracts"}
+    ]
+    assert rules["code_scanning"]["parameters"]["code_scanning_tools"] == [{
+        "tool": "CodeQL",
+        "alerts_threshold": "errors",
+        "security_alerts_threshold": "high_or_higher",
+    }]

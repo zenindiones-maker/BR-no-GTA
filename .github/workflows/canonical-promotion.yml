@@ -9,7 +9,6 @@ on:
         type: choice
         options:
           - refs/heads/work/gate6f-analytics-learning
-          - refs/heads/main
       staging_ref:
         description: Exact staging ref containing candidate
         required: true
@@ -120,10 +119,17 @@ jobs:
           key="$RUNNER_TEMP/br-canonical-promotion-key"
           known="$RUNNER_TEMP/br-canonical-promotion-known-hosts"
           printf '%s\n' "$PROMOTION_KEY" > "$key"
-          ssh-keyscan -t ed25519 github.com > "$known"
+          printf '%s\n' 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > "$known"
           chmod 600 "$key" "$known"
           test -s "$key"
           test -s "$known"
+          expected_fingerprint='SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU'
+          observed_fingerprint="$(ssh-keygen -lf "$known" -E sha256 | awk '{print $2}')"
+          test "$observed_fingerprint" = "$expected_fingerprint"
+          echo "KNOWN_HOST_SOURCE=PINNED_OFFICIAL"
+          echo "KNOWN_HOST_FINGERPRINT_VERIFICATION=PASS"
+          echo "DYNAMIC_SSH_TRUST_BOOTSTRAP=0"
+          echo "STRICT_HOST_KEY_CHECKING=YES"
 
       - name: Fast-forward canonical ref with exact bindings
         env:
