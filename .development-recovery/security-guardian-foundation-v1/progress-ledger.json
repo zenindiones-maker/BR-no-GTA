@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 26,
+  "checkpoint_sequence": 27,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -67,9 +67,10 @@
     "root-suite-revalidation-pass",
     "independent-review-runtime-boundary-red-green",
     "independent-review-runtime-boundary-focused-validation",
-    "root-suite-cp26-temp-volume-failure-evidence-persisted"
+    "root-suite-cp26-temp-volume-failure-evidence-persisted",
+    "root-suite-cp26-142-errors-evidence-persisted"
   ],
-  "current_step": "root-suite-failure-root-cause-analysis",
+  "current_step": "root-suite-142-errors-causal-analysis",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -253,16 +254,22 @@
     "root-suite-cp26:/tmp=100_percent_available_approx_880K",
     "root-suite-cp26:/tmp/pytest-of-sprite=approx_11G",
     "root-suite-cp26:log-sha256=407e7cf3b174b701bb0313b1970a18864fd4ebffcdfade2b8cb218376c01f464",
-    "root-suite-cp26:errors-grouped=PYTEST_TMP_VOLUME_EXHAUSTION_ENVIRONMENTAL_SETUP_FAILURE"
+    "root-suite-cp26:errors-grouped=PYTEST_TMP_VOLUME_EXHAUSTION_ENVIRONMENTAL_SETUP_FAILURE",
+    "root-suite-cp26:3675_PASS_7_SKIP_142_ERROR",
+    "root-suite-cp26:first-traceback=OSError_ERRNO28_NO_SPACE_LEFT_ON_DEVICE",
+    "root-suite-cp26:tmp=100_percent_used_avail_880K",
+    "root-suite-cp26:pytest_tmp=11G",
+    "root-suite-cp26:evidence=DevelopmentRecoveryCheckpoint.failure_state",
+    "root-suite-cp26:evidence=DevelopmentProgressLedger.tests+evidence_refs"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000026-a8bf5d4b",
-  "latest_verified_checkpoint_sha": "6588d22e6c00833cdb04749b6d0c36f0bf2f4a0d",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000027-4bff60a5",
+  "latest_verified_checkpoint_sha": "5185cc69720847ef573082bb2069d0949bad31e4",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "compare post-last-pass delta, confirm temp-volume exhaustion as grouped cause, run focused fixture/test verification after cleanup; only then rerun full root suite",
+  "next_step": "compare post-last-pass delta, group setup errors by root cause, then run focused TDD only if a code defect is proven",
   "open_blockers": [
-    "ROOT_SUITE_TEMP_VOLUME_EXHAUSTION_ENVIRONMENTAL_SETUP_FAILURE"
+    "ROOT_SUITE_FAIL_142_ERRORS_CAUSAL_ANALYSIS"
   ],
   "plan_steps": [
     "authority-contract",
@@ -371,6 +378,7 @@
     "root_suite_candidate_tree": "520a1a277c3a09a6ea119d72446f0dcebb6025e4",
     "root_suite_cluster_affected_families": "242_PASS",
     "root_suite_cluster_focused": "3_PASS",
+    "root_suite_duration_seconds": "241.32",
     "root_suite_errors": "142",
     "root_suite_exit_code": "0",
     "root_suite_failed": "71",
@@ -394,6 +402,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "updated_at": "2026-10-02T10:50:52.949550+00:00",
-  "validation_state": "ROOT_SUITE_FAIL_142_ERRORS_GROUPED_ENVIRONMENTAL_ROOT_CAUSE"
+  "updated_at": "2026-10-02T10:51:14.605171+00:00",
+  "validation_state": "ROOT_SUITE_FAIL_3675_PASS_7_SKIP_142_ERROR_EVIDENCE_PERSISTED"
 }
