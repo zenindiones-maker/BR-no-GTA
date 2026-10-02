@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "security-foundation-development",
   "artifact_refs": [],
-  "authorization_id": "91eddecc-d4d8-4ade-a83d-8192f20fe36c",
+  "authorization_id": "f2ddb01d-096f-4ef3-8406-2e403556d65d",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "25c2a21c796b4547d027ee85d4d613c23c92c1649cab2f9e0ce741d073ee2820",
-  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000038-6cbf93d2",
+  "checkpoint_digest": "b42dc3d5f86e08030a33f41e12a071131e629ebbb6304a8990af84baecc6f721",
+  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000039-0ed202b5",
   "checkpoint_kind": "RECOVERY",
-  "checkpoint_sequence": 38,
+  "checkpoint_sequence": 39,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -99,11 +99,14 @@
     "clean-candidate-recovery-history-exclusion-proved",
     "promotion-readiness-v2-source-hardening-focused-green",
     "clean-candidate-root-suite-failure-persisted",
-    "runner-alias-inventory-tdd-focused-green"
+    "runner-alias-inventory-tdd-focused-green",
+    "runner-alias-inventory-fix-published",
+    "clean-candidate-affected-subgraph-pass",
+    "clean-candidate-root-suite-pass"
   ],
   "content_digest": "9c7d414952c40a727fc43c10848b3a5d4e087cd87d9f519b8d6e87d5d318b183",
-  "created_at": "2026-10-02T14:38:16.994518+00:00",
-  "current_step": "publish-runner-alias-inventory-fix-to-clean-staging",
+  "created_at": "2026-10-02T15:11:35.712131+00:00",
+  "current_step": "exact-clean-candidate-scanners",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
@@ -364,13 +367,17 @@
     "root-suite-v2:failure=test_harness_ecosystem_inventory.worker_engine_classification",
     "root-suite-v2:root-cause=RUNNER_ALIAS_INVENTORY_STALE",
     "tdd:runner-alias-inventory=FOCUSED_1_PASS",
-    "root-suite-v2:evidence=docs/security/evidence/security-promotion-readiness-v2-root-suite-failure.jsonl"
+    "root-suite-v2:evidence=docs/security/evidence/security-promotion-readiness-v2-root-suite-failure.jsonl",
+    "clean-candidate-final:6436992a4b31debccd7f31f6396c58bdded50b3f",
+    "clean-candidate-final-tree:fbb07351d95d12f946c6c873a07512af4980c19b",
+    "clean-diff-final-sha256:43b897ac14e0f547f0133e21ac88642c68e51c49c861df0db4440330d1f02fbc",
+    "affected-security-subgraph-v2:170_PASS",
+    "root-suite-v2-final:3829_PASS_7_SKIP_0_FAIL_exit0",
+    "root-suite-v2-final:duration_seconds=253.52",
+    "root-suite-v2-history:3828_PASS_7_SKIP_1_FAIL_preserved"
   ],
   "excluded_paths": [],
-  "failure_state": {
-    "root_cause": "RUNNER_ALIAS_INVENTORY_STALE",
-    "root_suite": "3828_PASS_7_SKIP_1_FAIL"
-  },
+  "failure_state": {},
   "included_paths": [
     ".github/CODEOWNERS",
     "SECURITY.md",
@@ -409,16 +416,14 @@
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "fast-forward staging with two-file alias inventory fix, recompute exact SHA/tree/diff, rerun focused affected subgraph then root suite; scanners remain pending",
-  "open_blockers": [
-    "ROOT_SUITE_FAIL_RUNNER_ALIAS_INVENTORY_STALE"
-  ],
-  "previous_checkpoint_sha": "56cea48463f023c7b3fb2cbabee84f90d94782b8",
-  "progress_ledger_digest": "04a05af8ca4585bfbd7312b29817ee7ef3b88c71f3f3ee91af9b5f3d4c7bcb25",
+  "next_step": "run CodeQL exact-candidate binding, Zizmor HIGH=0, secret regression and OSV dependency delta on final clean SHA; then independent read-only review",
+  "open_blockers": [],
+  "previous_checkpoint_sha": "75f4078b280be466d4f02ccd2bfc2ecd5662adcd",
+  "progress_ledger_digest": "f68d117cc2ffee6ea88756e86e61eb7102ca79cbcf24fbdd0bd6fb36e8aa22da",
   "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "Root suite on clean staging SHA 9dbc987334de5527f90f3c80867fa48b1005e6fc produced one causal inventory-contract failure after 3828 passes. Focused TDD is GREEN: codex-security-reviewer is a runner alias of physical engine codex-independent-reviewer. Publish only scripts/audit_harness_ecosystem.py and tests/test_harness_ecosystem_inventory.py by fast-forward/CAS, then rerun focused affected subgraph and root suite. Do not run scanners until root suite passes. Do not promote.",
+  "resume_instructions": "Final clean candidate staging SHA 6436992a4b31debccd7f31f6396c58bdded50b3f tree fbb07351d95d12f946c6c873a07512af4980c19b diff 43b897ac14e0f547f0133e21ac88642c68e51c49c861df0db4440330d1f02fbc has affected security subgraph 170 PASS and root suite 3829 PASS / 7 skipped / exit0. Prior one-failure history is preserved. Run exact-candidate scanners next. Do not promote.",
   "runtime_namespace": "security-guardian-foundation-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -437,9 +442,9 @@
     "unknown_requires_reconciliation": []
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "checkpoint-root-suite-v2-single-failure-before-staging-fix",
+  "task_id": "checkpoint-clean-candidate-root-suite-pass-before-scanners",
   "test_state": {
-    "affected_security_subgraph": "152_PASS",
+    "affected_security_subgraph": "170_PASS",
     "canonical_promotion_deploy_key_probe_create": "PASS",
     "canonical_promotion_deploy_key_probe_delete": "PASS",
     "canonical_promotion_diff_check": "PASS",
@@ -458,9 +463,9 @@
     "canonical_promotion_write_deploy_key_count": "1",
     "checkpoint_history_in_canonical": "0",
     "clean_candidate_pre_fix_sha": "9dbc987334de5527f90f3c80867fa48b1005e6fc",
-    "clean_candidate_sha": "4bd57868ceee55a59e382b5f758ad02bb152e14f",
-    "clean_candidate_tree": "a30cbaa3b0967ae59a6876d85ea43917cb1e7b76",
-    "clean_diff_sha256": "c738653ab7d00c123d7733bf0b4bcc6714169e13fcb251f950cd397e80dd65d8",
+    "clean_candidate_sha": "6436992a4b31debccd7f31f6396c58bdded50b3f",
+    "clean_candidate_tree": "fbb07351d95d12f946c6c873a07512af4980c19b",
+    "clean_diff_sha256": "43b897ac14e0f547f0133e21ac88642c68e51c49c861df0db4440330d1f02fbc",
     "codeql_actions_candidate_high": "4",
     "codeql_actions_candidate_results": "4",
     "codeql_actions_final_results": "0",
@@ -591,12 +596,12 @@
         "subtests_passed": 16
       }
     },
-    "root_suite_v2_duration_seconds": "286.67",
-    "root_suite_v2_exit_code": "1",
-    "root_suite_v2_failed": "1",
-    "root_suite_v2_passed": "3828",
+    "root_suite_v2_duration_seconds": "253.52",
+    "root_suite_v2_exit_code": "0",
+    "root_suite_v2_failed": "0",
+    "root_suite_v2_passed": "3829",
     "root_suite_v2_skipped": "7",
-    "root_suite_v2_status": "FAIL",
+    "root_suite_v2_status": "PASS",
     "run001_bootstrap_yaml": "PASS",
     "run001_final_products_executor_yaml": "PASS",
     "runner_alias_inventory_focused": "1_PASS",
@@ -622,6 +627,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "validation_state": "SECURITY_PROMOTION_READINESS_V2_ROOT_SUITE_FAIL_CAUSAL_FIX_FOCUSED_GREEN",
+  "validation_state": "SECURITY_PROMOTION_READINESS_V2_ROOT_SUITE_PASS_SCANNERS_PENDING",
   "workspace_id": "security-guardian-foundation-v1"
 }
