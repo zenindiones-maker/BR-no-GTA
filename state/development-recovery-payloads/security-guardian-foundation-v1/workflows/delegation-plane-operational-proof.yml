@@ -239,11 +239,13 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Prepare persisted learning state for this phase
+        env:
+          FIRST_RUN_ID: ${{ inputs.first_run_id }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/delegation-plane-operational/state
           if [ "$OP_PHASE" = "second" ]; then
-            test -n "${{ inputs.first_run_id }}"
+            test -n "$FIRST_RUN_ID"
             test -s artifacts/delegation-plane-operational/restored/state/learning.db
             cp artifacts/delegation-plane-operational/restored/state/learning.db "$BR_TEST_DATABASE"
             mkdir -p artifacts/delegation-plane-operational/first
@@ -602,13 +604,14 @@ jobs:
           BR_CODEX_AUTH_MODE: "TUXEVIL_ANTIGRAVITY_RESPONSES_PROXY"
           BR_CODEX_TUXEVIL_MODEL: ${{ steps.provider.outputs.model }}
           BR_TOOL_BUDGET_EVIDENCE_PATH: ${{ github.workspace }}/artifacts/delegation-plane-operational/second/tool-budget.json
+          FIRST_RUN_ID: ${{ inputs.first_run_id }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/delegation-plane-operational/second
           python scripts/delegation_plane_real_execution.py \
             --goal-id "delegation-plane-real-second-$GITHUB_RUN_ID" \
             --execution-instance-id "second:$GITHUB_RUN_ID" \
-            --learning-source-run-id "${{ inputs.first_run_id }}" \
+            --learning-source-run-id "$FIRST_RUN_ID" \
             --base-sha "$OP_BASE_SHA" \
             --branch "work/gate6f-analytics-learning" \
             --upstream-root "$BR_HERMES_UPSTREAM_ROOT" \
@@ -616,6 +619,8 @@ jobs:
 
       - name: Compare real learning causally and build final evidence
         if: env.OP_PHASE == 'second'
+        env:
+          FIRST_RUN_ID: ${{ inputs.first_run_id }}
         run: |
           set -euo pipefail
           python scripts/delegation_plane_learning_compare.py \
@@ -635,7 +640,7 @@ jobs:
             --second-report artifacts/delegation-plane-operational/second/dynamic-system-improvement-report.json \
             --learning artifacts/delegation-plane-operational/learning-compare.json \
             --benchmark artifacts/delegation-plane-operational/benchmark.json \
-            --first-run-id "${{ inputs.first_run_id }}" \
+            --first-run-id "$FIRST_RUN_ID" \
             --second-run-id "$GITHUB_RUN_ID" \
             --head "$OP_BASE_SHA" \
             --output artifacts/delegation-plane-operational/final-evidence.json

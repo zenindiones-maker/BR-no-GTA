@@ -42,16 +42,19 @@ jobs:
             --output runtime/gta6-fresh-research/result.json
 
       - name: Validate evidence packet
+        env:
+          EXECUTION_ID: ${{ inputs.execution_id }}
         run: |
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
           p = Path('runtime/gta6-fresh-research/result.json')
           data = json.loads(p.read_text())
           assert data['status'] == 'PASS'
           assert int(data['official_source_count']) >= 1
           assert data['checked_at']
-          assert data['execution_id'] == '${{ inputs.execution_id }}'
+          assert data['execution_id'] == os.environ['EXECUTION_ID']
           print('FRESH_RESEARCH_EVIDENCE=PASS')
           PY
 

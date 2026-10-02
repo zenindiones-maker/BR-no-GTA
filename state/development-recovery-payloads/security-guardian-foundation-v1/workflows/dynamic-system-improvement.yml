@@ -233,9 +233,11 @@ jobs:
         if: steps.runtime.outputs.codex_required == 'true'
         id: auth
         working-directory: target
+        env:
+          DISPATCH_ID: ${{ inputs.dispatch_id }}
         run: |
           set -euo pipefail
-          python scripts/codex_auth_control_preflight.py             --dispatch-id "${{ inputs.dispatch_id }}"             --target-ref "$TARGET_REF"             --target-sha "$TARGET_SHA"             --plan-b64 "$PLAN_B64"             --human-goal-b64 "$HUMAN_GOAL_B64"             --telegram-chat-id "$TELEGRAM_CHAT_ID_INPUT"             --artifact-dir artifacts/dynamic-system-improvement
+          python scripts/codex_auth_control_preflight.py             --dispatch-id "$DISPATCH_ID"             --target-ref "$TARGET_REF"             --target-sha "$TARGET_SHA"             --plan-b64 "$PLAN_B64"             --human-goal-b64 "$HUMAN_GOAL_B64"             --telegram-chat-id "$TELEGRAM_CHAT_ID_INPUT"             --artifact-dir artifacts/dynamic-system-improvement
           echo "CODEX_AUTH_PREFLIGHT=PASS"
 
       - name: Resolve selected-runtime mission gate

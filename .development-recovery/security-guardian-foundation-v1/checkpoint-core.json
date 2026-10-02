@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "security-foundation-development",
   "artifact_refs": [],
-  "authorization_id": "e8bbe189-bb46-4990-89e5-7dc0a66d83d3",
+  "authorization_id": "24d056a5-1b51-4ca0-a070-20fa200c813a",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "3143591a04a6481fcb9b97967dc82305fd21cb180dbe1ebeb5058ebdc0e9c4b9",
-  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000010-e72eb41e",
+  "checkpoint_digest": "63dea713d60b0d5700ddca040cd44fa8064d74e423ae1ee26da96c81fa366557",
+  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000011-79d4e925",
   "checkpoint_kind": "MILESTONE",
-  "checkpoint_sequence": 10,
+  "checkpoint_sequence": 11,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -36,8 +36,8 @@
     "security-guardian-baseline-workflow-red-green",
     "security-toolchain-static-validation"
   ],
-  "content_digest": "531336fc0d9b999d859ce1c0ecab6dc15df7b5dbd39d0541e2c004f20155c2e5",
-  "created_at": "2026-10-02T03:19:14.590102+00:00",
+  "content_digest": "ebe8fad5b6a0bfea4e596e1c8f2a37cdcd012b6108c56f2e57ead8907a2092b6",
+  "created_at": "2026-10-02T03:39:10.471093+00:00",
   "current_step": "execute-pinned-external-security-baseline",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
@@ -104,7 +104,17 @@
     "recovery-toolchain-manifest-sha256:89865afbdb518c7e87af44c4ff271ec65a019ed929b3f8d66218852f204cd7df",
     "resume:SECURITY_GUARDIAN_FOUNDATION_V1-cp-000009-b055e7b5",
     "resume-sha:5f309c86bde4b9716b466a2809f1c38071e03425",
-    "pre-long-operation-checkpoint:external-security-baseline"
+    "pre-long-operation-checkpoint:external-security-baseline",
+    "cp10-remote-readback:VERIFIED",
+    "cp10-tree:e35b911ce5880087801990c630c15ede47f2e0b6",
+    "external-baseline:zizmor-v1.30.1-executed",
+    "external-baseline:osv-v2.6.0-executed",
+    "external-baseline:scorecard-v5.5.0-local-executed",
+    "delta:osv-new=0",
+    "delta:zizmor-template-injection-high=0-after-fix",
+    "delta:zizmor-high=1-dangerous-triggers",
+    "recovery-workflow-manifest-sha256:09575e4a64e2efb3a9eef06964edeb79eb30fff6492c383e57534e854b3f5cc4",
+    "recovery-payloads:post-template-injection-fixes=7"
   ],
   "excluded_paths": [],
   "failure_state": {},
@@ -259,18 +269,18 @@
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "run pinned zizmor/osv/scorecard; sanitize evidence; classify blockers; then run security canary",
+  "next_step": "bind scanners to durable recovery payload candidate; sanitize evidence; classify blockers; run security canary",
   "open_blockers": [
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED",
     "CODEQL_CANDIDATE_RESCAN_REQUIRED",
     "EXTERNAL_SECURITY_TOOLCHAIN_BASELINE_REQUIRED"
   ],
-  "previous_checkpoint_sha": "5f309c86bde4b9716b466a2809f1c38071e03425",
-  "progress_ledger_digest": "12f89ab52d7764ce93e35b36fabf2050abb0026f94b5ad4f7852a07eaf7288b7",
+  "previous_checkpoint_sha": "216af76e463e3ea7872bedbab70d0aeb6313d15b",
+  "progress_ledger_digest": "6498b40df8dde8dfd9fc510ddf45f89256d4340303d834bfaa332ecaf788e826",
   "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "Resume from cp10 and execute pinned external security baseline. Do not resume owner voice.",
+  "resume_instructions": "Resume from cp11 payload-backed checkpoint. Complete pinned external baseline evidence and dangerous-trigger disposition, then run canary. Do not resume owner voice.",
   "runtime_namespace": "security-guardian-foundation-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -287,7 +297,7 @@
     ]
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "checkpoint-before-pinned-external-security-baseline",
+  "task_id": "preserve-post-scan-template-injection-fixes-via-recovery-payloads",
   "test_state": {
     "diff_check": "PASS",
     "gta6_change_detector": "12_PASS",
@@ -299,9 +309,10 @@
     "pip_check": "PASS",
     "security_guardian_foundation_core": "29_PASS",
     "security_guardian_foundation_focused": "43_PASS",
+    "targeted_zizmor_high_after_template_fix": "1_DANGEROUS_TRIGGERS",
     "work_branch_force_push": "BLOCKED",
     "workflow_yaml_parse": "PASS"
   },
-  "validation_state": "CP10_READY_FOR_PINNED_EXTERNAL_SECURITY_BASELINE",
+  "validation_state": "POST_TEMPLATE_INJECTION_FIX_PAYLOAD_DURABILITY_READY",
   "workspace_id": "security-guardian-foundation-v1"
 }

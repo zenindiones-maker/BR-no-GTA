@@ -69,6 +69,8 @@ jobs:
         env:
           EXPECTED_SHA: ${{ inputs.expected_target_sha }}
           EXPECTED_POLICY_SHA256: ${{ inputs.expected_policy_sha256 }}
+          SCHEDULER_RUN_ID: ${{ inputs.scheduler_run_id }}
+          LOGICAL_CYCLE_ID: ${{ inputs.logical_cycle_id }}
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
@@ -95,8 +97,8 @@ jobs:
           echo "sha=$actual" >> "$GITHUB_OUTPUT"
           echo "CONTINUOUS_EXECUTOR_TARGET_SHA_EXACT_MATCH=PASS"
           echo "DEPLOYMENT_POLICY_BINDING=PASS"
-          echo "SCHEDULER_RUN_ID=${{ inputs.scheduler_run_id }}"
-          echo "LOGICAL_CYCLE_ID=${{ inputs.logical_cycle_id }}"
+          echo "SCHEDULER_RUN_ID=$SCHEDULER_RUN_ID"
+          echo "LOGICAL_CYCLE_ID=$LOGICAL_CYCLE_ID"
           echo "CONCURRENCY_EVENT_SEMANTICS=COALESCIBLE_LATEST_STATE_RECONCILIATION"
 
       - name: Restore prior durable attempt settlement
@@ -265,9 +267,11 @@ jobs:
           BR_HERMES_UPSTREAM_ROOT: ${{ github.workspace }}/target/.runtime/hermes-agent
           BR_CONTINUOUS_REGRESSION_EVIDENCE: github-actions:${{ github.run_id }}:continuous-regression
           BR_CONTINUOUS_CROSS_CHANNEL_EVIDENCE: github-actions:${{ github.run_id }}:cross-channel
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+          TRIGGER_KIND: ${{ inputs.trigger_kind }}
         run: |
           set -euo pipefail
-          python scripts/continuous_intelligence_cycle.py             --mode "$MODE"             --artifact-dir artifacts/continuous-operation             --upstream-root "$BR_HERMES_UPSTREAM_ROOT"             --target-sha "${{ steps.target.outputs.sha }}"             --trigger-kind "${{ inputs.trigger_kind }}"
+          python scripts/continuous_intelligence_cycle.py             --mode "$MODE"             --artifact-dir artifacts/continuous-operation             --upstream-root "$BR_HERMES_UPSTREAM_ROOT"             --target-sha "$TARGET_SHA"             --trigger-kind "$TRIGGER_KIND"
           echo "CONTINUOUS_CYCLE_EXECUTED=PASS"
 
       - name: Validate immutable safety boundaries

@@ -537,6 +537,8 @@ jobs:
 
       - name: Validate final artifact
         if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' }}
+        env:
+          TEST_ONLY: ${{ github.event.inputs.test_only }}
         run: |
             set -euo pipefail
 
@@ -544,7 +546,7 @@ jobs:
             test -s runtime/media-worker/artifact/media_probe.json
             test -s runtime/media-worker/artifact/manifest.json
 
-            if [ "${{ github.event.inputs.test_only }}" != "true" ]; then
+            if [ "$TEST_ONLY" != "true" ]; then
               test -s runtime/media-worker/artifact/speech_analysis.json
               test -s runtime/media-worker/artifact/speech_qa.json
             fi
@@ -553,6 +555,7 @@ jobs:
 
             python - <<'PY'
             import json
+            import os
             from pathlib import Path
 
             artifact_dir = Path("runtime/media-worker/artifact")
@@ -597,7 +600,7 @@ jobs:
                     "Manifest inválido: mídia local não deveria estar incluída."
                 )
 
-            if "${{ github.event.inputs.test_only }}" != "true":
+            if os.environ["TEST_ONLY"] != "true":
                 speech_analysis = json.loads(
                     (artifact_dir / "speech_analysis.json")
                     .read_text(encoding="utf-8")

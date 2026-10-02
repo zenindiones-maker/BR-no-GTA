@@ -699,13 +699,16 @@ jobs:
 
       - name: Report immutable checkpoint reuse
         if: inputs.narration_artifact_id != '' || inputs.media_artifact_id != ''
+        env:
+          NARRATION_ARTIFACT_ID: ${{ inputs.narration_artifact_id }}
+          MEDIA_ARTIFACT_ID: ${{ inputs.media_artifact_id }}
         run: |
           set -euo pipefail
-          if [ -n "${{ inputs.narration_artifact_id }}" ]; then
+          if [ -n "$NARRATION_ARTIFACT_ID" ]; then
             echo "NARRATION_CHECKPOINT_REUSED=YES"
             echo "REDUNDANT_NARRATION_ARTIFACT_UPLOADS=0"
           fi
-          if [ -n "${{ inputs.media_artifact_id }}" ]; then
+          if [ -n "$MEDIA_ARTIFACT_ID" ]; then
             echo "MEDIA_CHECKPOINT_REUSED=YES"
             echo "REDUNDANT_MEDIA_ARTIFACT_UPLOADS=0"
             echo "REDUNDANT_MEDIA_DOWNLOADS=0"

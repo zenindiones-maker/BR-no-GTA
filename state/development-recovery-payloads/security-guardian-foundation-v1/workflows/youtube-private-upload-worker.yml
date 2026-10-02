@@ -149,6 +149,7 @@ jobs:
           python -m app.workers.youtube_private_upload_worker
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
           result = json.loads(Path("runtime/youtube-upload/result/youtube-upload-result.json").read_text())
           if result.get("status") != "UPLOADED":
@@ -183,6 +184,7 @@ jobs:
           PYTHONPATH: .
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID }}
+          EXPECTED_PUBLICATION_ID: ${{ inputs.publication_id }}
         run: |
           set -euo pipefail
           python scripts/telegram_video_review_worker.py \
@@ -195,7 +197,7 @@ jobs:
           review = result.get("telegram_review")
           if not isinstance(review, dict) or review.get("status") != "DELIVERED":
               raise SystemExit("Telegram review delivery evidence missing")
-          if str(review.get("publication_id")) != "${{ inputs.publication_id }}":
+          if str(review.get("publication_id")) != os.environ["EXPECTED_PUBLICATION_ID"]:
               raise SystemExit("Telegram review publication identity mismatch")
           if review.get("review_surface") != "YOUTUBE_PRIVATE_HD_MASTER":
               raise SystemExit("Telegram did not deliver the private YouTube HD master review surface")
