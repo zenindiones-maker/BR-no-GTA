@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "security-foundation-development",
   "artifact_refs": [],
-  "authorization_id": "3ee4b4b4-f3ff-4b28-b63d-6207d0a67f36",
+  "authorization_id": "fc549c95-4808-434f-88e0-acd08b046898",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "35fc239e145d5345f5edbcd6c238d40415d4c38d35a37182eb0c7667debdac85",
-  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000028-4d32a1d7",
+  "checkpoint_digest": "0eaac2d963cfa115a968e9a62fb968f200a1e6c27151b25876b1d1abad84c434",
+  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000029-4b0964e6",
   "checkpoint_kind": "RECOVERY",
-  "checkpoint_sequence": 28,
+  "checkpoint_sequence": 29,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -73,11 +73,15 @@
     "independent-review-runtime-boundary-red-green",
     "independent-review-runtime-boundary-focused-validation",
     "root-suite-cp26-temp-volume-failure-evidence-persisted",
-    "root-suite-cp26-142-errors-evidence-persisted"
+    "root-suite-cp26-142-errors-evidence-persisted",
+    "root-suite-142-errors-root-cause-grouped",
+    "pytest-temp-retention-tdd-red-green",
+    "zero-cost-route-test-isolation-tdd-red-green",
+    "test-harness-isolation-focused-green"
   ],
-  "content_digest": "322ca90439dcc2b43cc287ca1f32a875b4f9f39bdd6d64ba7529459dd1e93fc8",
-  "created_at": "2026-10-02T10:51:54.599505+00:00",
-  "current_step": "root-suite-142-errors-causal-analysis",
+  "content_digest": "262ff640a2403cefd4b52f238c29ea9819a95dfb6be7b675c0c312cf4612c582",
+  "created_at": "2026-10-02T11:05:59.007511+00:00",
+  "current_step": "root-suite-revalidation-after-test-harness-isolation",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
@@ -253,15 +257,18 @@
     "root-suite-cp26:tmp=100_percent_used_avail_880K",
     "root-suite-cp26:pytest_tmp=11G",
     "root-suite-cp26:evidence=DevelopmentRecoveryCheckpoint.failure_state",
-    "root-suite-cp26:evidence=DevelopmentProgressLedger.tests+evidence_refs"
+    "root-suite-cp26:evidence=DevelopmentProgressLedger.tests+evidence_refs",
+    "delta:cp25_to_cp26=agent_office_security_readonly_reviewer_boundary+reviewer_contract_test_only",
+    "causal-analysis:reviewer-boundary-not-on-errno28-path",
+    "root-suite-post-tmp-cleanup:3816_PASS_7_SKIP_1_FAIL",
+    "root-suite-post-tmp-cleanup:residual=test_zero_cost_route_inventory_FileExistsError_runtime-test",
+    "tdd:test-harness-isolation=2_RED_then_3_GREEN",
+    "focused:test-harness+security-guardian+agent-office=135_PASS",
+    "pytest:tmp_path_retention_count=1",
+    "zero-cost-route-inventory:root=tmp_path/runtime-test"
   ],
   "excluded_paths": [],
-  "failure_state": {
-    "first_error": "OSError: [Errno 28] No space left on device",
-    "root_suite_errors": 142,
-    "root_suite_passed": 3675,
-    "root_suite_skipped": 7
-  },
+  "failure_state": {},
   "included_paths": [
     ".github/CODEOWNERS",
     "SECURITY.md",
@@ -280,6 +287,7 @@
     "docs/security/evidence/root-suite-cp26-temp-volume-failure-v1.jsonl",
     "docs/security/evidence/root-suite-pre-review-v1.jsonl",
     "docs/security/evidence/security-pre-review-validation-v1.jsonl",
+    "pytest.ini",
     "requirements.txt",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/addy-24-live-semantic-smoke.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/agent-office-validation.yml",
@@ -422,22 +430,24 @@
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/ytdlp-format-diagnostic.yml",
     "tests/test_canonical_promotion_identity.py",
     "tests/test_gta6_change_detector.py",
+    "tests/test_pytest_workspace_isolation.py",
     "tests/test_security_guardian_foundation_v1.py",
-    "tests/test_telegram_hermes_dispatch_transport.py"
+    "tests/test_telegram_hermes_dispatch_transport.py",
+    "tests/test_zero_cost_route_inventory.py"
   ],
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "compare post-last-pass delta, group setup errors by root cause, then run focused TDD only if a code defect is proven",
+  "next_step": "run exact root suite once from checkpointed focused-green state; promotion and independent review remain forbidden unless PASS",
   "open_blockers": [
-    "ROOT_SUITE_FAIL_142_ERRORS_CAUSAL_ANALYSIS"
+    "ROOT_SUITE_REVALIDATION_PENDING"
   ],
-  "previous_checkpoint_sha": "5185cc69720847ef573082bb2069d0949bad31e4",
-  "progress_ledger_digest": "30a9c7671957ae812736314047ea328a33b3b652da7b29a5d6d9b70952dbd063",
+  "previous_checkpoint_sha": "95e104fc7975f36046c010e1225f935d1d151e10",
+  "progress_ledger_digest": "9ceb5e256293f6ee4104f29bb4788267a7d4c5038526d86c18939f8d2eaea434",
   "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "Root suite failure evidence 3675 passed / 7 skipped / 142 errors is durable. Do not treat 142 errors as 142 bugs. Compare delta since last ROOT_SUITE=PASS, especially independent-review boundary. Group by root cause; use TDD only for proven causal code defects. Promotion and independent review forbidden while ROOT_SUITE != PASS.",
+  "resume_instructions": "The 142-error run was grouped to one /tmp exhaustion root cause. Post-cleanup exposed one non-idempotent test-state leak. TDD fixed only test harness isolation: pytest tmp retention bounded to 1 and zero-cost inventory uses tmp_path. Focused expanded suite is 135 PASS, including Security Guardian + Agent Office reviewer boundary. Run the exact root suite once. Promotion and independent review remain forbidden unless ROOT_SUITE=PASS.",
   "runtime_namespace": "security-guardian-foundation-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -457,7 +467,7 @@
     ]
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "persist-root-suite-cp26-142-errors-before-causal-remediation",
+  "task_id": "checkpoint-test-harness-isolation-focused-green-before-root-suite",
   "test_state": {
     "affected_security_subgraph": "152_PASS",
     "canonical_promotion_deploy_key_probe_create": "PASS",
@@ -524,6 +534,8 @@
     "osv_exact_candidate_new_vs_canonical": "0",
     "overbroad_workflow_permissions": "0",
     "pip_check": "PASS",
+    "pytest_tmp_path_retention_count": "1",
+    "root_suite_142_errors_root_cause": "PYTEST_TMP_VOLUME_EXHAUSTION",
     "root_suite_candidate_sha": "da610a4e24e2b95552b62afcf8bfd5d912eba25e",
     "root_suite_candidate_tree": "520a1a277c3a09a6ea119d72446f0dcebb6025e4",
     "root_suite_cluster_affected_families": "242_PASS",
@@ -534,6 +546,7 @@
     "root_suite_failed": "71",
     "root_suite_failure_group": "PYTEST_TMP_VOLUME_EXHAUSTION",
     "root_suite_passed": "3675",
+    "root_suite_post_cleanup_residual": "1_FAILED_3816_PASS_7_SKIP_16_SUBTESTS",
     "root_suite_skipped": "7",
     "root_suite_status": "FAIL",
     "root_suite_subtests_passed": "16",
@@ -546,12 +559,16 @@
     "security_reviewer_runtime_boundary_green": "1_PASS",
     "security_reviewer_runtime_boundary_red": "CONFIRMED",
     "targeted_zizmor_high_after_template_fix": "1_DANGEROUS_TRIGGERS",
+    "test_harness_isolation_expanded": "135_PASS",
+    "test_harness_isolation_green": "3_PASS",
+    "test_harness_isolation_red": "2_FAILED_EXPECTED",
     "work_branch_force_push": "BLOCKED",
     "workflow_yaml_parse": "PASS",
+    "zero_cost_route_inventory_workspace": "TMP_PATH_ISOLATED",
     "zizmor_exact_candidate": "HIGH=1_MEDIUM=34_LOW=220",
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "validation_state": "ROOT_SUITE_FAIL_3675_PASS_7_SKIP_142_ERROR_EVIDENCE_PERSISTED",
+  "validation_state": "TEST_HARNESS_ISOLATION_FOCUSED_GREEN_ROOT_REVALIDATION_PENDING",
   "workspace_id": "security-guardian-foundation-v1"
 }
