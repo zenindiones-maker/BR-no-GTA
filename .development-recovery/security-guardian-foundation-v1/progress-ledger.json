@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 25,
+  "checkpoint_sequence": 26,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -66,9 +66,10 @@
     "root-suite-cluster-focused-validation",
     "root-suite-revalidation-pass",
     "independent-review-runtime-boundary-red-green",
-    "independent-review-runtime-boundary-focused-validation"
+    "independent-review-runtime-boundary-focused-validation",
+    "root-suite-cp26-temp-volume-failure-evidence-persisted"
   ],
-  "current_step": "root-suite-revalidation-after-review-boundary-fix",
+  "current_step": "root-suite-failure-root-cause-analysis",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -246,15 +247,23 @@
     "root-suite-revalidation:exit_code=0",
     "tdd:security-reviewer-runtime-boundary=RED_THEN_GREEN",
     "tests:security_guardian+agent_office=133_PASS",
-    "review-runtime-boundary:security-domain-allowed-only-for-readonly-independent-reviewer"
+    "review-runtime-boundary:security-domain-allowed-only-for-readonly-independent-reviewer",
+    "root-suite-cp26:3675_PASS_7_SKIP_142_ERROR_16_SUBTESTS",
+    "root-suite-cp26:first-traceback=tests/conftest.py:test_database:shutil.copyfile:OSError_Errno28_NO_SPACE",
+    "root-suite-cp26:/tmp=100_percent_available_approx_880K",
+    "root-suite-cp26:/tmp/pytest-of-sprite=approx_11G",
+    "root-suite-cp26:log-sha256=407e7cf3b174b701bb0313b1970a18864fd4ebffcdfade2b8cb218376c01f464",
+    "root-suite-cp26:errors-grouped=PYTEST_TMP_VOLUME_EXHAUSTION_ENVIRONMENTAL_SETUP_FAILURE"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000025-ee1d4401",
-  "latest_verified_checkpoint_sha": "b66c0f19328775828824c2aa56024a69165ca4a8",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000026-a8bf5d4b",
+  "latest_verified_checkpoint_sha": "6588d22e6c00833cdb04749b6d0c36f0bf2f4a0d",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "rerun exact root suite; if PASS execute independent read-only Security Guardian review",
-  "open_blockers": [],
+  "next_step": "compare post-last-pass delta, confirm temp-volume exhaustion as grouped cause, run focused fixture/test verification after cleanup; only then rerun full root suite",
+  "open_blockers": [
+    "ROOT_SUITE_TEMP_VOLUME_EXHAUSTION_ENVIRONMENTAL_SETUP_FAILURE"
+  ],
   "plan_steps": [
     "authority-contract",
     "security-contracts",
@@ -362,11 +371,13 @@
     "root_suite_candidate_tree": "520a1a277c3a09a6ea119d72446f0dcebb6025e4",
     "root_suite_cluster_affected_families": "242_PASS",
     "root_suite_cluster_focused": "3_PASS",
+    "root_suite_errors": "142",
     "root_suite_exit_code": "0",
     "root_suite_failed": "71",
-    "root_suite_passed": "3744",
+    "root_suite_failure_group": "PYTEST_TMP_VOLUME_EXHAUSTION",
+    "root_suite_passed": "3675",
     "root_suite_skipped": "7",
-    "root_suite_status": "PASS",
+    "root_suite_status": "FAIL",
     "root_suite_subtests_passed": "16",
     "run001_bootstrap_yaml": "PASS",
     "run001_final_products_executor_yaml": "PASS",
@@ -383,6 +394,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "updated_at": "2026-10-02T10:32:53.318024+00:00",
-  "validation_state": "REVIEW_RUNTIME_BOUNDARY_TDD_GREEN_ROOT_REVALIDATION_PENDING"
+  "updated_at": "2026-10-02T10:50:52.949550+00:00",
+  "validation_state": "ROOT_SUITE_FAIL_142_ERRORS_GROUPED_ENVIRONMENTAL_ROOT_CAUSE"
 }
