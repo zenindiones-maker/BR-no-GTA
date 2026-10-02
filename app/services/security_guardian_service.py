@@ -733,3 +733,110 @@ def build_security_posture_snapshot(
     }
     payload["content_sha256"] = _stable_digest(payload)
     return payload
+
+
+SECURITY_SENSOR_IDS = frozenset({
+    "security.scan.github-actions",
+    "security.scan.code",
+    "security.scan.dependencies",
+    "security.scan.secrets",
+    "security.scan.supply-chain",
+    "security.audit.github-posture",
+})
+
+
+def build_security_sensor_evidence(
+    *,
+    sensor_id: str,
+    candidate_sha: str,
+    tree_sha: str,
+    findings: Sequence[SecurityFinding | Mapping[str, Any]],
+    metadata: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    sensor = str(sensor_id or "").strip()
+    if sensor not in SECURITY_SENSOR_IDS:
+        raise ValueError("unknown security sensor")
+    candidate = _require_sha(candidate_sha, length=40, name="candidate_sha")
+    tree = _require_sha(tree_sha, length=40, name="tree_sha")
+    normalized_findings: list[dict[str, Any]] = []
+    for finding in findings:
+        if isinstance(finding, SecurityFinding):
+            normalized_findings.append({
+                "finding_id": finding.finding_id,
+                "category": finding.category,
+                "severity": finding.severity,
+                "content_sha256": finding.content_sha256,
+                "affected_paths": list(finding.affected_paths),
+                "fact_kind": finding.fact_kind,
+            })
+        else:
+            normalized_findings.append(sanitize_security_evidence(dict(finding)))
+    payload = {
+        "schema_version": "SecurityEvidence/v1",
+        "sensor_id": sensor,
+        "candidate_sha": candidate,
+        "tree_sha": tree,
+        "findings": normalized_findings,
+        "metadata": sanitize_security_evidence(dict(metadata or {})),
+    }
+    payload["content_sha256"] = _stable_digest(payload)
+    return payload
+
+
+def execute_security_scan_github_actions(*, candidate_sha: str, tree_sha: str, files: Mapping[str, str]) -> dict[str, Any]:
+    findings: list[SecurityFinding] = []
+    for path, text in sorted(files.items()):
+        findings.extend(scan_github_actions_text(path, text))
+    return build_security_sensor_evidence(
+        sensor_id="security.scan.github-actions",
+        candidate_sha=candidate_sha,
+        tree_sha=tree_sha,
+        findings=deduplicate_findings(findings),
+        metadata={"file_count": len(files)},
+    )
+
+
+def execute_security_scan_secrets(*, candidate_sha: str, tree_sha: str, files: Mapping[str, str]) -> dict[str, Any]:
+    findings: list[SecurityFinding] = []
+    for path, text in sorted(files.items()):
+        findings.extend(scan_secret_text(path, text))
+    return build_security_sensor_evidence(
+        sensor_id="security.scan.secrets",
+        candidate_sha=candidate_sha,
+        tree_sha=tree_sha,
+        findings=deduplicate_findings(findings),
+        metadata={"file_count": len(files)},
+    )
+
+
+def _execute_external_security_sensor(
+    sensor_id: str,
+    *,
+    candidate_sha: str,
+    tree_sha: str,
+    findings: Sequence[SecurityFinding | Mapping[str, Any]] = (),
+    metadata: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    return build_security_sensor_evidence(
+        sensor_id=sensor_id,
+        candidate_sha=candidate_sha,
+        tree_sha=tree_sha,
+        findings=findings,
+        metadata=metadata,
+    )
+
+
+def execute_security_scan_code(**kwargs: Any) -> dict[str, Any]:
+    return _execute_external_security_sensor("security.scan.code", **kwargs)
+
+
+def execute_security_scan_dependencies(**kwargs: Any) -> dict[str, Any]:
+    return _execute_external_security_sensor("security.scan.dependencies", **kwargs)
+
+
+def execute_security_scan_supply_chain(**kwargs: Any) -> dict[str, Any]:
+    return _execute_external_security_sensor("security.scan.supply-chain", **kwargs)
+
+
+def execute_security_audit_github_posture(**kwargs: Any) -> dict[str, Any]:
+    return _execute_external_security_sensor("security.audit.github-posture", **kwargs)

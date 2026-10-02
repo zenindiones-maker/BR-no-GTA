@@ -499,3 +499,73 @@ def test_token_pattern_is_suspected_not_confirmed_without_validation():
     findings = scan_secret_text("fixture.py", token_shape)
     assert any(f.category == "SUSPECTED_SECRET_PATTERN" for f in findings)
     assert not any(f.category == "CONFIRMED_SECRET_EXPOSURE" for f in findings)
+
+
+def test_six_security_sensor_capabilities_are_registered_read_only():
+    expected = {
+        "security.scan.github-actions",
+        "security.scan.code",
+        "security.scan.dependencies",
+        "security.scan.secrets",
+        "security.scan.supply-chain",
+        "security.audit.github-posture",
+    }
+    for capability_id in expected:
+        record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
+        assert record is not None, capability_id
+        assert record.authority == "NONE"
+        assert record.routing_authority == "NONE"
+        assert record.memory_write == "NONE"
+        assert record.publication_authority == "NONE"
+        assert record.default_write_scope == ()
+        assert record.side_effect_class == "READ_ONLY"
+        assert record.execution_kind == "VALIDATOR"
+        assert record.executor_binding
+
+
+def test_security_sensor_evidence_is_sha_bound_and_sanitized():
+    from app.services.security_guardian_service import build_security_sensor_evidence
+    evidence = build_security_sensor_evidence(
+        sensor_id="security.scan.secrets",
+        candidate_sha="1"*40,
+        tree_sha="2"*40,
+        findings=(),
+        metadata={
+            "secret_value": "must-not-survive",
+            "fingerprint": "sha256:abc",
+            "scanner_version": "fixture",
+        },
+    )
+    encoded = json.dumps(evidence, sort_keys=True)
+    assert evidence["schema_version"] == "SecurityEvidence/v1"
+    assert evidence["candidate_sha"] == "1"*40
+    assert evidence["tree_sha"] == "2"*40
+    assert len(evidence["content_sha256"]) == 64
+    assert "must-not-survive" not in encoded
+    assert evidence["metadata"]["fingerprint"] == "sha256:abc"
+
+
+def test_codeowners_covers_security_sensitive_surfaces():
+    text = Path(".github/CODEOWNERS").read_text()
+    required = [
+        "/.github/** @zenindiones-maker",
+        "/.github/workflows/** @zenindiones-maker",
+        "/.github/CODEOWNERS @zenindiones-maker",
+        "/SECURITY.md @zenindiones-maker",
+        "/app/services/*authorization* @zenindiones-maker",
+        "/app/services/*security* @zenindiones-maker",
+        "/app/services/global_capability_registry.py @zenindiones-maker",
+        "/app/services/harness_durable_execution_v3.py @zenindiones-maker",
+        "/integrations/** @zenindiones-maker",
+    ]
+    for line in required:
+        assert line in text
+
+
+def test_security_md_requires_private_reporting_and_forbids_public_secret_material():
+    text = Path("SECURITY.md").read_text()
+    assert "Private Vulnerability Reporting" in text
+    assert "Do not open a public Issue" in text
+    assert "private-key bytes" in text
+    assert "raw private owner-voice audio" in text
+    assert "read-only independent reviewer" in text

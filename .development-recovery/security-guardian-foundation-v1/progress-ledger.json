@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 2,
+  "checkpoint_sequence": 3,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -13,9 +13,13 @@
     "security-exception-contract",
     "secret-incident-contract",
     "persistent-security-responsibility-contract",
-    "minimal-canonical-force-delete-protection"
+    "minimal-canonical-force-delete-protection",
+    "deterministic-security-sensor-contracts",
+    "security-sensor-registry-read-only",
+    "codeowners-baseline-created",
+    "security-md-baseline-created"
   ],
-  "current_step": "deterministic-sensors-toolchain-baseline-codeowners-security-md-in-progress",
+  "current_step": "supply-chain-action-pinning-and-codeql-remediation",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -45,17 +49,35 @@
     "checkpoint-resume-sha:6c4ed048dd22fc93c22ca9e1bb1ab55e4374af1c",
     "local-wip:CODEOWNERS-created-not-yet-promoted",
     "local-wip:SECURITY.md-created-not-yet-promoted",
-    "local-wip:security-baseline-contracts-extended-after-cp2"
+    "local-wip:security-baseline-contracts-extended-after-cp2",
+    "tests:test_security_guardian_foundation_v1=36_PASS",
+    "baseline:workflow_files=148",
+    "baseline:action_uses=563",
+    "baseline:mutable_action_refs=539",
+    "baseline:workflow_permission_findings=60",
+    "github:codeql_open_high=4",
+    "github:codeql_open_medium=4",
+    "github:dependabot_open=0",
+    "github:secret_scanning_open=0",
+    "github:secret_scanning=enabled",
+    "github:push_protection=enabled",
+    "github:private_vulnerability_reporting=enabled",
+    "github:self_hosted_runners=0",
+    "github:ledger_repo_visibility=private",
+    "github:ledger_deploy_key_write_capable=true"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000002-bd8505a1",
-  "latest_verified_checkpoint_sha": "6c4ed048dd22fc93c22ca9e1bb1ab55e4374af1c",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000003-91383b44",
+  "latest_verified_checkpoint_sha": "7f70bfeff7bd98f8adcc0db0754f6eaa7b7d5c57",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "finish deterministic sensor/toolchain baseline, validate CODEOWNERS and SECURITY.md, then run security canary",
+  "next_step": "resolve and pin all mutable third-party action refs, then remediate open HIGH CodeQL findings and workflow permission debt",
   "open_blockers": [
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED",
-    "MUTABLE_ACTION_REFS_BASELINE_DEBT"
+    "MUTABLE_ACTION_REFS_539",
+    "WORKFLOW_PERMISSION_FINDINGS_60",
+    "CODEQL_HIGH_OPEN_4",
+    "CODEQL_MEDIUM_OPEN_4"
   ],
   "plan_steps": [
     "authority-contract",
@@ -94,8 +116,9 @@
   "tests": {
     "main_force_push": "BLOCKED",
     "security_guardian_foundation_core": "29_PASS",
+    "security_guardian_foundation_focused": "36_PASS",
     "work_branch_force_push": "BLOCKED"
   },
-  "updated_at": "2026-10-02T02:50:08.778376+00:00",
-  "validation_state": "POST_CP2_WIP_PRESERVED_BEFORE_LONG_SECURITY_BASELINE"
+  "updated_at": "2026-10-02T02:55:01.425664+00:00",
+  "validation_state": "SECURITY_SENSORS_GOVERNANCE_36_PASS"
 }

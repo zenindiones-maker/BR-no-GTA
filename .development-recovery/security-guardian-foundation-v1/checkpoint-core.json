@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "security-foundation-development",
   "artifact_refs": [],
-  "authorization_id": "0f979ba6-9785-45e7-809e-22dc114fd93c",
+  "authorization_id": "f0c63c38-3a57-4795-91ac-bbcf56222230",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "c742bdbf74c4c148f3200c54ec2f7af5024964d32571d637cc259f792612f6ef",
-  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000003-91383b44",
+  "checkpoint_digest": "99c4b2cf771b556ef43fc84ac50cc1d4968dfc934ab1a67bbe34eae0e1588ab8",
+  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000004-f65f9b1c",
   "checkpoint_kind": "MILESTONE",
-  "checkpoint_sequence": 3,
+  "checkpoint_sequence": 4,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -18,11 +18,15 @@
     "security-exception-contract",
     "secret-incident-contract",
     "persistent-security-responsibility-contract",
-    "minimal-canonical-force-delete-protection"
+    "minimal-canonical-force-delete-protection",
+    "deterministic-security-sensor-contracts",
+    "security-sensor-registry-read-only",
+    "codeowners-baseline-created",
+    "security-md-baseline-created"
   ],
-  "content_digest": "8493cf3659245609fd3dac6bf45f37ce48580b457f29123a33e8cd635f86e813",
-  "created_at": "2026-10-02T02:50:09.909323+00:00",
-  "current_step": "deterministic-sensors-toolchain-baseline-codeowners-security-md-in-progress",
+  "content_digest": "61d9339b8c6facd4e567197d5a34cde79e304b775f14f4f522276afbc20427be",
+  "created_at": "2026-10-02T02:55:02.461591+00:00",
+  "current_step": "supply-chain-action-pinning-and-codeql-remediation",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
@@ -38,7 +42,22 @@
     "checkpoint-resume-sha:6c4ed048dd22fc93c22ca9e1bb1ab55e4374af1c",
     "local-wip:CODEOWNERS-created-not-yet-promoted",
     "local-wip:SECURITY.md-created-not-yet-promoted",
-    "local-wip:security-baseline-contracts-extended-after-cp2"
+    "local-wip:security-baseline-contracts-extended-after-cp2",
+    "tests:test_security_guardian_foundation_v1=36_PASS",
+    "baseline:workflow_files=148",
+    "baseline:action_uses=563",
+    "baseline:mutable_action_refs=539",
+    "baseline:workflow_permission_findings=60",
+    "github:codeql_open_high=4",
+    "github:codeql_open_medium=4",
+    "github:dependabot_open=0",
+    "github:secret_scanning_open=0",
+    "github:secret_scanning=enabled",
+    "github:push_protection=enabled",
+    "github:private_vulnerability_reporting=enabled",
+    "github:self_hosted_runners=0",
+    "github:ledger_repo_visibility=private",
+    "github:ledger_deploy_key_write_capable=true"
   ],
   "excluded_paths": [],
   "failure_state": {},
@@ -52,17 +71,20 @@
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "finish deterministic sensor/toolchain baseline, validate CODEOWNERS and SECURITY.md, then run security canary",
+  "next_step": "resolve and pin all mutable third-party action refs, then remediate open HIGH CodeQL findings and workflow permission debt",
   "open_blockers": [
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED",
-    "MUTABLE_ACTION_REFS_BASELINE_DEBT"
+    "MUTABLE_ACTION_REFS_539",
+    "WORKFLOW_PERMISSION_FINDINGS_60",
+    "CODEQL_HIGH_OPEN_4",
+    "CODEQL_MEDIUM_OPEN_4"
   ],
-  "previous_checkpoint_sha": "6c4ed048dd22fc93c22ca9e1bb1ab55e4374af1c",
-  "progress_ledger_digest": "62f40cc5df9ac23a34a010d37d4c87d572f4b9f260c3b71cd2031439db7c03c7",
+  "previous_checkpoint_sha": "7f70bfeff7bd98f8adcc0db0754f6eaa7b7d5c57",
+  "progress_ledger_digest": "06f758ee75519fbe1f887b6ceecd437823a23a1063a7a8e1917de905c1d40e5f",
   "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "Resume from cp3. Finish deterministic sensors/toolchain baseline and validate CODEOWNERS/SECURITY.md. Do not resume owner voice or dispatch audition.",
+  "resume_instructions": "Resume from cp4. Next incomplete step is repo-wide immutable third-party action pinning, then CodeQL/permission remediation. Owner voice remains frozen.",
   "runtime_namespace": "security-guardian-foundation-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -79,12 +101,13 @@
     ]
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "preserve-post-cp2-wip-before-long-security-baseline",
+  "task_id": "checkpoint-before-repowide-supply-chain-remediation",
   "test_state": {
     "main_force_push": "BLOCKED",
     "security_guardian_foundation_core": "29_PASS",
+    "security_guardian_foundation_focused": "36_PASS",
     "work_branch_force_push": "BLOCKED"
   },
-  "validation_state": "POST_CP2_WIP_PRESERVED_BEFORE_LONG_SECURITY_BASELINE",
+  "validation_state": "SECURITY_SENSORS_GOVERNANCE_36_PASS",
   "workspace_id": "security-guardian-foundation-v1"
 }
