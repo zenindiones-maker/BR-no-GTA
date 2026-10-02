@@ -18,15 +18,15 @@ jobs:
     env:
       PYTHONPATH: .
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
-      - uses: denoland/setup-deno@v2
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
         with:
           deno-version: v2.x
       - name: Measure current cold-start stack
@@ -35,7 +35,7 @@ jobs:
           python scripts/benchmark_cold_start_runtime.py \
             --mode baseline \
             --output runtime/cold-start/baseline.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: cold-start-baseline-${{ github.run_id }}
           path: runtime/cold-start/baseline.json
@@ -48,16 +48,16 @@ jobs:
     env:
       PYTHONPATH: .
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Restore or prepare versioned media venv
         id: media-venv
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .venv-media
           key: media-venv-v2-${{ runner.os }}-${{ runner.arch }}-py312-${{ hashFiles('requirements.txt', 'requirements/**/*.txt', 'pyproject.toml') }}
@@ -97,21 +97,21 @@ jobs:
     env:
       PYTHONPATH: .
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Restore exact versioned media venv
         id: media-venv
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .venv-media
           key: media-venv-v2-${{ runner.os }}-${{ runner.arch }}-py312-${{ hashFiles('requirements.txt', 'requirements/**/*.txt', 'pyproject.toml') }}
           fail-on-cache-miss: true
-      - uses: denoland/setup-deno@v2
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
         with:
           deno-version: v2.x
       - name: Measure cached ephemeral-runner candidate
@@ -121,7 +121,7 @@ jobs:
           .venv-media/bin/python scripts/benchmark_cold_start_runtime.py \
             --mode cached \
             --output runtime/cold-start/cached.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: cold-start-cached-${{ github.run_id }}
           path: runtime/cold-start/cached.json
@@ -134,14 +134,14 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: cold-start-*-${{ github.run_id }}
           path: runtime/cold-start/downloaded
@@ -245,7 +245,7 @@ jobs:
           print('QUALITY_REGRESSION=NO')
           print('PROMOTION_PERFORMED=NO')
           PY
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: cold-start-comparison-${{ github.run_id }}
           path: runtime/cold-start/comparison.json

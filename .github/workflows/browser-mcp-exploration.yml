@@ -76,20 +76,20 @@ jobs:
 
     steps:
       - name: Checkout exact candidate
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.candidate_sha || github.sha }}
           persist-credentials: false
 
       - name: Setup Node 24.21.0
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24.21.0
           cache: npm
           cache-dependency-path: video-engine/frontend/package-lock.json
 
       - name: Setup Python 3.12
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
 
@@ -295,7 +295,7 @@ jobs:
 
       - name: Upload MCP exploration evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: browser-mcp-exploration-${{ github.run_id }}
           retention-days: 30

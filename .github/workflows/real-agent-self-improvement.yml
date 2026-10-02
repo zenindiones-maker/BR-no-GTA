@@ -100,10 +100,7 @@ on:
         default: ""
         type: string
 
-permissions:
-  contents: read
-  actions: write
-
+permissions: {}
 concurrency:
   group: real-agent-self-improvement-${{ github.ref }}
   cancel-in-progress: false
@@ -119,16 +116,19 @@ env:
 
 jobs:
   mission:
+    permissions:
+      contents: read
+      actions: write # SECURITY-JUSTIFICATION: job-scoped least privilege; trusted repository workflow; no fork-controlled code execution
     if: inputs.operation != 'PROVIDER_RECONCILIATION'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -678,7 +678,7 @@ jobs:
 
       - name: Set up Node 24 for bounded Codex CLI
         if: steps.provider_recovery.outputs.provider_level_replan_required == 'true' && steps.provider_recovery.outputs.alternate_route_ready != 'true' && env.BR_NEW_CODEX_DEVICE_AUTH != 'DENIED'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24"
 
@@ -1039,7 +1039,7 @@ jobs:
 
       - name: Upload real self-improvement evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: real-agent-self-improvement-${{ github.run_id }}
           path: runtime/real-agent-self-improvement/
@@ -1057,6 +1057,9 @@ jobs:
 
 
   provider-reconcile:
+    permissions:
+      contents: read
+      actions: write # SECURITY-JUSTIFICATION: job-scoped least privilege; trusted repository workflow; no fork-controlled code execution
     if: inputs.operation == 'PROVIDER_RECONCILIATION'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -1064,13 +1067,13 @@ jobs:
       TARGET_REF: work/gate6f-analytics-learning
       BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/provider-availability-reconciliation/reconciliation-learning.db
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: work/gate6f-analytics-learning
           fetch-depth: 1
           persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -1497,7 +1500,7 @@ jobs:
 
       - name: Upload reconciliation evidence
         if: steps.wait.outputs.active_wait == 'true' && steps.prior.outputs.prior_terminal_decision == ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: provider-availability-reconciliation-${{ github.run_id }}
           path: ${{ runner.temp }}/provider-reconciliation-publish/

@@ -33,24 +33,24 @@ on:
       - ".github/workflows/harness-intelligence-validation.yml"
   workflow_dispatch:
 
-permissions:
-  contents: read
-  statuses: write
-
+permissions: {}
 concurrency:
   group: harness-intelligence-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   focused:
+    permissions:
+      contents: read
+      statuses: write # SECURITY-JUSTIFICATION: job-scoped least privilege; trusted repository workflow; no fork-controlled code execution
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       PYTHONPATH: .
       ZERO_COST_OPERATION: "TRUE"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -158,6 +158,9 @@ jobs:
           curl --fail-with-body --silent --show-error             -X POST             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA"             -d @/tmp/status.json
 
   live-benchmark:
+    permissions:
+      contents: read
+      statuses: write # SECURITY-JUSTIFICATION: job-scoped least privilege; trusted repository workflow; no fork-controlled code execution
     if: github.event_name == 'workflow_dispatch'
     needs: focused
     runs-on: ubuntu-24.04
@@ -173,8 +176,8 @@ jobs:
       OLLAMA_HOST: "127.0.0.1:11434"
       OLLAMA_NO_CLOUD: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -259,7 +262,7 @@ jobs:
 
       - name: Upload bounded budget profile
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: semantic-planner-bounded-budget-profile
           path: artifacts/harness-intelligence/semantic-budget-profile.json
@@ -293,7 +296,7 @@ jobs:
 
       - name: Upload isolated proposal evidence
         if: always() && steps.budget_profile.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: semantic-single-proposal-performance
           path: artifacts/harness-intelligence/single-proposal-performance.json
@@ -333,7 +336,7 @@ jobs:
           fi
       - name: Upload benchmark evidence
         if: always() && steps.budget_profile.outcome == 'success' && steps.single_proposal.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: harness-intelligence-benchmark
           path: artifacts/harness-intelligence/intelligence-benchmark.json

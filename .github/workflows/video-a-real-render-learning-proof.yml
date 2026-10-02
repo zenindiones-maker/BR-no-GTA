@@ -22,9 +22,9 @@ jobs:
       HANDOFF_ARTIFACT_ID: "10525757299"
       HANDOFF_PRODUCER_RUN_ID: "35289539299"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
@@ -34,7 +34,7 @@ jobs:
           python -m pip install -r requirements.txt
 
       - name: Download exact governed VIDEO A RenderJob
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           artifact-ids: ${{ env.HANDOFF_ARTIFACT_ID }}
           run-id: ${{ env.HANDOFF_PRODUCER_RUN_ID }}
@@ -105,7 +105,7 @@ jobs:
           print(json.dumps(proof,sort_keys=True))
           PY
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: video-a-real-render-learning-proof
           path: runtime/video-a-real-learning/proof/

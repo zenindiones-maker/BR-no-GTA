@@ -19,9 +19,9 @@ jobs:
       YTDLP_COOKIES_FILE: runtime/secrets/youtube-cookies.txt
       YTDLP_PO_TOKEN_BASE_URL: http://127.0.0.1:4416
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
@@ -35,7 +35,7 @@ jobs:
           python -m pip install -U "bgutil-ytdlp-pot-provider==1.3.1"
           python -m pip install "edge-tts==7.2.8"
 
-      - uses: denoland/setup-deno@v2
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
         with:
           deno-version: v2.x
 
@@ -63,7 +63,7 @@ jobs:
           chmod 600 runtime/secrets/youtube-cookies.txt
 
       - name: Download exact governed VIDEO A RenderJob
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           artifact-ids: ${{ env.HANDOFF_ARTIFACT_ID }}
           run-id: ${{ env.HANDOFF_PRODUCER_RUN_ID }}
@@ -98,7 +98,7 @@ jobs:
           print("DECISION="+d["decision"])
           PY
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: video-a-render-profile-benchmark

@@ -43,10 +43,10 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Checkout exact control-plane ref
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -93,7 +93,7 @@ jobs:
           PY
 
       - name: Download exact render artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ${{ inputs.render_artifact_name }}
           path: runtime/youtube-upload/render-artifact
@@ -149,6 +149,7 @@ jobs:
           python -m app.workers.youtube_private_upload_worker
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
           result = json.loads(Path("runtime/youtube-upload/result/youtube-upload-result.json").read_text())
           if result.get("status") != "UPLOADED":
@@ -183,6 +184,7 @@ jobs:
           PYTHONPATH: .
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID }}
+          EXPECTED_PUBLICATION_ID: ${{ inputs.publication_id }}
         run: |
           set -euo pipefail
           python scripts/telegram_video_review_worker.py \
@@ -195,7 +197,7 @@ jobs:
           review = result.get("telegram_review")
           if not isinstance(review, dict) or review.get("status") != "DELIVERED":
               raise SystemExit("Telegram review delivery evidence missing")
-          if str(review.get("publication_id")) != "${{ inputs.publication_id }}":
+          if str(review.get("publication_id")) != os.environ["EXPECTED_PUBLICATION_ID"]:
               raise SystemExit("Telegram review publication identity mismatch")
           if review.get("review_surface") != "YOUTUBE_PRIVATE_HD_MASTER":
               raise SystemExit("Telegram did not deliver the private YouTube HD master review surface")
@@ -211,7 +213,7 @@ jobs:
 
       - name: Upload lightweight execution result
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: youtube-private-upload-result-${{ inputs.publication_id }}-${{ inputs.execution_id }}
           path: runtime/youtube-upload/result/

@@ -77,10 +77,10 @@ jobs:
       PYTHONPATH: video-engine/backend:.
       BR_PERFORMANCE_TRACE_FILE: runtime/render/performance-trace.jsonl
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -176,7 +176,7 @@ jobs:
 
       - name: Materialize artifact-backed RenderJob
         if: steps.render_transport.outputs.mode == 'artifact'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           artifact-ids: ${{ steps.render_transport.outputs.artifact_id }}
           run-id: ${{ steps.render_transport.outputs.producer_run_id }}
@@ -186,7 +186,7 @@ jobs:
 
       - name: Restore versioned render Python runtime
         id: render_python_runtime
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .venv-media
           key: render-media-venv-v2-${{ runner.os }}-${{ runner.arch }}-py312-yt2026.8.19-bgutil1.3.1-edge7.2.8-fw1.2.0-${{ hashFiles('requirements.txt', 'requirements/**/*.txt', 'pyproject.toml') }}
@@ -312,7 +312,7 @@ jobs:
             tests/test_run001_longform_editorial_controller.py
       - name: Setup ingestion JavaScript runtime
         if: inputs.media_artifact_id == ''
-        uses: denoland/setup-deno@v2
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
         with:
           deno-version: v2.x
       - name: Validate pinned ingestion narration and spoken-language QA adapters
@@ -374,7 +374,7 @@ jobs:
 
       - name: Restore content-addressed narration cache
         if: inputs.narration_artifact_id == ''
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: runtime/narration-cache
           key: narration-v2-${{ runner.os }}-edge-tts-7.2.8
@@ -382,7 +382,7 @@ jobs:
             narration-v2-${{ runner.os }}-edge-tts-
 
       - name: Restore content-addressed spoken brand audio cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: runtime/brand-audio-cache
           key: brand-audio-v3-${{ runner.os }}-edge-tts-7.2.8
@@ -404,7 +404,7 @@ jobs:
 
       - name: Download QA-passed narration checkpoint for render retry
         if: inputs.narration_artifact_id != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           artifact-ids: ${{ inputs.narration_artifact_id }}
           run-id: ${{ inputs.narration_producer_run_id }}
@@ -427,7 +427,7 @@ jobs:
 
       - name: Download QA-passed media checkpoint for render retry
         if: inputs.media_artifact_id != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           artifact-ids: ${{ inputs.media_artifact_id }}
           run-id: ${{ inputs.media_producer_run_id }}
@@ -450,7 +450,7 @@ jobs:
 
       - name: Download QA-passed spoken brand audio checkpoint for render retry
         if: inputs.brand_audio_artifact_id != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           artifact-ids: ${{ inputs.brand_audio_artifact_id }}
           run-id: ${{ inputs.brand_audio_producer_run_id }}
@@ -625,7 +625,7 @@ jobs:
 
       - name: Checkpoint QA-passed spoken brand audio artifact
         id: brand_audio_checkpoint
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: brand-audio-bundle-${{ inputs.execution_id }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: runtime/render/brand-audio-checkpoint/
@@ -657,7 +657,7 @@ jobs:
       - name: Checkpoint QA-passed narration artifact
         if: inputs.narration_artifact_id == ''
         id: narration_checkpoint
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: narration-bundle-${{ inputs.execution_id }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: runtime/render/narration-checkpoint/
@@ -690,7 +690,7 @@ jobs:
       - name: Checkpoint QA-passed media artifact
         if: inputs.media_artifact_id == ''
         id: media_checkpoint
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: media-checkpoint-${{ inputs.execution_id }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: runtime/render/media-checkpoint/
@@ -699,13 +699,16 @@ jobs:
 
       - name: Report immutable checkpoint reuse
         if: inputs.narration_artifact_id != '' || inputs.media_artifact_id != ''
+        env:
+          NARRATION_ARTIFACT_ID: ${{ inputs.narration_artifact_id }}
+          MEDIA_ARTIFACT_ID: ${{ inputs.media_artifact_id }}
         run: |
           set -euo pipefail
-          if [ -n "${{ inputs.narration_artifact_id }}" ]; then
+          if [ -n "$NARRATION_ARTIFACT_ID" ]; then
             echo "NARRATION_CHECKPOINT_REUSED=YES"
             echo "REDUNDANT_NARRATION_ARTIFACT_UPLOADS=0"
           fi
-          if [ -n "${{ inputs.media_artifact_id }}" ]; then
+          if [ -n "$MEDIA_ARTIFACT_ID" ]; then
             echo "MEDIA_CHECKPOINT_REUSED=YES"
             echo "REDUNDANT_MEDIA_ARTIFACT_UPLOADS=0"
             echo "REDUNDANT_MEDIA_DOWNLOADS=0"
@@ -829,7 +832,7 @@ jobs:
         run: python scripts/render_pipeline_stage_clock.py start artifact_upload --path runtime/render/pipeline-stage-clock.json
 
       - name: Checkpoint QA-passed render before external review
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: render-output
           path: runtime/render/output/
@@ -863,7 +866,7 @@ jobs:
 
       - name: Upload compact render performance evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: render-performance-proof-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -883,7 +886,7 @@ jobs:
           retention-days: 30
       - name: Upload failure diagnostic JSONs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: render-failure-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -935,12 +938,12 @@ jobs:
       BR_PERFORMANCE_TRACE_FILE: runtime/render/performance-trace.jsonl
     steps:
       - name: Checkout final-QA repair revision
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
 
       - name: Setup Python for final QA
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -975,7 +978,7 @@ jobs:
           PY
 
       - name: Restore rendered and branded checkpoint
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           artifact-ids: ${{ inputs.post_branding_artifact_id }}
           run-id: ${{ inputs.post_branding_producer_run_id }}
@@ -1111,7 +1114,7 @@ jobs:
           PY
 
       - name: Checkpoint QA-passed render before external review
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: render-output
           path: runtime/render/output/
@@ -1120,7 +1123,7 @@ jobs:
 
       - name: Upload final-QA resume diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: render-final-qa-resume-${{ github.run_id }}-${{ github.run_attempt }}
           path: |

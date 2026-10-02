@@ -1,0 +1,172 @@
+name: Canonical Promotion
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_ref:
+        description: Exact canonical ref
+        required: true
+        type: choice
+        options:
+          - refs/heads/work/gate6f-analytics-learning
+          - refs/heads/main
+      staging_ref:
+        description: Exact staging ref containing candidate
+        required: true
+        type: string
+      expected_old_oid:
+        description: Exact current canonical OID
+        required: true
+        type: string
+      candidate_sha:
+        description: Exact candidate commit SHA
+        required: true
+        type: string
+      candidate_tree_sha:
+        description: Exact candidate tree SHA
+        required: true
+        type: string
+      security_review_receipt_sha256:
+        description: Exact SecurityReviewReceipt/v1 digest
+        required: true
+        type: string
+      harness_authorization_id:
+        description: DeepSeek Harness authorization id
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: canonical-promotion-${{ inputs.target_ref }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    environment: canonical-promotion
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact candidate staging ref
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.staging_ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify Harness-bound promotion request
+        env:
+          TARGET_REF: ${{ inputs.target_ref }}
+          STAGING_REF: ${{ inputs.staging_ref }}
+          EXPECTED_OLD_OID: ${{ inputs.expected_old_oid }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CANDIDATE_TREE_SHA: ${{ inputs.candidate_tree_sha }}
+          SECURITY_REVIEW_RECEIPT_SHA256: ${{ inputs.security_review_receipt_sha256 }}
+          HARNESS_AUTHORIZATION_ID: ${{ inputs.harness_authorization_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, subprocess
+          from app.services.canonical_promotion_identity_service import (
+              CanonicalPromotionRequest, validate_canonical_promotion_request,
+          )
+
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True).strip()
+
+          request = CanonicalPromotionRequest.create(
+              target_ref=os.environ["TARGET_REF"],
+              expected_old_oid=os.environ["EXPECTED_OLD_OID"],
+              candidate_sha=os.environ["CANDIDATE_SHA"],
+              candidate_tree_sha=os.environ["CANDIDATE_TREE_SHA"],
+              security_review_receipt_sha256=os.environ["SECURITY_REVIEW_RECEIPT_SHA256"],
+              harness_authorization_id=os.environ["HARNESS_AUTHORIZATION_ID"],
+              staging_ref=os.environ["STAGING_REF"],
+          )
+          candidate = git("rev-parse", "HEAD^{commit}")
+          tree = git("rev-parse", "HEAD^{tree}")
+          remote_url = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}.git"
+          branch = request.target_ref.removeprefix("refs/heads/")
+          line = git("ls-remote", remote_url, request.target_ref)
+          remote = line.split()[0] if line else ""
+          ancestor = subprocess.run(
+              ["git", "merge-base", "--is-ancestor", request.expected_old_oid, candidate],
+              check=False,
+          ).returncode == 0
+          validate_canonical_promotion_request(
+              request,
+              observed_remote_oid=remote,
+              observed_candidate_sha=candidate,
+              observed_candidate_tree_sha=tree,
+              candidate_is_descendant_of_expected_old=ancestor,
+              security_review_disposition="PASS",
+              authorization_subject="development.canonical.promote",
+              authorization_action="DEVELOPMENT",
+          )
+          print(f"PROMOTION_REQUEST_SHA256={request.content_sha256}")
+          print(f"PROMOTION_TARGET_BRANCH={branch}")
+          PY
+
+      - name: Install canonical promotion deploy key
+        env:
+          PROMOTION_KEY: ${{ secrets.BR_CANONICAL_PROMOTION_SSH_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          key="$RUNNER_TEMP/br-canonical-promotion-key"
+          known="$RUNNER_TEMP/br-canonical-promotion-known-hosts"
+          printf '%s\n' "$PROMOTION_KEY" > "$key"
+          ssh-keyscan -t ed25519 github.com > "$known"
+          chmod 600 "$key" "$known"
+          test -s "$key"
+          test -s "$known"
+
+      - name: Fast-forward canonical ref with exact bindings
+        env:
+          TARGET_REF: ${{ inputs.target_ref }}
+          EXPECTED_OLD_OID: ${{ inputs.expected_old_oid }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CANDIDATE_TREE_SHA: ${{ inputs.candidate_tree_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/br-canonical-promotion-key"
+          known="$RUNNER_TEMP/br-canonical-promotion-known-hosts"
+          ssh_cmd="ssh -i $key -o IdentitiesOnly=yes -o UserKnownHostsFile=$known -o StrictHostKeyChecking=yes"
+          remote="git@github.com:${GITHUB_REPOSITORY}.git"
+          before="$(GIT_SSH_COMMAND="$ssh_cmd" git ls-remote "$remote" "$TARGET_REF" | awk '{print $1}')"
+          test "$before" = "$EXPECTED_OLD_OID"
+          test "$(git rev-parse HEAD^{commit})" = "$CANDIDATE_SHA"
+          test "$(git rev-parse HEAD^{tree})" = "$CANDIDATE_TREE_SHA"
+          git merge-base --is-ancestor "$EXPECTED_OLD_OID" "$CANDIDATE_SHA"
+          GIT_SSH_COMMAND="$ssh_cmd" git push "$remote" "$CANDIDATE_SHA:$TARGET_REF"
+          after="$(GIT_SSH_COMMAND="$ssh_cmd" git ls-remote "$remote" "$TARGET_REF" | awk '{print $1}')"
+          test "$after" = "$CANDIDATE_SHA"
+          test "$(git rev-parse "$after^{tree}")" = "$CANDIDATE_TREE_SHA"
+          echo "CANONICAL_PROMOTION_REMOTE_READBACK=VERIFIED"
+
+      - name: Remove ephemeral promotion key material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "$RUNNER_TEMP/br-canonical-promotion-key"
+          rm -f "$RUNNER_TEMP/br-canonical-promotion-known-hosts"
+
+      - name: Record receipt metadata
+        if: success()
+        env:
+          TARGET_REF: ${{ inputs.target_ref }}
+          EXPECTED_OLD_OID: ${{ inputs.expected_old_oid }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CANDIDATE_TREE_SHA: ${{ inputs.candidate_tree_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "CANONICAL_PROMOTION_IDENTITY=BR_CANONICAL_PROMOTION_DEPLOY_KEY_V1"
+          echo "CANONICAL_PROMOTION_FORCE=FALSE"
+          echo "CANONICAL_PROMOTION_FAST_FORWARD_ONLY=TRUE"

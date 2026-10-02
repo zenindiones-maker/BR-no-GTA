@@ -28,12 +28,12 @@ jobs:
       SOURCE_KNOWLEDGE_RUN_ID: "35460016361"
       SOURCE_KNOWLEDGE_ARTIFACT_ID: "10590341059"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
@@ -46,7 +46,7 @@ jobs:
           python -m py_compile scripts/video_a_extended_look_primary_audit.py
 
       - name: Download exact official Extended Look checkpoint
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           artifact-ids: ${{ env.SOURCE_VIDEO_ARTIFACT_ID }}
           run-id: ${{ env.SOURCE_VIDEO_RUN_ID }}
@@ -55,7 +55,7 @@ jobs:
           merge-multiple: true
 
       - name: Download reusable media-knowledge checkpoint
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           artifact-ids: ${{ env.SOURCE_KNOWLEDGE_ARTIFACT_ID }}
           run-id: ${{ env.SOURCE_KNOWLEDGE_RUN_ID }}
@@ -87,7 +87,7 @@ jobs:
           print("FULL_RENDER_AUTHORIZED=NO")
           PY
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: video-a-extended-look-primary-audit-${{ github.run_id }}

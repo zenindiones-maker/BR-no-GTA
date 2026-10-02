@@ -30,11 +30,7 @@ on:
         default: false
         type: boolean
 
-permissions:
-  contents: read
-  actions: write
-  statuses: write
-
+permissions: {}
 env:
   TUXEVIL_ROTATOR_VERSION: "3.8.0"
   TUXEVIL_ROTATOR_BIND_HOST: "127.0.0.1"
@@ -61,11 +57,15 @@ env:
 
 jobs:
   operational:
+    permissions:
+      contents: read
+      actions: write
+      statuses: write
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     steps:
       - name: Checkout exact operational base without persisted Git credentials
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ env.OP_BASE_SHA }}
           fetch-depth: 0
@@ -86,11 +86,11 @@ jobs:
           print("OP_DIAGNOSTIC_ONLY=" + ("true" if diagnostic else "false"))
           PY
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24"
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
@@ -101,7 +101,7 @@ jobs:
 
       - name: Restore content-addressed canonical test environment
         id: canonical-venv-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .venv
           key: ${{ runner.os }}-${{ runner.arch }}-py312-br-no-gta-venv-v2-${{ hashFiles('requirements.txt', 'config/canonical-test-environment-cache-contract.txt') }}
@@ -231,7 +231,7 @@ jobs:
 
       - name: Restore first real execution and Learning Plane state
         if: env.OP_PHASE == 'second'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: delegation-plane-first-state-${{ inputs.first_run_id }}
           path: artifacts/delegation-plane-operational/restored
@@ -239,11 +239,13 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Prepare persisted learning state for this phase
+        env:
+          FIRST_RUN_ID: ${{ inputs.first_run_id }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/delegation-plane-operational/state
           if [ "$OP_PHASE" = "second" ]; then
-            test -n "${{ inputs.first_run_id }}"
+            test -n "$FIRST_RUN_ID"
             test -s artifacts/delegation-plane-operational/restored/state/learning.db
             cp artifacts/delegation-plane-operational/restored/state/learning.db "$BR_TEST_DATABASE"
             mkdir -p artifacts/delegation-plane-operational/first
@@ -602,13 +604,14 @@ jobs:
           BR_CODEX_AUTH_MODE: "TUXEVIL_ANTIGRAVITY_RESPONSES_PROXY"
           BR_CODEX_TUXEVIL_MODEL: ${{ steps.provider.outputs.model }}
           BR_TOOL_BUDGET_EVIDENCE_PATH: ${{ github.workspace }}/artifacts/delegation-plane-operational/second/tool-budget.json
+          FIRST_RUN_ID: ${{ inputs.first_run_id }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/delegation-plane-operational/second
           python scripts/delegation_plane_real_execution.py \
             --goal-id "delegation-plane-real-second-$GITHUB_RUN_ID" \
             --execution-instance-id "second:$GITHUB_RUN_ID" \
-            --learning-source-run-id "${{ inputs.first_run_id }}" \
+            --learning-source-run-id "$FIRST_RUN_ID" \
             --base-sha "$OP_BASE_SHA" \
             --branch "work/gate6f-analytics-learning" \
             --upstream-root "$BR_HERMES_UPSTREAM_ROOT" \
@@ -616,6 +619,8 @@ jobs:
 
       - name: Compare real learning causally and build final evidence
         if: env.OP_PHASE == 'second'
+        env:
+          FIRST_RUN_ID: ${{ inputs.first_run_id }}
         run: |
           set -euo pipefail
           python scripts/delegation_plane_learning_compare.py \
@@ -635,7 +640,7 @@ jobs:
             --second-report artifacts/delegation-plane-operational/second/dynamic-system-improvement-report.json \
             --learning artifacts/delegation-plane-operational/learning-compare.json \
             --benchmark artifacts/delegation-plane-operational/benchmark.json \
-            --first-run-id "${{ inputs.first_run_id }}" \
+            --first-run-id "$FIRST_RUN_ID" \
             --second-run-id "$GITHUB_RUN_ID" \
             --head "$OP_BASE_SHA" \
             --output artifacts/delegation-plane-operational/final-evidence.json
@@ -824,7 +829,7 @@ jobs:
 
       - name: Upload end-to-end performance evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: delegation-plane-performance-${{ github.run_id }}
           path: |
@@ -870,7 +875,7 @@ jobs:
 
       - name: Upload rejected-command diagnostic even on mission failure
         if: env.OP_PHASE == 'first' && always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: delegation-plane-rejected-command-${{ github.run_id }}
           path: artifacts/delegation-plane-operational/first/rejected-command-shape.json
@@ -879,7 +884,7 @@ jobs:
 
       - name: Upload tool-budget diagnostic even on mission failure
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: delegation-plane-tool-budget-${{ github.run_id }}
           path: artifacts/delegation-plane-operational/${{ env.OP_PHASE }}/tool-budget.json
@@ -888,7 +893,7 @@ jobs:
 
       - name: Upload first real execution and Learning state
         if: env.OP_PHASE == 'first' && success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: delegation-plane-first-state-${{ github.run_id }}
           path: |
@@ -935,7 +940,7 @@ jobs:
 
       - name: Upload final operational evidence
         if: env.OP_PHASE == 'second' && always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: delegation-plane-final-${{ github.run_id }}
           path: |

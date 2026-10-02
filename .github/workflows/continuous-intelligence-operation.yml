@@ -19,25 +19,16 @@ on:
         required: false
         default: ""
         type: string
-  workflow_run:
-    workflows:
-      - Obsidian Memory Inbox
-      - Telegram Conversational Control Validation
-      - GTA6 Fresh Research
-      - System Improvement Review
-    types:
-      - completed
-
-permissions:
-  contents: read
-  actions: write
-
+permissions: {}
 concurrency:
   group: br-continuous-intelligence-scheduler-${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'proof' && format('proof-{0}', inputs.request_id) || 'coalescible' }}
   cancel-in-progress: false
 
 jobs:
   dispatch:
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:

@@ -9,20 +9,20 @@ on:
       - ".github/workflows/continuous-operation-live-proof.yml"
       - ".run/continuous-operation-live-proof.request.json"
 
-permissions:
-  contents: read
-  actions: write
-
+permissions: {}
 env:
   TARGET_REF: work/gate6f-analytics-learning
 
 jobs:
   live:
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-24.04
     timeout-minutes: 70
     steps:
       - name: Checkout validation revision
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -322,7 +322,7 @@ jobs:
 
       - name: Upload live proof evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: continuous-live-proof-${{ github.run_id }}
           path: live-evidence/

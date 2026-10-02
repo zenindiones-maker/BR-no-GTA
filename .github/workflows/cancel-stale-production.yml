@@ -7,17 +7,17 @@ on:
     paths:
       - ".run/cancel-stale-production.request.json"
 
-permissions:
-  contents: read
-  actions: write
-
+permissions: {}
 jobs:
   cancel:
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Checkout request
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Validate and cancel only the exact stale run
         env:

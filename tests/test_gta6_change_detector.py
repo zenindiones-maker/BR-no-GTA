@@ -178,3 +178,10 @@ def test_invalid_previous_hash_is_rejected():
         )
     else:
         raise AssertionError("ValueError was expected")
+
+
+def test_malformed_script_end_tag_is_removed_without_hiding_following_content():
+    content = '<html>GTA VI<script>tracking()</script foo="bar">Release date: 2026</html>'
+    result = normalize_monitored_content(content)
+    assert "tracking()" not in result
+    assert "Release date: 2026" in result

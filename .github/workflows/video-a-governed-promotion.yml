@@ -3,12 +3,12 @@ name: VIDEO A Governed Promotion and Full Render
 on:
   workflow_dispatch:
 
-permissions:
-  contents: write
-  actions: write
-
+permissions: {}
 jobs:
   promote-and-dispatch:
+    permissions:
+      contents: write
+      actions: write
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'run VIDEO A governed promotion')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -24,9 +24,9 @@ jobs:
       INCIDENT_HEAD_SHA: "7bc7b9c719d45efa23745d618ec8ba3077addaec"
       PREVIOUS_PROMOTED_RENDER_RUN_ID: "35344736531"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
@@ -49,7 +49,7 @@ jobs:
           python -m pip install -r requirements.txt
 
       - name: Download exact real VIDEO A RenderJob
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           artifact-ids: ${{ env.SOURCE_RENDER_ARTIFACT_ID }}
           run-id: ${{ env.SOURCE_RENDER_RUN_ID }}
@@ -58,7 +58,7 @@ jobs:
           merge-multiple: true
 
       - name: Download observed real benchmark
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           artifact-ids: ${{ env.BENCHMARK_ARTIFACT_ID }}
           run-id: ${{ env.BENCHMARK_RUN_ID }}
@@ -96,7 +96,7 @@ jobs:
 
       - name: Upload promoted RenderJob handoff
         id: handoff
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: video-a-promoted-render-job-${{ github.run_id }}
           path: runtime/video-a-promotion/promoted/render-job.json
@@ -141,7 +141,7 @@ jobs:
           echo "NEXT_REAL_VIDEO_A_RENDER_DISPATCHED=PASS"
           echo "RENDER_DISPATCH_IMMUTABLE_REF=$DISPATCH_TAG"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: video-a-governed-promotion-proof

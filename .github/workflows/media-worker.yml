@@ -34,15 +34,15 @@ jobs:
 
     steps:
       - name: Checkout BR-no-GTA
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
       - name: Setup Deno
-        uses: denoland/setup-deno@v2
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
         with:
           deno-version: v2.x
 
@@ -537,6 +537,8 @@ jobs:
 
       - name: Validate final artifact
         if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' }}
+        env:
+          TEST_ONLY: ${{ github.event.inputs.test_only }}
         run: |
             set -euo pipefail
 
@@ -544,7 +546,7 @@ jobs:
             test -s runtime/media-worker/artifact/media_probe.json
             test -s runtime/media-worker/artifact/manifest.json
 
-            if [ "${{ github.event.inputs.test_only }}" != "true" ]; then
+            if [ "$TEST_ONLY" != "true" ]; then
               test -s runtime/media-worker/artifact/speech_analysis.json
               test -s runtime/media-worker/artifact/speech_qa.json
             fi
@@ -553,6 +555,7 @@ jobs:
 
             python - <<'PY'
             import json
+            import os
             from pathlib import Path
 
             artifact_dir = Path("runtime/media-worker/artifact")
@@ -597,7 +600,7 @@ jobs:
                     "Manifest inválido: mídia local não deveria estar incluída."
                 )
 
-            if "${{ github.event.inputs.test_only }}" != "true":
+            if os.environ["TEST_ONLY"] != "true":
                 speech_analysis = json.loads(
                     (artifact_dir / "speech_analysis.json")
                     .read_text(encoding="utf-8")
@@ -673,7 +676,7 @@ jobs:
 
       - name: Upload MediaKnowledge artifact
         if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
             name: media-knowledge
             path: |
@@ -685,7 +688,7 @@ jobs:
 
       - name: Upload SpeechAnalysis artifact
         if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' && github.event.inputs.test_only != 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
             name: speech-analysis
             path: |

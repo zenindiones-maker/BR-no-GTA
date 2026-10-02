@@ -1,0 +1,26 @@
+# BR-no-GTA security ownership baseline
+/.github/** @zenindiones-maker
+/.github/workflows/** @zenindiones-maker
+/.github/actions/** @zenindiones-maker
+/.github/CODEOWNERS @zenindiones-maker
+/SECURITY.md @zenindiones-maker
+/app/services/*auth* @zenindiones-maker
+/app/services/*authorization* @zenindiones-maker
+/app/services/*security* @zenindiones-maker
+/app/services/*policy* @zenindiones-maker
+/app/services/harness_authorization_service.py @zenindiones-maker
+/app/services/global_capability_registry.py @zenindiones-maker
+/app/services/global_capability_registry_base.py @zenindiones-maker
+/app/services/harness_durable_execution_v3.py @zenindiones-maker
+/app/services/telegram_egress_outbox_service.py @zenindiones-maker
+/app/services/*publication* @zenindiones-maker
+/app/services/*private*voice* @zenindiones-maker
+/config/** @zenindiones-maker
+/integrations/** @zenindiones-maker
+/pyproject.toml @zenindiones-maker
+/requirements*.txt @zenindiones-maker
+/**/requirements*.txt @zenindiones-maker
+/**/package-lock.json @zenindiones-maker
+/**/pnpm-lock.yaml @zenindiones-maker
+/**/yarn.lock @zenindiones-maker
+/**/Dockerfile* @zenindiones-maker

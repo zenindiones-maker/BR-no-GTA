@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import re
+
+from bs4 import BeautifulSoup
 from dataclasses import dataclass
 
 
@@ -19,38 +21,19 @@ def normalize_monitored_content(content: str) -> str:
         raise ValueError("content must be a string")
 
     normalized = content
-    json_ld_blocks: list[str] = []
+    lowered = content.lower()
+    if "<script" in lowered or "<style" in lowered:
+        soup = BeautifulSoup(content, "lxml")
 
-    def preserve_json_ld(match: re.Match[str]) -> str:
-        json_ld_blocks.append(match.group(0))
-        return f"__GTA6_JSON_LD_{len(json_ld_blocks) - 1}__"
+        for style in soup.find_all("style"):
+            style.decompose()
 
-    normalized = re.sub(
-        r'<script\b[^>]*type=["\']application/ld\+json["\'][^>]*>.*?</script>',
-        preserve_json_ld,
-        normalized,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
+        for script in soup.find_all("script"):
+            script_type = str(script.get("type") or "").strip().lower()
+            if script_type != "application/ld+json":
+                script.decompose()
 
-    normalized = re.sub(
-        r"<script\b[^>]*>.*?</script>",
-        "",
-        normalized,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-
-    normalized = re.sub(
-        r"<style\b[^>]*>.*?</style>",
-        "",
-        normalized,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-
-    for index, block in enumerate(json_ld_blocks):
-        normalized = normalized.replace(
-            f"__GTA6_JSON_LD_{index}__",
-            block,
-        )
+        normalized = soup.decode(formatter="minimal")
 
     normalized = re.sub(r"\s+", " ", normalized)
 

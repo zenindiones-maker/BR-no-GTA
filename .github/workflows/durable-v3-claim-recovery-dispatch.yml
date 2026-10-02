@@ -14,10 +14,11 @@ on:
         description: Canonical authorization id
         required: true
         type: string
-permissions:
-  actions: write
+permissions: {}
 jobs:
   dispatch:
+    permissions:
+      actions: write
     runs-on: ubuntu-24.04
     steps:
       - env:

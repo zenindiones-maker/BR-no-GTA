@@ -7,10 +7,7 @@ on:
     paths:
       - ".run/obsidian-inbox-transport.request.json"
 
-permissions:
-  contents: read
-  actions: write
-
+permissions: {}
 env:
   PYTHONPATH: .
   ZERO_COST_OPERATION: "TRUE"
@@ -20,17 +17,20 @@ env:
 
 jobs:
   focused:
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Checkout exact validation revision
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 1
           persist-credentials: false
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -89,7 +89,7 @@ jobs:
         run: |
           set -euo pipefail
           NOTE_B64="$(cat /tmp/note.b64)"
-          gh workflow run obsidian-memory-inbox.yml             --repo "$GITHUB_REPOSITORY"             --ref main             -f "dispatch_id=$DISPATCH_ID"             -f "note_b64=$NOTE_B64"             -f "source_ref=Inbox/transport-validation.md"             -f "goal_id=$VIDEO_A_GOAL_ID"             -f "task_id=script-human-review"             -f "artifact_ref=script:8"             -f "target_ref=$TARGET_REF"
+          gh workflow run obsidian-memory-inbox.yml             --repo "$GITHUB_REPOSITORY"             --ref "$TARGET_REF"             -f "dispatch_id=$DISPATCH_ID"             -f "note_b64=$NOTE_B64"             -f "source_ref=Inbox/transport-validation.md"             -f "goal_id=$VIDEO_A_GOAL_ID"             -f "task_id=script-human-review"             -f "artifact_ref=script:8"
           echo "OBSIDIAN_INBOX_DISPATCH_REQUEST=PASS"
 
       - name: Wait for dispatched run and download envelope
@@ -101,7 +101,7 @@ jobs:
           set -euo pipefail
           run_id=""
           for _ in $(seq 1 30); do
-            run_id="$(gh run list               --repo "$GITHUB_REPOSITORY"               --workflow obsidian-memory-inbox.yml               --branch main               --limit 40               --json databaseId,displayTitle               --jq ".[] | select(.displayTitle == \"Obsidian Inbox $DISPATCH_ID\") | .databaseId"               | head -n 1)"
+            run_id="$(gh run list               --repo "$GITHUB_REPOSITORY"               --workflow obsidian-memory-inbox.yml               --branch "$TARGET_REF"               --limit 40               --json databaseId,displayTitle               --jq ".[] | select(.displayTitle == \"Obsidian Inbox $DISPATCH_ID\") | .databaseId"               | head -n 1)"
             [[ -n "$run_id" ]] && break
             sleep 2
           done
@@ -169,7 +169,7 @@ jobs:
 
       - name: Upload focused transport evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: obsidian-inbox-transport-${{ github.run_id }}
           path: artifacts/obsidian-inbox-transport/

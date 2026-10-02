@@ -8,12 +8,12 @@ on:
     paths:
       - .run001/final-products-request.json
 
-permissions:
-  contents: read
-  actions: write
-
+permissions: {}
 jobs:
   authorize-and-dispatch:
+    permissions:
+      contents: read
+      actions: write
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'dispatch RUN-001 final products')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -21,11 +21,11 @@ jobs:
       TARGET_REF: work/gate6f-analytics-learning
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 1
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Install control-plane dependencies
@@ -121,7 +121,7 @@ jobs:
           }
           Path('runtime/final-products/dispatch-evidence.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding='utf-8')
           PY
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: run001-final-products-dispatch
           path: runtime/final-products/

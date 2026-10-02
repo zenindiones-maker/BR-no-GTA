@@ -4,7 +4,7 @@ from pathlib import Path
 from scripts.zero_cost_route_inventory import build
 
 def test_real_checkpoint_closes_zero_cost_inventory(tmp_path):
-    root=Path("runtime-test")
+    root=tmp_path/"runtime-test"
     # Focused synthetic AgentSession preserves the real four exhausted pairs.
     session={"schema":"AgentSession/v1","MISSION_ID":"mission-real","TASK_ID":"task-02","AGENT_INSTANCE_ID":"agent-real","FINAL_OUTPUT_VALID":False,"PROVIDER_ATTEMPTS":[
       {"provider_id":"nvidia_nim","model_id":"z-ai/glm-5.3","status":"FAILED"},
