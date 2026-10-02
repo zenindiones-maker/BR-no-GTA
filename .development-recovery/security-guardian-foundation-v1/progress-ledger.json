@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 35,
+  "checkpoint_sequence": 36,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -89,9 +89,12 @@
     "independent-security-review-independence-pass",
     "independent-security-review-receipt-pass",
     "promotion-readiness-v2-server-precheck",
-    "secret-non-provider-patterns-reconciled-unavailable"
+    "secret-non-provider-patterns-reconciled-unavailable",
+    "clean-promotion-candidate-materialized",
+    "clean-candidate-recovery-history-exclusion-proved",
+    "promotion-readiness-v2-source-hardening-focused-green"
   ],
-  "current_step": "clean-promotion-candidate-materialization",
+  "current_step": "exact-clean-candidate-validation",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -357,14 +360,24 @@
     "github-security:push-protection=enabled",
     "github-security:non-provider-patterns=disabled",
     "server-enforcement-unavailable:generic-patterns-require-organization-owned-Team+Secret-Protection",
-    "server-precheck:docs/security/evidence/security-promotion-readiness-v2-server-precheck.jsonl"
+    "server-precheck:docs/security/evidence/security-promotion-readiness-v2-server-precheck.jsonl",
+    "clean-candidate:4bd57868ceee55a59e382b5f758ad02bb152e14f",
+    "clean-candidate-tree:a30cbaa3b0967ae59a6876d85ea43917cb1e7b76",
+    "clean-diff-sha256:c738653ab7d00c123d7733bf0b4bcc6714169e13fcb251f950cd397e80dd65d8",
+    "clean-candidate:recovery-metadata=0",
+    "clean-candidate:recovery-payloads=0",
+    "clean-history:checkpoint=0",
+    "clean-history:recovery-payload=0",
+    "clean-material:cp36-digest=e7af12f24383d0df334e4557871c8651190665eee08a8047392f8ac8b4043d5f",
+    "focused:promotion-readiness+identity=19_PASS",
+    "clean-candidate-evidence:docs/security/evidence/security-promotion-readiness-v2-clean-candidate.jsonl"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000035-fd04b46d",
-  "latest_verified_checkpoint_sha": "ae988d91074fa943d6a472092a69c01cd18db740",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000036-84c219e8",
+  "latest_verified_checkpoint_sha": "86f6e54be414c3472415a742276901fb123af93a",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "restore cp36 onto exact canonical base, materialize recovery workflow payloads into canonical workflow paths, exclude all recovery-only metadata, then harden promotion readiness v2",
+  "next_step": "run focused security, affected subgraph, root suite, CodeQL exact binding, Zizmor, secret regression, OSV dependency delta, then independent read-only review on clean candidate",
   "open_blockers": [],
   "plan_steps": [
     "authority-contract",
@@ -420,6 +433,10 @@
     "canonical_promotion_ruleset_id": "24350572",
     "canonical_promotion_workflow_yaml": "PASS",
     "canonical_promotion_write_deploy_key_count": "1",
+    "checkpoint_history_in_canonical": "0",
+    "clean_candidate_sha": "4bd57868ceee55a59e382b5f758ad02bb152e14f",
+    "clean_candidate_tree": "a30cbaa3b0967ae59a6876d85ea43917cb1e7b76",
+    "clean_diff_sha256": "c738653ab7d00c123d7733bf0b4bcc6714169e13fcb251f950cd397e80dd65d8",
     "codeql_actions_candidate_high": "4",
     "codeql_actions_candidate_results": "4",
     "codeql_actions_final_results": "0",
@@ -462,6 +479,7 @@
     "final_zizmor_high": "0",
     "final_zizmor_low": "199",
     "final_zizmor_medium": "57",
+    "focused_promotion_readiness_tests": "19_PASS",
     "git_diff_check": "PASS",
     "gta6_change_detector": "12_PASS",
     "independent_review_authorization_id": "5e6eab8a-dfb1-4d8f-a24b-af07deb3e100",
@@ -493,6 +511,9 @@
     "pip_check": "PASS",
     "promotion_attempted": "false",
     "pytest_tmp_path_retention_count": "1",
+    "recovery_metadata_in_candidate": "0",
+    "recovery_payload_history_in_canonical": "0",
+    "recovery_payloads_in_candidate": "0",
     "root_suite_142_errors_root_cause": "PYTEST_TMP_VOLUME_EXHAUSTION",
     "root_suite_cluster_affected_families": "242_PASS",
     "root_suite_cluster_focused": "3_PASS",
@@ -570,6 +591,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "updated_at": "2026-10-02T13:48:21.656100+00:00",
-  "validation_state": "SECURITY_PROMOTION_READINESS_V2_SERVER_PRECHECK_RECONCILED"
+  "updated_at": "2026-10-02T14:07:25.970329+00:00",
+  "validation_state": "SECURITY_PROMOTION_READINESS_V2_CLEAN_CANDIDATE_BOUND_VALIDATION_PENDING"
 }

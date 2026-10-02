@@ -822,3 +822,40 @@ def test_security_reviewer_review_authorization_reaches_readonly_agent_office_bo
     assert captured["allowed_agents"] == ["codex-security-reviewer"]
     assert captured["allowed_capabilities"] == ["security.review.repository"]
     assert captured["mission_write_scope"] == []
+
+
+def test_security_ci_uses_hash_locked_python_dependencies():
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github/workflows/security-guardian-baseline.yml").read_text(encoding="utf-8")
+    lock = (root / "requirements/security-ci.lock").read_text(encoding="utf-8")
+    assert "python -m pip install --require-hashes --only-binary :all: -r requirements/security-ci.lock" in workflow
+    assert "pip install --disable-pip-version-check --no-input pytest " not in workflow
+    package_lines = [
+        line.strip()
+        for line in lock.splitlines()
+        if line.strip() and not line.lstrip().startswith(("#", "--", "\\"))
+        and "==" in line
+    ]
+    assert package_lines
+    assert all("==" in line for line in package_lines)
+    assert lock.count("--hash=sha256:") >= len(package_lines)
+
+
+def test_dependabot_maintains_pip_and_github_actions_without_automerge():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / ".github/dependabot.yml").read_text(encoding="utf-8")
+    assert 'package-ecosystem: "pip"' in text
+    assert 'package-ecosystem: "github-actions"' in text
+    assert "schedule:" in text
+    assert "open-pull-requests-limit:" in text
+    assert "automerge" not in text.lower()
+
+
+def test_release_artifact_provenance_followup_is_explicit_not_source_promotion_gate():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "docs/security/RELEASE_ARTIFACT_PROVENANCE_V1.md").read_text(encoding="utf-8")
+    assert "RELEASE_ARTIFACT_PROVENANCE_V1" in text
+    assert "binaries" in text
+    assert "packages" in text
+    assert "build manifests" in text
+    assert "source promotion" in text.lower()

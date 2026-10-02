@@ -7,7 +7,6 @@ import re
 from typing import Any, Mapping
 
 ALLOWED_CANONICAL_REFS = frozenset({
-    "refs/heads/main",
     "refs/heads/work/gate6f-analytics-learning",
 })
 PROMOTION_AUTHORIZATION_SUBJECT = "development.canonical.promote"
@@ -234,7 +233,6 @@ def canonical_promotion_ruleset_payload() -> dict[str, Any]:
         "conditions": {
             "ref_name": {
                 "include": [
-                    "~DEFAULT_BRANCH",
                     "refs/heads/work/gate6f-analytics-learning",
                 ],
                 "exclude": [],
@@ -245,5 +243,46 @@ def canonical_promotion_ruleset_payload() -> dict[str, Any]:
             {"type": "update"},
             {"type": "deletion"},
             {"type": "non_fast_forward"},
+        ],
+    }
+
+
+def canonical_acceptance_ruleset_payload() -> dict[str, Any]:
+    return {
+        "name": "BR canonical development acceptance",
+        "target": "branch",
+        "enforcement": "active",
+        "bypass_actors": [],
+        "conditions": {
+            "ref_name": {
+                "include": ["refs/heads/work/gate6f-analytics-learning"],
+                "exclude": [],
+            }
+        },
+        "rules": [
+            {"type": "deletion"},
+            {"type": "non_fast_forward"},
+            {
+                "type": "required_status_checks",
+                "parameters": {
+                    "do_not_enforce_on_create": False,
+                    "required_status_checks": [
+                        {"context": "Deterministic policy contracts"},
+                    ],
+                    "strict_required_status_checks_policy": False,
+                },
+            },
+            {
+                "type": "code_scanning",
+                "parameters": {
+                    "code_scanning_tools": [
+                        {
+                            "tool": "CodeQL",
+                            "alerts_threshold": "errors",
+                            "security_alerts_threshold": "high_or_higher",
+                        }
+                    ]
+                },
+            },
         ],
     }
