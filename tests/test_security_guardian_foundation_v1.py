@@ -9,6 +9,7 @@ import pytest
 
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.agent_office_harness_service import build_agent_office_specialist_contract
+from app.services.agent_office.munder_adapter import registered_worker_runners
 from app.services.security_guardian_service import (
     BLOCKING_DETERMINISTIC_CLASSES,
     CredentialInventoryItem,
@@ -740,3 +741,11 @@ def test_security_reviewer_registry_contract_projects_into_read_only_agent_offic
     assert contract["side_effect_class"] == "READ_ONLY"
     assert contract["mission_write_scope"] == []
     assert contract["task"]["action"] == "analyze"
+
+
+def test_security_reviewer_agent_id_has_registered_readonly_worker():
+    record = GLOBAL_CAPABILITY_REGISTRY.get("security.review.repository")
+    assert record is not None
+    runners = registered_worker_runners()
+    assert record.agent_id in runners
+    assert runners[record.agent_id].__name__ == "codex_readonly_worker"

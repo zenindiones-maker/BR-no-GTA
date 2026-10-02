@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "security-foundation-development",
   "artifact_refs": [],
-  "authorization_id": "23cecf5b-3665-495b-9e99-9a3067c8df7a",
+  "authorization_id": "2851f507-b641-45f4-99c8-6b3f4b1958de",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "c9d06b5ffdfaf4bf368b2b5c7d57cc4125795e8b364f1c80db104d493127820f",
-  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000031-b3cc5df3",
+  "checkpoint_digest": "792f50479d0301f7b957158af7c4a5652b72106a9bdeb4d630c656a264addbb1",
+  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000032-a6cd6ff8",
   "checkpoint_kind": "RECOVERY",
-  "checkpoint_sequence": 31,
+  "checkpoint_sequence": 32,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -80,11 +80,13 @@
     "test-harness-isolation-focused-green",
     "root-suite-cp29-pass",
     "cp30-formal-readback-verified",
-    "root-suite-ledger-history-current-normalized"
+    "root-suite-ledger-history-current-normalized",
+    "independent-security-review-dispatch-attempted",
+    "independent-security-review-auth-infra-blocked"
   ],
-  "content_digest": "eef3613ebf6c9151cf82ecf5544737755b1b3ccb71b13707491512be2bbe72d8",
-  "created_at": "2026-10-02T11:20:20.017821+00:00",
-  "current_step": "independent-security-review",
+  "content_digest": "5ec0aa8d58e8b36473bb899bd9985a9846bb5402d9382418017049c7ff896de8",
+  "created_at": "2026-10-02T11:40:33.984512+00:00",
+  "current_step": "independent-security-review-blocked-auth-infrastructure",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
@@ -283,10 +285,26 @@
     "cp30:readback-receipt=docs/security/evidence/cp30-readback-v1.jsonl",
     "root-suite-current:3818_PASS_7_SKIP_0_FAIL_0_ERROR_exit0",
     "root-suite-history:71_FAILED_PRESERVED",
-    "root-suite-history:142_ERRORS_PRESERVED_AS_ENVIRONMENTAL_SETUP_FANOUT"
+    "root-suite-history:142_ERRORS_PRESERVED_AS_ENVIRONMENTAL_SETUP_FANOUT",
+    "independent-review:dispatch=READ_ONLY_EPHEMERAL_DISPOSABLE_WORKTREE",
+    "independent-review:authorization=5e6eab8a-dfb1-4d8f-a24b-af07deb3e100",
+    "independent-review:candidate=747ef03d6057c805fe5d6a158571d7c522f68473",
+    "independent-review:tree=dfd718e37ccab6e64879be9aed2cebc2e1fb82ae",
+    "independent-review:diff-sha256=331e5f86280b0e7c7eb47111350503c8fd6c867e24b0385f21532f6133d2b69a",
+    "independent-review:codex-sandbox=read-only",
+    "independent-review:codex-session=ephemeral",
+    "independent-review:transport=401_UNAUTHORIZED_NO_VERDICT",
+    "independent-review:events-sha256=3349378fedf0c32f676765caf4a0eb85fbb4f709ee1bfb4c260fce71a135ef42",
+    "promotion:FORBIDDEN_until_INDEPENDENT_REVIEW_PASS"
   ],
   "excluded_paths": [],
-  "failure_state": {},
+  "failure_state": {
+    "failure": "Codex transport 401 Unauthorized before reviewer verdict",
+    "independent_review": "BLOCKED_AUTH_INFRASTRUCTURE",
+    "reviewed_candidate_sha": "747ef03d6057c805fe5d6a158571d7c522f68473",
+    "reviewed_diff_sha256": "331e5f86280b0e7c7eb47111350503c8fd6c867e24b0385f21532f6133d2b69a",
+    "reviewed_tree_sha": "dfd718e37ccab6e64879be9aed2cebc2e1fb82ae"
+  },
   "included_paths": [
     ".github/CODEOWNERS",
     "SECURITY.md",
@@ -302,7 +320,6 @@
     "docs/security/evidence/codeql-exact-candidate-baseline-v1.jsonl",
     "docs/security/evidence/codeql-final-candidate-v1.jsonl",
     "docs/security/evidence/codeql-python-exact-candidate-v1.jsonl",
-    "docs/security/evidence/cp30-readback-v1.jsonl",
     "docs/security/evidence/root-suite-cp26-temp-volume-failure-v1.jsonl",
     "docs/security/evidence/root-suite-pre-review-v1.jsonl",
     "docs/security/evidence/security-pre-review-validation-v1.jsonl",
@@ -457,16 +474,16 @@
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "execute independent read-only Security Guardian review on exact normalized recovery candidate; promotion forbidden unless INDEPENDENT_REVIEW=PASS",
+  "next_step": "restore a governed read-only Security Guardian semantic execution route with existing authorized credentials; rerun only independent review on exact normalized candidate; promotion forbidden until PASS",
   "open_blockers": [
-    "INDEPENDENT_REVIEW_PENDING"
+    "INDEPENDENT_REVIEW_BLOCKED_AUTH_INFRASTRUCTURE"
   ],
-  "previous_checkpoint_sha": "a10516e8b846190d84d0f30385f383715d0bb430",
-  "progress_ledger_digest": "08ce54cc40c0057cbe2099510967e079a934d209d385185357ab865c8d0d1ef9",
+  "previous_checkpoint_sha": "747ef03d6057c805fe5d6a158571d7c522f68473",
+  "progress_ledger_digest": "4c00e4c23028bd6098cfa285f9133c6a1edbceeeda8c0ccc0436eee35a977652",
   "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "cp30 remote readback is formally VERIFIED. Root-suite ledger is normalized: historical 71-failure and 142-error runs are preserved separately; current result is 3818 passed / 7 skipped / exit_code=0. Do not rerun root suite, CodeQL, Zizmor, promotion identity or affected subgraph absent new contradictory evidence. Execute independent read-only Security Guardian review on the exact normalized recovery candidate. Promotion remains forbidden unless INDEPENDENT_REVIEW=PASS.",
+  "resume_instructions": "cp30 readback and ledger normalization are closed at cp31. Root suite current remains PASS 3818/7/exit0. Independent read-only Security Guardian review was dispatched on exact cp31 candidate in a detached disposable worktree with sandbox read-only and ephemeral session, but Codex transport failed 401 Unauthorized before any verdict. Do not rerun root suite/CodeQL/Zizmor/promotion identity/affected subgraph. Restore only a governed read-only reviewer auth route, then rerun independent review. Promotion remains forbidden until INDEPENDENT_REVIEW=PASS.",
   "runtime_namespace": "security-guardian-foundation-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -486,7 +503,7 @@
     ]
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "checkpoint-cp30-readback-and-root-suite-ledger-normalization",
+  "task_id": "checkpoint-independent-review-auth-infrastructure-block",
   "test_state": {
     "affected_security_subgraph": "152_PASS",
     "canonical_promotion_deploy_key_probe_create": "PASS",
@@ -548,6 +565,13 @@
     "final_zizmor_medium": "57",
     "git_diff_check": "PASS",
     "gta6_change_detector": "12_PASS",
+    "independent_review_authorization_id": "5e6eab8a-dfb1-4d8f-a24b-af07deb3e100",
+    "independent_review_candidate_sha": "747ef03d6057c805fe5d6a158571d7c522f68473",
+    "independent_review_candidate_tree": "dfd718e37ccab6e64879be9aed2cebc2e1fb82ae",
+    "independent_review_diff_sha256": "331e5f86280b0e7c7eb47111350503c8fd6c867e24b0385f21532f6133d2b69a",
+    "independent_review_failure_class": "CODEX_AUTH_401_UNAUTHORIZED",
+    "independent_review_status": "BLOCKED_AUTH_INFRASTRUCTURE",
+    "independent_review_transport_exit_code": "1",
     "main_force_push": "BLOCKED",
     "missing_top_level_permissions": "0",
     "mutable_action_refs": "0",
@@ -629,6 +653,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "validation_state": "ROOT_SUITE_PASS_CP30_READBACK_VERIFIED_INDEPENDENT_REVIEW_PENDING",
+  "validation_state": "ROOT_SUITE_PASS_INDEPENDENT_REVIEW_BLOCKED_AUTH_INFRASTRUCTURE",
   "workspace_id": "security-guardian-foundation-v1"
 }
