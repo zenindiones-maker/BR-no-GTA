@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 17,
+  "checkpoint_sequence": 18,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -44,9 +44,11 @@
     "codeql-actions-high-root-cause-query-reviewed",
     "workflow-dispatch-executable-ref-boundary-red-green",
     "codeql-actions-four-highs-remediated",
-    "codeql-actions-post-fix-exact-rescan-zero-findings"
+    "codeql-actions-post-fix-exact-rescan-zero-findings",
+    "codeql-final-python-exact-binding",
+    "codeql-candidate-rescan-closed"
   ],
-  "current_step": "codeql-final-python-exact-binding",
+  "current_step": "canonical-promotion-identity-hardening",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -183,16 +185,19 @@
     "codeql-actions-post-fix-evidence-sha256:eb226af802b61a799b3f57219f342aa3b5ef543a700fb7e9983bcf7cdb71c447",
     "codeql-actions-post-fix:result_count=0",
     "codeql-actions-post-fix:new_high_or_critical_vs_canonical=0",
-    "codeql-actions-post-fix:resolved_previous_high=4"
+    "codeql-actions-post-fix:resolved_previous_high=4",
+    "codeql-final-evidence-sha256:75fccca11a2f677cabcac7ff759a2d8374c6ab17c490267a4fe736b5dfdf5b5c",
+    "codeql-python-final-sarif-sha256:8fa6b1eb7710ab131a02350a882a465b48fed86e90cf1f3a665ab1bcc802bb0a",
+    "codeql-final:new_high_or_critical=0",
+    "codeql-blocker:CLOSED"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000017-54cedf15",
-  "latest_verified_checkpoint_sha": "4660ecc17408f6afe9961046a0b63d84bba50d20",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000018-946d6e60",
+  "latest_verified_checkpoint_sha": "8958feb9b43d23bca0528ec6dc962bd4d7aa1e34",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "run Python CodeQL on exact final candidate 0cf0fa50/08ff2490; if no new HIGH/CRITICAL vs canonical, close CodeQL blocker and proceed to canonical promotion identity hardening",
+  "next_step": "harden canonical promotion identity and prove promotion authority/ref/CAS/tree/candidate bindings before any canonical ref update",
   "open_blockers": [
-    "CODEQL_FINAL_PYTHON_EXACT_BINDING_REQUIRED",
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED"
   ],
   "plan_steps": [
@@ -232,6 +237,7 @@
   "tests": {
     "codeql_actions_candidate_high": "4",
     "codeql_actions_candidate_results": "4",
+    "codeql_actions_final_results": "0",
     "codeql_actions_new_high_or_critical_vs_canonical": "0",
     "codeql_actions_new_high_vs_canonical": "4",
     "codeql_actions_post_fix_candidate_sha": "0cf0fa50ce6f51f8e976449ffa9dca53a92c4235",
@@ -239,12 +245,17 @@
     "codeql_actions_post_fix_results": "0",
     "codeql_actions_resolved_previous_high": "4",
     "codeql_actions_resolved_vs_canonical": "7",
+    "codeql_final_candidate_sha": "0cf0fa50ce6f51f8e976449ffa9dca53a92c4235",
+    "codeql_final_candidate_tree": "08ff24908e408338bcef5f21d5f834861e5751cd",
+    "codeql_final_new_high_or_critical": "0",
     "codeql_new_high_or_critical_vs_canonical": "4",
     "codeql_python_candidate_high": "39",
     "codeql_python_candidate_medium": "2",
     "codeql_python_candidate_results": "41",
     "codeql_python_exact_candidate_sha": "7c15f2615dce05310fdf75e95bc6ee48551b2bc9",
     "codeql_python_exact_candidate_tree": "3d5f5f8db78224456c76dc6958665c4ba3710f5e",
+    "codeql_python_final_resolved_high_vs_canonical": "1",
+    "codeql_python_final_results": "41",
     "codeql_python_new_high_or_critical": "0",
     "codeql_python_new_vs_canonical": "0",
     "codeql_python_resolved_high": "1",
@@ -274,6 +285,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "updated_at": "2026-10-02T06:04:43.563624+00:00",
-  "validation_state": "CODEQL_ACTIONS_ZERO_FINDINGS_PYTHON_FINAL_BINDING_PENDING"
+  "updated_at": "2026-10-02T06:08:52.800547+00:00",
+  "validation_state": "CODEQL_BLOCKER_CLOSED_PROMOTION_IDENTITY_HARDENING_ACTIVE"
 }
