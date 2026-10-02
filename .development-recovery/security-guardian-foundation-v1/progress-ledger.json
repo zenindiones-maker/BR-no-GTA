@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 23,
+  "checkpoint_sequence": 24,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -63,9 +63,10 @@
     "final-candidate-secret-regression-scan",
     "final-candidate-zizmor-high-zero",
     "root-suite-cluster-remediation-tdd",
-    "root-suite-cluster-focused-validation"
+    "root-suite-cluster-focused-validation",
+    "root-suite-revalidation-pass"
   ],
-  "current_step": "root-suite-revalidation",
+  "current_step": "independent-security-review",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -238,14 +239,16 @@
     "tdd:root-suite-clusters:affected-families=242_PASS",
     "remediation:security-sensors-capability_type=TOOL_execution_kind=VALIDATOR",
     "remediation:actions-cache-expectation=FULL_SHA_PINNED",
-    "remediation:openai-codex-action-expectation=FULL_SHA_PINNED"
+    "remediation:openai-codex-action-expectation=FULL_SHA_PINNED",
+    "root-suite-revalidation:command=python -m pytest -q",
+    "root-suite-revalidation:exit_code=0"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000023-4ace84cd",
-  "latest_verified_checkpoint_sha": "36ddbdc6abc0a736c922e5370b53667ea6789e70",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000024-81fb029d",
+  "latest_verified_checkpoint_sha": "c2b89188e709c477785afe4400570c5aaba47577",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "run exact root suite on checkpointed candidate; only if PASS dispatch independent read-only Security Guardian review",
+  "next_step": "dispatch independent read-only Security Guardian review on exact checkpointed candidate; promotion remains forbidden unless review PASS",
   "open_blockers": [],
   "plan_steps": [
     "authority-contract",
@@ -354,10 +357,11 @@
     "root_suite_candidate_tree": "520a1a277c3a09a6ea119d72446f0dcebb6025e4",
     "root_suite_cluster_affected_families": "242_PASS",
     "root_suite_cluster_focused": "3_PASS",
+    "root_suite_exit_code": "0",
     "root_suite_failed": "71",
     "root_suite_passed": "3744",
     "root_suite_skipped": "7",
-    "root_suite_status": "FAIL",
+    "root_suite_status": "PASS",
     "root_suite_subtests_passed": "16",
     "run001_bootstrap_yaml": "PASS",
     "run001_final_products_executor_yaml": "PASS",
@@ -371,6 +375,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "updated_at": "2026-10-02T10:24:01.446051+00:00",
-  "validation_state": "ROOT_SUITE_CLUSTER_REMEDIATION_FOCUSED_GREEN_ROOT_REVALIDATION_PENDING"
+  "updated_at": "2026-10-02T10:28:53.145733+00:00",
+  "validation_state": "ROOT_SUITE_PASS_INDEPENDENT_REVIEW_PENDING"
 }

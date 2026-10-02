@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "security-foundation-development",
   "artifact_refs": [],
-  "authorization_id": "04009e0f-39c9-41a3-8620-ccffa64226d5",
+  "authorization_id": "ec729fd6-a62e-461b-9bd0-76e091d6251c",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "41b3cc67f8f26d02d3146ee63088ce53aa3b4f9b88353e28c0ef5d39ff66f1f4",
-  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000024-81fb029d",
+  "checkpoint_digest": "5e1d7c9272c420d6e2a2406041e42286bde054064abfc61ca2f87e569d7c1f9d",
+  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000025-ee1d4401",
   "checkpoint_kind": "RECOVERY",
-  "checkpoint_sequence": 24,
+  "checkpoint_sequence": 25,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -68,11 +68,12 @@
     "final-candidate-secret-regression-scan",
     "final-candidate-zizmor-high-zero",
     "root-suite-cluster-remediation-tdd",
-    "root-suite-cluster-focused-validation"
+    "root-suite-cluster-focused-validation",
+    "root-suite-revalidation-pass"
   ],
   "content_digest": "4589efae9614a9435c88ce58914a7fddb45a2b68806d85db8f40a6fbd0fcd65e",
-  "created_at": "2026-10-02T10:24:09.877947+00:00",
-  "current_step": "root-suite-revalidation",
+  "created_at": "2026-10-02T10:28:58.790118+00:00",
+  "current_step": "independent-security-review",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
@@ -231,7 +232,9 @@
     "tdd:root-suite-clusters:affected-families=242_PASS",
     "remediation:security-sensors-capability_type=TOOL_execution_kind=VALIDATOR",
     "remediation:actions-cache-expectation=FULL_SHA_PINNED",
-    "remediation:openai-codex-action-expectation=FULL_SHA_PINNED"
+    "remediation:openai-codex-action-expectation=FULL_SHA_PINNED",
+    "root-suite-revalidation:command=python -m pytest -q",
+    "root-suite-revalidation:exit_code=0"
   ],
   "excluded_paths": [],
   "failure_state": {},
@@ -399,14 +402,14 @@
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "run exact root suite on checkpointed candidate; only if PASS dispatch independent read-only Security Guardian review",
+  "next_step": "dispatch independent read-only Security Guardian review on exact checkpointed candidate; promotion remains forbidden unless review PASS",
   "open_blockers": [],
-  "previous_checkpoint_sha": "36ddbdc6abc0a736c922e5370b53667ea6789e70",
-  "progress_ledger_digest": "67f3581862847cc41d6bcff930bda43049a10a0a3c25e950628fec1248218a89",
+  "previous_checkpoint_sha": "c2b89188e709c477785afe4400570c5aaba47577",
+  "progress_ledger_digest": "15e2a70cd689a12b51b749eb0fb2d9bec77d382f0a3f4c36cf1d92c6ddd396b6",
   "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "Resume from cluster-remediation checkpoint. Focused tests are green. Run exact root suite only; if green persist result and dispatch independent read-only Security Guardian review. Do not repeat closed CodeQL/Zizmor/promotion identity/affected-subgraph gates and do not promote before independent review PASS.",
+  "resume_instructions": "Root suite revalidation passed with exit code 0. Next step is independent read-only Security Guardian review on this exact checkpointed candidate. Do not repeat closed CodeQL/Zizmor/promotion-identity/affected-subgraph gates. Do not promote unless INDEPENDENT_REVIEW=PASS.",
   "runtime_namespace": "security-guardian-foundation-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -426,7 +429,7 @@
     ]
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "checkpoint-after-root-suite-cluster-remediation-before-root-revalidation",
+  "task_id": "checkpoint-root-suite-pass-before-independent-review",
   "test_state": {
     "affected_security_subgraph": "152_PASS",
     "canonical_promotion_deploy_key_probe_create": "PASS",
@@ -497,10 +500,11 @@
     "root_suite_candidate_tree": "520a1a277c3a09a6ea119d72446f0dcebb6025e4",
     "root_suite_cluster_affected_families": "242_PASS",
     "root_suite_cluster_focused": "3_PASS",
+    "root_suite_exit_code": "0",
     "root_suite_failed": "71",
     "root_suite_passed": "3744",
     "root_suite_skipped": "7",
-    "root_suite_status": "FAIL",
+    "root_suite_status": "PASS",
     "root_suite_subtests_passed": "16",
     "run001_bootstrap_yaml": "PASS",
     "run001_final_products_executor_yaml": "PASS",
@@ -514,6 +518,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "validation_state": "ROOT_SUITE_CLUSTER_REMEDIATION_FOCUSED_GREEN_ROOT_REVALIDATION_PENDING",
+  "validation_state": "ROOT_SUITE_PASS_INDEPENDENT_REVIEW_PENDING",
   "workspace_id": "security-guardian-foundation-v1"
 }
