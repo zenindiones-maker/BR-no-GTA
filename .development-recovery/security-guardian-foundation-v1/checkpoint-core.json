@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "security-foundation-development",
   "artifact_refs": [],
-  "authorization_id": "8cc39ef0-dd27-45a6-883c-ecc4174e9d2c",
+  "authorization_id": "49b56ee5-f56d-4fc6-aeab-5a33fba62ff2",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "653fbbb206288e90f7b59787f516d069efd2d44ce6cb8cc114c828ed050be9dd",
-  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000015-39daf0ac",
+  "checkpoint_digest": "2e515e72b027610cb0ca10e65e2cb7de2526663ebfb025771518757bdbc29553",
+  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000016-fdfa361b",
   "checkpoint_kind": "MILESTONE",
-  "checkpoint_sequence": 15,
+  "checkpoint_sequence": 16,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -43,11 +43,13 @@
     "external-baseline-blockers-classified",
     "dangerous-workflow-trigger-red-green",
     "pinned-zizmor-post-fix-high-zero",
-    "codeql-exact-candidate-python-rescan-evidence"
+    "codeql-exact-candidate-python-rescan-evidence",
+    "codeql-exact-candidate-actions-rescan",
+    "codeql-exact-candidate-rescan-complete"
   ],
-  "content_digest": "db2b0865fa1af968fb71dacd645c75f9ced9d790381e2ee536bc701acf1d8692",
-  "created_at": "2026-10-02T05:11:05.299784+00:00",
-  "current_step": "codeql-exact-candidate-actions-rescan",
+  "content_digest": "c402bfccf0bdb8c16093c0b258f833b07b34076d23b7ea20adbfcb551f5f7b5c",
+  "created_at": "2026-10-02T05:14:42.892100+00:00",
+  "current_step": "codeql-new-high-findings-remediation",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
@@ -154,16 +156,25 @@
     "codeql-cli-binary-sha256:5010324098d11f9e2d34e0fcf53bb44e40e8e3ffc8aecefe695269b54edaa413",
     "codeql-python-sanitized-evidence-sha256:2c55f914e4055ede5366d69211b8c03b2d16b3d012db3123f47f63a648fad1da",
     "codeql-python-new-vs-canonical=0",
-    "codeql-python-resolved-vs-canonical=1_HIGH"
+    "codeql-python-resolved-vs-canonical=1_HIGH",
+    "codeql-actions-exact-candidate-sarif-sha256:ccad737a916f3d0c5ff74e4e0f7708cda430e2d9608d314873746eca4067cacd",
+    "codeql-exact-candidate-baseline-sha256:fcbb2e2ba9b6b0b98e08cb902b09b8e7fd6ce2c2fbf3756db6db96466dc4fc1a",
+    "codeql-actions-new-high:actions/cache-poisoning/poisonable-step:.github/workflows/obsidian-memory-inbox.yml:97-104",
+    "codeql-actions-new-high:actions/cache-poisoning/poisonable-step:.github/workflows/obsidian-memory-inbox.yml:125-141",
+    "codeql-actions-new-high:actions/cache-poisoning/poisonable-step:.github/workflows/obsidian-memory-inbox.yml:141-151",
+    "codeql-actions-new-high:actions/cache-poisoning/poisonable-step:.github/workflows/dynamic-system-improvement.yml:495-509"
   ],
   "excluded_paths": [],
-  "failure_state": {},
+  "failure_state": {
+    "codeql_new_actions_high_findings": 4
+  },
   "included_paths": [
     ".github/CODEOWNERS",
     "SECURITY.md",
     "app/services/global_capability_registry.py",
     "app/services/gta6_change_detector.py",
     "app/services/security_guardian_service.py",
+    "docs/security/evidence/codeql-exact-candidate-baseline-v1.jsonl",
     "docs/security/evidence/codeql-python-exact-candidate-v1.jsonl",
     "requirements.txt",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/addy-24-live-semantic-smoke.yml",
@@ -310,17 +321,17 @@
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "run CodeQL actions against exact candidate 7c15f261/3d5f5f8d; classify exact-candidate CodeQL findings; close rescan blocker; then harden canonical promotion identity",
+  "next_step": "remediate 4 new CodeQL Actions HIGH cache-poisoning findings; verify zero new HIGH/CRITICAL; then harden canonical promotion identity",
   "open_blockers": [
-    "CODEQL_CANDIDATE_RESCAN_REQUIRED",
+    "CODEQL_NEW_HIGH_FINDINGS=4",
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED"
   ],
-  "previous_checkpoint_sha": "34a83fc72e283f720e4a063ad0083d227d6c9efc",
-  "progress_ledger_digest": "630f4d5c090b3ddb6b2673fa425b5c7c32ed34498d57779a26cf25d5328d19e0",
+  "previous_checkpoint_sha": "7616b37970e03eb4426a0801f67e78000b1327ff",
+  "progress_ledger_digest": "be71ccb2d08de62c45e2076b6067ff83958c5c056e7a610244a1827687348e2e",
   "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "Resume from cp15. Python CodeQL exact-candidate evidence is durable. Run only missing exact-candidate Actions CodeQL; do not rerun baseline/zizmor/canary; do not resume owner voice.",
+  "resume_instructions": "Resume from cp16. CODEQL_CANDIDATE_RESCAN_REQUIRED is closed. Remediate the 4 new Actions HIGH findings and verify them before canonical promotion identity hardening. Do not resume owner voice.",
   "runtime_namespace": "security-guardian-foundation-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -337,15 +348,23 @@
     ]
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "preserve-authoritative-codeql-python-evidence-before-actions-rescan",
+  "task_id": "checkpoint-codeql-rescan-complete-new-highs-open",
   "test_state": {
+    "codeql_actions_candidate_high": "4",
+    "codeql_actions_candidate_results": "4",
+    "codeql_actions_new_high_vs_canonical": "4",
+    "codeql_actions_resolved_vs_canonical": "7",
+    "codeql_new_high_or_critical_vs_canonical": "4",
     "codeql_python_candidate_high": "39",
     "codeql_python_candidate_medium": "2",
     "codeql_python_candidate_results": "41",
     "codeql_python_exact_candidate_sha": "7c15f2615dce05310fdf75e95bc6ee48551b2bc9",
     "codeql_python_exact_candidate_tree": "3d5f5f8db78224456c76dc6958665c4ba3710f5e",
+    "codeql_python_new_high_or_critical": "0",
     "codeql_python_new_vs_canonical": "0",
+    "codeql_python_resolved_high": "1",
     "codeql_python_resolved_vs_canonical": "1_HIGH",
+    "codeql_rescan_status": "COMPLETE",
     "dangerous_workflow_trigger": "RESOLVED",
     "diff_check": "PASS",
     "gta6_change_detector": "12_PASS",
@@ -367,6 +386,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "validation_state": "CODEQL_PYTHON_EXACT_CANDIDATE_EVIDENCE_PRESERVED",
+  "validation_state": "CODEQL_RESCAN_COMPLETE_NEW_HIGH_FINDINGS_BLOCK_PROMOTION",
   "workspace_id": "security-guardian-foundation-v1"
 }

@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 14,
+  "checkpoint_sequence": 15,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -38,9 +38,11 @@
     "external-baseline-blockers-classified",
     "dangerous-workflow-trigger-red-green",
     "pinned-zizmor-post-fix-high-zero",
-    "codeql-exact-candidate-python-rescan-evidence"
+    "codeql-exact-candidate-python-rescan-evidence",
+    "codeql-exact-candidate-actions-rescan",
+    "codeql-exact-candidate-rescan-complete"
   ],
-  "current_step": "codeql-exact-candidate-actions-rescan",
+  "current_step": "codeql-new-high-findings-remediation",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -161,16 +163,22 @@
     "codeql-cli-binary-sha256:5010324098d11f9e2d34e0fcf53bb44e40e8e3ffc8aecefe695269b54edaa413",
     "codeql-python-sanitized-evidence-sha256:2c55f914e4055ede5366d69211b8c03b2d16b3d012db3123f47f63a648fad1da",
     "codeql-python-new-vs-canonical=0",
-    "codeql-python-resolved-vs-canonical=1_HIGH"
+    "codeql-python-resolved-vs-canonical=1_HIGH",
+    "codeql-actions-exact-candidate-sarif-sha256:ccad737a916f3d0c5ff74e4e0f7708cda430e2d9608d314873746eca4067cacd",
+    "codeql-exact-candidate-baseline-sha256:fcbb2e2ba9b6b0b98e08cb902b09b8e7fd6ce2c2fbf3756db6db96466dc4fc1a",
+    "codeql-actions-new-high:actions/cache-poisoning/poisonable-step:.github/workflows/obsidian-memory-inbox.yml:97-104",
+    "codeql-actions-new-high:actions/cache-poisoning/poisonable-step:.github/workflows/obsidian-memory-inbox.yml:125-141",
+    "codeql-actions-new-high:actions/cache-poisoning/poisonable-step:.github/workflows/obsidian-memory-inbox.yml:141-151",
+    "codeql-actions-new-high:actions/cache-poisoning/poisonable-step:.github/workflows/dynamic-system-improvement.yml:495-509"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000014-e511a478",
-  "latest_verified_checkpoint_sha": "34a83fc72e283f720e4a063ad0083d227d6c9efc",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000015-39daf0ac",
+  "latest_verified_checkpoint_sha": "7616b37970e03eb4426a0801f67e78000b1327ff",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "run CodeQL actions against exact candidate 7c15f261/3d5f5f8d; classify exact-candidate CodeQL findings; close rescan blocker; then harden canonical promotion identity",
+  "next_step": "remediate 4 new CodeQL Actions HIGH cache-poisoning findings; verify zero new HIGH/CRITICAL; then harden canonical promotion identity",
   "open_blockers": [
-    "CODEQL_CANDIDATE_RESCAN_REQUIRED",
+    "CODEQL_NEW_HIGH_FINDINGS=4",
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED"
   ],
   "plan_steps": [
@@ -208,13 +216,21 @@
     ]
   },
   "tests": {
+    "codeql_actions_candidate_high": "4",
+    "codeql_actions_candidate_results": "4",
+    "codeql_actions_new_high_vs_canonical": "4",
+    "codeql_actions_resolved_vs_canonical": "7",
+    "codeql_new_high_or_critical_vs_canonical": "4",
     "codeql_python_candidate_high": "39",
     "codeql_python_candidate_medium": "2",
     "codeql_python_candidate_results": "41",
     "codeql_python_exact_candidate_sha": "7c15f2615dce05310fdf75e95bc6ee48551b2bc9",
     "codeql_python_exact_candidate_tree": "3d5f5f8db78224456c76dc6958665c4ba3710f5e",
+    "codeql_python_new_high_or_critical": "0",
     "codeql_python_new_vs_canonical": "0",
+    "codeql_python_resolved_high": "1",
     "codeql_python_resolved_vs_canonical": "1_HIGH",
+    "codeql_rescan_status": "COMPLETE",
     "dangerous_workflow_trigger": "RESOLVED",
     "diff_check": "PASS",
     "gta6_change_detector": "12_PASS",
@@ -236,6 +252,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "updated_at": "2026-10-02T05:10:56.207366+00:00",
-  "validation_state": "CODEQL_PYTHON_EXACT_CANDIDATE_EVIDENCE_PRESERVED"
+  "updated_at": "2026-10-02T05:14:41.293179+00:00",
+  "validation_state": "CODEQL_RESCAN_COMPLETE_NEW_HIGH_FINDINGS_BLOCK_PROMOTION"
 }
