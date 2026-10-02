@@ -2,43 +2,54 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 5,
+  "checkpoint_sequence": 6,
   "completed_steps": [
     "professional-corpus-contracts",
     "private-corpus-audit-contract",
     "human-audition-pack-contract",
     "strong-asr-reference-qa",
     "three-comparable-candidate-generation",
-    "manifest-handoff-root-cause-fix"
+    "manifest-handoff-root-cause-fix",
+    "owner-voice-audition-handoff-v1",
+    "owner-voice-audition-delivery-v1",
+    "run-scoped-private-workspace",
+    "atomic-manifest-commit",
+    "manifest-hash-verification",
+    "outbox-side-effect-semantics",
+    "separate-ledger-repository-authority-boundary"
   ],
   "current_step": "audition-handoff-delivery-hardening",
   "decisions": [
     {
-      "decision": "Persist current local-only Handoff/Delivery WIP before further edits.",
-      "id": "checkpoint-before-more-mutation"
+      "decision": "Use private separate repository for durable audition delivery state; product repository job remains contents:read.",
+      "id": "separate-ledger-repository"
     },
     {
-      "decision": "Reuse durable Telegram side-effect semantics; ambiguous sends require reconciliation and never blind resend.",
-      "id": "durable-v3-reuse"
+      "decision": "Same-repository deploy-key design was rejected after live canary proved it could bypass a ruleset and advance main; canary commit had identical tree and main was restored exactly.",
+      "id": "same-repo-deploy-key-rejected"
     },
     {
-      "decision": "Do not accept contents:write on the whole audition workflow without a bounded dedicated ledger authority proof.",
-      "id": "workflow-authority"
+      "decision": "Audition side effects use PENDING/SENDING/SENT/UNKNOWN_REMOTE_STATE; ambiguous send enters SIDE_EFFECT_RECONCILIATION_REQUIRED and blind resend is forbidden.",
+      "id": "outbox-semantics"
     },
     {
-      "decision": "No new audition run until checkpoint readback and authority/ledger tests are GREEN.",
-      "id": "no-audition-yet"
+      "decision": "After this verified checkpoint, dispatch exactly one audition run; no blind retry.",
+      "id": "single-run-only"
     }
   ],
   "do_not_repeat": [
     "owner-voice-100-pass-suite",
     "blind-rerun-36936161771",
+    "same-repo-deploy-key-ruleset-design",
     "re-diagnose-manifest-path-mismatch"
   ],
   "evidence_refs": [
-    "staging:d52c6bddb81e2bdf9b4c07ad2783738620d7e8fe",
-    "local-wip:07ac09ef1ad12e8f1c722385939883fe3e694a69",
-    "recovery:402694475c66baeb5b3efcac00c4e311492b3c6d",
+    "staging:54a12c2387281686476aa42689e5f05a89ad75f2",
+    "recovery:240e4523ab9bfaaed0c9b9457e4e2df01c9f1775",
+    "ledger-repository:zenindiones-maker/BR-no-GTA-audition-ledger",
+    "ledger-state:fec25c9e6d5b254586d258616f0ee4ebe1efc180",
+    "authority-canary:PRODUCT_REPOSITORY_WRITE_AUTHORITY=NONE",
+    "workflow:contents-read+persist-credentials-false",
     "run:36936161771"
   ],
   "goal_digest": "2b8f10962dd2d81d67ab0c26d5f9223fb0ce02fd52433055ed819428dd4e4a3f",
@@ -48,44 +59,39 @@
       "run_id": 36936161771,
       "status": "FIXED_NOT_RETRIED",
       "telegram_delivery": "NONE"
-    }
-  ],
-  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000005-3b70b924",
-  "latest_verified_checkpoint_sha": "402694475c66baeb5b3efcac00c4e311492b3c6d",
-  "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
-  "next_step": "audit-and-restrict-delivery-ledger-authority-before-any-run",
-  "open_blockers": [
-    {
-      "cause": "audition job currently requests contents:write while Git-backed delivery ledger authority has not yet been proven branch/ref-scoped",
-      "id": "workflow-contents-write-scope",
-      "required_fix": "limit write authority to dedicated ledger path/ref with CAS, fast-forward-only, no force, and prove canonical refs unreachable",
-      "status": "OPEN"
     },
     {
-      "cause": "terminal receipt path references require_reconciliation_for_started_operation and must prove persisted STARTED => SIDE_EFFECT_RECONCILIATION_REQUIRED without Telegram resend",
-      "id": "terminal-started-operation-reconciliation",
-      "required_fix": "deterministic authority/ledger tests before audition",
-      "status": "OPEN"
+      "failure": "SAME_REPOSITORY_DEPLOY_KEY_RULESET_BYPASS",
+      "main_restored_sha": "32a616d8b32b74a56289c481b12a020a9b6b201b",
+      "product_tree_mutation": "NONE",
+      "status": "DESIGN_REJECTED_AND_ROLLED_BACK"
     }
   ],
+  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000006-3bc00961",
+  "latest_verified_checkpoint_sha": "240e4523ab9bfaaed0c9b9457e4e2df01c9f1775",
+  "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
+  "next_step": "dispatch-exactly-one-owner-voice-audition-run",
+  "open_blockers": [],
   "plan_steps": [
     "reference-audit",
     "corpus-gap-analysis",
     "human-audition-pack",
     "audition-handoff-hardening",
     "audition-delivery-authority-hardening",
-    "automatic-qa",
+    "single-audition-run",
     "blind-human-review",
     "longform-certification",
     "pipeline-code-promotion"
   ],
   "recovery_ref": "recovery/dev/br-owner-v1-professional-ptbr-v1",
   "rejected_directions": [
-    "discard-local-07ac09ef-wip",
-    "blind-rerun-audition",
-    "workflow-wide-unbounded-contents-write",
+    "workflow-wide-contents-write",
+    "same-repository-write-deploy-key",
+    "GITHUB_TOKEN-backed-ledger-writer",
     "last-writer-wins-ledger",
-    "blind-telegram-resend-after-ambiguous-send"
+    "force-push-ledger",
+    "blind-telegram-resend-after-ambiguous-send",
+    "ordinary-GitHub-artifact-storage-for-private-audio"
   ],
   "schema_version": "DevelopmentProgressLedger/v1",
   "side_effects": {
@@ -93,10 +99,14 @@
     "unknown_requires_reconciliation": []
   },
   "tests": {
-    "handoff_delivery_focused": "37_PASS",
+    "compile": "PASS",
+    "diff_check": "PASS",
+    "handoff_delivery_authority_surface": "95_PASS",
+    "ledger_authority_store_outbox": "9_PASS",
     "previous_owner_voice_affected_subgraph": "100_PASS_NOT_RERUN",
-    "root": "PASS_BASELINE_NOT_RERUN"
+    "product_repository_write_authority": "NONE",
+    "workflow_authority": "PASS"
   },
-  "updated_at": "2026-10-02T00:49:32.809164+00:00",
-  "validation_state": "RECOVERY_WIP_AUTHORITY_AUDIT_PENDING"
+  "updated_at": "2026-10-02T01:10:14.124132+00:00",
+  "validation_state": "HANDOFF_DELIVERY_AUTHORITY_GREEN_READY_FOR_SINGLE_AUDITION"
 }

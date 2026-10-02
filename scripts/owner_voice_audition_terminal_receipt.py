@@ -9,7 +9,7 @@ ROOT=Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0,str(ROOT))
 
-from app.services.harness_git_transaction_store import GitHubGitTransactionStore
+from app.services.owner_voice_audition_ledger_store import store_from_environment
 from app.services.owner_voice_audition_delivery_service import GitBackedAuditionDeliveryLedger
 
 
@@ -27,7 +27,7 @@ def main() -> int:
         "schema_version":"OwnerVoiceAuditionDelivery/v1",
         "pack_id":pack_id,
         "state":"NOT_STARTED",
-        "side_effect_status":"READY",
+        "side_effect_status":"PENDING",
         "manifest_digest":str(manifest.get("manifest_digest") or ""),
         "candidate_hashes":{
             str(x.get("label") or x.get("candidate_id") or ""):str(x.get("sha256") or "")
@@ -38,14 +38,11 @@ def main() -> int:
         "blind_retry_count":0,
     }
     try:
-        store=GitHubGitTransactionStore(
-            repository=os.environ["GITHUB_REPOSITORY"],
-            token=os.environ["GITHUB_TOKEN"],
-            branch="harness-state",
-        )
+        workspace=Path(str(os.environ.get("BR_OWNER_AUDITION_WORKSPACE") or "/tmp")).resolve()
+        store=store_from_environment(repo_root=ROOT,workspace=workspace)
         ledger=GitBackedAuditionDeliveryLedger(store=store,pack_id=pack_id)
         try:
-            ledger.require_reconciliation_for_started_operation()
+            ledger.require_reconciliation_for_sending_operation()
             receipt=ledger.sanitized_receipt(manifest=manifest)
         except ValueError:
             pass

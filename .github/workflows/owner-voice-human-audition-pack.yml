@@ -53,15 +53,15 @@ jobs:
     needs: contract
     runs-on: ubuntu-24.04
     permissions:
-      contents: write
+      contents: read
       actions: read
     timeout-minutes: 120
     env:
       BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64 }}
       BR_OWNER_TELEGRAM_REFERENCE_INDEX: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_INDEX }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      GITHUB_TOKEN: ${{ github.token }}
       BR_OWNER_AUDITION_AUTHORITY_REF: owner-explicit:BR_OWNER_V1_PROFESSIONAL_PTBR_V1
+      BR_OWNER_AUDITION_LEDGER_REPOSITORY: zenindiones-maker/BR-no-GTA-audition-ledger
       HF_HOME: /tmp/br-owner-huggingface
       TOKENIZERS_PARALLELISM: "false"
       BR_OWNER_REFERENCE_QA_CONTEXT: ${{ runner.temp }}/br-owner-voice/${{ github.run_id }}/${{ github.run_attempt }}/reference-qa-context.json
@@ -171,6 +171,7 @@ jobs:
       - name: Machine pre-screen and send protected blind pack to Telegram
         env:
           PYTHONPATH: ${{ github.workspace }}
+          BR_OWNER_AUDITION_LEDGER_SSH_KEY: ${{ secrets.BR_OWNER_AUDITION_LEDGER_SSH_KEY }}
           BR_OWNER_AUDITION_MANIFEST_PATH: ${{ steps.generate.outputs.manifest_path }}
           BR_OWNER_AUDITION_PACK_ID: ${{ steps.generate.outputs.pack_id }}
           BR_OWNER_AUDITION_DELIVERY_PATH: ${{ env.BR_OWNER_AUDITION_DELIVERY_PATH }}
@@ -187,6 +188,7 @@ jobs:
         if: ${{ always() }}
         env:
           PYTHONPATH: ${{ github.workspace }}
+          BR_OWNER_AUDITION_LEDGER_SSH_KEY: ${{ secrets.BR_OWNER_AUDITION_LEDGER_SSH_KEY }}
           BR_OWNER_AUDITION_JOB_STATUS: ${{ job.status }}
         run: |
           set -euo pipefail

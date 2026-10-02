@@ -13,7 +13,7 @@ if str(ROOT) not in sys.path:
 
 from app.services.owner_voice_audio_quality_service import pcm16_quality_metrics
 from app.services.owner_voice_audition_handoff_service import consume_audition_handoff
-from app.services.harness_git_transaction_store import GitHubGitTransactionStore
+from app.services.owner_voice_audition_ledger_store import store_from_environment
 from app.services.owner_voice_audition_delivery_service import (
     GitBackedAuditionDeliveryLedger,
     SIDE_EFFECT_RECONCILIATION_REQUIRED,
@@ -135,7 +135,7 @@ def main() -> int:
         raise RuntimeError("TELEGRAM_BOT_TOKEN_NOT_MATERIALIZED")
     if not manifest_env:
         raise RuntimeError("OWNER_AUDITION_MANIFEST_PATH_NOT_PROPAGATED")
-    if not pack_id or not delivery_env or not receipt_env:
+    if not pack_id or not receipt_env:
         raise RuntimeError("OWNER_AUDITION_EXPLICIT_HANDOFF_ENV_REQUIRED")
 
     manifest_path=Path(manifest_env).resolve()
@@ -212,11 +212,7 @@ def main() -> int:
     if len(machine_qa)!=3 or any(row["eligible"] is not True for row in machine_qa):
         raise RuntimeError("OWNER_AUDITION_MACHINE_PRESCREEN_FAILED")
 
-    store=GitHubGitTransactionStore(
-        repository=os.environ["GITHUB_REPOSITORY"],
-        token=os.environ["GITHUB_TOKEN"],
-        branch="harness-state",
-    )
+    store=store_from_environment(repo_root=ROOT,workspace=workspace)
     ledger=GitBackedAuditionDeliveryLedger(store=store,pack_id=pack_id)
     ledger.create(
         manifest=manifest,
@@ -234,7 +230,7 @@ def main() -> int:
     receipt_path=Path(receipt_env).resolve()
     receipt_path.parent.mkdir(parents=True,exist_ok=True)
     receipt_path.write_text(json.dumps(receipt,ensure_ascii=False,sort_keys=True,indent=2)+"\n",encoding="utf-8")
-    if result.get("side_effect_status")==SIDE_EFFECT_RECONCILIATION_REQUIRED:
+    if result.get("reconciliation_state")==SIDE_EFFECT_RECONCILIATION_REQUIRED:
         print("OWNER_AUDITION_DELIVERY=SIDE_EFFECT_RECONCILIATION_REQUIRED")
         raise RuntimeError("SIDE_EFFECT_RECONCILIATION_REQUIRED")
     if result.get("state")!="CONFIRMED":

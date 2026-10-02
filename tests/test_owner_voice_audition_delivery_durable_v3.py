@@ -102,7 +102,7 @@ def test_remote_ledger_uses_required_delivery_states_and_persists_receipts():
         FakeTelegram(),ledger=ledger,manifest=_manifest()
     )
     assert result["state"]=="CONFIRMED"
-    assert result["side_effect_status"]=="READY"
+    assert result["side_effect_status"]=="SENT"
     assert result["confirmed_message_ids"]=={
         "reference":101,
         "candidates":[201,202,203],
@@ -124,7 +124,8 @@ def test_ambiguous_remote_send_enters_reconciliation_and_never_blind_resends(fai
     ledger=_ledger(store)
     api=FakeTelegram(fail_at=failure)
     first=deliver_owner_voice_audition_durable(api,ledger=ledger,manifest=_manifest())
-    assert first["side_effect_status"]==SIDE_EFFECT_RECONCILIATION_REQUIRED
+    assert first["side_effect_status"]=="UNKNOWN_REMOTE_STATE"
+    assert first["reconciliation_state"]==SIDE_EFFECT_RECONCILIATION_REQUIRED
     calls=len(api.calls)
 
     restarted=GitBackedAuditionDeliveryLedger(store=store,pack_id="pack-durable-1")
@@ -132,7 +133,8 @@ def test_ambiguous_remote_send_enters_reconciliation_and_never_blind_resends(fai
     second=deliver_owner_voice_audition_durable(
         second_api,ledger=restarted,manifest=_manifest()
     )
-    assert second["side_effect_status"]==SIDE_EFFECT_RECONCILIATION_REQUIRED
+    assert second["side_effect_status"]=="UNKNOWN_REMOTE_STATE"
+    assert second["reconciliation_state"]==SIDE_EFFECT_RECONCILIATION_REQUIRED
     assert second_api.calls==[]
     assert len(api.calls)==calls
     assert second["blind_retry_count"]==0
@@ -145,13 +147,14 @@ def test_restart_after_persisted_started_operation_requires_reconciliation_befor
         logical_operation="REFERENCE_SEND",
         payload_digest="b"*64,
     )
-    assert operation["status"]=="STARTED"
+    assert operation["status"]=="SENDING"
 
     restarted=GitBackedAuditionDeliveryLedger(store=store,pack_id="pack-durable-1")
     api=FakeTelegram()
     result=deliver_owner_voice_audition_durable(api,ledger=restarted,manifest=_manifest())
     assert result["state"]=="PLANNED"
-    assert result["side_effect_status"]==SIDE_EFFECT_RECONCILIATION_REQUIRED
+    assert result["side_effect_status"]=="UNKNOWN_REMOTE_STATE"
+    assert result["reconciliation_state"]==SIDE_EFFECT_RECONCILIATION_REQUIRED
     assert api.calls==[]
 
 
@@ -160,7 +163,7 @@ def test_crash_before_telegram_remains_planned_and_has_no_message_ids():
     ledger=_ledger(store)
     state=ledger.load()
     assert state["state"]=="PLANNED"
-    assert state["side_effect_status"]=="READY"
+    assert state["side_effect_status"]=="PENDING"
     assert state["confirmed_message_ids"]=={}
 
 
@@ -188,7 +191,8 @@ def test_terminal_reconciliation_marks_persisted_started_operation_without_post(
         payload_digest="c"*64,
     )
     state=ledger.require_reconciliation_for_started_operation()
-    assert state["side_effect_status"]==SIDE_EFFECT_RECONCILIATION_REQUIRED
+    assert state["side_effect_status"]=="UNKNOWN_REMOTE_STATE"
+    assert state["reconciliation_state"]==SIDE_EFFECT_RECONCILIATION_REQUIRED
     assert state["active_operation"]["status"]=="UNKNOWN_REMOTE_STATE"
     assert state["blind_retry_count"]==0
 
@@ -197,5 +201,6 @@ def test_terminal_reconciliation_marks_persisted_started_operation_without_post(
     replay=deliver_owner_voice_audition_durable(
         api,ledger=restarted,manifest=_manifest()
     )
-    assert replay["side_effect_status"]==SIDE_EFFECT_RECONCILIATION_REQUIRED
+    assert replay["side_effect_status"]=="UNKNOWN_REMOTE_STATE"
+    assert replay["reconciliation_state"]==SIDE_EFFECT_RECONCILIATION_REQUIRED
     assert api.calls==[]

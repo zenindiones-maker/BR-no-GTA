@@ -1,29 +1,39 @@
 {
   "agent_execution_identity": "voice-pipeline-development",
   "artifact_refs": [],
-  "authorization_id": "01bacb64-0537-4f3a-97e5-0e1c14b801ab",
+  "authorization_id": "babc6a3e-e7c1-45a3-8cdd-662b492a51c5",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "8981c97843e794ca21f6b1fa706d563a46e046381bef01dd7daa8527cce6f3b3",
-  "checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000006-3bc00961",
+  "checkpoint_digest": "0aa5979107748ce0cc14bc9b61319b6cbee83a881887bd42c69da65282547599",
+  "checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000007-4b4fdf3f",
   "checkpoint_kind": "RECOVERY",
-  "checkpoint_sequence": 6,
+  "checkpoint_sequence": 7,
   "completed_steps": [
     "professional-corpus-contracts",
     "private-corpus-audit-contract",
     "human-audition-pack-contract",
     "strong-asr-reference-qa",
     "three-comparable-candidate-generation",
-    "manifest-handoff-root-cause-fix"
+    "manifest-handoff-root-cause-fix",
+    "owner-voice-audition-handoff-v1",
+    "owner-voice-audition-delivery-v1",
+    "run-scoped-private-workspace",
+    "atomic-manifest-commit",
+    "manifest-hash-verification",
+    "outbox-side-effect-semantics",
+    "separate-ledger-repository-authority-boundary"
   ],
-  "content_digest": "199aa3425ba87470534417c6d16c68379933ca4138644a0694748fa3f3198d0f",
-  "created_at": "2026-10-02T00:49:33.869526+00:00",
+  "content_digest": "37aa894bf625c49b998ba203a8e43cadc1471367325619b2254d609e6c94e8a4",
+  "created_at": "2026-10-02T01:10:15.123151+00:00",
   "current_step": "audition-handoff-delivery-hardening",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
-    "staging:d52c6bddb81e2bdf9b4c07ad2783738620d7e8fe",
-    "local-wip:07ac09ef1ad12e8f1c722385939883fe3e694a69",
-    "recovery:402694475c66baeb5b3efcac00c4e311492b3c6d",
+    "staging:54a12c2387281686476aa42689e5f05a89ad75f2",
+    "recovery:240e4523ab9bfaaed0c9b9457e4e2df01c9f1775",
+    "ledger-repository:zenindiones-maker/BR-no-GTA-audition-ledger",
+    "ledger-state:fec25c9e6d5b254586d258616f0ee4ebe1efc180",
+    "authority-canary:PRODUCT_REPOSITORY_WRITE_AUTHORITY=NONE",
+    "workflow:contents-read+persist-credentials-false",
     "run:36936161771"
   ],
   "excluded_paths": [],
@@ -32,6 +42,7 @@
     ".github/workflows/owner-voice-human-audition-pack.yml",
     "app/services/owner_voice_audition_delivery_service.py",
     "app/services/owner_voice_audition_handoff_service.py",
+    "app/services/owner_voice_audition_ledger_store.py",
     "scripts/owner_voice_audition_terminal_receipt.py",
     "scripts/owner_voice_chatterbox_ptbr_audition.py",
     "scripts/owner_voice_human_audition_pack.py",
@@ -40,6 +51,9 @@
     "tests/test_owner_voice_audition_delivery_v1.py",
     "tests/test_owner_voice_audition_handoff_service.py",
     "tests/test_owner_voice_audition_handoff_v1.py",
+    "tests/test_owner_voice_audition_ledger_authority.py",
+    "tests/test_owner_voice_audition_ledger_store_integration.py",
+    "tests/test_owner_voice_audition_outbox_semantics.py",
     "tests/test_owner_voice_audition_workflow_v1.py",
     "tests/test_owner_voice_human_audition_bootstrap.py",
     "tests/test_owner_voice_human_audition_pack_runtime.py",
@@ -48,23 +62,10 @@
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
-  "next_step": "audit-and-restrict-delivery-ledger-authority-before-any-run",
-  "open_blockers": [
-    {
-      "cause": "audition job currently requests contents:write while Git-backed delivery ledger authority has not yet been proven branch/ref-scoped",
-      "id": "workflow-contents-write-scope",
-      "required_fix": "limit write authority to dedicated ledger path/ref with CAS, fast-forward-only, no force, and prove canonical refs unreachable",
-      "status": "OPEN"
-    },
-    {
-      "cause": "terminal receipt path references require_reconciliation_for_started_operation and must prove persisted STARTED => SIDE_EFFECT_RECONCILIATION_REQUIRED without Telegram resend",
-      "id": "terminal-started-operation-reconciliation",
-      "required_fix": "deterministic authority/ledger tests before audition",
-      "status": "OPEN"
-    }
-  ],
-  "previous_checkpoint_sha": "402694475c66baeb5b3efcac00c4e311492b3c6d",
-  "progress_ledger_digest": "e6dc22177a44bb8938211c050fcb4d494b67dc51ce58fb397326d30f0d9261ee",
+  "next_step": "dispatch-exactly-one-owner-voice-audition-run",
+  "open_blockers": [],
+  "previous_checkpoint_sha": "240e4523ab9bfaaed0c9b9457e4e2df01c9f1775",
+  "progress_ledger_digest": "0d65575836e0d92769aeb2477544e13591709a0a8e9f477b28d62704f2c0d812",
   "recovery_ref": "recovery/dev/br-owner-v1-professional-ptbr-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
@@ -76,12 +77,16 @@
     "unknown_requires_reconciliation": []
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "pre-authority-audit-wip-preservation",
+  "task_id": "handoff-delivery-authority-green-pre-single-audition",
   "test_state": {
-    "handoff_delivery_focused": "37_PASS",
+    "compile": "PASS",
+    "diff_check": "PASS",
+    "handoff_delivery_authority_surface": "95_PASS",
+    "ledger_authority_store_outbox": "9_PASS",
     "previous_owner_voice_affected_subgraph": "100_PASS_NOT_RERUN",
-    "root": "PASS_BASELINE_NOT_RERUN"
+    "product_repository_write_authority": "NONE",
+    "workflow_authority": "PASS"
   },
-  "validation_state": "RECOVERY_WIP_AUTHORITY_AUDIT_PENDING",
+  "validation_state": "HANDOFF_DELIVERY_AUTHORITY_GREEN_READY_FOR_SINGLE_AUDITION",
   "workspace_id": "br-owner-v1-professional-ptbr-v1"
 }
