@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "voice-pipeline-development",
   "artifact_refs": [],
-  "authorization_id": "f8a45629-ac16-4c0f-a935-946ee49ad37b",
+  "authorization_id": "5f6bb278-d1d0-4901-98d9-b8d324eb691a",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "2287fc04226c9c43d22d643e6d026775212a93834ebdf8fba7a2e3ad7068a6c2",
-  "checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000008-6567205b",
-  "checkpoint_kind": "RECOVERY",
-  "checkpoint_sequence": 8,
+  "checkpoint_digest": "04de69e27f19d1adaf841ef36a21243a7cc7804c39c9ee6497ff9dc9cd501683",
+  "checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000009-7517f805",
+  "checkpoint_kind": "MILESTONE",
+  "checkpoint_sequence": 9,
   "completed_steps": [
     "professional-corpus-contracts",
     "private-corpus-audit-contract",
@@ -21,10 +21,11 @@
     "atomic-manifest-commit",
     "manifest-hash-verification",
     "outbox-side-effect-semantics",
-    "separate-ledger-repository-authority-boundary"
+    "separate-ledger-repository-authority-boundary",
+    "authority-ledger-focused-verification"
   ],
-  "content_digest": "4d76ff332316ec0bffa788d12d5538743fd48e5ff073b86a119e7f7412e3fb3f",
-  "created_at": "2026-10-02T01:14:27.578078+00:00",
+  "content_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "created_at": "2026-10-02T01:17:08.206311+00:00",
   "current_step": "audition-delivery-authority-hardening",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
@@ -35,20 +36,24 @@
     "authority-canary:PRODUCT_REPOSITORY_WRITE_AUTHORITY=NONE",
     "workflow:contents-read+persist-credentials-false",
     "run:36936161771",
-    "local-workflow-blob:2d7fda1fd24d6341edf20a4f166d794a9d6293ca"
+    "local-workflow-blob:2d7fda1fd24d6341edf20a4f166d794a9d6293ca",
+    "staging:b53963a27cd81d896b50a0e4beedc3cced1e84b9",
+    "tests:authority-ledger-handoff=59_PASS",
+    "workflow:contents-read",
+    "workflow:persist-credentials-false",
+    "product-repository-write-authority:NONE",
+    "ledger-repository:zenindiones-maker/BR-no-GTA-audition-ledger"
   ],
   "excluded_paths": [],
   "failure_state": {},
-  "included_paths": [
-    ".github/workflows/owner-voice-human-audition-pack.yml"
-  ],
+  "included_paths": [],
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
-  "next_step": "continue-authority-audit-after-wip-preservation",
+  "next_step": "dispatch-exactly-one-owner-voice-audition-run",
   "open_blockers": [],
-  "previous_checkpoint_sha": "4e9167ec5b315195d81c7c3573d066a84d131645",
-  "progress_ledger_digest": "8691514f286082f88800e7d81ea8a2a7d386def6ad72989291e23dd38f2a2de1",
+  "previous_checkpoint_sha": "dec21d02d4dd7008f41696ce974bc820bae763f3",
+  "progress_ledger_digest": "2560bbf70242cf33eea85bce4f7250a038c7910cfacc623738d3c5cbec182f56",
   "recovery_ref": "recovery/dev/br-owner-v1-professional-ptbr-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
@@ -60,8 +65,9 @@
     "unknown_requires_reconciliation": []
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "preserve-local-workflow-wip-before-authority-audit",
+  "task_id": "authority-ledger-green-before-single-audition",
   "test_state": {
+    "authority_ledger_handoff_surface": "59_PASS",
     "compile": "PASS",
     "diff_check": "PASS",
     "handoff_delivery_authority_surface": "95_PASS",
@@ -70,6 +76,6 @@
     "product_repository_write_authority": "NONE",
     "workflow_authority": "PASS"
   },
-  "validation_state": "LOCAL_WIP_PRESERVED_PENDING_AUTHORITY_AUDIT",
+  "validation_state": "AUTHORITY_LEDGER_GREEN_READY_FOR_SINGLE_AUDITION",
   "workspace_id": "br-owner-v1-professional-ptbr-v1"
 }

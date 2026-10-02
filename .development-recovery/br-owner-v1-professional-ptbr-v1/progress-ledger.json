@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 7,
+  "checkpoint_sequence": 8,
   "completed_steps": [
     "professional-corpus-contracts",
     "private-corpus-audit-contract",
@@ -16,7 +16,8 @@
     "atomic-manifest-commit",
     "manifest-hash-verification",
     "outbox-side-effect-semantics",
-    "separate-ledger-repository-authority-boundary"
+    "separate-ledger-repository-authority-boundary",
+    "authority-ledger-focused-verification"
   ],
   "current_step": "audition-delivery-authority-hardening",
   "decisions": [
@@ -39,6 +40,10 @@
     {
       "decision": "Checkpoint the current local workflow WIP remotely before any further mutation.",
       "id": "preserve-local-workflow-wip"
+    },
+    {
+      "decision": "Only the separate audition ledger repository carries durable delivery writes; the product workflow remains contents:read with persist-credentials:false.",
+      "id": "authority-green-before-single-run"
     }
   ],
   "do_not_repeat": [
@@ -55,7 +60,13 @@
     "authority-canary:PRODUCT_REPOSITORY_WRITE_AUTHORITY=NONE",
     "workflow:contents-read+persist-credentials-false",
     "run:36936161771",
-    "local-workflow-blob:2d7fda1fd24d6341edf20a4f166d794a9d6293ca"
+    "local-workflow-blob:2d7fda1fd24d6341edf20a4f166d794a9d6293ca",
+    "staging:b53963a27cd81d896b50a0e4beedc3cced1e84b9",
+    "tests:authority-ledger-handoff=59_PASS",
+    "workflow:contents-read",
+    "workflow:persist-credentials-false",
+    "product-repository-write-authority:NONE",
+    "ledger-repository:zenindiones-maker/BR-no-GTA-audition-ledger"
   ],
   "goal_digest": "2b8f10962dd2d81d67ab0c26d5f9223fb0ce02fd52433055ed819428dd4e4a3f",
   "known_failures": [
@@ -72,10 +83,10 @@
       "status": "DESIGN_REJECTED_AND_ROLLED_BACK"
     }
   ],
-  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000007-4b4fdf3f",
-  "latest_verified_checkpoint_sha": "4e9167ec5b315195d81c7c3573d066a84d131645",
+  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000008-6567205b",
+  "latest_verified_checkpoint_sha": "dec21d02d4dd7008f41696ce974bc820bae763f3",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
-  "next_step": "continue-authority-audit-after-wip-preservation",
+  "next_step": "dispatch-exactly-one-owner-voice-audition-run",
   "open_blockers": [],
   "plan_steps": [
     "reference-audit",
@@ -104,6 +115,7 @@
     "unknown_requires_reconciliation": []
   },
   "tests": {
+    "authority_ledger_handoff_surface": "59_PASS",
     "compile": "PASS",
     "diff_check": "PASS",
     "handoff_delivery_authority_surface": "95_PASS",
@@ -112,6 +124,6 @@
     "product_repository_write_authority": "NONE",
     "workflow_authority": "PASS"
   },
-  "updated_at": "2026-10-02T01:14:26.555775+00:00",
-  "validation_state": "LOCAL_WIP_PRESERVED_PENDING_AUTHORITY_AUDIT"
+  "updated_at": "2026-10-02T01:17:07.290410+00:00",
+  "validation_state": "AUTHORITY_LEDGER_GREEN_READY_FOR_SINGLE_AUDITION"
 }
