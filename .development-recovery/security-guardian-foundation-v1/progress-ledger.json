@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 29,
+  "checkpoint_sequence": 30,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -73,7 +73,9 @@
     "pytest-temp-retention-tdd-red-green",
     "zero-cost-route-test-isolation-tdd-red-green",
     "test-harness-isolation-focused-green",
-    "root-suite-cp29-pass"
+    "root-suite-cp29-pass",
+    "cp30-formal-readback-verified",
+    "root-suite-ledger-history-current-normalized"
   ],
   "current_step": "independent-security-review",
   "decisions": [
@@ -90,7 +92,13 @@
       "id": "no-paid-security-autonomy"
     }
   ],
-  "do_not_repeat": [],
+  "do_not_repeat": [
+    "root-suite:closed-at-cp30-do-not-rerun-without-new-contradictory-evidence",
+    "codeql:closed-do-not-repeat",
+    "zizmor:closed-do-not-repeat",
+    "promotion-identity:closed-do-not-repeat",
+    "affected-security-subgraph:closed-do-not-repeat"
+  ],
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
     "voice-recovery:a52a15155be146fc70b2f3cdf60d629eec5d7f9f",
@@ -279,14 +287,23 @@
     "root-suite-cp29:warnings=6",
     "root-suite-cp29:duration_seconds=267.42",
     "root-suite-cp29:exit_code=0",
-    "root-suite-cp29:tmp-final-use=69_percent_avail_5.9G"
+    "root-suite-cp29:tmp-final-use=69_percent_avail_5.9G",
+    "cp30:remote-readback=VERIFIED",
+    "cp30:remote-oid=a10516e8b846190d84d0f30385f383715d0bb430",
+    "cp30:remote-tree=76d99e2ad561f6eb7c6dcd2e99da1ebf30bfd562",
+    "cp30:checkpoint-digest=a885f55decb4a13380c970e05fa471bd1df37dde2b4944b67034a0afe475e957",
+    "cp30:progress-ledger-digest=c4d777fec114a560bb5e4f2721f276ac65f4246308ced8b5039857254047d4fd",
+    "cp30:readback-receipt=docs/security/evidence/cp30-readback-v1.jsonl",
+    "root-suite-current:3818_PASS_7_SKIP_0_FAIL_0_ERROR_exit0",
+    "root-suite-history:71_FAILED_PRESERVED",
+    "root-suite-history:142_ERRORS_PRESERVED_AS_ENVIRONMENTAL_SETUP_FANOUT"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000029-4b0964e6",
-  "latest_verified_checkpoint_sha": "1b871172b0839f20e37b0d38fc3f5970415baf29",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000030-4430ecb6",
+  "latest_verified_checkpoint_sha": "a10516e8b846190d84d0f30385f383715d0bb430",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "execute independent read-only Security Guardian review on exact checkpointed candidate; promotion remains forbidden unless review PASS",
+  "next_step": "execute independent read-only Security Guardian review on exact normalized recovery candidate; promotion forbidden unless INDEPENDENT_REVIEW=PASS",
   "open_blockers": [
     "INDEPENDENT_REVIEW_PENDING"
   ],
@@ -371,6 +388,9 @@
     "codeql_python_resolved_high": "1",
     "codeql_python_resolved_vs_canonical": "1_HIGH",
     "codeql_rescan_status": "COMPLETE",
+    "cp30_formal_readback": "VERIFIED",
+    "cp30_recovery_commit_sha": "a10516e8b846190d84d0f30385f383715d0bb430",
+    "cp30_recovery_tree_sha": "76d99e2ad561f6eb7c6dcd2e99da1ebf30bfd562",
     "dangerous_workflow_trigger": "RESOLVED",
     "diff_check": "PASS",
     "direct_canonical_push_count": "0",
@@ -395,21 +415,58 @@
     "pip_check": "PASS",
     "pytest_tmp_path_retention_count": "1",
     "root_suite_142_errors_root_cause": "PYTEST_TMP_VOLUME_EXHAUSTION",
-    "root_suite_candidate_sha": "da610a4e24e2b95552b62afcf8bfd5d912eba25e",
-    "root_suite_candidate_tree": "520a1a277c3a09a6ea119d72446f0dcebb6025e4",
     "root_suite_cluster_affected_families": "242_PASS",
     "root_suite_cluster_focused": "3_PASS",
-    "root_suite_duration_seconds": "267.42",
-    "root_suite_errors": "142",
-    "root_suite_exit_code": "0",
-    "root_suite_failed": "71",
-    "root_suite_failure_group": "PYTEST_TMP_VOLUME_EXHAUSTION",
-    "root_suite_passed": "3818",
-    "root_suite_post_cleanup_residual": "1_FAILED_3816_PASS_7_SKIP_16_SUBTESTS",
-    "root_suite_skipped": "7",
-    "root_suite_status": "PASS",
-    "root_suite_subtests_passed": "16",
-    "root_suite_warnings": "6",
+    "root_suite_current": {
+      "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
+      "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000030-4430ecb6",
+      "command": "python -m pytest -q",
+      "duration_seconds": 267.42,
+      "errors": 0,
+      "exit_code": 0,
+      "failed": 0,
+      "passed": 3818,
+      "recovery_commit_sha": "a10516e8b846190d84d0f30385f383715d0bb430",
+      "recovery_tree_sha": "76d99e2ad561f6eb7c6dcd2e99da1ebf30bfd562",
+      "skipped": 7,
+      "status": "PASS",
+      "subtests_passed": 16,
+      "validated_source_content_digest": "262ff640a2403cefd4b52f238c29ea9819a95dfb6be7b675c0c312cf4612c582",
+      "warnings": 6
+    },
+    "root_suite_history": {
+      "cp26_142_errors": {
+        "duration_seconds": 241.32,
+        "errors": 142,
+        "evidence_ref": "docs/security/evidence/root-suite-cp26-temp-volume-failure-v1.jsonl",
+        "passed": 3675,
+        "recovery_checkpoint_sha": "6588d22e6c00833cdb04749b6d0c36f0bf2f4a0d",
+        "recovery_tree_sha": "5917f5a5d7508cf67b3d792e89bb295cd68f132b",
+        "root_cause": "PYTEST_TMP_VOLUME_EXHAUSTION_ENVIRONMENTAL_SETUP_FAILURE",
+        "skipped": 7,
+        "status": "FAIL",
+        "subtests_passed": 16
+      },
+      "post_cleanup_residual": {
+        "failed": 1,
+        "passed": 3816,
+        "root_cause": "NON_IDEMPOTENT_TEST_WORKSPACE_RUNTIME_TEST",
+        "skipped": 7,
+        "status": "FAIL",
+        "subtests_passed": 16
+      },
+      "pre_remediation_71_failed": {
+        "candidate_sha": "da610a4e24e2b95552b62afcf8bfd5d912eba25e",
+        "candidate_tree_sha": "520a1a277c3a09a6ea119d72446f0dcebb6025e4",
+        "duration_seconds": 256.23,
+        "evidence_ref": "docs/security/evidence/root-suite-pre-review-v1.jsonl",
+        "failed": 71,
+        "passed": 3744,
+        "skipped": 7,
+        "status": "FAIL",
+        "subtests_passed": 16
+      }
+    },
     "run001_bootstrap_yaml": "PASS",
     "run001_final_products_executor_yaml": "PASS",
     "security_canary": "BLOCK_THEN_PASS_NEW_SESSION",
@@ -429,6 +486,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "updated_at": "2026-10-02T11:12:17.174620+00:00",
-  "validation_state": "ROOT_SUITE_PASS_INDEPENDENT_REVIEW_PENDING"
+  "updated_at": "2026-10-02T11:20:10.338683+00:00",
+  "validation_state": "ROOT_SUITE_PASS_CP30_READBACK_VERIFIED_INDEPENDENT_REVIEW_PENDING"
 }
