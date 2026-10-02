@@ -1,0 +1,64 @@
+{
+  "generated_for": "SECURITY_GUARDIAN_FOUNDATION_V1",
+  "osv": {
+    "action_repository": "google/osv-scanner-action",
+    "action_sha": "a345acffa64b0eaede81a3d9aae6141214d9c8fc",
+    "action_version": "v2.6.0",
+    "reusable_workflow_sha": "c7c7bcb0773cc4678a674ada03a66cc5c4325476",
+    "secret_values_required": false,
+    "tool_source_commit_sha": "e840a6e8adb14b7777c78e26cfbf6e2abc1d1fc6",
+    "tool_source_repository": "google/osv-scanner",
+    "transitive_container_ref": "ghcr.io/google/osv-scanner-action:v2.6.0"
+  },
+  "policy": {
+    "mutable_execution_refs_allowed": false,
+    "openai_platform_api_calls": 0,
+    "openai_platform_api_spend": 0,
+    "repository_content_is_untrusted_data": true,
+    "secret_values_in_scanner_inputs": false
+  },
+  "schema_version": "SecurityToolchain/v1",
+  "scorecard": {
+    "action_repository": "ossf/scorecard-action",
+    "action_sha": "2d1146689b8cda280b9bc96326124645441f03bc",
+    "action_version": "v2.4.4",
+    "publish_results": false,
+    "secret_values_required": false,
+    "tool_source_commit_sha": "c395761df6afe1a69e476bc60a013a94bcbc153f",
+    "tool_source_repository": "ossf/scorecard",
+    "tool_version": "v5.5.0",
+    "transitive_container_ref": "ghcr.io/ossf/scorecard-action:v2.4.4"
+  },
+  "tools": {
+    "openssf-scorecard": {
+      "mutable_ref_allowed": false,
+      "source_commit_sha": "c395761df6afe1a69e476bc60a013a94bcbc153f",
+      "source_repository": "ossf/scorecard",
+      "version": "v5.5.0"
+    },
+    "osv-scanner": {
+      "mutable_ref_allowed": false,
+      "source_commit_sha": "e840a6e8adb14b7777c78e26cfbf6e2abc1d1fc6",
+      "source_repository": "google/osv-scanner",
+      "version": "v2.6.0"
+    },
+    "zizmor": {
+      "mutable_ref_allowed": false,
+      "source_commit_sha": "99a054ed9283c90abdd2d5b9fb5101d27dde9783",
+      "source_repository": "zizmorcore/zizmor",
+      "version": "v1.30.1"
+    }
+  },
+  "zizmor": {
+    "action_repository": "zizmorcore/zizmor-action",
+    "action_sha": "cc914d7f3750a2d13d75c7f184a1060aa0e9d482",
+    "action_version": "v0.6.4",
+    "advanced_security_sarif": true,
+    "online_audits": false,
+    "secret_values_required": false,
+    "tool_source_commit_sha": "99a054ed9283c90abdd2d5b9fb5101d27dde9783",
+    "tool_source_repository": "zizmorcore/zizmor",
+    "tool_version": "1.30.1",
+    "transitive_upload_sarif_action_sha": "cdf488f595d80d6e07e03d4674febd5ab45fa938"
+  }
+}
