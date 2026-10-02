@@ -669,9 +669,3 @@ def test_continuous_intelligence_privileged_scheduler_does_not_use_workflow_run_
     assert "schedule:" in text
     assert "workflow_dispatch:" in text
 
-def test_workflow_run_privileged_scheduler_has_explicit_trust_filter():
-    workflow = Path(".github/workflows/continuous-intelligence-operation.yml").read_text(encoding="utf-8")
-    assert "github.event.workflow_run.conclusion == 'success'" in workflow
-    assert "github.event.workflow_run.head_repository.full_name == github.repository" in workflow
-    assert "github.event.workflow_run.head_branch == 'main'" in workflow
-    assert "github.event.workflow_run.head_branch == 'work/gate6f-analytics-learning'" in workflow

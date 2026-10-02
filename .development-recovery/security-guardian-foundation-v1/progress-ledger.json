@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 12,
+  "checkpoint_sequence": 13,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -145,14 +145,22 @@
     "zizmor-post-fix-sha256:9bb49bfad33a4581ea8629bd2bfe5b721cf289d62eb6aefa9f107be36d42869f",
     "zizmor-post-fix:HIGH=0,MEDIUM=57,LOW=201",
     "tests:security_guardian+gta6_change_detector=57_PASS",
-    "workflow-recovery-manifest-sha256:e0c64adea768875b5ba829a6bc6c3cfa54d65d1b1cc82beeccc3c5ab21b622da"
+    "workflow-recovery-manifest-sha256:e0c64adea768875b5ba829a6bc6c3cfa54d65d1b1cc82beeccc3c5ab21b622da",
+    "cp13-remote-readback:VERIFIED",
+    "dangerous-workflow-trigger:REMOVED",
+    "zizmor-post-fix-high=0",
+    "zizmor-post-fix-raw-sha256:9bb49bfad33a4581ea8629bd2bfe5b721cf289d62eb6aefa9f107be36d42869f",
+    "codeql-candidate:7c15f2615dce05310fdf75e95bc6ee48551b2bc9",
+    "codeql-candidate-tree:3d5f5f8db78224456c76dc6958665c4ba3710f5e",
+    "workflow-payload-sha256:8db3d4cab90695d17888a86ec695bdc65fdeb13865944ab5f4f6b8ea3aa2857b",
+    "workflow-manifest-sha256:3921ef764d7151df3fa2ba1ae6071a283a83fbebae11d5fbebc8604ab76a99f7"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000012-18d1f824",
-  "latest_verified_checkpoint_sha": "64505e87d105a1c308919c75360b6ad456c47570",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000013-59c5a1d7",
+  "latest_verified_checkpoint_sha": "e5c2d5bfc50da00c440888b13ef81cbe1795715f",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "obtain exact-candidate CodeQL evidence without weakening gates; then harden canonical promotion identity",
+  "next_step": "execute pinned local CodeQL against exact candidate tree; if clean enough, harden canonical promotion identity",
   "open_blockers": [
     "CODEQL_CANDIDATE_RESCAN_REQUIRED",
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED"
@@ -205,13 +213,14 @@
     "pip_check": "PASS",
     "security_canary": "BLOCK_THEN_PASS_NEW_SESSION",
     "security_guardian_foundation_core": "29_PASS",
-    "security_guardian_foundation_focused": "57_PASS",
+    "security_guardian_foundation_focused": "45_PASS",
     "targeted_zizmor_high_after_template_fix": "1_DANGEROUS_TRIGGERS",
     "work_branch_force_push": "BLOCKED",
     "workflow_yaml_parse": "PASS",
     "zizmor_exact_candidate": "HIGH=1_MEDIUM=34_LOW=220",
-    "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201"
+    "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
+    "zizmor_strict_collection": "PASS"
   },
-  "updated_at": "2026-10-02T04:13:13.289329+00:00",
-  "validation_state": "EXTERNAL_BASELINE_COMPLETE_ZIZMOR_HIGH_ZERO_57_PASS"
+  "updated_at": "2026-10-02T04:18:10.194866+00:00",
+  "validation_state": "DANGEROUS_WORKFLOW_RESOLVED_READY_FOR_CODEQL_EXACT_CANDIDATE"
 }

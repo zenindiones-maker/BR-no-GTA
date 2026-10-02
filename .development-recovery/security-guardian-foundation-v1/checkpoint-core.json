@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "security-foundation-development",
   "artifact_refs": [],
-  "authorization_id": "30333364-f286-4633-99b1-a0f8c154b6f5",
+  "authorization_id": "46d61bfa-6705-4c6a-bd23-2f6eef7816ed",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "6cdba5c29e4596fcd3173575f3cd9b1d0723254d5027ce8fe3a879ed49c43101",
-  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000013-59c5a1d7",
+  "checkpoint_digest": "be10451723e3c532088cec84a0db0c73b7cad6ba6361a20345fbe98a6d9314ce",
+  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000014-e511a478",
   "checkpoint_kind": "MILESTONE",
-  "checkpoint_sequence": 13,
+  "checkpoint_sequence": 14,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -44,8 +44,8 @@
     "dangerous-workflow-trigger-red-green",
     "pinned-zizmor-post-fix-high-zero"
   ],
-  "content_digest": "db7b0fb8c0aa20ca96b1cee4c051115d05864f449bdd48c8f0a0c3f981e5fa78",
-  "created_at": "2026-10-02T04:13:14.751589+00:00",
+  "content_digest": "b95309847e1c410125028c8216c36c487fd17d6a4b17d33850023c50ae0deddf",
+  "created_at": "2026-10-02T04:18:12.655037+00:00",
   "current_step": "codeql-exact-candidate-rescan",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
@@ -138,7 +138,15 @@
     "zizmor-post-fix-sha256:9bb49bfad33a4581ea8629bd2bfe5b721cf289d62eb6aefa9f107be36d42869f",
     "zizmor-post-fix:HIGH=0,MEDIUM=57,LOW=201",
     "tests:security_guardian+gta6_change_detector=57_PASS",
-    "workflow-recovery-manifest-sha256:e0c64adea768875b5ba829a6bc6c3cfa54d65d1b1cc82beeccc3c5ab21b622da"
+    "workflow-recovery-manifest-sha256:e0c64adea768875b5ba829a6bc6c3cfa54d65d1b1cc82beeccc3c5ab21b622da",
+    "cp13-remote-readback:VERIFIED",
+    "dangerous-workflow-trigger:REMOVED",
+    "zizmor-post-fix-high=0",
+    "zizmor-post-fix-raw-sha256:9bb49bfad33a4581ea8629bd2bfe5b721cf289d62eb6aefa9f107be36d42869f",
+    "codeql-candidate:7c15f2615dce05310fdf75e95bc6ee48551b2bc9",
+    "codeql-candidate-tree:3d5f5f8db78224456c76dc6958665c4ba3710f5e",
+    "workflow-payload-sha256:8db3d4cab90695d17888a86ec695bdc65fdeb13865944ab5f4f6b8ea3aa2857b",
+    "workflow-manifest-sha256:3921ef764d7151df3fa2ba1ae6071a283a83fbebae11d5fbebc8604ab76a99f7"
   ],
   "excluded_paths": [],
   "failure_state": {},
@@ -293,17 +301,17 @@
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "obtain exact-candidate CodeQL evidence without weakening gates; then harden canonical promotion identity",
+  "next_step": "execute pinned local CodeQL against exact candidate tree; if clean enough, harden canonical promotion identity",
   "open_blockers": [
     "CODEQL_CANDIDATE_RESCAN_REQUIRED",
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED"
   ],
-  "previous_checkpoint_sha": "64505e87d105a1c308919c75360b6ad456c47570",
-  "progress_ledger_digest": "ec0537911071aadc26ecaab1ec084fe9229237fe6d70b3da1a640a9ef4741d37",
+  "previous_checkpoint_sha": "e5c2d5bfc50da00c440888b13ef81cbe1795715f",
+  "progress_ledger_digest": "c179bce0a2ec54401682d377760f82f227e1948c771c7e755e197c04150e79c6",
   "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "Resume from cp13. External baseline/canary complete and zizmor HIGH is zero. Run exact-candidate CodeQL, then harden canonical promotion identity. No owner voice and no canonical promotion yet.",
+  "resume_instructions": "Resume from cp14. Execute exact-candidate CodeQL on 7c15f2615dce05310fdf75e95bc6ee48551b2bc9 / tree 3d5f5f8db78224456c76dc6958665c4ba3710f5e. Do not promote or resume owner voice.",
   "runtime_namespace": "security-guardian-foundation-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -335,13 +343,14 @@
     "pip_check": "PASS",
     "security_canary": "BLOCK_THEN_PASS_NEW_SESSION",
     "security_guardian_foundation_core": "29_PASS",
-    "security_guardian_foundation_focused": "57_PASS",
+    "security_guardian_foundation_focused": "45_PASS",
     "targeted_zizmor_high_after_template_fix": "1_DANGEROUS_TRIGGERS",
     "work_branch_force_push": "BLOCKED",
     "workflow_yaml_parse": "PASS",
     "zizmor_exact_candidate": "HIGH=1_MEDIUM=34_LOW=220",
-    "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201"
+    "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
+    "zizmor_strict_collection": "PASS"
   },
-  "validation_state": "EXTERNAL_BASELINE_COMPLETE_ZIZMOR_HIGH_ZERO_57_PASS",
+  "validation_state": "DANGEROUS_WORKFLOW_RESOLVED_READY_FOR_CODEQL_EXACT_CANDIDATE",
   "workspace_id": "security-guardian-foundation-v1"
 }
