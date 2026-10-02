@@ -1,0 +1,140 @@
+name: BR Security Guardian Baseline
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 7 * * 1"
+  push:
+    branches:
+      - main
+      - work/gate6f-analytics-learning
+    paths:
+      - ".github/workflows/**"
+      - ".github/actions/**"
+      - ".github/CODEOWNERS"
+      - "SECURITY.md"
+      - "app/services/*auth*"
+      - "app/services/*authorization*"
+      - "app/services/*policy*"
+      - "app/services/*security*"
+      - "app/services/global_capability_registry*.py"
+      - "app/services/harness_durable_execution_v3.py"
+      - "app/services/*outbox*"
+      - "app/services/*publication*"
+      - "integrations/**"
+      - "requirements*.txt"
+      - "**/requirements*.txt"
+      - "pyproject.toml"
+      - "**/package-lock.json"
+      - "**/pnpm-lock.yaml"
+      - "**/yarn.lock"
+      - "**/Dockerfile*"
+      - "config/security/**"
+
+permissions: {}
+
+concurrency:
+  group: security-guardian-baseline-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  policy:
+    name: Deterministic policy contracts
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Run Security Guardian deterministic contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input pytest beautifulsoup4==4.15.0 lxml==6.1.3
+          python -m pytest -q tests/test_security_guardian_foundation_v1.py tests/test_gta6_change_detector.py
+      - name: Upload deterministic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-guardian-policy-${{ github.run_id }}
+          path: |
+            config/security/security-toolchain.json
+          if-no-files-found: error
+          retention-days: 14
+
+  zizmor:
+    name: Zizmor GitHub Actions security
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      security-events: write # SECURITY-JUSTIFICATION: job-scoped SARIF upload only; trusted branch/schedule/manual triggers; no fork-controlled code execution
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Run pinned zizmor
+        id: zizmor
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          inputs: "."
+          collect: all
+          online-audits: "false"
+          persona: auditor
+          min-severity: low
+          min-confidence: medium
+          version: "1.30.1"
+          advanced-security: "true"
+          color: "false"
+
+  osv:
+    name: OSV dependency vulnerability scan
+    permissions:
+      actions: read
+      contents: read
+      security-events: write # SECURITY-JUSTIFICATION: job-scoped OSV SARIF upload only; trusted branch/schedule/manual triggers; no fork-controlled code execution
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@c7c7bcb0773cc4678a674ada03a66cc5c4325476 # v2.6.0
+    with:
+      scan-args: |-
+        --include-git-root
+        -r
+        ./
+
+  scorecard:
+    name: OpenSSF Scorecard posture
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare result directory
+        run: mkdir -p artifacts/security-guardian
+      - name: Run pinned OpenSSF Scorecard
+        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: artifacts/security-guardian/scorecard.json
+          results_format: json
+          publish_results: false
+      - name: Upload Scorecard baseline
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-guardian-scorecard-${{ github.run_id }}
+          path: artifacts/security-guardian/scorecard.json
+          if-no-files-found: warn
+          retention-days: 14

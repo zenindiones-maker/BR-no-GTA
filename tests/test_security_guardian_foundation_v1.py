@@ -611,3 +611,38 @@ def test_all_active_workflows_declare_explicit_top_level_permissions():
         if not any(re.match(r"^permissions:\s*(?:\{\})?\s*(?:#.*)?$", line) for line in lines):
             missing.append(path.as_posix())
     assert missing == [], "\n".join(missing)
+
+
+def test_security_toolchain_manifest_pins_reviewed_revisions():
+    manifest = json.loads(Path("config/security/security-toolchain.json").read_text())
+    assert manifest["schema_version"] == "SecurityToolchain/v1"
+    assert manifest["zizmor"]["action_sha"] == "cc914d7f3750a2d13d75c7f184a1060aa0e9d482"
+    assert manifest["zizmor"]["tool_version"] == "1.30.1"
+    assert manifest["osv"]["action_sha"] == "a345acffa64b0eaede81a3d9aae6141214d9c8fc"
+    assert manifest["scorecard"]["action_sha"] == "2d1146689b8cda280b9bc96326124645441f03bc"
+    assert manifest["scorecard"]["publish_results"] is False
+    assert manifest["scorecard"]["transitive_container_ref"] == "ghcr.io/ossf/scorecard-action:v2.4.4"
+    assert manifest["osv"]["transitive_container_ref"] == "ghcr.io/google/osv-scanner-action:v2.6.0"
+
+
+def test_security_guardian_baseline_workflow_is_minimal_pinned_and_trusted():
+    workflow = Path(".github/workflows/security-guardian-baseline.yml").read_text()
+    assert "permissions: {}" in workflow
+    assert "pull_request_target" not in workflow
+    assert "zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482" in workflow
+    assert 'version: "1.30.1"' in workflow
+    assert "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@c7c7bcb0773cc4678a674ada03a66cc5c4325476" in workflow
+    assert "ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc" in workflow
+    assert "publish_results: false" in workflow
+    assert "persist-credentials: false" in workflow
+    assert "security-events: write" in workflow
+    assert "schedule:" in workflow
+    assert "workflow_dispatch:" in workflow
+
+
+def test_security_toolchain_workflow_has_no_secret_value_inputs():
+    workflow = Path(".github/workflows/security-guardian-baseline.yml").read_text()
+    assert "secrets." not in workflow
+    assert "OPENAI_API_KEY" not in workflow
+    assert "TELEGRAM_BOT_TOKEN" not in workflow
+    assert "StrictHostKeyChecking=no" not in workflow

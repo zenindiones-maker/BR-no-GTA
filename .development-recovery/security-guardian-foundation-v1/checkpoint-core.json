@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "security-foundation-development",
   "artifact_refs": [],
-  "authorization_id": "f7f64cfc-bb46-48a2-ac66-0f6d10bd7b5b",
+  "authorization_id": "d0c87146-a6e8-455a-98b7-86cb98267eed",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "41e45a5bbdd2af441d742203a4d4083b020baa23a4c5ff0457224a4bfe4a7111",
-  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000008-89d67bee",
+  "checkpoint_digest": "c514c454fd5ff67357edff4e1652993b92017cc5ffff7e2b0c01771b5e59829b",
+  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000009-b055e7b5",
   "checkpoint_kind": "MILESTONE",
-  "checkpoint_sequence": 8,
+  "checkpoint_sequence": 9,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -31,11 +31,14 @@
     "codeql-high-bad-tag-filter-red-green",
     "codeql-high-cache-poisoning-red-green",
     "codeql-medium-explicit-permissions-red-green",
-    "top-level-permissions-default-minimal-enforced"
+    "top-level-permissions-default-minimal-enforced",
+    "security-toolchain-manifest-red-green",
+    "security-guardian-baseline-workflow-red-green",
+    "security-toolchain-static-validation"
   ],
-  "content_digest": "6228ee81f5095c30c1d47cd1eeec49ada923b8c50f7b1468e129a5094401b242",
-  "created_at": "2026-10-02T03:08:19.785620+00:00",
-  "current_step": "external-security-toolchain-and-full-posture-baseline",
+  "content_digest": "531336fc0d9b999d859ce1c0ecab6dc15df7b5dbd39d0541e2c004f20155c2e5",
+  "created_at": "2026-10-02T03:17:38.204605+00:00",
+  "current_step": "execute-pinned-external-security-baseline",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
@@ -89,7 +92,16 @@
     "tests:security_guardian_foundation=40_PASS",
     "workflow-policy:all_yaml_parse=PASS",
     "workflow-policy:missing_top_level_permissions=0",
-    "recovery-workflow-manifest-sha256:c52ef42704e0140b028ebd685d1bed93e37ff20c8c25c00ce0f9dd4020e12a97"
+    "recovery-workflow-manifest-sha256:c52ef42704e0140b028ebd685d1bed93e37ff20c8c25c00ce0f9dd4020e12a97",
+    "tests:security_guardian_foundation=43_PASS",
+    "workflow-policy:workflow_files=149",
+    "workflow-policy:action_uses=572",
+    "toolchain-manifest-sha256:be13470cdfce6e0eb4aa3232e00cf12842ed8cb3e0d5687cec9062dfb7ed2675",
+    "toolchain-workflow-sha256:a40d988814f12941c7e67ae2a947c930517e5b2b864b2116b72a4d663f190ee5",
+    "recovery-workflow-payload-count:138",
+    "recovery-workflow-manifest-sha256:28ba6b8e39fc2efcfe3b51a4301ce9bd171a4297bfc2a30c5f0e796b621ae1b3",
+    "recovery-toolchain-payload-sha256:be13470cdfce6e0eb4aa3232e00cf12842ed8cb3e0d5687cec9062dfb7ed2675",
+    "recovery-toolchain-manifest-sha256:89865afbdb518c7e87af44c4ff271ec65a019ed929b3f8d66218852f204cd7df"
   ],
   "excluded_paths": [],
   "failure_state": {},
@@ -196,6 +208,7 @@
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/run001-e2e-canary.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/run001-final-products-dispatch.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/run001-final-products-executor.yml",
+    "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/security-guardian-baseline.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/semantic-planner-context-profile.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/semantic-planner-inference-profile.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/semantic-planner-optimized-profile.yml",
@@ -243,18 +256,18 @@
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "integrate pinned zizmor, OSV and OpenSSF Scorecard execution surfaces, run sanitized baseline, then security canary",
+  "next_step": "run pinned zizmor/osv/scorecard against candidate, sanitize evidence, classify blockers, then run security canary",
   "open_blockers": [
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED",
     "CODEQL_CANDIDATE_RESCAN_REQUIRED",
     "EXTERNAL_SECURITY_TOOLCHAIN_BASELINE_REQUIRED"
   ],
-  "previous_checkpoint_sha": "2acf59c396cf9d3a171e7fd20ba54c937552d126",
-  "progress_ledger_digest": "194daef3bad34dba7f22528b8fea61934871522f5f896a0588f3cbe96dce1441",
+  "previous_checkpoint_sha": "f4b5e8d50772eb7e8eb470805cb460643c217187",
+  "progress_ledger_digest": "bec1c4acd5b5e757c678aee274ec0ede28bdc5ca3d7d19e741daa91e19501474",
   "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "Resume from cp8. Workflow action pinning, permission hardening, and local CodeQL causal fixes are closed. Next: pinned external security toolchain and full posture baseline. Owner voice remains frozen.",
+  "resume_instructions": "Resume from cp9. Static toolchain is green; run pinned external scanners and persist sanitized baseline. Workflow WIP and ignored security-toolchain config are preserved as non-executing recovery payloads. Do not resume owner voice.",
   "runtime_namespace": "security-guardian-foundation-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -271,8 +284,9 @@
     ]
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "checkpoint-before-external-security-toolchain-baseline",
+  "task_id": "checkpoint-before-live-external-security-baseline",
   "test_state": {
+    "diff_check": "PASS",
     "gta6_change_detector": "12_PASS",
     "main_force_push": "BLOCKED",
     "missing_top_level_permissions": "0",
@@ -281,10 +295,10 @@
     "overbroad_workflow_permissions": "0",
     "pip_check": "PASS",
     "security_guardian_foundation_core": "29_PASS",
-    "security_guardian_foundation_focused": "40_PASS",
+    "security_guardian_foundation_focused": "43_PASS",
     "work_branch_force_push": "BLOCKED",
     "workflow_yaml_parse": "PASS"
   },
-  "validation_state": "WORKFLOW_SECURITY_POLICY_40_PASS_CHANGE_DETECTOR_12_PASS",
+  "validation_state": "SECURITY_TOOLCHAIN_STATIC_43_PASS_CHANGE_DETECTOR_12_PASS",
   "workspace_id": "security-guardian-foundation-v1"
 }
