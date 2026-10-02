@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 11,
+  "checkpoint_sequence": 12,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -35,9 +35,11 @@
     "pinned-openssf-scorecard-exact-candidate-executed",
     "external-security-evidence-sanitized",
     "security-canary-block-pass-new-session",
-    "external-baseline-blockers-classified"
+    "external-baseline-blockers-classified",
+    "dangerous-workflow-trigger-red-green",
+    "pinned-zizmor-post-fix-high-zero"
   ],
-  "current_step": "external-baseline-classified-blockers-open",
+  "current_step": "codeql-exact-candidate-rescan",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -137,18 +139,23 @@
     "blocking-finding:security-known_dangerous_workflow-a482a518d3eea6e4",
     "blocker-classification-sha256:5b2315c09429e17d31d37010cf1a1ad1bd5d494129f854f1b459ab5f8b800a5a",
     "osv-new-vulnerabilities=0",
-    "zizmor-high=1:dangerous-triggers"
+    "zizmor-high=1:dangerous-triggers",
+    "candidate-post-trigger-fix:f92f290a7974706445cdcf0d3d4fcfbba8a3341f",
+    "candidate-tree-post-trigger-fix:7ef2a45ed8707fb8b11871226e5d200d80288eca",
+    "zizmor-post-fix-sha256:9bb49bfad33a4581ea8629bd2bfe5b721cf289d62eb6aefa9f107be36d42869f",
+    "zizmor-post-fix:HIGH=0,MEDIUM=57,LOW=201",
+    "tests:security_guardian+gta6_change_detector=57_PASS",
+    "workflow-recovery-manifest-sha256:e0c64adea768875b5ba829a6bc6c3cfa54d65d1b1cc82beeccc3c5ab21b622da"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000011-79d4e925",
-  "latest_verified_checkpoint_sha": "6d801cad9200c5a7febafeabe2d7b2bfa43194a8",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000012-18d1f824",
+  "latest_verified_checkpoint_sha": "64505e87d105a1c308919c75360b6ad456c47570",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "causally resolve dangerous workflow trigger, exact-candidate CodeQL rescan, and canonical promotion identity hardening; no promotion before all three close",
+  "next_step": "obtain exact-candidate CodeQL evidence without weakening gates; then harden canonical promotion identity",
   "open_blockers": [
-    "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED",
     "CODEQL_CANDIDATE_RESCAN_REQUIRED",
-    "EXTERNAL_SECURITY_TOOLCHAIN_BASELINE_REQUIRED"
+    "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED"
   ],
   "plan_steps": [
     "authority-contract",
@@ -185,6 +192,7 @@
     ]
   },
   "tests": {
+    "dangerous_workflow_trigger": "RESOLVED",
     "diff_check": "PASS",
     "gta6_change_detector": "12_PASS",
     "main_force_push": "BLOCKED",
@@ -197,12 +205,13 @@
     "pip_check": "PASS",
     "security_canary": "BLOCK_THEN_PASS_NEW_SESSION",
     "security_guardian_foundation_core": "29_PASS",
-    "security_guardian_foundation_focused": "43_PASS",
+    "security_guardian_foundation_focused": "57_PASS",
     "targeted_zizmor_high_after_template_fix": "1_DANGEROUS_TRIGGERS",
     "work_branch_force_push": "BLOCKED",
     "workflow_yaml_parse": "PASS",
-    "zizmor_exact_candidate": "HIGH=1_MEDIUM=34_LOW=220"
+    "zizmor_exact_candidate": "HIGH=1_MEDIUM=34_LOW=220",
+    "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201"
   },
-  "updated_at": "2026-10-02T03:44:16.863264+00:00",
-  "validation_state": "EXTERNAL_BASELINE_SANITIZED_CANARY_PASS_THREE_BLOCKERS_OPEN"
+  "updated_at": "2026-10-02T04:13:13.289329+00:00",
+  "validation_state": "EXTERNAL_BASELINE_COMPLETE_ZIZMOR_HIGH_ZERO_57_PASS"
 }

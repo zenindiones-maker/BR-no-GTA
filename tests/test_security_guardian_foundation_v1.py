@@ -646,3 +646,32 @@ def test_security_toolchain_workflow_has_no_secret_value_inputs():
     assert "OPENAI_API_KEY" not in workflow
     assert "TELEGRAM_BOT_TOKEN" not in workflow
     assert "StrictHostKeyChecking=no" not in workflow
+
+def test_privileged_continuous_scheduler_avoids_dangerous_workflow_run_trigger():
+    workflow = Path(".github/workflows/continuous-intelligence-operation.yml").read_text(encoding="utf-8")
+    assert "workflow_run:" not in workflow
+    assert "schedule:" in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "actions: write" in workflow
+    assert "actions/download-artifact" not in workflow
+    assert "github.event.workflow_run." not in workflow
+    assert "config/continuous_operation_deployment.json" in workflow
+    assert 'test "$resolved" = "$EXPECTED_SHA"' in workflow
+    assert 'test "$actual_policy_sha" = "$EXPECTED_POLICY_SHA256"' in workflow
+    assert "gh workflow run continuous-intelligence-executor.yml" in workflow
+
+
+def test_continuous_intelligence_privileged_scheduler_does_not_use_workflow_run_trigger():
+    path=Path(".github/workflows/continuous-intelligence-operation.yml")
+    text=path.read_text(encoding="utf-8")
+    assert "workflow_run:" not in text
+    assert "actions: write" in text
+    assert "schedule:" in text
+    assert "workflow_dispatch:" in text
+
+def test_workflow_run_privileged_scheduler_has_explicit_trust_filter():
+    workflow = Path(".github/workflows/continuous-intelligence-operation.yml").read_text(encoding="utf-8")
+    assert "github.event.workflow_run.conclusion == 'success'" in workflow
+    assert "github.event.workflow_run.head_repository.full_name == github.repository" in workflow
+    assert "github.event.workflow_run.head_branch == 'main'" in workflow
+    assert "github.event.workflow_run.head_branch == 'work/gate6f-analytics-learning'" in workflow
