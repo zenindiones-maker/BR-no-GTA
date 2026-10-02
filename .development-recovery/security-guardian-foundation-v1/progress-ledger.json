@@ -2,13 +2,20 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 0,
+  "checkpoint_sequence": 1,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
-    "reconcile-security-refs"
+    "reconcile-security-refs",
+    "security-authority-contract",
+    "security-finding-contract",
+    "security-review-receipt-contract",
+    "security-exception-contract",
+    "secret-incident-contract",
+    "persistent-security-responsibility-contract",
+    "minimal-canonical-force-delete-protection"
   ],
-  "current_step": "security-foundation-pre-mutation-baseline",
+  "current_step": "security-core-contracts-and-github-posture",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -28,15 +35,25 @@
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
     "voice-recovery:a52a15155be146fc70b2f3cdf60d629eec5d7f9f",
     "voice-staging:265909cd152df441ee44745683fda690995f9891",
-    "voice-run:36954054193:failure-before-side-effect"
+    "voice-run:36954054193:failure-before-side-effect",
+    "github:main:allow_force_pushes=false",
+    "github:main:allow_deletions=false",
+    "github:work/gate6f-analytics-learning:allow_force_pushes=false",
+    "github:work/gate6f-analytics-learning:allow_deletions=false",
+    "tests:test_security_guardian_foundation_v1=29_PASS"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": null,
-  "latest_verified_checkpoint_sha": null,
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000001-103b757a",
+  "latest_verified_checkpoint_sha": "aa2d7a34762320520a054c0ef69c1ae4b44efa06",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "implement-read-only-security-contract-and-deterministic-sensors-by-tdd",
-  "open_blockers": [],
+  "next_step": "complete-deterministic-sensors-toolchain-baseline-codeowners-security-md",
+  "open_blockers": [
+    "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED",
+    "MUTABLE_ACTION_REFS_BASELINE_DEBT",
+    "CODEOWNERS_MISSING",
+    "SECURITY_MD_MISSING"
+  ],
   "plan_steps": [
     "authority-contract",
     "security-contracts",
@@ -62,7 +79,11 @@
     "known_completed": [],
     "unknown_requires_reconciliation": []
   },
-  "tests": {},
-  "updated_at": "2026-10-02T02:20:12.411910+00:00",
-  "validation_state": "PRE_MUTATION_BASELINE"
+  "tests": {
+    "main_force_push": "BLOCKED",
+    "security_guardian_foundation_core": "29_PASS",
+    "work_branch_force_push": "BLOCKED"
+  },
+  "updated_at": "2026-10-02T02:35:22.257991+00:00",
+  "validation_state": "SECURITY_CORE_29_PASS_BRANCH_PROTECTION_MINIMUM_APPLIED"
 }

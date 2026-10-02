@@ -1,51 +1,85 @@
 {
   "agent_execution_identity": "security-foundation-development",
   "artifact_refs": [],
-  "authorization_id": "908be129-b06b-4509-8ed3-3d7c707a8945",
+  "authorization_id": "baeb1e0a-283c-45a0-abe8-1fa07570f8d4",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "ce08f18d153a3b1ae314281171f3315f93cfde5e18607ab9ff8e16642b70bb30",
-  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000001-103b757a",
-  "checkpoint_kind": "RECOVERY",
-  "checkpoint_sequence": 1,
+  "checkpoint_digest": "71f3dc0ac287f88e8a341b35011a6570379a64db7e3c195c917c6d97065c7070",
+  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000002-bd8505a1",
+  "checkpoint_kind": "MILESTONE",
+  "checkpoint_sequence": 2,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
-    "reconcile-security-refs"
+    "reconcile-security-refs",
+    "security-authority-contract",
+    "security-finding-contract",
+    "security-review-receipt-contract",
+    "security-exception-contract",
+    "secret-incident-contract",
+    "persistent-security-responsibility-contract",
+    "minimal-canonical-force-delete-protection"
   ],
-  "content_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "created_at": "2026-10-02T02:20:13.355573+00:00",
-  "current_step": "security-foundation-pre-mutation-baseline",
+  "content_digest": "fe1f9bd241fd4b552db11d261dddd1c99567949307f52e1f57f1ccee6d78969a",
+  "created_at": "2026-10-02T02:35:23.242149+00:00",
+  "current_step": "security-core-contracts-and-github-posture",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
     "voice-recovery:a52a15155be146fc70b2f3cdf60d629eec5d7f9f",
     "voice-staging:265909cd152df441ee44745683fda690995f9891",
-    "voice-run:36954054193:failure-before-side-effect"
+    "voice-run:36954054193:failure-before-side-effect",
+    "github:main:allow_force_pushes=false",
+    "github:main:allow_deletions=false",
+    "github:work/gate6f-analytics-learning:allow_force_pushes=false",
+    "github:work/gate6f-analytics-learning:allow_deletions=false",
+    "tests:test_security_guardian_foundation_v1=29_PASS"
   ],
   "excluded_paths": [],
   "failure_state": {},
-  "included_paths": [],
+  "included_paths": [
+    "app/services/global_capability_registry.py",
+    "app/services/security_guardian_service.py",
+    "tests/test_security_guardian_foundation_v1.py"
+  ],
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "implement-read-only-security-contract-and-deterministic-sensors-by-tdd",
-  "open_blockers": [],
-  "previous_checkpoint_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
-  "progress_ledger_digest": "7421d3b480b24d5006ad52e1cbdf1c88f12161ea48c1038f8e29f235220c693c",
+  "next_step": "complete-deterministic-sensors-toolchain-baseline-codeowners-security-md",
+  "open_blockers": [
+    "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED",
+    "MUTABLE_ACTION_REFS_BASELINE_DEBT",
+    "CODEOWNERS_MISSING",
+    "SECURITY_MD_MISSING"
+  ],
+  "previous_checkpoint_sha": "aa2d7a34762320520a054c0ef69c1ae4b44efa06",
+  "progress_ledger_digest": "8eaa7a2cf92ffb8bae348c4190bb58bd5bd76444b0b7a1ecc9812fbbdf862a7c",
   "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "Resume Security Guardian Foundation V1 from canonical 0e6704ec. Voice mission remains frozen at recovery a52a1515 and staging 265909cd. No audition rerun.",
+  "resume_instructions": "Resume Security Guardian Foundation V1. Do not resume owner voice or dispatch audition. Continue deterministic sensors/baseline then independent review.",
   "runtime_namespace": "security-guardian-foundation-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
-    "known_completed": [],
-    "unknown_requires_reconciliation": []
+    "known_completed": [
+      "github-branch-protection:main:no-force-no-delete",
+      "github-branch-protection:work/gate6f-analytics-learning:no-force-no-delete",
+      "github-security:dependabot-alerts-enabled",
+      "github-security:dependabot-security-updates-enabled",
+      "github-security:private-vulnerability-reporting-enabled",
+      "github-security:codeql-default-setup-configured"
+    ],
+    "unknown_requires_reconciliation": [
+      "github-security:non-provider-secret-patterns-requested-readback-disabled"
+    ]
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "pre-mutation-security-foundation-checkpoint",
-  "test_state": {},
-  "validation_state": "PRE_MUTATION_BASELINE",
+  "task_id": "security-core-contracts-checkpoint",
+  "test_state": {
+    "main_force_push": "BLOCKED",
+    "security_guardian_foundation_core": "29_PASS",
+    "work_branch_force_push": "BLOCKED"
+  },
+  "validation_state": "SECURITY_CORE_29_PASS_BRANCH_PROTECTION_MINIMUM_APPLIED",
   "workspace_id": "security-guardian-foundation-v1"
 }

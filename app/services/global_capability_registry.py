@@ -482,6 +482,95 @@ AGENT_OFFICE_CODEX_INDEPENDENT_REVIEW_RECORD = CapabilityRecord(
     functional_roles=("REVIEW",),
 )
 
+SECURITY_REPOSITORY_REVIEW_RECORD = CapabilityRecord(
+    capability_id="security.review.repository",
+    capability_type="AGENT",
+    domain="security",
+    implementation=(
+        "BR Security Guardian specialization of the proven Agent Office independent Codex "
+        "reviewer in a separate read-only AgentSession/disposable workspace"
+    ),
+    input_contract=(
+        "Harness-authorized security review task + exact candidate SHA/tree/diff digest + "
+        "sanitized deterministic scanner evidence"
+    ),
+    output_contract="SecurityFinding/v1 + SecurityReviewReceipt/v1",
+    requirements=(
+        "DeepSeek Harness REVIEW/DEVELOPMENT authorization",
+        "Agent Office delegated independent-review lease",
+        "separate reviewer AgentSession",
+        "separate worker/authorization identity",
+        "disposable read-only worktree",
+        "no secret-value or raw-owner-voice access",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("DEVELOPMENT", "REVIEW"),
+    policy_tags=(
+        "security", "appsec", "supply-chain", "github-actions", "independent-review",
+        "readonly", "evidence", "least-privilege",
+    ),
+    security_boundary=(
+        "DeepSeek Harness remains sole authority. Security Guardian observes, audits, "
+        "classifies and proposes remediation only; no repository write, push, merge, "
+        "publish, deploy, permission mutation, credential mutation, secret-value access "
+        "or self-approval."
+    ),
+    cost_class="BOUNDED_BY_LEASE",
+    quota_class="CODEX_ACCOUNT",
+    latency_class="MODEL_DEPENDENT",
+    quality_class="INDEPENDENT_SECURITY_REVIEW_WITH_DETERMINISTIC_EVIDENCE",
+    evidence_contract="app.services.security_guardian_service.SecurityReviewReceipt",
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.agent_office_harness_service.execute_authorized_agent_office_specialist"
+    ),
+    version="1",
+    provider_id="codex",
+    agent_id="codex-security-reviewer",
+    side_effects=("ephemeral read-only worktree", "sanitized structured security artifact"),
+    authority="NONE",
+    memory_write="NONE",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+    supports_parallelism=False,
+    supports_retry=True,
+    supports_resume=True,
+    supports_review=True,
+    side_effect_class="READ_ONLY",
+    default_read_scope=(
+        "app", "scripts", "tests", ".github", "config", "integrations",
+        "pyproject.toml", "requirements*.txt", "Dockerfile*", "SECURITY.md",
+    ),
+    default_write_scope=(),
+    allowed_tools=("rg", "cat", "pytest", "security-evidence"),
+    health_policy="CODEX_AUTH_REQUIRED",
+    execution_operations=(
+        CAN_SEMANTIC_REASONING,
+        CAN_READ_REPOSITORY,
+        CAN_REVIEW,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    ),
+    execution_kind="INDEPENDENT_REVIEWER",
+    functional_roles=(
+        "SECURITY_REVIEW",
+        "THREAT_ANALYSIS",
+        "SECURITY_EVIDENCE",
+        "REMEDIATION_PROPOSAL",
+    ),
+)
+
+if _REGISTRY._by_id.get(SECURITY_REPOSITORY_REVIEW_RECORD.capability_id) is not None:
+    raise ValueError("Duplicate security.review.repository Registry record")
+_REGISTRY._by_id[SECURITY_REPOSITORY_REVIEW_RECORD.capability_id] = SECURITY_REPOSITORY_REVIEW_RECORD
+_REGISTRY._records = tuple(sorted(
+    (*_REGISTRY._records, SECURITY_REPOSITORY_REVIEW_RECORD),
+    key=lambda item: item.capability_id,
+))
+
+
 AGENT_OFFICE_CODEX_BOUNDED_DEVELOPMENT_RECORD = CapabilityRecord(
     capability_id="agent-office.codex.bounded-development",
     capability_type="AGENT",
