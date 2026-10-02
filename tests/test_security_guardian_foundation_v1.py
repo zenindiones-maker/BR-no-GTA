@@ -601,3 +601,13 @@ def test_untrusted_workflow_dispatch_checkout_must_not_write_shared_dependency_c
     assert 'ref: ${{ steps.target.outputs.ref }}' in workflow
     assert "cache: pip" not in workflow
     assert "cache-dependency-path:" not in workflow
+
+
+def test_all_active_workflows_declare_explicit_top_level_permissions():
+    import re
+    missing = []
+    for path in sorted(Path(".github/workflows").glob("*.y*ml")):
+        lines = path.read_text(errors="replace").splitlines()
+        if not any(re.match(r"^permissions:\s*(?:\{\})?\s*(?:#.*)?$", line) for line in lines):
+            missing.append(path.as_posix())
+    assert missing == [], "\n".join(missing)

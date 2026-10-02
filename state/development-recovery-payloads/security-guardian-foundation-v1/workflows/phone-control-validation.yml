@@ -17,6 +17,9 @@ on:
       - ".github/workflows/phone-control-validation.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest

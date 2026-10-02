@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "security-foundation-development",
   "artifact_refs": [],
-  "authorization_id": "400d3faf-e0f2-40ef-bc5a-88e2d6e8abfe",
+  "authorization_id": "f7f64cfc-bb46-48a2-ac66-0f6d10bd7b5b",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "3f6d4e53f5a9c24c4858c14ca2b9ec47c9d83d020547030e5d7413966913df0a",
-  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000007-ebf4b026",
+  "checkpoint_digest": "41e45a5bbdd2af441d742203a4d4083b020baa23a4c5ff0457224a4bfe4a7111",
+  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000008-89d67bee",
   "checkpoint_kind": "MILESTONE",
-  "checkpoint_sequence": 7,
+  "checkpoint_sequence": 8,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -29,11 +29,13 @@
     "single-job-permission-scope-hardening",
     "multi-job-permission-scope-hardening",
     "codeql-high-bad-tag-filter-red-green",
-    "codeql-high-cache-poisoning-red-green"
+    "codeql-high-cache-poisoning-red-green",
+    "codeql-medium-explicit-permissions-red-green",
+    "top-level-permissions-default-minimal-enforced"
   ],
-  "content_digest": "d453863b2b0da3bda5fb204ba45915cb26fbf0e47d30379b3af0079ebb33a590",
-  "created_at": "2026-10-02T03:06:11.120723+00:00",
-  "current_step": "codeql-medium-missing-workflow-permissions",
+  "content_digest": "6228ee81f5095c30c1d47cd1eeec49ada923b8c50f7b1468e129a5094401b242",
+  "created_at": "2026-10-02T03:08:19.785620+00:00",
+  "current_step": "external-security-toolchain-and-full-posture-baseline",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
@@ -83,7 +85,11 @@
     "tests:security_guardian_foundation=39_PASS",
     "workflow:obsidian-memory-inbox:YAML_PARSE_PASS",
     "dependencies:pip_check=PASS",
-    "recovery-workflow-manifest-sha256:ae755d19d1b036cd3b9ed822e739d366071563fc6172940bf71833500e705848"
+    "recovery-workflow-manifest-sha256:ae755d19d1b036cd3b9ed822e739d366071563fc6172940bf71833500e705848",
+    "tests:security_guardian_foundation=40_PASS",
+    "workflow-policy:all_yaml_parse=PASS",
+    "workflow-policy:missing_top_level_permissions=0",
+    "recovery-workflow-manifest-sha256:c52ef42704e0140b028ebd685d1bed93e37ff20c8c25c00ce0f9dd4020e12a97"
   ],
   "excluded_paths": [],
   "failure_state": {},
@@ -237,18 +243,18 @@
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "add explicit minimal top-level permissions to the four CodeQL MEDIUM workflows, then run candidate code scanning",
+  "next_step": "integrate pinned zizmor, OSV and OpenSSF Scorecard execution surfaces, run sanitized baseline, then security canary",
   "open_blockers": [
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED",
-    "CODEQL_HIGH_REMOTE_RESCAN_PENDING_4",
-    "CODEQL_MEDIUM_OPEN_4"
+    "CODEQL_CANDIDATE_RESCAN_REQUIRED",
+    "EXTERNAL_SECURITY_TOOLCHAIN_BASELINE_REQUIRED"
   ],
-  "previous_checkpoint_sha": "8c409a4b705cf83eeaec4810cc8d9c6710771cdb",
-  "progress_ledger_digest": "5e6aebf3bac2656d2d08428115e34954e809208b09442e63a6020d22ef6bafaf",
+  "previous_checkpoint_sha": "2acf59c396cf9d3a171e7fd20ba54c937552d126",
+  "progress_ledger_digest": "194daef3bad34dba7f22528b8fea61934871522f5f896a0588f3cbe96dce1441",
   "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "Resume from cp7. HIGH CodeQL causes are fixed in candidate but require candidate rescan. Next: four MEDIUM missing-workflow-permissions findings. Owner voice remains frozen.",
+  "resume_instructions": "Resume from cp8. Workflow action pinning, permission hardening, and local CodeQL causal fixes are closed. Next: pinned external security toolchain and full posture baseline. Owner voice remains frozen.",
   "runtime_namespace": "security-guardian-foundation-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -265,19 +271,20 @@
     ]
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "checkpoint-after-codeql-high-causal-fixes",
+  "task_id": "checkpoint-before-external-security-toolchain-baseline",
   "test_state": {
     "gta6_change_detector": "12_PASS",
     "main_force_push": "BLOCKED",
+    "missing_top_level_permissions": "0",
     "mutable_action_refs": "0",
     "obsidian_yaml_parse": "PASS",
     "overbroad_workflow_permissions": "0",
     "pip_check": "PASS",
     "security_guardian_foundation_core": "29_PASS",
-    "security_guardian_foundation_focused": "39_PASS",
+    "security_guardian_foundation_focused": "40_PASS",
     "work_branch_force_push": "BLOCKED",
     "workflow_yaml_parse": "PASS"
   },
-  "validation_state": "CODEQL_HIGH_CAUSAL_FIXES_39_PASS_RESCAN_PENDING",
+  "validation_state": "WORKFLOW_SECURITY_POLICY_40_PASS_CHANGE_DETECTOR_12_PASS",
   "workspace_id": "security-guardian-foundation-v1"
 }

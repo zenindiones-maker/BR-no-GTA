@@ -8,6 +8,9 @@ on:
     paths:
       - ".github/workflows/ytdlp-format-diagnostic.yml"
 
+permissions:
+  contents: read
+
 jobs:
   diagnose:
     runs-on: ubuntu-latest

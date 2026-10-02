@@ -49,6 +49,9 @@ on:
       - ".github/workflows/harness-capability-boundary.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   capability-boundary:
     runs-on: ubuntu-latest
