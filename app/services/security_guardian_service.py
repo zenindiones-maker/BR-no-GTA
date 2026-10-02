@@ -471,7 +471,7 @@ def scan_secret_text(path: str, text: str) -> tuple[SecurityFinding, ...]:
         findings.append(SecurityFinding.create(
             candidate_sha=sha256(text.encode()).hexdigest()[:40],
             tree_sha=sha256(("tree:" + text).encode()).hexdigest()[:40],
-            category="ACTIVE_PRIVATE_KEY_IN_REPOSITORY",
+            category="PRIVATE_KEY_MATERIAL_PATTERN",
             severity="CRITICAL",
             severity_source="DETERMINISTIC_SCANNER",
             affected_paths=(path,),
@@ -496,7 +496,7 @@ def scan_secret_text(path: str, text: str) -> tuple[SecurityFinding, ...]:
             findings.append(SecurityFinding.create(
                 candidate_sha=sha256(text.encode()).hexdigest()[:40],
                 tree_sha=sha256(("tree:" + text).encode()).hexdigest()[:40],
-                category="CONFIRMED_SECRET_EXPOSURE",
+                category="SUSPECTED_SECRET_PATTERN",
                 severity="CRITICAL",
                 severity_source="DETERMINISTIC_SCANNER",
                 affected_paths=(path,),

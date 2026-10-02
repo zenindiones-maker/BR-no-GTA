@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 1,
+  "checkpoint_sequence": 2,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -15,7 +15,7 @@
     "persistent-security-responsibility-contract",
     "minimal-canonical-force-delete-protection"
   ],
-  "current_step": "security-core-contracts-and-github-posture",
+  "current_step": "deterministic-sensors-toolchain-baseline-codeowners-security-md-in-progress",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -40,19 +40,22 @@
     "github:main:allow_deletions=false",
     "github:work/gate6f-analytics-learning:allow_force_pushes=false",
     "github:work/gate6f-analytics-learning:allow_deletions=false",
-    "tests:test_security_guardian_foundation_v1=29_PASS"
+    "tests:test_security_guardian_foundation_v1=29_PASS",
+    "checkpoint-resume:SECURITY_GUARDIAN_FOUNDATION_V1-cp-000002-bd8505a1",
+    "checkpoint-resume-sha:6c4ed048dd22fc93c22ca9e1bb1ab55e4374af1c",
+    "local-wip:CODEOWNERS-created-not-yet-promoted",
+    "local-wip:SECURITY.md-created-not-yet-promoted",
+    "local-wip:security-baseline-contracts-extended-after-cp2"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000001-103b757a",
-  "latest_verified_checkpoint_sha": "aa2d7a34762320520a054c0ef69c1ae4b44efa06",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000002-bd8505a1",
+  "latest_verified_checkpoint_sha": "6c4ed048dd22fc93c22ca9e1bb1ab55e4374af1c",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "complete-deterministic-sensors-toolchain-baseline-codeowners-security-md",
+  "next_step": "finish deterministic sensor/toolchain baseline, validate CODEOWNERS and SECURITY.md, then run security canary",
   "open_blockers": [
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED",
-    "MUTABLE_ACTION_REFS_BASELINE_DEBT",
-    "CODEOWNERS_MISSING",
-    "SECURITY_MD_MISSING"
+    "MUTABLE_ACTION_REFS_BASELINE_DEBT"
   ],
   "plan_steps": [
     "authority-contract",
@@ -76,14 +79,23 @@
   ],
   "schema_version": "DevelopmentProgressLedger/v1",
   "side_effects": {
-    "known_completed": [],
-    "unknown_requires_reconciliation": []
+    "known_completed": [
+      "github-branch-protection:main:no-force-no-delete",
+      "github-branch-protection:work/gate6f-analytics-learning:no-force-no-delete",
+      "github-security:dependabot-alerts-enabled",
+      "github-security:dependabot-security-updates-enabled",
+      "github-security:private-vulnerability-reporting-enabled",
+      "github-security:codeql-default-setup-configured"
+    ],
+    "unknown_requires_reconciliation": [
+      "github-security:non-provider-secret-patterns-requested-readback-disabled"
+    ]
   },
   "tests": {
     "main_force_push": "BLOCKED",
     "security_guardian_foundation_core": "29_PASS",
     "work_branch_force_push": "BLOCKED"
   },
-  "updated_at": "2026-10-02T02:35:22.257991+00:00",
-  "validation_state": "SECURITY_CORE_29_PASS_BRANCH_PROTECTION_MINIMUM_APPLIED"
+  "updated_at": "2026-10-02T02:50:08.778376+00:00",
+  "validation_state": "POST_CP2_WIP_PRESERVED_BEFORE_LONG_SECURITY_BASELINE"
 }

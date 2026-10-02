@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "security-foundation-development",
   "artifact_refs": [],
-  "authorization_id": "baeb1e0a-283c-45a0-abe8-1fa07570f8d4",
+  "authorization_id": "0f979ba6-9785-45e7-809e-22dc114fd93c",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "71f3dc0ac287f88e8a341b35011a6570379a64db7e3c195c917c6d97065c7070",
-  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000002-bd8505a1",
+  "checkpoint_digest": "c742bdbf74c4c148f3200c54ec2f7af5024964d32571d637cc259f792612f6ef",
+  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000003-91383b44",
   "checkpoint_kind": "MILESTONE",
-  "checkpoint_sequence": 2,
+  "checkpoint_sequence": 3,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -20,9 +20,9 @@
     "persistent-security-responsibility-contract",
     "minimal-canonical-force-delete-protection"
   ],
-  "content_digest": "fe1f9bd241fd4b552db11d261dddd1c99567949307f52e1f57f1ccee6d78969a",
-  "created_at": "2026-10-02T02:35:23.242149+00:00",
-  "current_step": "security-core-contracts-and-github-posture",
+  "content_digest": "8493cf3659245609fd3dac6bf45f37ce48580b457f29123a33e8cd635f86e813",
+  "created_at": "2026-10-02T02:50:09.909323+00:00",
+  "current_step": "deterministic-sensors-toolchain-baseline-codeowners-security-md-in-progress",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
@@ -33,11 +33,18 @@
     "github:main:allow_deletions=false",
     "github:work/gate6f-analytics-learning:allow_force_pushes=false",
     "github:work/gate6f-analytics-learning:allow_deletions=false",
-    "tests:test_security_guardian_foundation_v1=29_PASS"
+    "tests:test_security_guardian_foundation_v1=29_PASS",
+    "checkpoint-resume:SECURITY_GUARDIAN_FOUNDATION_V1-cp-000002-bd8505a1",
+    "checkpoint-resume-sha:6c4ed048dd22fc93c22ca9e1bb1ab55e4374af1c",
+    "local-wip:CODEOWNERS-created-not-yet-promoted",
+    "local-wip:SECURITY.md-created-not-yet-promoted",
+    "local-wip:security-baseline-contracts-extended-after-cp2"
   ],
   "excluded_paths": [],
   "failure_state": {},
   "included_paths": [
+    ".github/CODEOWNERS",
+    "SECURITY.md",
     "app/services/global_capability_registry.py",
     "app/services/security_guardian_service.py",
     "tests/test_security_guardian_foundation_v1.py"
@@ -45,19 +52,17 @@
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "complete-deterministic-sensors-toolchain-baseline-codeowners-security-md",
+  "next_step": "finish deterministic sensor/toolchain baseline, validate CODEOWNERS and SECURITY.md, then run security canary",
   "open_blockers": [
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED",
-    "MUTABLE_ACTION_REFS_BASELINE_DEBT",
-    "CODEOWNERS_MISSING",
-    "SECURITY_MD_MISSING"
+    "MUTABLE_ACTION_REFS_BASELINE_DEBT"
   ],
-  "previous_checkpoint_sha": "aa2d7a34762320520a054c0ef69c1ae4b44efa06",
-  "progress_ledger_digest": "8eaa7a2cf92ffb8bae348c4190bb58bd5bd76444b0b7a1ecc9812fbbdf862a7c",
+  "previous_checkpoint_sha": "6c4ed048dd22fc93c22ca9e1bb1ab55e4374af1c",
+  "progress_ledger_digest": "62f40cc5df9ac23a34a010d37d4c87d572f4b9f260c3b71cd2031439db7c03c7",
   "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "Resume Security Guardian Foundation V1. Do not resume owner voice or dispatch audition. Continue deterministic sensors/baseline then independent review.",
+  "resume_instructions": "Resume from cp3. Finish deterministic sensors/toolchain baseline and validate CODEOWNERS/SECURITY.md. Do not resume owner voice or dispatch audition.",
   "runtime_namespace": "security-guardian-foundation-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -74,12 +79,12 @@
     ]
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "security-core-contracts-checkpoint",
+  "task_id": "preserve-post-cp2-wip-before-long-security-baseline",
   "test_state": {
     "main_force_push": "BLOCKED",
     "security_guardian_foundation_core": "29_PASS",
     "work_branch_force_push": "BLOCKED"
   },
-  "validation_state": "SECURITY_CORE_29_PASS_BRANCH_PROTECTION_MINIMUM_APPLIED",
+  "validation_state": "POST_CP2_WIP_PRESERVED_BEFORE_LONG_SECURITY_BASELINE",
   "workspace_id": "security-guardian-foundation-v1"
 }

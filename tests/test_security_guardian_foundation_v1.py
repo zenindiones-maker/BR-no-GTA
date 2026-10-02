@@ -228,7 +228,8 @@ jobs:
 def test_private_key_marker_blocks_but_public_key_does_not():
     private_marker = "-----BEGIN " + "PRIVATE KEY-----"
     private = scan_secret_text("fixture.txt", private_marker + "\nTEST-FIXTURE-NOT-A-REAL-KEY\n-----END PRIVATE KEY-----")
-    assert any(f.category == "ACTIVE_PRIVATE_KEY_IN_REPOSITORY" for f in private)
+    assert any(f.category == "PRIVATE_KEY_MATERIAL_PATTERN" for f in private)
+    assert not any(f.category == "CONFIRMED_SECRET_EXPOSURE" for f in private)
     assert all("TEST-FIXTURE" not in json.dumps(f.to_dict()) for f in private)
     public = scan_secret_text("fixture.txt", "ssh-ed25519 AAAATESTPUBLICKEY fixture@example")
     assert not any(f.category == "ACTIVE_PRIVATE_KEY_IN_REPOSITORY" for f in public)
@@ -418,7 +419,7 @@ jobs:
     categories = {f.category for f in result["findings"]}
     assert "OVERBROAD_WORKFLOW_PERMISSION" in categories
     assert "MUTABLE_THIRD_PARTY_ACTION" in categories
-    assert "ACTIVE_PRIVATE_KEY_IN_REPOSITORY" in categories
+    assert "PRIVATE_KEY_MATERIAL_PATTERN" in categories
     assert result["embedded_authority_escalation_obeyed"] is False
     assert result["mutated_candidate"] is False
     assert result["disposition"] == "BLOCK"
@@ -457,3 +458,44 @@ def test_baseline_classifies_existing_findings_without_marking_them_resolved():
     assert snap["schema_version"] == "SecurityPostureSnapshot/v1"
     assert snap["open_finding_ids"] == [f.finding_id]
     assert snap["resolved_finding_ids"] == []
+
+def test_security_toolchain_is_exactly_pinned():
+    payload=json.loads(Path("config/security/security-toolchain.json").read_text())
+    assert payload["schema_version"]=="SecurityToolchain/v1"
+    for name in ("zizmor","osv-scanner","openssf-scorecard"):
+        row=payload["tools"][name]
+        assert len(row["source_commit_sha"])==40
+        assert all(c in "0123456789abcdef" for c in row["source_commit_sha"])
+        assert row["mutable_ref_allowed"] is False
+
+
+def test_codeowners_covers_security_sensitive_surfaces():
+    text=Path(".github/CODEOWNERS").read_text()
+    for pattern in (
+        "/.github/**",
+        "/.github/workflows/**",
+        "/.github/CODEOWNERS",
+        "/SECURITY.md",
+        "/app/services/harness_authorization_service.py",
+        "/app/services/global_capability_registry.py",
+        "/app/services/harness_durable_execution_v3.py",
+        "/app/services/telegram_egress_outbox_service.py",
+        "/integrations/**",
+    ):
+        assert pattern in text
+    assert "@zenindiones-maker" in text
+
+
+def test_security_md_uses_private_reporting_not_public_issues():
+    text=Path("SECURITY.md").read_text().lower()
+    assert "private vulnerability reporting" in text
+    assert "do not" in text and "public issue" in text
+    assert "secret" in text
+    assert "credential" in text
+
+
+def test_token_pattern_is_suspected_not_confirmed_without_validation():
+    token_shape = "123456:" + "A" * 32
+    findings = scan_secret_text("fixture.py", token_shape)
+    assert any(f.category == "SUSPECTED_SECRET_PATTERN" for f in findings)
+    assert not any(f.category == "CONFIRMED_SECRET_EXPOSURE" for f in findings)
