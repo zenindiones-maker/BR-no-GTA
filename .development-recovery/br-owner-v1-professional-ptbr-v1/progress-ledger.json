@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 6,
+  "checkpoint_sequence": 7,
   "completed_steps": [
     "professional-corpus-contracts",
     "private-corpus-audit-contract",
@@ -18,7 +18,7 @@
     "outbox-side-effect-semantics",
     "separate-ledger-repository-authority-boundary"
   ],
-  "current_step": "audition-handoff-delivery-hardening",
+  "current_step": "audition-delivery-authority-hardening",
   "decisions": [
     {
       "decision": "Use private separate repository for durable audition delivery state; product repository job remains contents:read.",
@@ -35,6 +35,10 @@
     {
       "decision": "After this verified checkpoint, dispatch exactly one audition run; no blind retry.",
       "id": "single-run-only"
+    },
+    {
+      "decision": "Checkpoint the current local workflow WIP remotely before any further mutation.",
+      "id": "preserve-local-workflow-wip"
     }
   ],
   "do_not_repeat": [
@@ -50,7 +54,8 @@
     "ledger-state:fec25c9e6d5b254586d258616f0ee4ebe1efc180",
     "authority-canary:PRODUCT_REPOSITORY_WRITE_AUTHORITY=NONE",
     "workflow:contents-read+persist-credentials-false",
-    "run:36936161771"
+    "run:36936161771",
+    "local-workflow-blob:2d7fda1fd24d6341edf20a4f166d794a9d6293ca"
   ],
   "goal_digest": "2b8f10962dd2d81d67ab0c26d5f9223fb0ce02fd52433055ed819428dd4e4a3f",
   "known_failures": [
@@ -67,10 +72,10 @@
       "status": "DESIGN_REJECTED_AND_ROLLED_BACK"
     }
   ],
-  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000006-3bc00961",
-  "latest_verified_checkpoint_sha": "240e4523ab9bfaaed0c9b9457e4e2df01c9f1775",
+  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000007-4b4fdf3f",
+  "latest_verified_checkpoint_sha": "4e9167ec5b315195d81c7c3573d066a84d131645",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
-  "next_step": "dispatch-exactly-one-owner-voice-audition-run",
+  "next_step": "continue-authority-audit-after-wip-preservation",
   "open_blockers": [],
   "plan_steps": [
     "reference-audit",
@@ -107,6 +112,6 @@
     "product_repository_write_authority": "NONE",
     "workflow_authority": "PASS"
   },
-  "updated_at": "2026-10-02T01:10:14.124132+00:00",
-  "validation_state": "HANDOFF_DELIVERY_AUTHORITY_GREEN_READY_FOR_SINGLE_AUDITION"
+  "updated_at": "2026-10-02T01:14:26.555775+00:00",
+  "validation_state": "LOCAL_WIP_PRESERVED_PENDING_AUTHORITY_AUDIT"
 }

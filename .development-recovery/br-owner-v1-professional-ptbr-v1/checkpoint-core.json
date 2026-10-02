@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "voice-pipeline-development",
   "artifact_refs": [],
-  "authorization_id": "babc6a3e-e7c1-45a3-8cdd-662b492a51c5",
+  "authorization_id": "f8a45629-ac16-4c0f-a935-946ee49ad37b",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "0aa5979107748ce0cc14bc9b61319b6cbee83a881887bd42c69da65282547599",
-  "checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000007-4b4fdf3f",
+  "checkpoint_digest": "2287fc04226c9c43d22d643e6d026775212a93834ebdf8fba7a2e3ad7068a6c2",
+  "checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000008-6567205b",
   "checkpoint_kind": "RECOVERY",
-  "checkpoint_sequence": 7,
+  "checkpoint_sequence": 8,
   "completed_steps": [
     "professional-corpus-contracts",
     "private-corpus-audit-contract",
@@ -23,9 +23,9 @@
     "outbox-side-effect-semantics",
     "separate-ledger-repository-authority-boundary"
   ],
-  "content_digest": "37aa894bf625c49b998ba203a8e43cadc1471367325619b2254d609e6c94e8a4",
-  "created_at": "2026-10-02T01:10:15.123151+00:00",
-  "current_step": "audition-handoff-delivery-hardening",
+  "content_digest": "4d76ff332316ec0bffa788d12d5538743fd48e5ff073b86a119e7f7412e3fb3f",
+  "created_at": "2026-10-02T01:14:27.578078+00:00",
+  "current_step": "audition-delivery-authority-hardening",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "staging:54a12c2387281686476aa42689e5f05a89ad75f2",
@@ -34,38 +34,21 @@
     "ledger-state:fec25c9e6d5b254586d258616f0ee4ebe1efc180",
     "authority-canary:PRODUCT_REPOSITORY_WRITE_AUTHORITY=NONE",
     "workflow:contents-read+persist-credentials-false",
-    "run:36936161771"
+    "run:36936161771",
+    "local-workflow-blob:2d7fda1fd24d6341edf20a4f166d794a9d6293ca"
   ],
   "excluded_paths": [],
   "failure_state": {},
   "included_paths": [
-    ".github/workflows/owner-voice-human-audition-pack.yml",
-    "app/services/owner_voice_audition_delivery_service.py",
-    "app/services/owner_voice_audition_handoff_service.py",
-    "app/services/owner_voice_audition_ledger_store.py",
-    "scripts/owner_voice_audition_terminal_receipt.py",
-    "scripts/owner_voice_chatterbox_ptbr_audition.py",
-    "scripts/owner_voice_human_audition_pack.py",
-    "scripts/owner_voice_reference_qa.py",
-    "tests/test_owner_voice_audition_delivery_durable_v3.py",
-    "tests/test_owner_voice_audition_delivery_v1.py",
-    "tests/test_owner_voice_audition_handoff_service.py",
-    "tests/test_owner_voice_audition_handoff_v1.py",
-    "tests/test_owner_voice_audition_ledger_authority.py",
-    "tests/test_owner_voice_audition_ledger_store_integration.py",
-    "tests/test_owner_voice_audition_outbox_semantics.py",
-    "tests/test_owner_voice_audition_workflow_v1.py",
-    "tests/test_owner_voice_human_audition_bootstrap.py",
-    "tests/test_owner_voice_human_audition_pack_runtime.py",
-    "tests/test_owner_voice_human_audition_pack_workflow.py"
+    ".github/workflows/owner-voice-human-audition-pack.yml"
   ],
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
-  "next_step": "dispatch-exactly-one-owner-voice-audition-run",
+  "next_step": "continue-authority-audit-after-wip-preservation",
   "open_blockers": [],
-  "previous_checkpoint_sha": "240e4523ab9bfaaed0c9b9457e4e2df01c9f1775",
-  "progress_ledger_digest": "0d65575836e0d92769aeb2477544e13591709a0a8e9f477b28d62704f2c0d812",
+  "previous_checkpoint_sha": "4e9167ec5b315195d81c7c3573d066a84d131645",
+  "progress_ledger_digest": "8691514f286082f88800e7d81ea8a2a7d386def6ad72989291e23dd38f2a2de1",
   "recovery_ref": "recovery/dev/br-owner-v1-professional-ptbr-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
@@ -77,7 +60,7 @@
     "unknown_requires_reconciliation": []
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "handoff-delivery-authority-green-pre-single-audition",
+  "task_id": "preserve-local-workflow-wip-before-authority-audit",
   "test_state": {
     "compile": "PASS",
     "diff_check": "PASS",
@@ -87,6 +70,6 @@
     "product_repository_write_authority": "NONE",
     "workflow_authority": "PASS"
   },
-  "validation_state": "HANDOFF_DELIVERY_AUTHORITY_GREEN_READY_FOR_SINGLE_AUDITION",
+  "validation_state": "LOCAL_WIP_PRESERVED_PENDING_AUTHORITY_AUDIT",
   "workspace_id": "br-owner-v1-professional-ptbr-v1"
 }
