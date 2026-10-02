@@ -7,9 +7,6 @@ on:
       dispatch_id:
         required: true
         type: string
-      target_ref:
-        required: true
-        type: string
       target_sha:
         required: true
         type: string
@@ -46,7 +43,7 @@ jobs:
     env:
       PYTHONPATH: .
       ZERO_COST_OPERATION: "TRUE"
-      TARGET_REF: ${{ inputs.target_ref }}
+      TARGET_REF: ${{ github.ref_name }}
       TARGET_SHA: ${{ inputs.target_sha }}
       PLAN_B64: ${{ inputs.plan_b64 }}
       HUMAN_GOAL_B64: ${{ inputs.human_goal_b64 }}
@@ -59,7 +56,6 @@ jobs:
       - name: Checkout exact target ref
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.target_ref }}
           path: target
           fetch-depth: 0
           persist-credentials: false
@@ -433,7 +429,7 @@ jobs:
     env:
       PYTHONPATH: .
       ZERO_COST_OPERATION: "TRUE"
-      TARGET_REF: ${{ inputs.target_ref }}
+      TARGET_REF: ${{ github.ref_name }}
       TARGET_SHA: ${{ inputs.target_sha }}
       PLAN_B64: ${{ inputs.plan_b64 }}
       HUMAN_GOAL_B64: ${{ inputs.human_goal_b64 }}
@@ -445,7 +441,6 @@ jobs:
       - name: Checkout exact Telegram mission target
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.target_ref }}
           path: target
           fetch-depth: 0
           persist-credentials: false

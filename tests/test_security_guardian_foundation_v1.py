@@ -598,7 +598,8 @@ def test_active_workflows_have_no_workflow_level_write_permissions():
 def test_untrusted_workflow_dispatch_checkout_must_not_write_shared_dependency_cache():
     workflow = Path(".github/workflows/obsidian-memory-inbox.yml").read_text()
     assert "workflow_dispatch:" in workflow
-    assert 'ref: ${{ steps.target.outputs.ref }}' in workflow
+    assert "      target_ref:" not in workflow
+    assert "ref: ${{ steps.target.outputs.ref }}" not in workflow
     assert "cache: pip" not in workflow
     assert "cache-dependency-path:" not in workflow
 
@@ -669,3 +670,30 @@ def test_continuous_intelligence_privileged_scheduler_does_not_use_workflow_run_
     assert "schedule:" in text
     assert "workflow_dispatch:" in text
 
+
+def test_workflow_dispatch_never_uses_input_selected_ref_for_executable_checkout():
+    obsidian = Path(".github/workflows/obsidian-memory-inbox.yml").read_text(encoding="utf-8")
+    dynamic = Path(".github/workflows/dynamic-system-improvement.yml").read_text(encoding="utf-8")
+
+    assert "      target_ref:" not in obsidian
+    assert "ref: ${{ steps.target.outputs.ref }}" not in obsidian
+    assert "INPUT_TARGET_REF:" not in obsidian
+    assert "ref: ${{ inputs.target_ref }}" not in dynamic
+    assert "      target_ref:" not in dynamic
+
+
+def test_dispatch_services_select_executable_ref_at_workflow_dispatch_boundary_only():
+    hermes = Path("app/services/telegram_hermes_dispatch_service.py").read_text(encoding="utf-8")
+    system = Path("app/services/telegram_system_improvement_dispatch_service.py").read_text(encoding="utf-8")
+
+    assert '"target_ref": target_ref' not in hermes
+    assert '"target_ref": target_ref' not in system
+    assert "ref=ref" in hermes
+    assert "ref=target_ref" in system
+
+
+def test_obsidian_transport_validation_dispatches_workflow_on_target_ref():
+    text = Path(".github/workflows/obsidian-inbox-transport-focused.yml").read_text(encoding="utf-8")
+    assert 'gh workflow run obsidian-memory-inbox.yml' in text
+    assert '--ref "$TARGET_REF"' in text
+    assert '-f "target_ref=$TARGET_REF"' not in text

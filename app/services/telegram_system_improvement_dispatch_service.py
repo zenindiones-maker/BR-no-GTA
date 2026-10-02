@@ -225,7 +225,6 @@ def dispatch_telegram_system_improvement_mission(
             ref=target_ref,
             inputs={
                 "dispatch_id": dispatch_id,
-                "target_ref": target_ref,
                 "target_sha": target_sha,
                 "plan_b64": base64.b64encode(envelope_raw).decode("ascii"),
                 "human_goal_b64": base64.b64encode(goal_raw).decode("ascii"),

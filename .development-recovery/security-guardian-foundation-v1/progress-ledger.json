@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 15,
+  "checkpoint_sequence": 16,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -40,9 +40,11 @@
     "pinned-zizmor-post-fix-high-zero",
     "codeql-exact-candidate-python-rescan-evidence",
     "codeql-exact-candidate-actions-rescan",
-    "codeql-exact-candidate-rescan-complete"
+    "codeql-exact-candidate-rescan-complete",
+    "codeql-actions-high-root-cause-query-reviewed",
+    "workflow-dispatch-executable-ref-boundary-red-green"
   ],
-  "current_step": "codeql-new-high-findings-remediation",
+  "current_step": "codeql-actions-high-remediation-ready-for-exact-rescan",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -169,14 +171,19 @@
     "codeql-actions-new-high:actions/cache-poisoning/poisonable-step:.github/workflows/obsidian-memory-inbox.yml:97-104",
     "codeql-actions-new-high:actions/cache-poisoning/poisonable-step:.github/workflows/obsidian-memory-inbox.yml:125-141",
     "codeql-actions-new-high:actions/cache-poisoning/poisonable-step:.github/workflows/obsidian-memory-inbox.yml:141-151",
-    "codeql-actions-new-high:actions/cache-poisoning/poisonable-step:.github/workflows/dynamic-system-improvement.yml:495-509"
+    "codeql-actions-new-high:actions/cache-poisoning/poisonable-step:.github/workflows/dynamic-system-improvement.yml:495-509",
+    "dispatch-ref-boundary:workflow_dispatch_ref_selects_executable_code",
+    "obsidian-memory-inbox-workflow-sha256:ac206720ed334d1c41b12f44efad3164c990e1646d3945154cfeefa34cdd45b6",
+    "dynamic-system-improvement-workflow-sha256:82d0ad6ac1ac1559d69b095e13c2af02a6e076f928cf0be0658f313c0376b66b",
+    "obsidian-inbox-transport-focused-workflow-sha256:f8ffc6d30bfa2e34ddccfb991df1f375cf2dd5a632e11e82514f5361c3fd5602",
+    "codeql-query:actions/cache-poisoning/poisonable-step:security-severity=7.5"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000015-39daf0ac",
-  "latest_verified_checkpoint_sha": "7616b37970e03eb4426a0801f67e78000b1327ff",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000016-fdfa361b",
+  "latest_verified_checkpoint_sha": "b3bd88886e16585d376e689cd86ad4706d77dda0",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "remediate 4 new CodeQL Actions HIGH cache-poisoning findings; verify zero new HIGH/CRITICAL; then harden canonical promotion identity",
+  "next_step": "run exact-candidate CodeQL Actions after dispatch-ref boundary fix; if zero new HIGH/CRITICAL, rebuild exact candidate and run Python exact; then close CodeQL new-high blocker",
   "open_blockers": [
     "CODEQL_NEW_HIGH_FINDINGS=4",
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED"
@@ -233,6 +240,9 @@
     "codeql_rescan_status": "COMPLETE",
     "dangerous_workflow_trigger": "RESOLVED",
     "diff_check": "PASS",
+    "dispatch_affected_subgraph": "58_PASS",
+    "dispatch_ref_boundary_red_green": "3_PASS",
+    "git_diff_check": "PASS",
     "gta6_change_detector": "12_PASS",
     "main_force_push": "BLOCKED",
     "missing_top_level_permissions": "0",
@@ -252,6 +262,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "updated_at": "2026-10-02T05:14:41.293179+00:00",
-  "validation_state": "CODEQL_RESCAN_COMPLETE_NEW_HIGH_FINDINGS_BLOCK_PROMOTION"
+  "updated_at": "2026-10-02T06:00:06.027059+00:00",
+  "validation_state": "DISPATCH_REF_BOUNDARY_GREEN_BEFORE_CODEQL_RESCAN"
 }

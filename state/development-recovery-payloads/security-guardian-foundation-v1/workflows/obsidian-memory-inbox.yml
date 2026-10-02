@@ -29,11 +29,6 @@ on:
         description: Optional canonical artifact reference
         required: false
         type: string
-      target_ref:
-        description: Repository ref containing the real ingestion implementation
-        required: false
-        default: ""
-        type: string
 
 permissions:
   contents: read
@@ -47,32 +42,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
-      - name: Resolve bounded target ref
-        id: target
-        env:
-          INPUT_TARGET_REF: ${{ inputs.target_ref }}
-          DISPATCH_REF: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          ref="${INPUT_TARGET_REF:-$DISPATCH_REF}"
-          python - "$ref" <<'PY'
-          import re, sys
-          ref=sys.argv[1].strip()
-          if not ref or len(ref) > 180:
-              raise SystemExit("OBSIDIAN_INBOX_DISPATCH=FAIL invalid target_ref")
-          if ref.startswith("-") or ".." in ref or "@{" in ref or ref.endswith(".lock"):
-              raise SystemExit("OBSIDIAN_INBOX_DISPATCH=FAIL unsafe target_ref")
-          if not re.fullmatch(r"[A-Za-z0-9._/-]+", ref):
-              raise SystemExit("OBSIDIAN_INBOX_DISPATCH=FAIL unsafe target_ref")
-          print(ref)
-          PY
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
-          echo "TARGET_REF=$ref" >> "$GITHUB_ENV"
-
       - name: Checkout exact target ref
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ steps.target.outputs.ref }}
           path: target
           fetch-depth: 1
           persist-credentials: false
@@ -128,7 +100,7 @@ jobs:
           PYTHONPATH: .
           ZERO_COST_OPERATION: "TRUE"
           BR_TEST_DATABASE: ${{ github.workspace }}/target/artifacts/obsidian-inbox/control.db
-          OBSIDIAN_TARGET_REF: ${{ steps.target.outputs.ref }}
+          OBSIDIAN_TARGET_REF: ${{ github.ref_name }}
           OBSIDIAN_TARGET_SHA: ${{ steps.checkout.outputs.sha }}
           SOURCE_REF: ${{ inputs.source_ref }}
           GOAL_ID: ${{ inputs.goal_id }}
@@ -151,7 +123,7 @@ jobs:
       - name: Validate transport gates
         working-directory: target
         env:
-          EXPECTED_TARGET_REF: ${{ steps.target.outputs.ref }}
+          EXPECTED_TARGET_REF: ${{ github.ref_name }}
           EXPECTED_TARGET_SHA: ${{ steps.checkout.outputs.sha }}
         run: |
           set -euo pipefail

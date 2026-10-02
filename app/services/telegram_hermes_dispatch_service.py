@@ -80,7 +80,6 @@ def _build_launcher_inputs(
     mission_id: str,
     goal_id: str,
     chat_id: int,
-    target_ref: str,
     target_sha: str,
     artifact_ref: str,
     request_text: str,
@@ -114,7 +113,6 @@ def _build_launcher_inputs(
     goal_raw = str(request_text or "").encode("utf-8")
     return {
         "dispatch_id": dispatch_id,
-        "target_ref": target_ref,
         "target_sha": target_sha,
         "plan_b64": base64.b64encode(plan_raw).decode("ascii"),
         "human_goal_b64": base64.b64encode(goal_raw).decode("ascii"),
@@ -244,7 +242,6 @@ def _dispatch(
         mission_id=mission_id,
         goal_id=goal_id[:240],
         chat_id=chat_id,
-        target_ref=ref,
         target_sha=target_sha,
         artifact_ref=artifact_ref[:500],
         request_text=request_text[:2000],

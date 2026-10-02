@@ -25,7 +25,6 @@ def test_launcher_payload_preserves_exact_branch_and_mission_contract():
         mission_id="tg-hermes--1001-abc",
         goal_id="telegram-editorial-review",
         chat_id=-1001,
-        target_ref="work/gate6f-analytics-learning",
         target_sha="a" * 40,
         artifact_ref="script:8",
         request_text="Crie roteiros atualizados do gta 6",
@@ -37,13 +36,12 @@ def test_launcher_payload_preserves_exact_branch_and_mission_contract():
 
     assert set(inputs) == {
         "dispatch_id",
-        "target_ref",
         "target_sha",
         "plan_b64",
         "human_goal_b64",
         "telegram_chat_id",
     }
-    assert inputs["target_ref"] == "work/gate6f-analytics-learning"
+    assert "target_ref" not in inputs
     assert inputs["target_sha"] == "a" * 40
     assert inputs["telegram_chat_id"] == "-1001"
     assert base64.b64decode(inputs["human_goal_b64"]).decode("utf-8") == (

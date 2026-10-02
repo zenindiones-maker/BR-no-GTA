@@ -89,7 +89,7 @@ jobs:
         run: |
           set -euo pipefail
           NOTE_B64="$(cat /tmp/note.b64)"
-          gh workflow run obsidian-memory-inbox.yml             --repo "$GITHUB_REPOSITORY"             --ref main             -f "dispatch_id=$DISPATCH_ID"             -f "note_b64=$NOTE_B64"             -f "source_ref=Inbox/transport-validation.md"             -f "goal_id=$VIDEO_A_GOAL_ID"             -f "task_id=script-human-review"             -f "artifact_ref=script:8"             -f "target_ref=$TARGET_REF"
+          gh workflow run obsidian-memory-inbox.yml             --repo "$GITHUB_REPOSITORY"             --ref "$TARGET_REF"             -f "dispatch_id=$DISPATCH_ID"             -f "note_b64=$NOTE_B64"             -f "source_ref=Inbox/transport-validation.md"             -f "goal_id=$VIDEO_A_GOAL_ID"             -f "task_id=script-human-review"             -f "artifact_ref=script:8"
           echo "OBSIDIAN_INBOX_DISPATCH_REQUEST=PASS"
 
       - name: Wait for dispatched run and download envelope
@@ -101,7 +101,7 @@ jobs:
           set -euo pipefail
           run_id=""
           for _ in $(seq 1 30); do
-            run_id="$(gh run list               --repo "$GITHUB_REPOSITORY"               --workflow obsidian-memory-inbox.yml               --branch main               --limit 40               --json databaseId,displayTitle               --jq ".[] | select(.displayTitle == \"Obsidian Inbox $DISPATCH_ID\") | .databaseId"               | head -n 1)"
+            run_id="$(gh run list               --repo "$GITHUB_REPOSITORY"               --workflow obsidian-memory-inbox.yml               --branch "$TARGET_REF"               --limit 40               --json databaseId,displayTitle               --jq ".[] | select(.displayTitle == \"Obsidian Inbox $DISPATCH_ID\") | .databaseId"               | head -n 1)"
             [[ -n "$run_id" ]] && break
             sleep 2
           done
