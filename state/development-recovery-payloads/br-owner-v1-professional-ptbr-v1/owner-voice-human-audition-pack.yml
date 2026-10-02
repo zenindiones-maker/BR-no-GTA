@@ -1,0 +1,222 @@
+name: BR_OWNER_V1 Human Audition Pack
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - staging/br-owner-v1-professional-ptbr-v1
+    paths:
+      - ".run/br-owner-v1-human-audition.request.json"
+
+concurrency:
+  group: br-owner-v1-human-audition-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Human audition pack contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Install focused test dependencies
+        run: python -m pip install --disable-pip-version-check -q pytest packaging "python-dotenv==1.2.3"
+      - name: Validate request
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path(".run/br-owner-v1-human-audition.request.json").read_text())
+          assert d["schema_version"]=="OwnerVoiceHumanAuditionRequest/v1"
+          assert d["voice_identity_id"]=="BR_OWNER_V1"
+          assert d["blind_review"] is True
+          assert d["send_real_reference"] is True
+          assert d["generic_voice_fallback"] is False
+          PY
+      - name: Prove audition handoff and delivery contracts
+        run: |
+          set -euo pipefail
+          python -m pytest -q             tests/test_owner_voice_audition_handoff_v1.py             tests/test_owner_voice_audition_delivery_v1.py             tests/test_owner_voice_audition_delivery_durable_v3.py             tests/test_owner_voice_audition_ledger_authority.py             tests/test_owner_voice_audition_ledger_store_integration.py             tests/test_owner_voice_audition_outbox_semantics.py             tests/test_owner_voice_audition_workflow_v1.py             tests/test_owner_voice_human_audition_pack_service.py             tests/test_owner_voice_human_review_pack_callbacks.py             tests/test_owner_voice_chatterbox_ptbr_audition.py             tests/test_owner_voice_chatterbox_dependency_contract.py             tests/test_owner_voice_ptbr_audition_review.py             tests/test_owner_voice_private_materialization.py             tests/test_owner_voice_reference_qa.py
+
+  audition:
+    name: Generate and deliver real-reference plus blind A-B-C
+    needs: contract
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    timeout-minutes: 120
+    env:
+      BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64 }}
+      BR_OWNER_TELEGRAM_REFERENCE_INDEX: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_INDEX }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      BR_OWNER_AUDITION_AUTHORITY_REF: owner-explicit:BR_OWNER_V1_PROFESSIONAL_PTBR_V1
+      BR_OWNER_AUDITION_LEDGER_REPOSITORY: zenindiones-maker/BR-no-GTA-audition-ledger
+      HF_HOME: /tmp/br-owner-huggingface
+      TOKENIZERS_PARALLELISM: "false"
+      BR_OWNER_STT_MODEL: large-v3-turbo
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Establish run-scoped private workspace
+        run: |
+          set -euo pipefail
+          BR_OWNER_AUDITION_WORKSPACE="$RUNNER_TEMP/br-owner-voice/$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT"
+          BR_OWNER_AUDITION_MANIFEST_PATH="$BR_OWNER_AUDITION_WORKSPACE/audition-manifest.json"
+          BR_OWNER_AUDITION_DELIVERY_PATH="$BR_OWNER_AUDITION_WORKSPACE/delivery.json"
+          BR_OWNER_REFERENCE_QA_CONTEXT="$BR_OWNER_AUDITION_WORKSPACE/reference-qa-context.json"
+          BR_OWNER_AUDITION_PACK_ID="BR_OWNER_V1_AUDITION_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          BR_OWNER_REFERENCE_QA_CONTEXT="$BR_OWNER_AUDITION_WORKSPACE/reference-qa-context.json"
+          BR_OWNER_AUDITION_TERMINAL_RECEIPT="$RUNNER_TEMP/br-owner-audition-public/owner-voice-audition-delivery-receipt.json"
+          mkdir -p "$BR_OWNER_AUDITION_WORKSPACE" "$(dirname "$BR_OWNER_AUDITION_TERMINAL_RECEIPT")"
+          chmod 700 "$BR_OWNER_AUDITION_WORKSPACE"
+          {
+            echo "BR_OWNER_AUDITION_WORKSPACE=$BR_OWNER_AUDITION_WORKSPACE"
+            echo "BR_OWNER_AUDITION_MANIFEST_PATH=$BR_OWNER_AUDITION_MANIFEST_PATH"
+            echo "BR_OWNER_AUDITION_DELIVERY_PATH=$BR_OWNER_AUDITION_DELIVERY_PATH"
+            echo "BR_OWNER_REFERENCE_QA_CONTEXT=$BR_OWNER_REFERENCE_QA_CONTEXT"
+            echo "BR_OWNER_AUDITION_PACK_ID=$BR_OWNER_AUDITION_PACK_ID"
+            echo "BR_OWNER_REFERENCE_QA_CONTEXT=$BR_OWNER_REFERENCE_QA_CONTEXT"
+            echo "BR_OWNER_AUDITION_TERMINAL_RECEIPT=$BR_OWNER_AUDITION_TERMINAL_RECEIPT"
+          } >> "$GITHUB_ENV"
+          echo "RUN_SCOPED_WORKSPACE=PASS"
+
+      - name: Mask private Telegram provenance
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from app.services.owner_voice_telegram_handoff_service import parse_reference_envelope_b64
+          envelope=(os.environ.get("BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64") or "").strip()
+          legacy=(os.environ.get("BR_OWNER_TELEGRAM_REFERENCE_INDEX") or "").strip()
+          if envelope:
+              index=parse_reference_envelope_b64(envelope)
+          elif legacy:
+              index=json.loads(legacy)
+          else:
+              raise SystemExit("OWNER_TELEGRAM_REFERENCE_INDEX_NOT_MATERIALIZED")
+          for row in index.get("references") or []:
+              for key in ("telegram_file_id","telegram_file_unique_id","telegram_user_id","telegram_chat_id","telegram_message_id","telegram_update_id"):
+                  value=str(row.get(key) or "").strip()
+                  if value:
+                      print(f"::add-mask::{value}")
+          PY
+          test -n "${TELEGRAM_BOT_TOKEN:-}"
+
+      - name: Install strong private STT runtime
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get install -y -qq ffmpeg
+          fi
+          python -m venv /tmp/br-owner-stt-venv
+          timeout 300 /tmp/br-owner-stt-venv/bin/python -m pip install             --disable-pip-version-check             --prefer-binary             --progress-bar off             "faster-whisper==1.2.0"             "av==18.0.0"             "requests>=2.32,<3"
+          /tmp/br-owner-stt-venv/bin/python - <<'PY'
+          from importlib.metadata import version
+          import av
+          import faster_whisper
+          major=int(version("av").split(".",1)[0])
+          assert version("av") == "18.0.0", version("av")
+          assert major < 19, version("av")
+          assert version("faster-whisper") == "1.2.0"
+          print("PYAV_VERSION=" + version("av"))
+          print("FASTER_WHISPER_VERSION=" + version("faster-whisper"))
+          print("STT_PYAV_COMPATIBILITY=PASS")
+          print("PYAV_FASTER_WHISPER_COMPATIBILITY=PASS")
+          PY
+          echo "STT_RUNTIME_INSTALL=PASS"
+
+      - name: Quality-rank real Telegram owner references with strong ASR
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          /tmp/br-owner-stt-venv/bin/python scripts/owner_voice_reference_qa.py
+
+      - name: Install isolated pinned Chatterbox PT-BR runtime
+        run: |
+          set -euo pipefail
+          python -m venv /tmp/br-owner-chatterbox-venv
+          PY=/tmp/br-owner-chatterbox-venv/bin/python
+          CONSTRAINTS=integrations/chatterbox-ptbr/constraints.txt
+          "$PY" -m pip install --disable-pip-version-check -q             --constraint "$CONSTRAINTS"             numpy librosa s3tokenizer torch torchaudio transformers diffusers conformer safetensors             spacy-pkuseg pykakasi gradio pyloudnorm omegaconf             "resemble-perth @ git+https://github.com/resemble-ai/Perth.git@ff1c8ac55a976971245cdd53c18d6131ca00d993"
+          "$PY" -m pip install --disable-pip-version-check -q --no-deps             "git+https://github.com/resemble-ai/chatterbox.git@5de7a54aa4e5e2baadb0182dde554908b48b85c2"
+          "$PY" -m pip check
+          echo "CHATTERBOX_DEPENDENCY_CHECK=PASS"
+
+      - name: Generate three comparable BR_OWNER_V1 candidates
+        id: generate
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          /tmp/br-owner-chatterbox-venv/bin/python scripts/owner_voice_chatterbox_ptbr_audition.py
+
+      - name: Machine pre-screen and send protected blind pack to Telegram
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          BR_OWNER_AUDITION_LEDGER_SSH_KEY: ${{ secrets.BR_OWNER_AUDITION_LEDGER_SSH_KEY }}
+          BR_OWNER_AUDITION_MANIFEST_PATH: ${{ steps.generate.outputs.manifest_path }}
+          BR_OWNER_AUDITION_PACK_ID: ${{ steps.generate.outputs.pack_id }}
+          BR_OWNER_AUDITION_DELIVERY_PATH: ${{ env.BR_OWNER_AUDITION_DELIVERY_PATH }}
+          BR_OWNER_AUDITION_TERMINAL_RECEIPT: ${{ env.BR_OWNER_AUDITION_TERMINAL_RECEIPT }}
+        run: |
+          set -euo pipefail
+          /tmp/br-owner-stt-venv/bin/python scripts/owner_voice_human_audition_pack.py
+          echo "VOICE_IDENTITY_HUMAN_GATE=PENDING"
+          echo "PTBR_ACCENT_HUMAN_GATE=PENDING"
+          echo "NATURALNESS_HUMAN_GATE=PENDING"
+          echo "OWNER_VOICE_RUNTIME=BLOCKED_PENDING_HUMAN_REVIEW"
+
+      - name: Persist sanitized terminal or failure receipt
+        if: ${{ always() }}
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          BR_OWNER_AUDITION_LEDGER_SSH_KEY: ${{ secrets.BR_OWNER_AUDITION_LEDGER_SSH_KEY }}
+          BR_OWNER_AUDITION_JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          /tmp/br-owner-stt-venv/bin/python scripts/owner_voice_audition_terminal_receipt.py
+
+      - name: Upload sanitized receipt only
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: br-owner-v1-human-audition-delivery-receipt
+          path: /tmp/br-owner-audition-public/owner-voice-audition-delivery-receipt.json
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Verify private audio never entered repository or public artifact
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain --untracked-files=all -- '*.wav' '*.flac' '*.ogg' '*.oga' '*.opus' '*.mp3' '*.m4a' '*.pt')"
+          test -z "$(find /tmp/br-owner-audition-public -type f \( -name '*.wav' -o -name '*.flac' -o -name '*.ogg' -o -name '*.opus' -o -name '*.mp3' -o -name '*.m4a' -o -name '*.pt' \) -print 2>/dev/null)"
+          echo "RAW_OWNER_AUDIO_IN_GIT=0"
+          echo "RAW_OWNER_AUDIO_IN_PUBLIC_ARTIFACT=0"
+          echo "CLONE_AUDIO_IN_PUBLIC_ARTIFACT=0"
+
+      - name: Remove ephemeral owner biometric and clone material
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          rm -rf "$BR_OWNER_AUDITION_WORKSPACE" /tmp/br-owner-huggingface /tmp/br-owner-stt-venv /tmp/br-owner-chatterbox-venv
+          echo "OWNER_EPHEMERAL_PRIVATE_MATERIAL_CLEANED=PASS"

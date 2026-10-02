@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 8,
+  "checkpoint_sequence": 9,
   "completed_steps": [
     "professional-corpus-contracts",
     "private-corpus-audit-contract",
@@ -19,7 +19,7 @@
     "separate-ledger-repository-authority-boundary",
     "authority-ledger-focused-verification"
   ],
-  "current_step": "audition-delivery-authority-hardening",
+  "current_step": "audit-contents-write-authority-and-ledger",
   "decisions": [
     {
       "decision": "Use private separate repository for durable audition delivery state; product repository job remains contents:read.",
@@ -44,6 +44,10 @@
     {
       "decision": "Only the separate audition ledger repository carries durable delivery writes; the product workflow remains contents:read with persist-credentials:false.",
       "id": "authority-green-before-single-run"
+    },
+    {
+      "decision": "Preserve exact dirty workflow bytes under state/development-recovery-payloads because the existing OAuth credential intentionally lacks workflow scope; do not broaden credential authority.",
+      "id": "workflow-wip-versioned-nonexecuting-recovery-payload"
     }
   ],
   "do_not_repeat": [
@@ -66,7 +70,12 @@
     "workflow:contents-read",
     "workflow:persist-credentials-false",
     "product-repository-write-authority:NONE",
-    "ledger-repository:zenindiones-maker/BR-no-GTA-audition-ledger"
+    "ledger-repository:zenindiones-maker/BR-no-GTA-audition-ledger",
+    "previous-recovery:cd9bd2a02e067b8af2ca29f7d6fd01039b928561",
+    "canonical-head:0e6704ecd60ed2f7266b4b299017910a6491e068",
+    "blocked-push:oauth-app-lacks-workflow-scope",
+    "workflow-payload:state/development-recovery-payloads/br-owner-v1-professional-ptbr-v1/owner-voice-human-audition-pack.yml",
+    "workflow-payload-sha256:04b70b2ce7977dfe1c7bc9e15513193f0a517ca47bb8f103e3f5c1e2cc6eaba8"
   ],
   "goal_digest": "2b8f10962dd2d81d67ab0c26d5f9223fb0ce02fd52433055ed819428dd4e4a3f",
   "known_failures": [
@@ -83,10 +92,10 @@
       "status": "DESIGN_REJECTED_AND_ROLLED_BACK"
     }
   ],
-  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000008-6567205b",
-  "latest_verified_checkpoint_sha": "dec21d02d4dd7008f41696ce974bc820bae763f3",
+  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000009-7517f805",
+  "latest_verified_checkpoint_sha": "cd9bd2a02e067b8af2ca29f7d6fd01039b928561",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
-  "next_step": "dispatch-exactly-one-owner-voice-audition-run",
+  "next_step": "prove-minimal-ledger-authority-and-side-effect-reconciliation-before-single-audition",
   "open_blockers": [],
   "plan_steps": [
     "reference-audit",
@@ -124,6 +133,6 @@
     "product_repository_write_authority": "NONE",
     "workflow_authority": "PASS"
   },
-  "updated_at": "2026-10-02T01:17:07.290410+00:00",
-  "validation_state": "AUTHORITY_LEDGER_GREEN_READY_FOR_SINGLE_AUDITION"
+  "updated_at": "2026-10-02T01:38:06.718855+00:00",
+  "validation_state": "MATERIAL_WIP_REMOTE_PRESERVATION_WITH_VERSIONED_NONEXECUTABLE_WORKFLOW_PAYLOAD"
 }

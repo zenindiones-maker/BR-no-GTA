@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "voice-pipeline-development",
   "artifact_refs": [],
-  "authorization_id": "5f6bb278-d1d0-4901-98d9-b8d324eb691a",
+  "authorization_id": "6c013d2e-78e9-47c3-9682-ac7ec7594833",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "04de69e27f19d1adaf841ef36a21243a7cc7804c39c9ee6497ff9dc9cd501683",
-  "checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000009-7517f805",
-  "checkpoint_kind": "MILESTONE",
-  "checkpoint_sequence": 9,
+  "checkpoint_digest": "8bc212eabd02d91a6e2b38c5cc4dc3ba07cc0833e53ae4117adb4b9a339e9fe0",
+  "checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000010-7fb5d82e",
+  "checkpoint_kind": "RECOVERY",
+  "checkpoint_sequence": 10,
   "completed_steps": [
     "professional-corpus-contracts",
     "private-corpus-audit-contract",
@@ -24,9 +24,9 @@
     "separate-ledger-repository-authority-boundary",
     "authority-ledger-focused-verification"
   ],
-  "content_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "created_at": "2026-10-02T01:17:08.206311+00:00",
-  "current_step": "audition-delivery-authority-hardening",
+  "content_digest": "7d3a23c65147b6960157cf6cb32e41e2116f6b553be6c2b8dacde4ca7dccda5c",
+  "created_at": "2026-10-02T01:38:07.805435+00:00",
+  "current_step": "audit-contents-write-authority-and-ledger",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "staging:54a12c2387281686476aa42689e5f05a89ad75f2",
@@ -42,22 +42,50 @@
     "workflow:contents-read",
     "workflow:persist-credentials-false",
     "product-repository-write-authority:NONE",
-    "ledger-repository:zenindiones-maker/BR-no-GTA-audition-ledger"
+    "ledger-repository:zenindiones-maker/BR-no-GTA-audition-ledger",
+    "previous-recovery:cd9bd2a02e067b8af2ca29f7d6fd01039b928561",
+    "canonical-head:0e6704ecd60ed2f7266b4b299017910a6491e068",
+    "blocked-push:oauth-app-lacks-workflow-scope",
+    "workflow-payload:state/development-recovery-payloads/br-owner-v1-professional-ptbr-v1/owner-voice-human-audition-pack.yml",
+    "workflow-payload-sha256:04b70b2ce7977dfe1c7bc9e15513193f0a517ca47bb8f103e3f5c1e2cc6eaba8"
   ],
   "excluded_paths": [],
-  "failure_state": {},
-  "included_paths": [],
+  "failure_state": {
+    "blocked_direct_workflow_checkpoint": "OAUTH_APP_LACKS_WORKFLOW_SCOPE",
+    "workflow_wip_payload": "state/development-recovery-payloads/br-owner-v1-professional-ptbr-v1/owner-voice-human-audition-pack.yml"
+  },
+  "included_paths": [
+    "app/services/owner_voice_audition_delivery_service.py",
+    "app/services/owner_voice_audition_handoff_service.py",
+    "app/services/owner_voice_audition_ledger_store.py",
+    "scripts/owner_voice_audition_terminal_receipt.py",
+    "scripts/owner_voice_chatterbox_ptbr_audition.py",
+    "scripts/owner_voice_human_audition_pack.py",
+    "scripts/owner_voice_reference_qa.py",
+    "state/development-recovery-payloads/br-owner-v1-professional-ptbr-v1/owner-voice-human-audition-pack.yml",
+    "tests/test_owner_voice_audition_delivery_durable_v3.py",
+    "tests/test_owner_voice_audition_delivery_v1.py",
+    "tests/test_owner_voice_audition_handoff_service.py",
+    "tests/test_owner_voice_audition_handoff_v1.py",
+    "tests/test_owner_voice_audition_ledger_authority.py",
+    "tests/test_owner_voice_audition_ledger_store_integration.py",
+    "tests/test_owner_voice_audition_outbox_semantics.py",
+    "tests/test_owner_voice_audition_workflow_v1.py",
+    "tests/test_owner_voice_human_audition_bootstrap.py",
+    "tests/test_owner_voice_human_audition_pack_runtime.py",
+    "tests/test_owner_voice_human_audition_pack_workflow.py"
+  ],
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
-  "next_step": "dispatch-exactly-one-owner-voice-audition-run",
+  "next_step": "prove-minimal-ledger-authority-and-side-effect-reconciliation-before-single-audition",
   "open_blockers": [],
-  "previous_checkpoint_sha": "dec21d02d4dd7008f41696ce974bc820bae763f3",
-  "progress_ledger_digest": "2560bbf70242cf33eea85bce4f7250a038c7910cfacc623738d3c5cbec182f56",
+  "previous_checkpoint_sha": "cd9bd2a02e067b8af2ca29f7d6fd01039b928561",
+  "progress_ledger_digest": "254576796cc7e8ee77130918c6d8a20d669d51647e066d5f4b674b7a0eb4a25a",
   "recovery_ref": "recovery/dev/br-owner-v1-professional-ptbr-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "Load ledger, reconcile canonical and side effects, continue first incomplete authorized step.",
+  "resume_instructions": "Validate checkpoint and restore manifest. Copy versioned workflow payload back to .github/workflows/owner-voice-human-audition-pack.yml only in a development workspace before continuing contents:write audit. Do not dispatch audition before authority/ledger tests are GREEN.",
   "runtime_namespace": "br-owner-v1-professional-ptbr-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -65,7 +93,7 @@
     "unknown_requires_reconciliation": []
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "authority-ledger-green-before-single-audition",
+  "task_id": "preserve-material-wip-before-contents-write-audit",
   "test_state": {
     "authority_ledger_handoff_surface": "59_PASS",
     "compile": "PASS",
@@ -76,6 +104,6 @@
     "product_repository_write_authority": "NONE",
     "workflow_authority": "PASS"
   },
-  "validation_state": "AUTHORITY_LEDGER_GREEN_READY_FOR_SINGLE_AUDITION",
+  "validation_state": "MATERIAL_WIP_REMOTE_PRESERVATION_WITH_VERSIONED_NONEXECUTABLE_WORKFLOW_PAYLOAD",
   "workspace_id": "br-owner-v1-professional-ptbr-v1"
 }

@@ -73,7 +73,9 @@ def test_workflow_propagates_exact_manifest_output_without_path_reconstruction()
 
 def test_workflow_uses_run_scoped_private_workspace_and_always_receipt_before_cleanup():
     text=WORKFLOW.read_text(encoding="utf-8")
-    assert 'BR_OWNER_REFERENCE_QA_CONTEXT: ${{ runner.temp }}/br-owner-voice/${{ github.run_id }}/${{ github.run_attempt }}/reference-qa-context.json' in text
+    assert 'BR_OWNER_REFERENCE_QA_CONTEXT="$BR_OWNER_AUDITION_WORKSPACE/reference-qa-context.json"' in text
+    assert 'echo "BR_OWNER_REFERENCE_QA_CONTEXT=$BR_OWNER_REFERENCE_QA_CONTEXT"' in text
+    assert 'BR_OWNER_REFERENCE_QA_CONTEXT: ${{ runner.temp }}' not in text
     receipt=text.index("Persist sanitized terminal or failure receipt")
     upload=text.index("Upload sanitized receipt only")
     cleanup=text.index("Remove ephemeral owner biometric and clone material")
