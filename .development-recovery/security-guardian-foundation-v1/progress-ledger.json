@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 10,
+  "checkpoint_sequence": 11,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -29,9 +29,15 @@
     "top-level-permissions-default-minimal-enforced",
     "security-toolchain-manifest-red-green",
     "security-guardian-baseline-workflow-red-green",
-    "security-toolchain-static-validation"
+    "security-toolchain-static-validation",
+    "pinned-zizmor-exact-candidate-executed",
+    "pinned-osv-exact-candidate-executed",
+    "pinned-openssf-scorecard-exact-candidate-executed",
+    "external-security-evidence-sanitized",
+    "security-canary-block-pass-new-session",
+    "external-baseline-blockers-classified"
   ],
-  "current_step": "execute-pinned-external-security-baseline",
+  "current_step": "external-baseline-classified-blockers-open",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -121,14 +127,24 @@
     "delta:zizmor-template-injection-high=0-after-fix",
     "delta:zizmor-high=1-dangerous-triggers",
     "recovery-workflow-manifest-sha256:09575e4a64e2efb3a9eef06964edeb79eb30fff6492c383e57534e854b3f5cc4",
-    "recovery-payloads:post-template-injection-fixes=7"
+    "recovery-payloads:post-template-injection-fixes=7",
+    "candidate:69eeba41a417a69053df60dfeeab4211b363aab2",
+    "candidate-tree:c71a9fd55faf26ceecaf3971c9f164f20347b8e8",
+    "zizmor-evidence-sha256:0516dddd2138eda2b4ee6a487843fd7e54b119b4b8c4ee89e426d01e53427636",
+    "osv-evidence-sha256:2bb392fe0d77611fbca7b545591342ef4eee9435f184afe751de02980bcad1fa",
+    "scorecard-evidence-sha256:e4f37eb0adc7ea90e700d9b1044ed36191bc45f75d4958306679aff8d1f02057",
+    "security-canary-sha256:546e868399a0d9f909bc3a4e14a4ac04695e6ffae4fefe2026e07af7e3297e59",
+    "blocking-finding:security-known_dangerous_workflow-a482a518d3eea6e4",
+    "blocker-classification-sha256:5b2315c09429e17d31d37010cf1a1ad1bd5d494129f854f1b459ab5f8b800a5a",
+    "osv-new-vulnerabilities=0",
+    "zizmor-high=1:dangerous-triggers"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000010-e72eb41e",
-  "latest_verified_checkpoint_sha": "216af76e463e3ea7872bedbab70d0aeb6313d15b",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000011-79d4e925",
+  "latest_verified_checkpoint_sha": "6d801cad9200c5a7febafeabe2d7b2bfa43194a8",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "bind scanners to durable recovery payload candidate; sanitize evidence; classify blockers; run security canary",
+  "next_step": "causally resolve dangerous workflow trigger, exact-candidate CodeQL rescan, and canonical promotion identity hardening; no promotion before all three close",
   "open_blockers": [
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED",
     "CODEQL_CANDIDATE_RESCAN_REQUIRED",
@@ -175,14 +191,18 @@
     "missing_top_level_permissions": "0",
     "mutable_action_refs": "0",
     "obsidian_yaml_parse": "PASS",
+    "openssf_scorecard_local": "6.0",
+    "osv_exact_candidate_new_vs_canonical": "0",
     "overbroad_workflow_permissions": "0",
     "pip_check": "PASS",
+    "security_canary": "BLOCK_THEN_PASS_NEW_SESSION",
     "security_guardian_foundation_core": "29_PASS",
     "security_guardian_foundation_focused": "43_PASS",
     "targeted_zizmor_high_after_template_fix": "1_DANGEROUS_TRIGGERS",
     "work_branch_force_push": "BLOCKED",
-    "workflow_yaml_parse": "PASS"
+    "workflow_yaml_parse": "PASS",
+    "zizmor_exact_candidate": "HIGH=1_MEDIUM=34_LOW=220"
   },
-  "updated_at": "2026-10-02T03:39:08.557536+00:00",
-  "validation_state": "POST_TEMPLATE_INJECTION_FIX_PAYLOAD_DURABILITY_READY"
+  "updated_at": "2026-10-02T03:44:16.863264+00:00",
+  "validation_state": "EXTERNAL_BASELINE_SANITIZED_CANARY_PASS_THREE_BLOCKERS_OPEN"
 }
