@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "voice-pipeline-development",
   "artifact_refs": [],
-  "authorization_id": "4b913e8f-52e3-4e16-8147-0eda9cee4e2a",
+  "authorization_id": "01bacb64-0537-4f3a-97e5-0e1c14b801ab",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "5d4a23e5e58242d8497ad5f41d4b6632c421b93a11821b0693680104f5b2a0fe",
-  "checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000005-3b70b924",
+  "checkpoint_digest": "8981c97843e794ca21f6b1fa706d563a46e046381bef01dd7daa8527cce6f3b3",
+  "checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000006-3bc00961",
   "checkpoint_kind": "RECOVERY",
-  "checkpoint_sequence": 5,
+  "checkpoint_sequence": 6,
   "completed_steps": [
     "professional-corpus-contracts",
     "private-corpus-audit-contract",
@@ -16,38 +16,55 @@
     "three-comparable-candidate-generation",
     "manifest-handoff-root-cause-fix"
   ],
-  "content_digest": "9f9db84b6a0cf2bf6f8b269dab90f2e68d57cd45f5d4e006edc6f93587766ef7",
-  "created_at": "2026-10-01T23:32:51.202617+00:00",
-  "current_step": "human-audition-pack",
+  "content_digest": "199aa3425ba87470534417c6d16c68379933ca4138644a0694748fa3f3198d0f",
+  "created_at": "2026-10-02T00:49:33.869526+00:00",
+  "current_step": "audition-handoff-delivery-hardening",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "staging:d52c6bddb81e2bdf9b4c07ad2783738620d7e8fe",
-    "run:36936161771",
-    "job:110616862466",
-    "run-log:NO_TELEGRAM_DELIVERY_RECEIPT_LINES"
+    "local-wip:07ac09ef1ad12e8f1c722385939883fe3e694a69",
+    "recovery:402694475c66baeb5b3efcac00c4e311492b3c6d",
+    "run:36936161771"
   ],
   "excluded_paths": [],
   "failure_state": {},
   "included_paths": [
+    ".github/workflows/owner-voice-human-audition-pack.yml",
+    "app/services/owner_voice_audition_delivery_service.py",
+    "app/services/owner_voice_audition_handoff_service.py",
+    "scripts/owner_voice_audition_terminal_receipt.py",
     "scripts/owner_voice_chatterbox_ptbr_audition.py",
-    "tests/test_owner_voice_chatterbox_ptbr_audition.py",
-    "tests/test_owner_voice_human_audition_bootstrap.py"
+    "scripts/owner_voice_human_audition_pack.py",
+    "scripts/owner_voice_reference_qa.py",
+    "tests/test_owner_voice_audition_delivery_durable_v3.py",
+    "tests/test_owner_voice_audition_delivery_v1.py",
+    "tests/test_owner_voice_audition_handoff_service.py",
+    "tests/test_owner_voice_audition_handoff_v1.py",
+    "tests/test_owner_voice_audition_workflow_v1.py",
+    "tests/test_owner_voice_human_audition_bootstrap.py",
+    "tests/test_owner_voice_human_audition_pack_runtime.py",
+    "tests/test_owner_voice_human_audition_pack_workflow.py"
   ],
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
-  "next_step": "causal-audition-retry-only-after-explicit-owner-order",
+  "next_step": "audit-and-restrict-delivery-ledger-authority-before-any-run",
   "open_blockers": [
     {
-      "cause": "Chatterbox wrote the audition manifest under RUNNER_TEMP while the pack consumed BR_OWNER_PTBR_AUDITION_SET=/tmp/br-owner-voice/ptbr-audition-set.json.",
-      "fix_sha": "d52c6bddb81e2bdf9b4c07ad2783738620d7e8fe",
-      "id": "run-36936161771-delivery",
-      "side_effects": "NO_TELEGRAM_DELIVERY",
-      "status": "FIXED_NOT_RETRIED"
+      "cause": "audition job currently requests contents:write while Git-backed delivery ledger authority has not yet been proven branch/ref-scoped",
+      "id": "workflow-contents-write-scope",
+      "required_fix": "limit write authority to dedicated ledger path/ref with CAS, fast-forward-only, no force, and prove canonical refs unreachable",
+      "status": "OPEN"
+    },
+    {
+      "cause": "terminal receipt path references require_reconciliation_for_started_operation and must prove persisted STARTED => SIDE_EFFECT_RECONCILIATION_REQUIRED without Telegram resend",
+      "id": "terminal-started-operation-reconciliation",
+      "required_fix": "deterministic authority/ledger tests before audition",
+      "status": "OPEN"
     }
   ],
-  "previous_checkpoint_sha": "2f9db3a776d952e2d57d0cada47f173b7199f6da",
-  "progress_ledger_digest": "886f46747e1ec958792b82ee16924d27a6d91a10e2c0828b63932f3fdd7e8302",
+  "previous_checkpoint_sha": "402694475c66baeb5b3efcac00c4e311492b3c6d",
+  "progress_ledger_digest": "e6dc22177a44bb8938211c050fcb4d494b67dc51ce58fb397326d30f0d9261ee",
   "recovery_ref": "recovery/dev/br-owner-v1-professional-ptbr-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
@@ -59,12 +76,12 @@
     "unknown_requires_reconciliation": []
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "post-run-36936161771-causal-fix",
+  "task_id": "pre-authority-audit-wip-preservation",
   "test_state": {
-    "affected_subgraph": "100_PASS",
-    "root": "PASS_BASELINE",
-    "targeted": "18_PASS"
+    "handoff_delivery_focused": "37_PASS",
+    "previous_owner_voice_affected_subgraph": "100_PASS_NOT_RERUN",
+    "root": "PASS_BASELINE_NOT_RERUN"
   },
-  "validation_state": "FIX_GREEN_AWAITING_CAUSAL_RETRY",
+  "validation_state": "RECOVERY_WIP_AUTHORITY_AUDIT_PENDING",
   "workspace_id": "br-owner-v1-professional-ptbr-v1"
 }

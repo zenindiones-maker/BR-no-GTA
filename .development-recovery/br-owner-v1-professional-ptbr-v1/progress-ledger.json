@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 4,
+  "checkpoint_sequence": 5,
   "completed_steps": [
     "professional-corpus-contracts",
     "private-corpus-audit-contract",
@@ -11,65 +11,69 @@
     "three-comparable-candidate-generation",
     "manifest-handoff-root-cause-fix"
   ],
-  "current_step": "human-audition-pack",
+  "current_step": "audition-handoff-delivery-hardening",
   "decisions": [
     {
-      "decision": "Do not dispatch another audition run after 36936161771 without explicit owner order.",
-      "id": "no-blind-retry"
+      "decision": "Persist current local-only Handoff/Delivery WIP before further edits.",
+      "id": "checkpoint-before-more-mutation"
     },
     {
-      "decision": "Generator now honors BR_OWNER_PTBR_AUDITION_SET and creates the shared parent path.",
-      "id": "handoff-contract"
+      "decision": "Reuse durable Telegram side-effect semantics; ambiguous sends require reconciliation and never blind resend.",
+      "id": "durable-v3-reuse"
     },
     {
-      "decision": "No identity/accent/naturalness PASS without actual Telegram listening review.",
-      "id": "human-gate"
+      "decision": "Do not accept contents:write on the whole audition workflow without a bounded dedicated ledger authority proof.",
+      "id": "workflow-authority"
     },
     {
-      "decision": "Generated candidates from failed run were ephemeral and cleanup completed; no audio entered Git/public artifact.",
-      "id": "privacy"
+      "decision": "No new audition run until checkpoint readback and authority/ledger tests are GREEN.",
+      "id": "no-audition-yet"
     }
   ],
   "do_not_repeat": [
+    "owner-voice-100-pass-suite",
     "blind-rerun-36936161771",
-    "re-diagnose-PyAV-19-after-pin-18",
-    "treat-generated-candidates-as-human-reviewed"
+    "re-diagnose-manifest-path-mismatch"
   ],
   "evidence_refs": [
     "staging:d52c6bddb81e2bdf9b4c07ad2783738620d7e8fe",
-    "run:36936161771",
-    "job:110616862466",
-    "run-log:NO_TELEGRAM_DELIVERY_RECEIPT_LINES"
+    "local-wip:07ac09ef1ad12e8f1c722385939883fe3e694a69",
+    "recovery:402694475c66baeb5b3efcac00c4e311492b3c6d",
+    "run:36936161771"
   ],
   "goal_digest": "2b8f10962dd2d81d67ab0c26d5f9223fb0ce02fd52433055ed819428dd4e4a3f",
   "known_failures": [
     {
-      "cleanup": "COMPLETED",
       "failure": "AUDITION_MANIFEST_PATH_MISMATCH",
-      "generation": "3_CANDIDATES_COMPLETED",
-      "job_id": 110616862466,
-      "public_receipt": "NONE",
       "run_id": 36936161771,
+      "status": "FIXED_NOT_RETRIED",
       "telegram_delivery": "NONE"
     }
   ],
-  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000004-f9a634b2",
-  "latest_verified_checkpoint_sha": "2f9db3a776d952e2d57d0cada47f173b7199f6da",
+  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000005-3b70b924",
+  "latest_verified_checkpoint_sha": "402694475c66baeb5b3efcac00c4e311492b3c6d",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
-  "next_step": "causal-audition-retry-only-after-explicit-owner-order",
+  "next_step": "audit-and-restrict-delivery-ledger-authority-before-any-run",
   "open_blockers": [
     {
-      "cause": "Chatterbox wrote the audition manifest under RUNNER_TEMP while the pack consumed BR_OWNER_PTBR_AUDITION_SET=/tmp/br-owner-voice/ptbr-audition-set.json.",
-      "fix_sha": "d52c6bddb81e2bdf9b4c07ad2783738620d7e8fe",
-      "id": "run-36936161771-delivery",
-      "side_effects": "NO_TELEGRAM_DELIVERY",
-      "status": "FIXED_NOT_RETRIED"
+      "cause": "audition job currently requests contents:write while Git-backed delivery ledger authority has not yet been proven branch/ref-scoped",
+      "id": "workflow-contents-write-scope",
+      "required_fix": "limit write authority to dedicated ledger path/ref with CAS, fast-forward-only, no force, and prove canonical refs unreachable",
+      "status": "OPEN"
+    },
+    {
+      "cause": "terminal receipt path references require_reconciliation_for_started_operation and must prove persisted STARTED => SIDE_EFFECT_RECONCILIATION_REQUIRED without Telegram resend",
+      "id": "terminal-started-operation-reconciliation",
+      "required_fix": "deterministic authority/ledger tests before audition",
+      "status": "OPEN"
     }
   ],
   "plan_steps": [
     "reference-audit",
     "corpus-gap-analysis",
     "human-audition-pack",
+    "audition-handoff-hardening",
+    "audition-delivery-authority-hardening",
     "automatic-qa",
     "blind-human-review",
     "longform-certification",
@@ -77,9 +81,11 @@
   ],
   "recovery_ref": "recovery/dev/br-owner-v1-professional-ptbr-v1",
   "rejected_directions": [
-    "blind-rerun-36936161771",
-    "claim Telegram delivery from generated-but-not-delivered candidates",
-    "claim voice quality PASS from machine-only QA"
+    "discard-local-07ac09ef-wip",
+    "blind-rerun-audition",
+    "workflow-wide-unbounded-contents-write",
+    "last-writer-wins-ledger",
+    "blind-telegram-resend-after-ambiguous-send"
   ],
   "schema_version": "DevelopmentProgressLedger/v1",
   "side_effects": {
@@ -87,10 +93,10 @@
     "unknown_requires_reconciliation": []
   },
   "tests": {
-    "affected_subgraph": "100_PASS",
-    "root": "PASS_BASELINE",
-    "targeted": "18_PASS"
+    "handoff_delivery_focused": "37_PASS",
+    "previous_owner_voice_affected_subgraph": "100_PASS_NOT_RERUN",
+    "root": "PASS_BASELINE_NOT_RERUN"
   },
-  "updated_at": "2026-10-01T23:32:50.243829+00:00",
-  "validation_state": "FIX_GREEN_AWAITING_CAUSAL_RETRY"
+  "updated_at": "2026-10-02T00:49:32.809164+00:00",
+  "validation_state": "RECOVERY_WIP_AUTHORITY_AUDIT_PENDING"
 }
