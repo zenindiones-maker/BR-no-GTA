@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 28,
+  "checkpoint_sequence": 29,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -72,9 +72,10 @@
     "root-suite-142-errors-root-cause-grouped",
     "pytest-temp-retention-tdd-red-green",
     "zero-cost-route-test-isolation-tdd-red-green",
-    "test-harness-isolation-focused-green"
+    "test-harness-isolation-focused-green",
+    "root-suite-cp29-pass"
   ],
-  "current_step": "root-suite-revalidation-after-test-harness-isolation",
+  "current_step": "independent-security-review",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -272,16 +273,22 @@
     "tdd:test-harness-isolation=2_RED_then_3_GREEN",
     "focused:test-harness+security-guardian+agent-office=135_PASS",
     "pytest:tmp_path_retention_count=1",
-    "zero-cost-route-inventory:root=tmp_path/runtime-test"
+    "zero-cost-route-inventory:root=tmp_path/runtime-test",
+    "root-suite-cp29:command=python -m pytest -q",
+    "root-suite-cp29:3818_PASS_7_SKIP_16_SUBTESTS",
+    "root-suite-cp29:warnings=6",
+    "root-suite-cp29:duration_seconds=267.42",
+    "root-suite-cp29:exit_code=0",
+    "root-suite-cp29:tmp-final-use=69_percent_avail_5.9G"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000028-4d32a1d7",
-  "latest_verified_checkpoint_sha": "95e104fc7975f36046c010e1225f935d1d151e10",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000029-4b0964e6",
+  "latest_verified_checkpoint_sha": "1b871172b0839f20e37b0d38fc3f5970415baf29",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "run exact root suite once from checkpointed focused-green state; promotion and independent review remain forbidden unless PASS",
+  "next_step": "execute independent read-only Security Guardian review on exact checkpointed candidate; promotion remains forbidden unless review PASS",
   "open_blockers": [
-    "ROOT_SUITE_REVALIDATION_PENDING"
+    "INDEPENDENT_REVIEW_PENDING"
   ],
   "plan_steps": [
     "authority-contract",
@@ -392,16 +399,17 @@
     "root_suite_candidate_tree": "520a1a277c3a09a6ea119d72446f0dcebb6025e4",
     "root_suite_cluster_affected_families": "242_PASS",
     "root_suite_cluster_focused": "3_PASS",
-    "root_suite_duration_seconds": "241.32",
+    "root_suite_duration_seconds": "267.42",
     "root_suite_errors": "142",
     "root_suite_exit_code": "0",
     "root_suite_failed": "71",
     "root_suite_failure_group": "PYTEST_TMP_VOLUME_EXHAUSTION",
-    "root_suite_passed": "3675",
+    "root_suite_passed": "3818",
     "root_suite_post_cleanup_residual": "1_FAILED_3816_PASS_7_SKIP_16_SUBTESTS",
     "root_suite_skipped": "7",
-    "root_suite_status": "FAIL",
+    "root_suite_status": "PASS",
     "root_suite_subtests_passed": "16",
+    "root_suite_warnings": "6",
     "run001_bootstrap_yaml": "PASS",
     "run001_final_products_executor_yaml": "PASS",
     "security_canary": "BLOCK_THEN_PASS_NEW_SESSION",
@@ -421,6 +429,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "updated_at": "2026-10-02T11:05:49.219622+00:00",
-  "validation_state": "TEST_HARNESS_ISOLATION_FOCUSED_GREEN_ROOT_REVALIDATION_PENDING"
+  "updated_at": "2026-10-02T11:12:17.174620+00:00",
+  "validation_state": "ROOT_SUITE_PASS_INDEPENDENT_REVIEW_PENDING"
 }
