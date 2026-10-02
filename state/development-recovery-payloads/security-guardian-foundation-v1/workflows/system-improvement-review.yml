@@ -8,16 +8,16 @@ on:
     paths:
       - '.run001/system-improvement-review.request.json'
 
-permissions:
-  contents: write
-  actions: write
-
+permissions: {}
 concurrency:
   group: system-improvement-review
   cancel-in-progress: false
 
 jobs:
   review:
+    permissions:
+      contents: write
+      actions: write
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:

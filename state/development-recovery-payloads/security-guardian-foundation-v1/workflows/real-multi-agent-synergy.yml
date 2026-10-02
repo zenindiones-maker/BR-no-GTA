@@ -45,16 +45,16 @@ on:
       - 'app/services/product_quality_artifact_contract.py'
       - 'scripts/restore_e2e_resume_state.py'
 
-permissions:
-  contents: write
-  actions: write
-
+permissions: {}
 concurrency:
   group: real-multi-agent-synergy
   cancel-in-progress: true
 
 jobs:
   prove:
+    permissions:
+      contents: write
+      actions: write
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:

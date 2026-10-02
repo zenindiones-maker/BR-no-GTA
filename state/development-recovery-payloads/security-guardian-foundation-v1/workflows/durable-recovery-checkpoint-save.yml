@@ -7,15 +7,15 @@ on:
     paths:
       - .run/checkpoint-save.request.json
 
-permissions:
-  contents: write
-
+permissions: {}
 concurrency:
   group: durable-recovery-checkpoint-save
   cancel-in-progress: false
 
 jobs:
   save:
+    permissions:
+      contents: write
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:

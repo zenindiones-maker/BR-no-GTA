@@ -9,15 +9,15 @@ on:
       - ".github/workflows/continuous-operation-live-proof.yml"
       - ".run/continuous-operation-live-proof.request.json"
 
-permissions:
-  contents: read
-  actions: write
-
+permissions: {}
 env:
   TARGET_REF: work/gate6f-analytics-learning
 
 jobs:
   live:
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-24.04
     timeout-minutes: 70
     steps:

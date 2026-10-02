@@ -35,16 +35,16 @@ on:
       - "tests/test_harness_ai_provider_service.py"
       - ".github/workflows/telegram-live-runtime-focused.yml"
 
-permissions:
-  contents: read
-  statuses: write
-
+permissions: {}
 env:
   PYTHONPATH: .
   BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/telegram-live-runtime-focused/focused.db
 
 jobs:
   focused:
+    permissions:
+      contents: read
+      statuses: write
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

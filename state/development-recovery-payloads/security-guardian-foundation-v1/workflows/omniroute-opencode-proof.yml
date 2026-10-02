@@ -3,12 +3,12 @@ name: OmniRoute OpenCode Zero-Cost Runtime Proof
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
-  actions: write
-
+permissions: {}
 jobs:
   prove-opencode-zero-cost:
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

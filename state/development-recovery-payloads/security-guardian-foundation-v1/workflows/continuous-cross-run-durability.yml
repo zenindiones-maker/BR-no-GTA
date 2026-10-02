@@ -7,10 +7,7 @@ on:
     paths:
       - ".github/workflows/continuous-cross-run-durability.yml"
 
-permissions:
-  contents: read
-  actions: write
-
+permissions: {}
 env:
   TARGET_REF: work/gate6f-analytics-learning
   PROOF_RUN_ID: "35590101622"
@@ -19,6 +16,9 @@ env:
 
 jobs:
   durability:
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:

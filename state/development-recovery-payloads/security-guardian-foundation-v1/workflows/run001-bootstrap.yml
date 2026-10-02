@@ -7,12 +7,12 @@ on:
     paths:
       - .run001/final-products-bootstrap.ready
 
-permissions:
-  contents: write
-  actions: write
-
+permissions: {}
 jobs:
   install-and-dispatch:
+    permissions:
+      contents: write
+      actions: write
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:

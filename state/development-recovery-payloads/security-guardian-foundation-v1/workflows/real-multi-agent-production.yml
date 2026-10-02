@@ -58,10 +58,7 @@ on:
     paths:
       - ".run/real-multi-agent-production.request.json"
 
-permissions:
-  contents: read
-  actions: write
-
+permissions: {}
 concurrency:
   group: real-multi-agent-production
   # A commit can explicitly invalidate an older stale production after a safety-critical gate fix.\n  # Ordinary production commits remain serial and never cancel in-progress renders.\n  cancel-in-progress: ${{ contains(github.event.head_commit.message, '[cancel-stale-production]') }}
@@ -97,6 +94,9 @@ env:
 
 jobs:
   production:
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     steps:

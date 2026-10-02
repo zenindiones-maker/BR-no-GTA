@@ -8,11 +8,7 @@ on:
       - ".run/opencode-semantic-text-v3-proof.request.json"
   workflow_dispatch:
 
-permissions:
-  contents: write
-  actions: write
-  statuses: write
-
+permissions: {}
 concurrency:
   group: opencode-semantic-text-v3-proof
   cancel-in-progress: true
@@ -29,6 +25,10 @@ env:
 
 jobs:
   proof:
+    permissions:
+      contents: write
+      actions: write
+      statuses: write
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

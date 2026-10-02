@@ -33,16 +33,16 @@ on:
       - ".github/workflows/harness-intelligence-validation.yml"
   workflow_dispatch:
 
-permissions:
-  contents: read
-  statuses: write
-
+permissions: {}
 concurrency:
   group: harness-intelligence-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   focused:
+    permissions:
+      contents: read
+      statuses: write # SECURITY-JUSTIFICATION: job-scoped least privilege; trusted repository workflow; no fork-controlled code execution
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -158,6 +158,9 @@ jobs:
           curl --fail-with-body --silent --show-error             -X POST             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA"             -d @/tmp/status.json
 
   live-benchmark:
+    permissions:
+      contents: read
+      statuses: write # SECURITY-JUSTIFICATION: job-scoped least privilege; trusted repository workflow; no fork-controlled code execution
     if: github.event_name == 'workflow_dispatch'
     needs: focused
     runs-on: ubuntu-24.04

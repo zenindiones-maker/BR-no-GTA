@@ -30,11 +30,7 @@ on:
         default: false
         type: boolean
 
-permissions:
-  contents: read
-  actions: write
-  statuses: write
-
+permissions: {}
 env:
   TUXEVIL_ROTATOR_VERSION: "3.8.0"
   TUXEVIL_ROTATOR_BIND_HOST: "127.0.0.1"
@@ -61,6 +57,10 @@ env:
 
 jobs:
   operational:
+    permissions:
+      contents: read
+      actions: write
+      statuses: write
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     steps:

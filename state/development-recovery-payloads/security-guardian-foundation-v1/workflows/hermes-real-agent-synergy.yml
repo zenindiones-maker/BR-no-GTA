@@ -8,11 +8,7 @@ on:
     paths:
       - ".run/hermes-real-agent-synergy.request.json"
 
-permissions:
-  contents: read
-  actions: read
-  statuses: write
-
+permissions: {}
 concurrency:
   group: hermes-real-agent-synergy
   cancel-in-progress: true
@@ -32,6 +28,10 @@ env:
 
 jobs:
   synergy:
+    permissions:
+      contents: read
+      actions: read
+      statuses: write
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:

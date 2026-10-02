@@ -13,10 +13,7 @@ on:
       - ".run/tuxevil-codex-antigravity-proof.request.json"
   workflow_dispatch:
 
-permissions:
-  contents: read
-  statuses: write
-
+permissions: {}
 env:
   TUXEVIL_ROTATOR_VERSION: "3.8.0"
   TUXEVIL_ROTATOR_BIND_HOST: "127.0.0.1"
@@ -28,6 +25,9 @@ env:
 
 jobs:
   protocol-and-auth:
+    permissions:
+      contents: read
+      statuses: write
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

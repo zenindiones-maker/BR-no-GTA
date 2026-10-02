@@ -7,12 +7,12 @@ on:
     paths:
       - ".run/cancel-stale-production.request.json"
 
-permissions:
-  contents: read
-  actions: write
-
+permissions: {}
 jobs:
   cancel:
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

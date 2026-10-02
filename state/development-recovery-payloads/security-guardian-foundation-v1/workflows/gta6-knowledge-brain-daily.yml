@@ -10,11 +10,7 @@ on:
     paths:
       - ".run/gta6-knowledge-brain-daily.request.json"
 
-permissions:
-  contents: read
-  actions: read
-  statuses: write
-
+permissions: {}
 concurrency:
   group: gta6-knowledge-brain-daily
   cancel-in-progress: false
@@ -26,6 +22,10 @@ env:
 
 jobs:
   daily-brain:
+    permissions:
+      contents: read
+      actions: read
+      statuses: write
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:

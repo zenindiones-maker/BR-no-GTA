@@ -8,16 +8,16 @@ on:
       - .run/new-video-production-resume.request.json
   workflow_dispatch:
 
-permissions:
-  contents: read
-  actions: write
-
+permissions: {}
 concurrency:
   group: new-video-1-production-resume
   cancel-in-progress: false
 
 jobs:
   resume:
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     env:

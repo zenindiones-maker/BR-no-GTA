@@ -100,10 +100,7 @@ on:
         default: ""
         type: string
 
-permissions:
-  contents: read
-  actions: write
-
+permissions: {}
 concurrency:
   group: real-agent-self-improvement-${{ github.ref }}
   cancel-in-progress: false
@@ -119,6 +116,9 @@ env:
 
 jobs:
   mission:
+    permissions:
+      contents: read
+      actions: write # SECURITY-JUSTIFICATION: job-scoped least privilege; trusted repository workflow; no fork-controlled code execution
     if: inputs.operation != 'PROVIDER_RECONCILIATION'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -1057,6 +1057,9 @@ jobs:
 
 
   provider-reconcile:
+    permissions:
+      contents: read
+      actions: write # SECURITY-JUSTIFICATION: job-scoped least privilege; trusted repository workflow; no fork-controlled code execution
     if: inputs.operation == 'PROVIDER_RECONCILIATION'
     runs-on: ubuntu-24.04
     timeout-minutes: 20

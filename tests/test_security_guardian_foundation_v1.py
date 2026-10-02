@@ -583,3 +583,13 @@ def test_all_active_third_party_actions_are_pinned_to_full_sha():
             if row.review_status == "MUTABLE_REF":
                 mutable.append(f"{row.workflow}:{row.action}@{row.declared_version}")
     assert mutable == [], "\n".join(mutable[:50])
+
+
+def test_active_workflows_have_no_workflow_level_write_permissions():
+    from app.services.security_guardian_service import scan_github_actions_text
+    overbroad = []
+    for path in sorted(Path(".github/workflows").glob("*.y*ml")):
+        for finding in scan_github_actions_text(path.as_posix(), path.read_text(errors="replace")):
+            if finding.category == "OVERBROAD_WORKFLOW_PERMISSION":
+                overbroad.append(f"{path}:{finding.finding_id}")
+    assert overbroad == [], "\n".join(overbroad[:80])

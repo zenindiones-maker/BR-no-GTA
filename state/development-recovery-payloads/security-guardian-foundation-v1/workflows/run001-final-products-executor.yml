@@ -7,16 +7,16 @@ on:
     paths:
       - .run001/execute-final-products.trigger
 
-permissions:
-  contents: write
-  actions: write
-
+permissions: {}
 concurrency:
   group: run001-final-products-executor
   cancel-in-progress: false
 
 jobs:
   install-and-dispatch:
+    permissions:
+      contents: write
+      actions: write
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:

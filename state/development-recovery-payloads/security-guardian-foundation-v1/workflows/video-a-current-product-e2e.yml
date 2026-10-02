@@ -7,16 +7,16 @@ on:
     paths:
       - .run/video-a-current-product-e2e.request.json
 
-permissions:
-  contents: read
-  actions: write
-
+permissions: {}
 concurrency:
   group: video-a-current-product-e2e
   cancel-in-progress: false
 
 jobs:
   deliver:
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-24.04
     timeout-minutes: 300
     env:

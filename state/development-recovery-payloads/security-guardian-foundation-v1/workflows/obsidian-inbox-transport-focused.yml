@@ -7,10 +7,7 @@ on:
     paths:
       - ".run/obsidian-inbox-transport.request.json"
 
-permissions:
-  contents: read
-  actions: write
-
+permissions: {}
 env:
   PYTHONPATH: .
   ZERO_COST_OPERATION: "TRUE"
@@ -20,6 +17,9 @@ env:
 
 jobs:
   focused:
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

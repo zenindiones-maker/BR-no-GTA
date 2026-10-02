@@ -8,16 +8,16 @@ on:
     paths:
       - .run001/e2e-canary-request.json
 
-permissions:
-  contents: read
-  actions: write
-
+permissions: {}
 concurrency:
   group: run001-e2e-canary-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   controller:
+    permissions:
+      contents: read
+      actions: write
     if: github.ref == 'refs/heads/work/gate6f-analytics-learning'
     runs-on: ubuntu-24.04
     timeout-minutes: 180

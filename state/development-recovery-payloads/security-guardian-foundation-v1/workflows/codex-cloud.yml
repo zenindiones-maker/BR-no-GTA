@@ -8,18 +8,18 @@ on:
       - ".github/workflows/codex-cloud.yml"
       - ".github/codex/run-001.txt"
 
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
-  actions: read
-
+permissions: {}
 concurrency:
   group: codex-run-001-app
   cancel-in-progress: false
 
 jobs:
   codex:
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read
     runs-on: ubuntu-latest
     timeout-minutes: 120
 

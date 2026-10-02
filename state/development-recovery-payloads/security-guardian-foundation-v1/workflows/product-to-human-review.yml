@@ -8,16 +8,16 @@ on:
     paths:
       - .run/product-human-review.request.json
 
-permissions:
-  contents: read
-  actions: write
-
+permissions: {}
 concurrency:
   group: product-to-human-review
   cancel-in-progress: false
 
 jobs:
   deliver:
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     env:

@@ -3,12 +3,12 @@ name: VIDEO A Governed Promotion and Full Render
 on:
   workflow_dispatch:
 
-permissions:
-  contents: write
-  actions: write
-
+permissions: {}
 jobs:
   promote-and-dispatch:
+    permissions:
+      contents: write
+      actions: write
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'run VIDEO A governed promotion')
     runs-on: ubuntu-24.04
     timeout-minutes: 20

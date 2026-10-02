@@ -7,10 +7,7 @@ on:
     paths:
       - ".run/telegram-pending-action-focused.request.json"
 
-permissions:
-  contents: read
-  statuses: write
-
+permissions: {}
 env:
   PYTHONPATH: .
   ZERO_COST_OPERATION: "TRUE"
@@ -18,6 +15,9 @@ env:
 
 jobs:
   focused:
+    permissions:
+      contents: read
+      statuses: write
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

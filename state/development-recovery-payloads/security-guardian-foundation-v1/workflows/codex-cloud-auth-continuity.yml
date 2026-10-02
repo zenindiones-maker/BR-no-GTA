@@ -17,16 +17,16 @@ on:
         required: false
         type: string
 
-permissions:
-  contents: read
-  id-token: write
-
+permissions: {}
 env:
   ZERO_COST_OPERATION: "TRUE"
   MISSION_ID: mission-auth-continuity-proof
 
 jobs:
   runner-a:
+    permissions:
+      contents: read
+      id-token: write # SECURITY-JUSTIFICATION: job-scoped least privilege; trusted repository workflow; no fork-controlled code execution
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
@@ -127,6 +127,9 @@ jobs:
           retention-days: 1
 
   runner-b:
+    permissions:
+      contents: read
+      id-token: write # SECURITY-JUSTIFICATION: job-scoped least privilege; trusted repository workflow; no fork-controlled code execution
     needs: runner-a
     runs-on: ubuntu-24.04
     timeout-minutes: 12

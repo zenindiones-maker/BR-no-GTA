@@ -8,11 +8,7 @@ on:
     paths:
       - ".run/telegram-conversational-control.request.json"
 
-permissions:
-  contents: read
-  actions: read
-  statuses: write
-
+permissions: {}
 concurrency:
   group: telegram-conversational-control-validation
   cancel-in-progress: true
@@ -25,6 +21,10 @@ env:
 
 jobs:
   validate:
+    permissions:
+      contents: read
+      actions: read
+      statuses: write
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:

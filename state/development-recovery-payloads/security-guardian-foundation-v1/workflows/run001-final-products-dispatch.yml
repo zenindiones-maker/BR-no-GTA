@@ -8,12 +8,12 @@ on:
     paths:
       - .run001/final-products-request.json
 
-permissions:
-  contents: read
-  actions: write
-
+permissions: {}
 jobs:
   authorize-and-dispatch:
+    permissions:
+      contents: read
+      actions: write
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'dispatch RUN-001 final products')
     runs-on: ubuntu-24.04
     timeout-minutes: 20

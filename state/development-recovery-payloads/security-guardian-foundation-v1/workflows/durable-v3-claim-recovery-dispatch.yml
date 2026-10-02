@@ -1,0 +1,34 @@
+name: Durable V3 Claim Recovery Dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      mission_id:
+        description: Canonical mission id
+        required: true
+        type: string
+      continuation_id:
+        description: Canonical continuation id
+        required: true
+        type: string
+      authorization_id:
+        description: Canonical authorization id
+        required: true
+        type: string
+permissions: {}
+jobs:
+  dispatch:
+    permissions:
+      actions: write
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          MISSION_ID: ${{ inputs.mission_id }}
+          CONTINUATION_ID: ${{ inputs.continuation_id }}
+          AUTHORIZATION_ID: ${{ inputs.authorization_id }}
+        run: |
+          gh workflow run durable-v3-claim-recovery.yml -R "$GITHUB_REPOSITORY" \
+            -f mission_id="$MISSION_ID" \
+            -f continuation_id="$CONTINUATION_ID" \
+            -f authorization_id="$AUTHORIZATION_ID"
+          echo CLAIM_RECOVERY_DISPATCHED=PASS

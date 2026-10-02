@@ -8,16 +8,16 @@ on:
       - '.run001/addy-24-live-semantic.request.json'
   workflow_dispatch:
 
-permissions:
-  contents: write
-  actions: write
-
+permissions: {}
 concurrency:
   group: addy-24-live-semantic-smoke
   cancel-in-progress: false
 
 jobs:
   live-semantic-smoke:
+    permissions:
+      contents: write
+      actions: write
     name: Prove 24 real Addy semantic turns
     runs-on: ubuntu-24.04
     timeout-minutes: 90

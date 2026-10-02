@@ -28,18 +28,18 @@ on:
         default: "0"
         type: string
 
-permissions:
-  contents: read
-  actions: read
-  statuses: write
-  id-token: write
-
+permissions: {}
 concurrency:
   group: dynamic-system-improvement-${{ inputs.dispatch_id }}
   cancel-in-progress: false
 
 jobs:
   mission:
+    permissions:
+      contents: read
+      actions: read
+      statuses: write # SECURITY-JUSTIFICATION: job-scoped least privilege; trusted repository workflow; no fork-controlled code execution
+      id-token: write # SECURITY-JUSTIFICATION: job-scoped least privilege; trusted repository workflow; no fork-controlled code execution
     if: ${{ !startsWith(inputs.dispatch_id, 'tg-hermes-') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
@@ -422,6 +422,9 @@ jobs:
 
 
   telegram-hermes:
+    permissions:
+      contents: read
+      actions: read
     if: ${{ startsWith(inputs.dispatch_id, 'tg-hermes-') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30

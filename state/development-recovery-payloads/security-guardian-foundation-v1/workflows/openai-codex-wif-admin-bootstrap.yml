@@ -27,17 +27,17 @@ on:
         default: "https://api.openai.com/codex/zenindiones-maker/BR-no-GTA"
         type: string
 
-permissions:
-  contents: read
-  id-token: write
-  actions: write
-
+permissions: {}
 env:
   PYTHONPATH: .
   DEFAULT_WIF_AUDIENCE: "https://api.openai.com/codex/zenindiones-maker/BR-no-GTA"
 
 jobs:
   bootstrap:
+    permissions:
+      contents: read
+      id-token: write
+      actions: write
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:

@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "security-foundation-development",
   "artifact_refs": [],
-  "authorization_id": "42b59967-30f0-4af6-82c1-b0ae1d7c8e0b",
+  "authorization_id": "38955541-f6a9-425a-a69a-1743d8919bc1",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "59c370c43c582cec8468c9d5efa91bc95311f6bcd59cb82faeda58c028530917",
-  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000005-2107f343",
+  "checkpoint_digest": "1540b3b1b44d904dd6b8b8517a32d43308e40a2f475fae082a5578764e19d5af",
+  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000006-e543ef3b",
   "checkpoint_kind": "MILESTONE",
-  "checkpoint_sequence": 5,
+  "checkpoint_sequence": 6,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -24,11 +24,14 @@
     "codeowners-baseline-created",
     "security-md-baseline-created",
     "third-party-action-inventory",
-    "third-party-action-full-sha-pinning"
+    "third-party-action-full-sha-pinning",
+    "workflow-permission-policy-red",
+    "single-job-permission-scope-hardening",
+    "multi-job-permission-scope-hardening"
   ],
-  "content_digest": "84802f9fe85e20938edde1cc9a1ebf1caefc90b387023623109b253b6ec1874d",
-  "created_at": "2026-10-02T02:58:41.795982+00:00",
-  "current_step": "workflow-permissions-and-codeql-remediation",
+  "content_digest": "7f8b5256db8b68f993441678af7ceea612b0f21a67a9cc22e3f819546d385ddd",
+  "created_at": "2026-10-02T03:02:02.433043+00:00",
+  "current_step": "codeql-open-findings-remediation",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
@@ -65,7 +68,13 @@
     "supply-chain:mutable_action_refs=0",
     "recovery-workflow-payload-count:134",
     "recovery-workflow-manifest-sha256:1c05cbd263f3f1aea77d36bcff4fd8c64261501cfd22388313f3da66f09ca45a",
-    "authority:no-workflow-scope-broadening"
+    "authority:no-workflow-scope-broadening",
+    "tests:test_security_guardian_foundation_v1=38_PASS",
+    "workflow-policy:mutable_action_refs=0",
+    "workflow-policy:overbroad_workflow_permissions=0",
+    "workflow-policy:yaml_parse=PASS",
+    "recovery-workflow-payload-count:137",
+    "recovery-workflow-manifest-sha256:c53c0a38a366e1f76d52e9d92761d26113ec53e86639083e4a052af3b529a2d9"
   ],
   "excluded_paths": [],
   "failure_state": {},
@@ -97,6 +106,8 @@
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/codex-cloud-auth-continuity.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/codex-cloud.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/continuous-cross-run-durability.yml",
+    "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/continuous-intelligence-executor.yml",
+    "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/continuous-intelligence-operation.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/continuous-operation-live-proof.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/deepseek-harness.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/delegated-autonomy-canary.yml",
@@ -104,6 +115,7 @@
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/delegation-plane-operational-proof.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/durable-physical-retry-proof.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/durable-recovery-checkpoint-save.yml",
+    "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/durable-v3-claim-recovery-dispatch.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/dynamic-system-improvement-focused.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/dynamic-system-improvement-resume.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/dynamic-system-improvement.yml",
@@ -213,19 +225,18 @@
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "eliminate workflow-level broad write permissions and remediate/classify all open CodeQL findings",
+  "next_step": "remediate four HIGH CodeQL findings first, then four MEDIUM missing-workflow-permissions findings and re-audit",
   "open_blockers": [
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED",
-    "WORKFLOW_PERMISSION_FINDINGS_60",
     "CODEQL_HIGH_OPEN_4",
     "CODEQL_MEDIUM_OPEN_4"
   ],
-  "previous_checkpoint_sha": "17d7d8692a3cad4a042147028c791298a307d621",
-  "progress_ledger_digest": "e364c26c7b9a48f6860aab2cb9ec32970111b3227e0b3e9424b3d7e14fd59001",
+  "previous_checkpoint_sha": "e94fb69a1c2872bbd47b8b9cff89da69dd2a2248",
+  "progress_ledger_digest": "58052cb6788415d89015f20f6ed2889c6d5d747ddcd10ac36c7a9305cb69c132",
   "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "Resume from cp5. Restore workflow payloads only into staging workspace after manifest SHA validation. Action pinning is closed at MUTABLE_ACTION_REFS=0. Continue permissions/CodeQL. Do not resume owner voice.",
+  "resume_instructions": "Resume from cp6. Action pinning and workflow-level permission hardening are closed. Remediate CodeQL HIGH findings before MEDIUM. Owner voice remains frozen.",
   "runtime_namespace": "security-guardian-foundation-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -242,14 +253,16 @@
     ]
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "checkpoint-after-action-pinning-via-nonexecuting-workflow-payload",
+  "task_id": "checkpoint-before-codeql-remediation",
   "test_state": {
     "main_force_push": "BLOCKED",
     "mutable_action_refs": "0",
+    "overbroad_workflow_permissions": "0",
     "security_guardian_foundation_core": "29_PASS",
-    "security_guardian_foundation_focused": "37_PASS",
-    "work_branch_force_push": "BLOCKED"
+    "security_guardian_foundation_focused": "38_PASS",
+    "work_branch_force_push": "BLOCKED",
+    "workflow_yaml_parse": "PASS"
   },
-  "validation_state": "THIRD_PARTY_ACTION_PINNING_37_PASS_MUTABLE_REFS_ZERO",
+  "validation_state": "WORKFLOW_PERMISSIONS_38_PASS_MUTABLE_ZERO_OVERBROAD_ZERO_YAML_PASS",
   "workspace_id": "security-guardian-foundation-v1"
 }

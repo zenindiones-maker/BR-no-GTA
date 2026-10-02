@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 4,
+  "checkpoint_sequence": 5,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -19,9 +19,12 @@
     "codeowners-baseline-created",
     "security-md-baseline-created",
     "third-party-action-inventory",
-    "third-party-action-full-sha-pinning"
+    "third-party-action-full-sha-pinning",
+    "workflow-permission-policy-red",
+    "single-job-permission-scope-hardening",
+    "multi-job-permission-scope-hardening"
   ],
-  "current_step": "workflow-permissions-and-codeql-remediation",
+  "current_step": "codeql-open-findings-remediation",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -72,17 +75,22 @@
     "supply-chain:mutable_action_refs=0",
     "recovery-workflow-payload-count:134",
     "recovery-workflow-manifest-sha256:1c05cbd263f3f1aea77d36bcff4fd8c64261501cfd22388313f3da66f09ca45a",
-    "authority:no-workflow-scope-broadening"
+    "authority:no-workflow-scope-broadening",
+    "tests:test_security_guardian_foundation_v1=38_PASS",
+    "workflow-policy:mutable_action_refs=0",
+    "workflow-policy:overbroad_workflow_permissions=0",
+    "workflow-policy:yaml_parse=PASS",
+    "recovery-workflow-payload-count:137",
+    "recovery-workflow-manifest-sha256:c53c0a38a366e1f76d52e9d92761d26113ec53e86639083e4a052af3b529a2d9"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000004-f65f9b1c",
-  "latest_verified_checkpoint_sha": "17d7d8692a3cad4a042147028c791298a307d621",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000005-2107f343",
+  "latest_verified_checkpoint_sha": "e94fb69a1c2872bbd47b8b9cff89da69dd2a2248",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "eliminate workflow-level broad write permissions and remediate/classify all open CodeQL findings",
+  "next_step": "remediate four HIGH CodeQL findings first, then four MEDIUM missing-workflow-permissions findings and re-audit",
   "open_blockers": [
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED",
-    "WORKFLOW_PERMISSION_FINDINGS_60",
     "CODEQL_HIGH_OPEN_4",
     "CODEQL_MEDIUM_OPEN_4"
   ],
@@ -123,10 +131,12 @@
   "tests": {
     "main_force_push": "BLOCKED",
     "mutable_action_refs": "0",
+    "overbroad_workflow_permissions": "0",
     "security_guardian_foundation_core": "29_PASS",
-    "security_guardian_foundation_focused": "37_PASS",
-    "work_branch_force_push": "BLOCKED"
+    "security_guardian_foundation_focused": "38_PASS",
+    "work_branch_force_push": "BLOCKED",
+    "workflow_yaml_parse": "PASS"
   },
-  "updated_at": "2026-10-02T02:58:40.393732+00:00",
-  "validation_state": "THIRD_PARTY_ACTION_PINNING_37_PASS_MUTABLE_REFS_ZERO"
+  "updated_at": "2026-10-02T03:02:00.993988+00:00",
+  "validation_state": "WORKFLOW_PERMISSIONS_38_PASS_MUTABLE_ZERO_OVERBROAD_ZERO_YAML_PASS"
 }
