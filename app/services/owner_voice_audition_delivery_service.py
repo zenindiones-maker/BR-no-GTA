@@ -275,7 +275,11 @@ def record_ambiguous_send(
     return _persist(path,state)
 
 
-SIDE_EFFECT_RECONCILIATION_REQUIRED = AMBIGUOUS
+SIDE_EFFECT_RECONCILIATION_REQUIRED = "SIDE_EFFECT_RECONCILIATION_REQUIRED"
+PENDING="PENDING"
+SENDING="SENDING"
+SENT="SENT"
+UNKNOWN_REMOTE_STATE="UNKNOWN_REMOTE_STATE"
 
 
 class GitBackedAuditionDeliveryLedger:
@@ -317,7 +321,8 @@ class GitBackedAuditionDeliveryLedger:
             "state_version":0,
             "pack_id":self.pack_id,
             "state":"PLANNED",
-            "side_effect_status":"READY",
+            "side_effect_status":PENDING,
+            "reconciliation_state":None,
             "manifest_digest":str(manifest.get("manifest_digest") or ""),
             "candidate_hashes":candidate_hashes,
             "telegram_chat_id":int(telegram_chat_id),
@@ -325,6 +330,7 @@ class GitBackedAuditionDeliveryLedger:
             "authority_ref":str(authority_ref),
             "confirmed_message_ids":{},
             "active_operation":None,
+            "failure_class":None,
             "blind_retry_count":0,
         }
         self.store.transact(
@@ -334,8 +340,10 @@ class GitBackedAuditionDeliveryLedger:
             mission_head=head,
             immutable_objects={
                 f"missions/{self.mission_id}/events/v000000.json":{
-                    "event":"PLANNED","pack_id":self.pack_id,
+                    "event":"PLANNED",
+                    "pack_id":self.pack_id,
                     "manifest_digest":head["manifest_digest"],
+                    "side_effect_status":PENDING,
                 }
             },
         )
@@ -368,26 +376,28 @@ class GitBackedAuditionDeliveryLedger:
 
     def begin_operation(self, *, logical_operation: str, payload_digest: str) -> dict[str,Any]:
         current=self.load()
-        if current.get("side_effect_status")==SIDE_EFFECT_RECONCILIATION_REQUIRED:
+        if current.get("reconciliation_state")==SIDE_EFFECT_RECONCILIATION_REQUIRED:
             return {"status":"RECONCILIATION_REQUIRED"}
         active=current.get("active_operation")
-        if isinstance(active,dict) and active.get("status")=="STARTED":
+        if isinstance(active,dict) and active.get("status")==SENDING:
             return dict(active)
         operation={
             "operation_id":f"{self.pack_id}:{logical_operation}",
             "logical_operation":str(logical_operation),
             "payload_digest":str(payload_digest),
-            "status":"STARTED",
+            "status":SENDING,
         }
         def mutate(row):
             row["active_operation"]=operation
+            row["side_effect_status"]=SENDING
+            row["reconciliation_state"]=None
         self._commit(
-            mutate,event="OPERATION_STARTED",
+            mutate,event="OPERATION_SENDING",
             object_payload={
                 "operation_id":operation["operation_id"],
                 "logical_operation":operation["logical_operation"],
                 "payload_digest":operation["payload_digest"],
-                "status":"STARTED",
+                "status":SENDING,
             },
         )
         return operation
@@ -395,59 +405,74 @@ class GitBackedAuditionDeliveryLedger:
     def _confirm_operation(self, *, logical_operation: str, receipt: Any, next_state: str) -> dict[str,Any]:
         def mutate(row):
             active=row.get("active_operation") or {}
-            if active.get("logical_operation")!=logical_operation or active.get("status")!="STARTED":
-                raise ValueError("AUDITION_DELIVERY_OPERATION_NOT_STARTED")
+            if active.get("logical_operation")!=logical_operation or active.get("status")!=SENDING:
+                raise ValueError("AUDITION_DELIVERY_OPERATION_NOT_SENDING")
             confirmed=dict(row.get("confirmed_message_ids") or {})
             if logical_operation=="REFERENCE_SEND":
                 confirmed["reference"]=int(receipt)
             elif logical_operation=="CANDIDATES_SEND":
                 ids=[int(x) for x in receipt]
-                if len(ids)!=3: raise ValueError("AUDITION_CANDIDATE_RECEIPTS_INCOMPLETE")
+                if len(ids)!=3:
+                    raise ValueError("AUDITION_CANDIDATE_RECEIPTS_INCOMPLETE")
                 confirmed["candidates"]=ids
             elif logical_operation=="CONTROL_SEND":
                 confirmed["control"]=int(receipt)
             row["confirmed_message_ids"]=confirmed
             row["state"]=next_state
-            row["active_operation"]={
-                **active,"status":"CONFIRMED","receipt":receipt,
-            }
+            row["active_operation"]={**active,"status":SENT,"receipt":receipt}
+            row["side_effect_status"]=SENT
+            row["reconciliation_state"]=None
         return self._commit(
-            mutate,event="OPERATION_CONFIRMED",
-            object_payload={"logical_operation":logical_operation,"next_state":next_state},
+            mutate,event="OPERATION_SENT",
+            object_payload={
+                "logical_operation":logical_operation,
+                "next_state":next_state,
+                "side_effect_status":SENT,
+            },
         )
 
     def mark_ambiguous(self, *, logical_operation: str, failure_class: str) -> dict[str,Any]:
         def mutate(row):
-            row["side_effect_status"]=SIDE_EFFECT_RECONCILIATION_REQUIRED
+            row["side_effect_status"]=UNKNOWN_REMOTE_STATE
+            row["reconciliation_state"]=SIDE_EFFECT_RECONCILIATION_REQUIRED
             row["failure_class"]=str(failure_class)[:300]
             active=dict(row.get("active_operation") or {})
             if active:
-                active["status"]="UNKNOWN_REMOTE_STATE"
+                active["status"]=UNKNOWN_REMOTE_STATE
                 row["active_operation"]=active
             row["blind_retry_count"]=0
         return self._commit(
-            mutate,event="SIDE_EFFECT_RECONCILIATION_REQUIRED",
-            object_payload={"logical_operation":logical_operation,"failure_class":str(failure_class)[:300]},
+            mutate,event=SIDE_EFFECT_RECONCILIATION_REQUIRED,
+            object_payload={
+                "logical_operation":logical_operation,
+                "failure_class":str(failure_class)[:300],
+                "side_effect_status":UNKNOWN_REMOTE_STATE,
+            },
         )
 
-    def require_reconciliation_for_started_operation(self) -> dict[str,Any]:
+    def require_reconciliation_for_sending_operation(self) -> dict[str,Any]:
         current=self.load()
-        active=current.get("active_operation")
-        if current.get("side_effect_status")==SIDE_EFFECT_RECONCILIATION_REQUIRED:
+        if current.get("reconciliation_state")==SIDE_EFFECT_RECONCILIATION_REQUIRED:
             return current
-        if isinstance(active,dict) and active.get("status")=="STARTED":
+        active=current.get("active_operation")
+        if isinstance(active,dict) and active.get("status")==SENDING:
             return self.mark_ambiguous(
                 logical_operation=str(active.get("logical_operation") or "UNKNOWN"),
-                failure_class="process ended with persisted STARTED operation",
+                failure_class="process ended with persisted SENDING operation",
             )
         return current
+
+    # Backwards-compatible name used by the terminal-receipt script.
+    def require_reconciliation_for_started_operation(self) -> dict[str,Any]:
+        return self.require_reconciliation_for_sending_operation()
 
     def confirm_delivery(self) -> dict[str,Any]:
         def mutate(row):
             if row.get("state")!="CONTROL_SENT":
                 raise ValueError("AUDITION_CONTROL_NOT_CONFIRMED")
             row["state"]="CONFIRMED"
-            row["side_effect_status"]="READY"
+            row["side_effect_status"]=SENT
+            row["reconciliation_state"]=None
             row["active_operation"]=None
         return self._commit(mutate,event="DELIVERY_CONFIRMED")
 
@@ -458,6 +483,7 @@ class GitBackedAuditionDeliveryLedger:
             "pack_id":self.pack_id,
             "state":state.get("state"),
             "side_effect_status":state.get("side_effect_status"),
+            "reconciliation_state":state.get("reconciliation_state"),
             "manifest_digest":str(manifest.get("manifest_digest") or state.get("manifest_digest") or ""),
             "candidate_hashes":dict(state.get("candidate_hashes") or {}),
             "failure_class":state.get("failure_class"),
@@ -479,97 +505,99 @@ def deliver_owner_voice_audition_durable(
     state=ledger.load()
     if state.get("state")=="CONFIRMED":
         return {**state,"sanitized_receipt":ledger.sanitized_receipt(manifest=manifest)}
-    if state.get("side_effect_status")==SIDE_EFFECT_RECONCILIATION_REQUIRED:
+    if state.get("reconciliation_state")==SIDE_EFFECT_RECONCILIATION_REQUIRED:
         return {**state,"sanitized_receipt":ledger.sanitized_receipt(manifest=manifest)}
     active=state.get("active_operation")
-    if isinstance(active,dict) and active.get("status")=="STARTED":
+    if isinstance(active,dict) and active.get("status")==SENDING:
         state=ledger.mark_ambiguous(
             logical_operation=str(active.get("logical_operation") or "UNKNOWN"),
-            failure_class="process restarted with persisted STARTED operation",
+            failure_class="process restarted with persisted SENDING operation",
         )
         return {**state,"sanitized_receipt":ledger.sanitized_receipt(manifest=manifest)}
 
-    try:
-        state=ledger.load()
-        if state["state"]=="PLANNED":
-            op=ledger.begin_operation(
+    state=ledger.load()
+    if state["state"]=="PLANNED":
+        ledger.begin_operation(
+            logical_operation="REFERENCE_SEND",
+            payload_digest=_delivery_payload_digest(
+                ledger.pack_id,"REFERENCE_SEND",str(state["real_reference_source_message_id"])
+            ),
+        )
+        try:
+            mid=api.copy_reference(
+                chat_id=int(state["telegram_chat_id"]),
+                source_message_id=int(state["real_reference_source_message_id"]),
+                protect_content=True,
+            )
+        except Exception as exc:
+            state=ledger.mark_ambiguous(
                 logical_operation="REFERENCE_SEND",
-                payload_digest=_delivery_payload_digest(
-                    ledger.pack_id,"REFERENCE_SEND",str(state["real_reference_source_message_id"])
-                ),
+                failure_class=f"{type(exc).__name__}:{str(exc)[:200]}",
             )
-            try:
-                mid=api.copy_reference(
-                    chat_id=int(state["telegram_chat_id"]),
-                    source_message_id=int(state["real_reference_source_message_id"]),
-                    protect_content=True,
-                )
-            except Exception as exc:
-                state=ledger.mark_ambiguous(
-                    logical_operation="REFERENCE_SEND",
-                    failure_class=f"{type(exc).__name__}:{str(exc)[:200]}",
-                )
-                return {**state,"sanitized_receipt":ledger.sanitized_receipt(manifest=manifest)}
-            if not isinstance(mid,int):
-                state=ledger.mark_ambiguous(
-                    logical_operation="REFERENCE_SEND",failure_class="REFERENCE_SEND_NO_RECEIPT"
-                )
-                return {**state,"sanitized_receipt":ledger.sanitized_receipt(manifest=manifest)}
-            state=ledger._confirm_operation(
-                logical_operation="REFERENCE_SEND",receipt=mid,next_state="REFERENCE_SENT"
+            return {**state,"sanitized_receipt":ledger.sanitized_receipt(manifest=manifest)}
+        if not isinstance(mid,int):
+            state=ledger.mark_ambiguous(
+                logical_operation="REFERENCE_SEND",failure_class="REFERENCE_SEND_NO_RECEIPT"
             )
+            return {**state,"sanitized_receipt":ledger.sanitized_receipt(manifest=manifest)}
+        state=ledger._confirm_operation(
+            logical_operation="REFERENCE_SEND",receipt=mid,next_state="REFERENCE_SENT"
+        )
 
-        if state["state"]=="REFERENCE_SENT":
-            ledger.begin_operation(
+    if state["state"]=="REFERENCE_SENT":
+        ledger.begin_operation(
+            logical_operation="CANDIDATES_SEND",
+            payload_digest=_delivery_payload_digest(
+                ledger.pack_id,"CANDIDATES_SEND",str(manifest.get("manifest_digest") or "")
+            ),
+        )
+        try:
+            mids=api.send_media_group(
+                chat_id=int(state["telegram_chat_id"]),
+                candidates=list(manifest["candidates"]),
+                protect_content=True,
+            )
+        except Exception as exc:
+            state=ledger.mark_ambiguous(
                 logical_operation="CANDIDATES_SEND",
-                payload_digest=_delivery_payload_digest(
-                    ledger.pack_id,"CANDIDATES_SEND",str(manifest.get("manifest_digest") or "")
-                ),
+                failure_class=f"{type(exc).__name__}:{str(exc)[:200]}",
             )
-            try:
-                mids=api.send_media_group(
-                    chat_id=int(state["telegram_chat_id"]),
-                    candidates=list(manifest["candidates"]),
-                    protect_content=True,
-                )
-            except Exception as exc:
-                state=ledger.mark_ambiguous(
-                    logical_operation="CANDIDATES_SEND",
-                    failure_class=f"{type(exc).__name__}:{str(exc)[:200]}",
-                )
-                return {**state,"sanitized_receipt":ledger.sanitized_receipt(manifest=manifest)}
-            if not isinstance(mids,list) or len(mids)!=3 or not all(isinstance(x,int) for x in mids):
-                state=ledger.mark_ambiguous(
-                    logical_operation="CANDIDATES_SEND",failure_class="CANDIDATES_SEND_NO_COMPLETE_RECEIPT"
-                )
-                return {**state,"sanitized_receipt":ledger.sanitized_receipt(manifest=manifest)}
-            state=ledger._confirm_operation(
-                logical_operation="CANDIDATES_SEND",receipt=mids,next_state="CANDIDATES_SENT"
+            return {**state,"sanitized_receipt":ledger.sanitized_receipt(manifest=manifest)}
+        if not isinstance(mids,list) or len(mids)!=3 or not all(isinstance(x,int) for x in mids):
+            state=ledger.mark_ambiguous(
+                logical_operation="CANDIDATES_SEND",
+                failure_class="CANDIDATES_SEND_NO_COMPLETE_RECEIPT",
             )
+            return {**state,"sanitized_receipt":ledger.sanitized_receipt(manifest=manifest)}
+        state=ledger._confirm_operation(
+            logical_operation="CANDIDATES_SEND",receipt=mids,next_state="CANDIDATES_SENT"
+        )
 
-        if state["state"]=="CANDIDATES_SENT":
-            ledger.begin_operation(
+    if state["state"]=="CANDIDATES_SENT":
+        ledger.begin_operation(
+            logical_operation="CONTROL_SEND",
+            payload_digest=_delivery_payload_digest(ledger.pack_id,"CONTROL_SEND"),
+        )
+        try:
+            mid=api.send_control(
+                chat_id=int(state["telegram_chat_id"]),
+                protect_content=True,
+            )
+        except Exception as exc:
+            state=ledger.mark_ambiguous(
                 logical_operation="CONTROL_SEND",
-                payload_digest=_delivery_payload_digest(ledger.pack_id,"CONTROL_SEND"),
+                failure_class=f"{type(exc).__name__}:{str(exc)[:200]}",
             )
-            try:
-                mid=api.send_control(chat_id=int(state["telegram_chat_id"]),protect_content=True)
-            except Exception as exc:
-                state=ledger.mark_ambiguous(
-                    logical_operation="CONTROL_SEND",
-                    failure_class=f"{type(exc).__name__}:{str(exc)[:200]}",
-                )
-                return {**state,"sanitized_receipt":ledger.sanitized_receipt(manifest=manifest)}
-            if not isinstance(mid,int):
-                state=ledger.mark_ambiguous(
-                    logical_operation="CONTROL_SEND",failure_class="CONTROL_SEND_NO_RECEIPT"
-                )
-                return {**state,"sanitized_receipt":ledger.sanitized_receipt(manifest=manifest)}
-            state=ledger._confirm_operation(
-                logical_operation="CONTROL_SEND",receipt=mid,next_state="CONTROL_SENT"
+            return {**state,"sanitized_receipt":ledger.sanitized_receipt(manifest=manifest)}
+        if not isinstance(mid,int):
+            state=ledger.mark_ambiguous(
+                logical_operation="CONTROL_SEND",failure_class="CONTROL_SEND_NO_RECEIPT"
             )
-        if state["state"]=="CONTROL_SENT":
-            state=ledger.confirm_delivery()
-        return {**state,"sanitized_receipt":ledger.sanitized_receipt(manifest=manifest)}
-    except Exception:
-        raise
+            return {**state,"sanitized_receipt":ledger.sanitized_receipt(manifest=manifest)}
+        state=ledger._confirm_operation(
+            logical_operation="CONTROL_SEND",receipt=mid,next_state="CONTROL_SENT"
+        )
+
+    if state["state"]=="CONTROL_SENT":
+        state=ledger.confirm_delivery()
+    return {**state,"sanitized_receipt":ledger.sanitized_receipt(manifest=manifest)}

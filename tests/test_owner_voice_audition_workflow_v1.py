@@ -54,17 +54,20 @@ def test_workflow_persists_sanitized_receipt_before_cleanup_and_never_uploads_au
 
 def test_consumer_uses_gitbacked_durable_v3_delivery_ledger():
     text=CONSUMER.read_text(encoding="utf-8")
-    assert "GitHubGitTransactionStore" in text
+    assert "store_from_environment" in text
     assert "GitBackedAuditionDeliveryLedger" in text
     assert "deliver_owner_voice_audition_durable" in text
-    assert "harness-state" in text
+    assert "GitHubGitTransactionStore" not in text
+    assert "GITHUB_TOKEN" not in text
     assert "deliver_owner_voice_audition(" not in text
 
 
-def test_audition_job_has_state_write_permission_but_no_persisted_audio_path():
+def test_audition_job_is_read_only_and_ledger_key_is_step_scoped():
     text=WORKFLOW.read_text(encoding="utf-8")
     audition=text[text.index("  audition:"):]
-    assert "contents: write" in audition
-    assert "GITHUB_TOKEN:" in audition
+    assert "contents: read" in audition
+    assert "contents: write" not in audition
+    assert "GITHUB_TOKEN:" not in audition
     assert "BR_OWNER_AUDITION_AUTHORITY_REF:" in audition
-    assert "harness-state" in CONSUMER.read_text(encoding="utf-8")
+    expected="BR_OWNER_AUDITION_LEDGER_SSH_KEY: $" + "{{ secrets.BR_OWNER_AUDITION_LEDGER_SSH_KEY }}"
+    assert audition.count(expected)==2
