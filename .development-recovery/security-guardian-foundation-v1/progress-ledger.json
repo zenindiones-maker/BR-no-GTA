@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 31,
+  "checkpoint_sequence": 32,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -77,9 +77,11 @@
     "cp30-formal-readback-verified",
     "root-suite-ledger-history-current-normalized",
     "independent-security-review-dispatch-attempted",
-    "independent-security-review-auth-infra-blocked"
+    "independent-security-review-auth-infra-blocked",
+    "independent-security-review-receipt-block",
+    "security-reviewer-runtime-binding-focused-red"
   ],
-  "current_step": "independent-security-review-blocked-auth-infrastructure",
+  "current_step": "independent-review-remediation-required",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -308,16 +310,24 @@
     "independent-review:codex-session=ephemeral",
     "independent-review:transport=401_UNAUTHORIZED_NO_VERDICT",
     "independent-review:events-sha256=3349378fedf0c32f676765caf4a0eb85fbb4f709ee1bfb4c260fce71a135ef42",
-    "promotion:FORBIDDEN_until_INDEPENDENT_REVIEW_PASS"
+    "promotion:FORBIDDEN_until_INDEPENDENT_REVIEW_PASS",
+    "independent-review:independence=PASS",
+    "independent-review:disposition=BLOCK",
+    "independent-review:finding=security-independent-review-runtime-binding-unexecutable:HIGH",
+    "independent-review:runner-registered=false",
+    "independent-review:capability-accepted-by-codex-readonly=false",
+    "independent-review:focused-red=test_security_reviewer_agent_id_has_registered_readonly_worker",
+    "independent-review:receipt=docs/security/evidence/security-independent-review-cp31-v1.jsonl",
+    "independent-review:receipt-sha256=cdc420c9556880ce244d0e248be1459bdbf95c0fcc186a693ffcfba595051807"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000031-b3cc5df3",
-  "latest_verified_checkpoint_sha": "747ef03d6057c805fe5d6a158571d7c522f68473",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000032-a6cd6ff8",
+  "latest_verified_checkpoint_sha": "e15b859fe07437dcedb48e150921fd0d8755c328",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "restore a governed read-only Security Guardian semantic execution route with existing authorized credentials; rerun only independent review on exact normalized candidate; promotion forbidden until PASS",
+  "next_step": "repair Security Guardian REVIEW/runtime binding with focused TDD; rerun only the focused reviewer runtime tests and independent review gate; promotion remains forbidden",
   "open_blockers": [
-    "INDEPENDENT_REVIEW_BLOCKED_AUTH_INFRASTRUCTURE"
+    "INDEPENDENT_REVIEW_BLOCKED_RUNTIME_BINDING"
   ],
   "plan_steps": [
     "authority-contract",
@@ -422,7 +432,10 @@
     "independent_review_candidate_tree": "dfd718e37ccab6e64879be9aed2cebc2e1fb82ae",
     "independent_review_diff_sha256": "331e5f86280b0e7c7eb47111350503c8fd6c867e24b0385f21532f6133d2b69a",
     "independent_review_failure_class": "CODEX_AUTH_401_UNAUTHORIZED",
-    "independent_review_status": "BLOCKED_AUTH_INFRASTRUCTURE",
+    "independent_review_high_findings": "1",
+    "independent_review_independence": "PASS",
+    "independent_review_receipt_sha256": "cdc420c9556880ce244d0e248be1459bdbf95c0fcc186a693ffcfba595051807",
+    "independent_review_status": "BLOCK",
     "independent_review_transport_exit_code": "1",
     "main_force_push": "BLOCKED",
     "missing_top_level_permissions": "0",
@@ -492,6 +505,7 @@
     "security_guardian_foundation_core": "29_PASS",
     "security_guardian_foundation_focused": "45_PASS",
     "security_reviewer_agent_office_focused": "133_PASS",
+    "security_reviewer_runtime_binding_focused": "1_FAILED_EXPECTED_RED",
     "security_reviewer_runtime_boundary_green": "1_PASS",
     "security_reviewer_runtime_boundary_red": "CONFIRMED",
     "targeted_zizmor_high_after_template_fix": "1_DANGEROUS_TRIGGERS",
@@ -505,6 +519,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "updated_at": "2026-10-02T11:40:28.105948+00:00",
-  "validation_state": "ROOT_SUITE_PASS_INDEPENDENT_REVIEW_BLOCKED_AUTH_INFRASTRUCTURE"
+  "updated_at": "2026-10-02T11:43:13.662093+00:00",
+  "validation_state": "ROOT_SUITE_PASS_INDEPENDENT_REVIEW_BLOCK_RUNTIME_BINDING"
 }
