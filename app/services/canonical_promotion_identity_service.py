@@ -236,7 +236,6 @@ def canonical_promotion_ruleset_payload() -> dict[str, Any]:
                 "include": [
                     "~DEFAULT_BRANCH",
                     "refs/heads/work/gate6f-analytics-learning",
-                    "refs/heads/security-promotion-probe",
                 ],
                 "exclude": [],
             }

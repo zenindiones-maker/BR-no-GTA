@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 19,
+  "checkpoint_sequence": 20,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -50,9 +50,17 @@
     "canonical-promotion-contract-red-green",
     "legacy-direct-canonical-writers-disabled",
     "canonical-promotion-workflow-static-validation",
-    "canonical-promotion-workflow-recovery-payload-preserved"
+    "canonical-promotion-workflow-recovery-payload-preserved",
+    "canonical-promotion-ruleset-final-contract-red-green",
+    "canonical-promotion-environment-protected",
+    "canonical-promotion-deploy-key-provisioned",
+    "canonical-promotion-deploy-key-probe-owner-blocked",
+    "canonical-promotion-deploy-key-probe-bypass-pass",
+    "canonical-promotion-final-ruleset-active",
+    "canonical-promotion-private-key-hygiene-verified",
+    "canonical-promotion-identity-server-enforcement"
   ],
-  "current_step": "canonical-promotion-identity-server-enforcement",
+  "current_step": "root-validation-before-independent-security-review",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -198,17 +206,26 @@
     "run001-bootstrap-payload-sha256:63b10db52396b636f04ef27050442675b145dd701d0f24d072b1a78e9490f05b",
     "run001-final-products-executor-payload-sha256:5acd6278a7fb79c13acc65b5b8fc4e70bf8d0a87186c76691a989ca49fbb5c6a",
     "workflow-restore-manifest-sha256:61770d11f5e13432bbf62db18b0b637ca9e1fb5790b04c364d6dccc784439937",
-    "canonical-promotion:direct-canonical-push-count=0"
+    "canonical-promotion:direct-canonical-push-count=0",
+    "canonical-promotion-ruleset-id:24350572",
+    "canonical-promotion-ruleset-readback-sha256:52b5cfea9a805d59b547916b658c2531562742df1d9ff05c0a443207cd4a676e",
+    "canonical-promotion-deploy-key-id:165133219",
+    "canonical-promotion-public-fingerprint:SHA256:m5QmXC8sIY+NWFLOx95igNLlz1zYADvcW4UuI056FQU",
+    "canonical-promotion-environment:canonical-promotion",
+    "canonical-promotion-secret-name:BR_CANONICAL_PROMOTION_SSH_KEY",
+    "canonical-promotion-probe-owner-create=BLOCKED_HTTP_422",
+    "canonical-promotion-probe-owner-delete=BLOCKED_HTTP_422",
+    "canonical-promotion-probe-deploy-key-create=PASS",
+    "canonical-promotion-probe-deploy-key-delete=PASS",
+    "canonical-promotion-identity-evidence-sha256:f30c69d909edf9f2bd4aad07531008c3177e1602c19c615599ba798251a54f5c"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000019-834b4ac4",
-  "latest_verified_checkpoint_sha": "c283f386ed07b2af69154b2b1e703d45bb7cfbaa",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000020-d8ce1160",
+  "latest_verified_checkpoint_sha": "a74a1ea401a83bdfc3273e1bdebd6ef7b1e1b91b",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "provision one dedicated BR-no-GTA write deploy key, protected canonical-promotion environment, active canonical ruleset, then prove normal writer blocked and deploy-key probe bypass works",
-  "open_blockers": [
-    "CANONICAL_PROMOTION_IDENTITY_SERVER_ENFORCEMENT_REQUIRED"
-  ],
+  "next_step": "run security focused/affected/root validation and secret/zizmor policy checks; then independent Security Guardian review before promotion",
+  "open_blockers": [],
   "plan_steps": [
     "authority-contract",
     "security-contracts",
@@ -237,16 +254,32 @@
       "github-security:dependabot-alerts-enabled",
       "github-security:dependabot-security-updates-enabled",
       "github-security:private-vulnerability-reporting-enabled",
-      "github-security:codeql-default-setup-configured"
+      "github-security:codeql-default-setup-configured",
+      "github-environment:canonical-promotion:protected-branches-required-reviewer",
+      "github-deploy-key:BR_CANONICAL_PROMOTION_DEPLOY_KEY_V1:id=165133219",
+      "github-ruleset:BR canonical promotion identity:id=24350572:active"
     ],
     "unknown_requires_reconciliation": [
       "github-security:non-provider-secret-patterns-requested-readback-disabled"
     ]
   },
   "tests": {
+    "canonical_promotion_deploy_key_probe_create": "PASS",
+    "canonical_promotion_deploy_key_probe_delete": "PASS",
     "canonical_promotion_diff_check": "PASS",
-    "canonical_promotion_identity_focused": "13_PASS",
+    "canonical_promotion_environment": "protected_branches+required_reviewer",
+    "canonical_promotion_identity_focused": "14_PASS",
+    "canonical_promotion_local_private_key_destroyed": "YES",
+    "canonical_promotion_owner_probe_create": "BLOCKED_HTTP_422",
+    "canonical_promotion_owner_probe_delete": "BLOCKED_HTTP_422",
+    "canonical_promotion_private_key_in_artifacts": "0",
+    "canonical_promotion_private_key_in_git": "0",
+    "canonical_promotion_private_key_in_logs": "0",
+    "canonical_promotion_private_key_in_recovery": "0",
+    "canonical_promotion_ruleset_enforcement": "active",
+    "canonical_promotion_ruleset_id": "24350572",
     "canonical_promotion_workflow_yaml": "PASS",
+    "canonical_promotion_write_deploy_key_count": "1",
     "codeql_actions_candidate_high": "4",
     "codeql_actions_candidate_results": "4",
     "codeql_actions_final_results": "0",
@@ -300,6 +333,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "updated_at": "2026-10-02T06:20:53.073993+00:00",
-  "validation_state": "PROMOTION_CONTRACT_GREEN_PRE_PRIVILEGED_IDENTITY_PROVISIONING"
+  "updated_at": "2026-10-02T06:30:44.913732+00:00",
+  "validation_state": "CANONICAL_PROMOTION_IDENTITY_HARDENED_ROOT_VALIDATION_PENDING"
 }

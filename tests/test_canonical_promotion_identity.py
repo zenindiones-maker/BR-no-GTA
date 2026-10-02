@@ -182,3 +182,23 @@ def test_security_guardian_itself_does_not_gain_promotion_authority():
     assert record.authority == "NONE"
     assert record.default_write_scope == ()
     assert "development.canonical.promote" not in record.allowed_actions
+
+
+def test_final_ruleset_targets_only_canonical_branches_and_only_deploy_key_bypasses():
+    from app.services.canonical_promotion_identity_service import canonical_promotion_ruleset_payload
+    payload = canonical_promotion_ruleset_payload()
+    assert payload["target"] == "branch"
+    assert payload["enforcement"] == "active"
+    assert payload["conditions"]["ref_name"]["include"] == [
+        "~DEFAULT_BRANCH",
+        "refs/heads/work/gate6f-analytics-learning",
+    ]
+    assert payload["conditions"]["ref_name"]["exclude"] == []
+    assert payload["bypass_actors"] == [
+        {"actor_id": None, "actor_type": "DeployKey", "bypass_mode": "always"}
+    ]
+    assert {rule["type"] for rule in payload["rules"]} == {
+        "creation", "update", "deletion", "non_fast_forward"
+    }
+    assert all(actor["actor_type"] not in {"User", "RepositoryRole", "OrganizationAdmin"}
+               for actor in payload["bypass_actors"])
