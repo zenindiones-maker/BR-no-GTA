@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 20,
+  "checkpoint_sequence": 21,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -58,9 +58,12 @@
     "canonical-promotion-deploy-key-probe-bypass-pass",
     "canonical-promotion-final-ruleset-active",
     "canonical-promotion-private-key-hygiene-verified",
-    "canonical-promotion-identity-server-enforcement"
+    "canonical-promotion-identity-server-enforcement",
+    "affected-security-subgraph-current-candidate",
+    "final-candidate-secret-regression-scan",
+    "final-candidate-zizmor-high-zero"
   ],
-  "current_step": "root-validation-before-independent-security-review",
+  "current_step": "root-suite-validation",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -217,14 +220,21 @@
     "canonical-promotion-probe-owner-delete=BLOCKED_HTTP_422",
     "canonical-promotion-probe-deploy-key-create=PASS",
     "canonical-promotion-probe-deploy-key-delete=PASS",
-    "canonical-promotion-identity-evidence-sha256:f30c69d909edf9f2bd4aad07531008c3177e1602c19c615599ba798251a54f5c"
+    "canonical-promotion-identity-evidence-sha256:f30c69d909edf9f2bd4aad07531008c3177e1602c19c615599ba798251a54f5c",
+    "final-candidate:da610a4e24e2b95552b62afcf8bfd5d912eba25e",
+    "final-candidate-tree:520a1a277c3a09a6ea119d72446f0dcebb6025e4",
+    "affected-security-subgraph:152_PASS",
+    "secret-regression:new-confirmed-credential-pattern=0",
+    "zizmor-final-raw-sha256:90b74937b1d387dc46f97794b44089b3f8a9bd4760cd5b064b452d7458ed6bdf",
+    "zizmor-final:HIGH=0_MEDIUM=57_LOW=199",
+    "pre-review-validation-sha256:534d74cfe1395d8b7f11bdb37da26c02438e90aea3d033ad703bd5622d144157"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000020-d8ce1160",
-  "latest_verified_checkpoint_sha": "a74a1ea401a83bdfc3273e1bdebd6ef7b1e1b91b",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000021-57a0da75",
+  "latest_verified_checkpoint_sha": "4ffd16f98eafd80c437d8f757ae19eb8734f6445",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "run security focused/affected/root validation and secret/zizmor policy checks; then independent Security Guardian review before promotion",
+  "next_step": "run root suite on exact final candidate; if green, persist result and dispatch separate independent Security Guardian review",
   "open_blockers": [],
   "plan_steps": [
     "authority-contract",
@@ -264,6 +274,7 @@
     ]
   },
   "tests": {
+    "affected_security_subgraph": "152_PASS",
     "canonical_promotion_deploy_key_probe_create": "PASS",
     "canonical_promotion_deploy_key_probe_delete": "PASS",
     "canonical_promotion_diff_check": "PASS",
@@ -311,6 +322,13 @@
     "direct_canonical_push_count": "0",
     "dispatch_affected_subgraph": "58_PASS",
     "dispatch_ref_boundary_red_green": "3_PASS",
+    "final_candidate_sha": "da610a4e24e2b95552b62afcf8bfd5d912eba25e",
+    "final_candidate_tree": "520a1a277c3a09a6ea119d72446f0dcebb6025e4",
+    "final_secret_scan_new_confirmed_credential_pattern": "0",
+    "final_zizmor_findings": "256",
+    "final_zizmor_high": "0",
+    "final_zizmor_low": "199",
+    "final_zizmor_medium": "57",
     "git_diff_check": "PASS",
     "gta6_change_detector": "12_PASS",
     "main_force_push": "BLOCKED",
@@ -333,6 +351,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "updated_at": "2026-10-02T06:30:44.913732+00:00",
-  "validation_state": "CANONICAL_PROMOTION_IDENTITY_HARDENED_ROOT_VALIDATION_PENDING"
+  "updated_at": "2026-10-02T06:36:29.633836+00:00",
+  "validation_state": "PRE_REVIEW_GATES_GREEN_ROOT_SUITE_PENDING"
 }
