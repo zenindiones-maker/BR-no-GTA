@@ -593,3 +593,11 @@ def test_active_workflows_have_no_workflow_level_write_permissions():
             if finding.category == "OVERBROAD_WORKFLOW_PERMISSION":
                 overbroad.append(f"{path}:{finding.finding_id}")
     assert overbroad == [], "\n".join(overbroad[:80])
+
+
+def test_untrusted_workflow_dispatch_checkout_must_not_write_shared_dependency_cache():
+    workflow = Path(".github/workflows/obsidian-memory-inbox.yml").read_text()
+    assert "workflow_dispatch:" in workflow
+    assert 'ref: ${{ steps.target.outputs.ref }}' in workflow
+    assert "cache: pip" not in workflow
+    assert "cache-dependency-path:" not in workflow
