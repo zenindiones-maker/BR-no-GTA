@@ -1,0 +1,60 @@
+name: Block A Agent Execution Validation
+
+on:
+  push:
+    branches:
+      - staging/block-a-live-20260930
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: block-a-live-validation
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: .
+  OPENAI_AGENTS_API: DORMANT_BY_OWNER_COST_POLICY
+  OPENAI_PLATFORM_API_SPEND: FORBIDDEN
+  ACTIVE_OPENAI_EXECUTION_SURFACE: CODEX_CLI_CHATGPT_SUBSCRIPTION
+
+jobs:
+  provider-neutral:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install repository dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q -r requirements.txt pytest
+
+      - name: Run Block A provider-neutral suite
+        run: |
+          set -euo pipefail
+          python -m pytest -q             tests/test_block_a_agent_execution_foundation.py             tests/test_block_a_capability_reality.py             tests/test_block_a_openai_application_live_canary.py             tests/test_openai_agents_api_runtime_dd2.py             tests/test_openai_agents_dd2_live_canary.py
+
+      - name: Compile Block A boundaries
+        run: |
+          set -euo pipefail
+          python -m py_compile             app/services/agent_environment_provider.py             app/services/sprite_agent_environment_provider.py             app/services/agent_skill_execution_service.py             app/services/openai_agents_runtime_service.py             app/database/openai_agents_repository.py             app/database/schema.py             scripts/openai_agents_dd2_live_canary.py             scripts/block_a_agent_execution_foundation_proof.py             scripts/block_a_openai_application_live_canary.py             scripts/block_a_self_hosted_live_driver.py
+          git diff --check
+
+      - name: Owner cost policy
+        run: |
+          echo "OPENAI_AGENTS_API=DORMANT_BY_OWNER_COST_POLICY"
+          echo "OPENAI_PLATFORM_API_SPEND=FORBIDDEN"
+          echo "ACTIVE_OPENAI_EXECUTION_SURFACE=CODEX_CLI_CHATGPT_SUBSCRIPTION"
+          echo "OPENAI_PLATFORM_API_FALLBACK=FORBIDDEN"
+          echo "DD3_NOT_STARTED=PASS"
+          echo "LIVE_CODEX_CHATGPT_PROOF=PRIVATE_SPRITE_BOUNDARY"

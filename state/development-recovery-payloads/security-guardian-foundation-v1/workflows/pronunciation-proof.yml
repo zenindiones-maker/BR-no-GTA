@@ -1,0 +1,122 @@
+name: Pronunciation Proof
+run-name: Owner voice pronunciation policy · BR_OWNER_V1 · ${{ github.run_attempt }}
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .github/workflows/pronunciation-proof.yml
+      - config/pronunciation_lexicon.json
+      - config/pronunciation_human_approvals.json
+      - config/voice_owner_enrollment_v1.json
+      - app/services/channel_spoken_branding_service.py
+      - app/services/pronunciation_service.py
+      - app/services/voice_enrollment_service.py
+      - tests/test_pronunciation_service.py
+      - tests/test_channel_spoken_branding.py
+      - tests/test_voice_owner_enrollment.py
+      - tests/test_voice_runtime_cleanliness.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: pronunciation-proof-owner-voice
+  cancel-in-progress: false
+
+jobs:
+  pronunciation-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install focused contract runtime
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt pytest
+
+      - name: Initialize pronunciation evidence
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/pronunciation-proof
+          printf '%s\n' '{"schema":"OwnerVoicePronunciationPolicyProof/v1","status":"STARTED","official_voice_identity":"BR_OWNER_V1","raw_voice_recorded":false}' > runtime/pronunciation-proof/proof-state.json
+
+      - name: Focused pronunciation and owner-voice tests
+        run: |
+          set -euo pipefail
+          pytest -q             tests/test_pronunciation_service.py             tests/test_channel_spoken_branding.py             tests/test_voice_owner_enrollment.py             tests/test_voice_runtime_cleanliness.py
+
+      - name: Prove owner-only pronunciation policy
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/pronunciation-proof
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from app.services.channel_spoken_branding_service import (
+              OFFICIAL_PROVIDER,
+              OFFICIAL_VOICE_IDENTITY_ID,
+          )
+
+          state=json.loads(
+              Path("config/voice_owner_enrollment_v1.json").read_text(encoding="utf-8")
+          )
+          checks={
+              "OFFICIAL_OWNER_IDENTITY": OFFICIAL_VOICE_IDENTITY_ID == "BR_OWNER_V1",
+              "PRIVATE_VOICE_RUNTIME": OFFICIAL_PROVIDER == "private-voice-runtime",
+              "CONFIG_OWNER_IDENTITY": state.get("official_voice") == "BR_OWNER_V1",
+              "TELEGRAM_REFERENCE_SOURCE": state.get("reference_source") == "TELEGRAM",
+              "ACTIVE_IDENTITY_SET": state.get("active_voice_identities") == ["BR_OWNER_V1"],
+          }
+          if not all(checks.values()):
+              raise SystemExit("OWNER_VOICE_PRONUNCIATION_POLICY=FAIL")
+          runtime_status=str(state.get("runtime_activation_status") or "UNKNOWN")
+          evidence={
+              "schema":"OwnerVoicePronunciationPolicyProof/v1",
+              "status":"PASS",
+              "official_voice_identity":"BR_OWNER_V1",
+              "provider":"private-voice-runtime",
+              "reference_source":"TELEGRAM",
+              "declared_reference_count":int(state.get("declared_reference_count") or 0),
+              "materialized_reference_count":int(state.get("materialized_reference_count") or 0),
+              "runtime_activation_status":runtime_status,
+              "real_owner_voice_audio_generated":False,
+              "reason":(
+                  "OWNER_REFERENCE_MATERIALIZATION_PENDING"
+                  if runtime_status == "PENDING_PRIVATE_REFERENCE_MATERIALIZATION"
+                  else "OWNER_RUNTIME_STATE_RECORDED"
+              ),
+              "checks":checks,
+          }
+          Path("runtime/pronunciation-proof/owner-voice-pronunciation-policy.json").write_text(
+              json.dumps(evidence,ensure_ascii=False,indent=2,sort_keys=True),
+              encoding="utf-8",
+          )
+          print("OWNER_VOICE_PRONUNCIATION_POLICY=PASS")
+          print("OFFICIAL_VOICE=BR_OWNER_V1")
+          print("OWNER_VOICE_RUNTIME_STATUS="+runtime_status)
+          PY
+
+      - name: Upload pronunciation policy proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: owner-voice-pronunciation-policy-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/pronunciation-proof/
+          if-no-files-found: error
+          retention-days: 30

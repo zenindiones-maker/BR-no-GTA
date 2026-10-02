@@ -569,3 +569,17 @@ def test_security_md_requires_private_reporting_and_forbids_public_secret_materi
     assert "private-key bytes" in text
     assert "raw private owner-voice audio" in text
     assert "read-only independent reviewer" in text
+
+
+def test_all_active_third_party_actions_are_pinned_to_full_sha():
+    from app.services.security_guardian_service import inventory_third_party_actions
+    mutable = []
+    for path in sorted(Path(".github/workflows").glob("*.y*ml")):
+        for row in inventory_third_party_actions(path.as_posix(), path.read_text(errors="replace")):
+            if row.review_status == "MUTABLE_REF":
+                mutable.append(f"{row.workflow}:{row.action}@{row.declared_version}")
+    for path in sorted(Path(".github/actions").rglob("action.y*ml")):
+        for row in inventory_third_party_actions(path.as_posix(), path.read_text(errors="replace")):
+            if row.review_status == "MUTABLE_REF":
+                mutable.append(f"{row.workflow}:{row.action}@{row.declared_version}")
+    assert mutable == [], "\n".join(mutable[:50])

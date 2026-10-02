@@ -1,0 +1,320 @@
+name: DeepSeek Harness Native Agent Proof
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+      - work/superpowers-skill-pack
+    paths:
+      - '.github/workflows/deepseek-harness.yml'
+      - '.run001/deepseek-harness-native-agent.request.json'
+      - '.dsh/cordis.patch.yml'
+      - '.dsh/plugins/**'
+      - '.dsh/skills/tdd/**'
+      - '.dsh/skills/teach/**'
+      - '.dsh/skills/handoff/**'
+      - '.dsh/skills/caveman/**'
+      - '.dsh/skills/video-edit/**'
+      - 'config/agent_skill_pack_v1.json'
+      - 'scripts/agent-tooling/agent_skill_pack.py'
+      - 'scripts/agent-tooling/bootstrap_dsh_skill_pack.sh'
+      - 'scripts/agent-tooling/prove_superpowers_provider.mjs'
+      - 'scripts/agent-tooling/prove_dsh_local_skill_discovery.mjs'
+      - 'tests/test_agent_skill_pack_contracts.py'
+      - 'app/integrations/deepseek_harness/**'
+      - 'app/services/gta6_brain.py'
+      - 'app/services/gta6_brain_harness_service.py'
+      - 'app/services/gta6_master_agent.py'
+      - 'app/services/harness_*'
+      - 'app/services/mission_product_contract_service.py'
+      - 'app/services/typed_task_requirement_service.py'
+      - 'app/services/capability_execution_contract_service.py'
+      - 'app/services/capability_resolution_receipt_service.py'
+      - 'app/services/global_capability_registry.py'
+      - 'app/services/global_capability_registry_base.py'
+      - 'app/services/youtube_department_service.py'
+      - 'app/services/production_mission_capability_adapters.py'
+      - 'tests/test_mission_product_contract_service.py'
+      - 'tests/test_typed_task_requirement_service.py'
+      - 'tests/test_capability_resolution_contract_service.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deepseek-harness-native-agent-proof
+  cancel-in-progress: false
+
+jobs:
+  native-harness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: .
+      BR_TEST_DATABASE: /tmp/br-deepseek-harness-native.db
+      DSH_VERSION: "0.1.7-rc.2"
+      DSH_MCP_CLIENT_VERSION: "0.1.7-rc.2"
+
+    steps:
+      - name: Checkout exact branch state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm for DeepSeek Harness plugin management
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10
+
+      - name: Install BR runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: Resolve current DeepSeek Harness package
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/deepseek-harness-native
+          npm view "@deepseek-ai/dsh@${DSH_VERSION}" name version description repository.url \
+            | tee runtime/deepseek-harness-native/package.txt
+          test "$(npm view "@deepseek-ai/dsh@${DSH_VERSION}" version)" = "$DSH_VERSION"
+          npx --yes "@deepseek-ai/dsh@${DSH_VERSION}" --version \
+            | tee runtime/deepseek-harness-native/version.txt
+          npx --yes "@deepseek-ai/dsh@${DSH_VERSION}" --help \
+            > runtime/deepseek-harness-native/help.txt
+
+      - name: Install pinned BR MCP client plugin
+        run: |
+          set -euo pipefail
+          npm install --global pnpm@10
+          pnpm --version | tee runtime/deepseek-harness-native/pnpm-version.txt
+          npm view "@deepseek-ai/dsh-mcp-client@${DSH_MCP_CLIENT_VERSION}" \
+            name version peerDependencies --json \
+            | tee runtime/deepseek-harness-native/mcp-client-package.json
+          test "$(npm view "@deepseek-ai/dsh-mcp-client@${DSH_MCP_CLIENT_VERSION}" version)" = "$DSH_MCP_CLIENT_VERSION"
+          npx --yes "@deepseek-ai/dsh@${DSH_VERSION}" \
+            plugin --profile headless add \
+            "@deepseek-ai/dsh-mcp-client@${DSH_MCP_CLIENT_VERSION}"
+          npx --yes "@deepseek-ai/dsh@${DSH_VERSION}" \
+            plugin --profile headless list \
+            | tee runtime/deepseek-harness-native/plugins.txt
+
+      - name: Install pinned Superpowers DSH skill provider
+        run: |
+          set -euo pipefail
+          bash scripts/agent-tooling/bootstrap_dsh_skill_pack.sh headless \
+            | tee runtime/deepseek-harness-native/superpowers-plugin-install.txt
+
+      - name: Prove Superpowers DSH provider contract
+        run: |
+          set -euo pipefail
+          node scripts/agent-tooling/prove_superpowers_provider.mjs
+          grep -q '"status": "PASS"' runtime/deepseek-harness-native/skill-pack/superpowers-provider.json
+          echo 'SUPERPOWERS_PROVIDER_LOADED=PASS'
+          echo 'SUPERPOWERS_BOOTSTRAP_GLOBAL=OFF'
+
+      - name: Install exact DSH filesystem skill-provider proof dependency
+        run: |
+          set -euo pipefail
+          proof_root="$RUNNER_TEMP/dsh-skill-filesystem-$DSH_VERSION"
+          mkdir -p "$proof_root"
+          test "$(npm view "@deepseek-ai/dsh-skill-filesystem@${DSH_VERSION}" version)" = "$DSH_VERSION"
+          npm install --prefix "$proof_root" --ignore-scripts             "@deepseek-ai/dsh-skill-filesystem@${DSH_VERSION}"
+          module_path="$(NODE_PATH="$proof_root/node_modules" node -p "require.resolve('@deepseek-ai/dsh-skill-filesystem')")"
+          test -f "$module_path"
+          echo "BR_DSH_SKILL_FILESYSTEM_MODULE=$module_path" >> "$GITHUB_ENV"
+
+      - name: Prove requested local skills through native DSH filesystem provider
+        run: |
+          set -euo pipefail
+          node scripts/agent-tooling/prove_dsh_local_skill_discovery.mjs
+          grep -q '"status": "PASS"' runtime/deepseek-harness-native/skill-pack/dsh-local-skill-discovery.json
+          echo 'REQUESTED_LOCAL_SKILLS_DSH_DISCOVERY=PASS'
+
+      - name: Resolve canonical BR Harness configuration
+        run: |
+          set -euo pipefail
+          npx --yes "@deepseek-ai/dsh@${DSH_VERSION}" \
+            --profile headless \
+            --patch .dsh/cordis.patch.yml \
+            --dump-config 2>&1 \
+            | tee runtime/deepseek-harness-native/resolved-config.txt
+          grep -q 'agent-loop' runtime/deepseek-harness-native/resolved-config.txt
+          grep -q 'gta6-master' runtime/deepseek-harness-native/resolved-config.txt
+          grep -q 'gta6-master-session' runtime/deepseek-harness-native/resolved-config.txt
+          grep -q 'gemini-3-flash' runtime/deepseek-harness-native/resolved-config.txt
+          grep -q 'mcp-br' runtime/deepseek-harness-native/resolved-config.txt
+          grep -q 'superpowers-dsh' runtime/deepseek-harness-native/resolved-config.txt
+          grep -q 'tool-skill' runtime/deepseek-harness-native/resolved-config.txt
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          text = Path('runtime/deepseek-harness-native/resolved-config.txt').read_text(
+              encoding='utf-8'
+          )
+          required_disabled = {
+              'tool-bash',
+              'tool-pwsh',
+              'tool-jobs',
+              'tool-fs',
+              'tool-subagent',
+              'tool-subagent-fork',
+              'tool-workflow',
+          }
+          lines = text.splitlines()
+          rows = {}
+          current = None
+          bucket = []
+          for line in lines:
+              match = re.match(r'^- id:\s*([^\s#]+)\s*$', line)
+              if match:
+                  if current is not None:
+                      rows[current] = '\n'.join(bucket)
+                  current = match.group(1)
+                  bucket = [line]
+              elif current is not None:
+                  bucket.append(line)
+          if current is not None:
+              rows[current] = '\n'.join(bucket)
+
+          for row_id in sorted(required_disabled):
+              row = rows.get(row_id)
+              assert row is not None, f'missing resolved DSH row: {row_id}'
+              assert re.search(r'(?m)^\s+disabled:\s*true\s*$', row), (
+                  f'direct effect row remains enabled: {row_id}'
+              )
+          assert 'mcp-br' in text
+          print('DSH_DIRECT_EFFECT_SURFACE_DISABLED=PASS')
+          print('DSH_HARNESS_MCP_AUTHORITY_BOUNDARY=PASS')
+          PY
+          test "$(grep -c 'gta6-master-session' runtime/deepseek-harness-native/resolved-config.txt)" -ge 1
+          if grep -q '/data/data/com.termux' .dsh/plugins/gta6-master-activation.mjs; then
+            echo 'DSH_PLUGIN_PORTABILITY=FAIL'
+            exit 2
+          fi
+          grep -q 'agent.followup' .dsh/plugins/gta6-master-activation.mjs
+          grep -q 'type: "text"' .dsh/plugins/gta6-master-activation.mjs
+          echo 'DSH_NATIVE_AGENT_CONFIG=PASS'
+          echo 'DSH_PLUGIN_PORTABILITY=PASS'
+
+      - name: Discover current BR MCP surface directly
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import asyncio
+          import json
+          import sys
+          from pathlib import Path
+
+          from mcp import ClientSession, StdioServerParameters
+          from mcp.client.stdio import stdio_client
+
+          async def main():
+              server = StdioServerParameters(
+                  command=sys.executable,
+                  args=["-m", "app.integrations.deepseek_harness.server"],
+              )
+              async with stdio_client(server) as (read, write):
+                  async with ClientSession(read, write) as session:
+                      await session.initialize()
+                      result = await session.list_tools()
+                      names = sorted(tool.name for tool in result.tools)
+                      expected = {
+                          "br_observe",
+                          "br_knowledge_query",
+                          "br_research_run",
+                          "br_execution_process_next",
+                          "br_route",
+                          "br_editorial_process_next",
+                          "br_gta6_monitor_run_once",
+                          "br_master_run_once",
+                          "br_capabilities_discover",
+                          "br_capability_execute",
+                          "br_youtube_publication_preview",
+                          "br_youtube_pode_postar",
+                      }
+                      missing = sorted(expected - set(names))
+                      assert not missing, missing
+                      payload = {
+                          "status": "PASS",
+                          "tool_count": len(names),
+                          "tools": names,
+                          "expected_subset": sorted(expected),
+                      }
+                      path = Path("runtime/deepseek-harness-native/mcp-discovery.json")
+                      path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+                      print(f"DSH_BR_MCP_DISCOVERY=PASS tools={len(names)}")
+
+          asyncio.run(main())
+          PY
+
+      - name: Materialize pinned Addy skills required by current MCP boundary tests
+        run: |
+          set -euo pipefail
+          bash scripts/agent-tooling/bootstrap.sh all
+          python scripts/agent-tooling/certify_addy_24.py \
+            --output runtime/deepseek-harness-native/addy-24-certification.json
+
+      - name: Run native Harness and GTA6 Brain boundary tests
+        run: |
+          set -euo pipefail
+          pytest -q             tests/test_agent_skill_pack_contracts.py             tests/test_deepseek_harness.py             tests/test_gta6_brain.py             tests/test_gta6_brain_harness_boundary.py             tests/test_gta6_master_agent.py             tests/test_mission_product_contract_service.py             tests/test_typed_task_requirement_service.py             tests/test_capability_resolution_contract_service.py
+
+      - name: Record native-agent proof scope honestly
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = {
+              "schema_version": 1,
+              "authority": "DEEPSEEK_HARNESS",
+              "native_runtime": "@deepseek-ai/dsh-agent-loop",
+              "declared_agents": ["gta6-master"],
+              "declared_agent_count": 1,
+              "config_loaded": True,
+              "plugin_portable": True,
+              "mcp_discovery": "PASS",
+              "semantic_turn_proven": False,
+              "semantic_turn_status": "PENDING_LIVE_CANONICAL_PROVIDER",
+              "reason": (
+                  "Canonical gta6-master provider is Tuxevil at 127.0.0.1:51200; "
+                  "this GitHub-hosted proof does not fabricate that provider or a model response."
+              ),
+              "job18_unchanged": True,
+              "publication_authority_unchanged": True,
+          }
+          Path("runtime/deepseek-harness-native/proof.json").write_text(
+              json.dumps(payload, indent=2),
+              encoding="utf-8",
+          )
+          print("NATIVE_HARNESS_AGENT_RUNTIME=PASS")
+          print("NATIVE_HARNESS_DECLARED_AGENTS=1")
+          print("NATIVE_HARNESS_AGENT_ID=gta6-master")
+          print("NATIVE_HARNESS_SEMANTIC_TURN=PENDING_LIVE_CANONICAL_PROVIDER")
+          PY
+
+      - name: Upload native Harness evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: deepseek-harness-native-${{ github.run_id }}
+          path: runtime/deepseek-harness-native/
+          if-no-files-found: error
+          retention-days: 30

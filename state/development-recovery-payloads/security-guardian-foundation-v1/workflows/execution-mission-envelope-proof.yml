@@ -1,0 +1,52 @@
+name: Execution Mission Envelope Proof
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run/execution-mission-envelope-proof.request.json"
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONPATH: .
+
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Download captured canonical MissionPlan
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RUN_ID="$(python -c 'import json; print(json.load(open(".run/execution-mission-envelope-proof.request.json"))["source_run_id"])')"
+          EXPECTED="$(python -c 'import json; print(json.load(open(".run/execution-mission-envelope-proof.request.json"))["expected_canonical_bytes"])')"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "expected=$EXPECTED" >> "$GITHUB_OUTPUT"
+          mkdir -p artifacts/execution-mission-envelope-proof/source
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY"             --name "telegram-natural-system-improvement-$RUN_ID"             --dir artifacts/execution-mission-envelope-proof/source
+          test -s artifacts/execution-mission-envelope-proof/source/canonical-mission-plan.json
+
+      - name: Prove bounded projection
+        run: |
+          set -euo pipefail
+          python scripts/execution_mission_envelope_proof.py             --canonical-plan artifacts/execution-mission-envelope-proof/source/canonical-mission-plan.json             --source-run-id "${{ steps.source.outputs.run_id }}"             --expected-bytes "${{ steps.source.outputs.expected }}"             --output artifacts/execution-mission-envelope-proof/report.json
+
+      - name: Upload proof evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: execution-mission-envelope-proof-${{ github.run_id }}
+          path: artifacts/execution-mission-envelope-proof
+          if-no-files-found: error

@@ -1,0 +1,81 @@
+name: Agent Skill Pack Contract Proof
+
+on:
+  push:
+    branches:
+      - work/superpowers-skill-pack
+      - work/gate6f-analytics-learning
+    paths:
+      - '.github/workflows/agent-skill-pack-proof.yml'
+      - '.dsh/cordis.patch.yml'
+      - 'config/agent_skill_pack_v1.json'
+      - 'scripts/agent-tooling/agent_skill_pack.py'
+      - 'scripts/agent-tooling/sync_agent_skill_pack.py'
+      - 'scripts/agent-tooling/bootstrap_dsh_skill_pack.sh'
+      - 'scripts/agent-tooling/prove_superpowers_provider.mjs'
+      - 'scripts/agent-tooling/prove_dsh_local_skill_discovery.mjs'
+      - '.dsh/skills/tdd/**'
+      - '.dsh/skills/teach/**'
+      - '.dsh/skills/handoff/**'
+      - '.dsh/skills/caveman/**'
+      - '.dsh/skills/video-edit/**'
+      - 'tests/test_agent_skill_pack_contracts.py'
+      - 'tests/test_harness_ecosystem_inventory.py'
+      - 'scripts/audit_harness_ecosystem.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install BR runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: Report materialized skill digests
+        run: |
+          python - <<'PY'
+          import importlib.util
+          from pathlib import Path
+
+          root = Path.cwd()
+          path = root / 'scripts' / 'agent-tooling' / 'agent_skill_pack.py'
+          spec = importlib.util.spec_from_file_location('br_agent_skill_pack_digest', path)
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          pack = module.load_agent_skill_pack(root)
+          for entry in pack.skills:
+              if not entry.local_path:
+                  continue
+              local = root / entry.local_path
+              if local.is_dir():
+                  print(f"SKILL_DIGEST {entry.skill_id} {module.skill_tree_digest(local)}")
+          PY
+
+      - name: Verify vendored skills against exact upstream pins
+        run: |
+          set -euo pipefail
+          python scripts/agent-tooling/sync_agent_skill_pack.py --verify-upstream
+
+      - name: Run agent skill pack and inventory contract tests
+        run: |
+          pytest -q \
+            tests/test_agent_skill_pack_contracts.py \
+            tests/test_harness_ecosystem_inventory.py

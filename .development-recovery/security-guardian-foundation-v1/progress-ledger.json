@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 3,
+  "checkpoint_sequence": 4,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -17,9 +17,11 @@
     "deterministic-security-sensor-contracts",
     "security-sensor-registry-read-only",
     "codeowners-baseline-created",
-    "security-md-baseline-created"
+    "security-md-baseline-created",
+    "third-party-action-inventory",
+    "third-party-action-full-sha-pinning"
   ],
-  "current_step": "supply-chain-action-pinning-and-codeql-remediation",
+  "current_step": "workflow-permissions-and-codeql-remediation",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -64,17 +66,22 @@
     "github:private_vulnerability_reporting=enabled",
     "github:self_hosted_runners=0",
     "github:ledger_repo_visibility=private",
-    "github:ledger_deploy_key_write_capable=true"
+    "github:ledger_deploy_key_write_capable=true",
+    "tests:test_security_guardian_foundation_v1=37_PASS",
+    "supply-chain:action_uses=563",
+    "supply-chain:mutable_action_refs=0",
+    "recovery-workflow-payload-count:134",
+    "recovery-workflow-manifest-sha256:1c05cbd263f3f1aea77d36bcff4fd8c64261501cfd22388313f3da66f09ca45a",
+    "authority:no-workflow-scope-broadening"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000003-91383b44",
-  "latest_verified_checkpoint_sha": "7f70bfeff7bd98f8adcc0db0754f6eaa7b7d5c57",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000004-f65f9b1c",
+  "latest_verified_checkpoint_sha": "17d7d8692a3cad4a042147028c791298a307d621",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "resolve and pin all mutable third-party action refs, then remediate open HIGH CodeQL findings and workflow permission debt",
+  "next_step": "eliminate workflow-level broad write permissions and remediate/classify all open CodeQL findings",
   "open_blockers": [
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED",
-    "MUTABLE_ACTION_REFS_539",
     "WORKFLOW_PERMISSION_FINDINGS_60",
     "CODEQL_HIGH_OPEN_4",
     "CODEQL_MEDIUM_OPEN_4"
@@ -115,10 +122,11 @@
   },
   "tests": {
     "main_force_push": "BLOCKED",
+    "mutable_action_refs": "0",
     "security_guardian_foundation_core": "29_PASS",
-    "security_guardian_foundation_focused": "36_PASS",
+    "security_guardian_foundation_focused": "37_PASS",
     "work_branch_force_push": "BLOCKED"
   },
-  "updated_at": "2026-10-02T02:55:01.425664+00:00",
-  "validation_state": "SECURITY_SENSORS_GOVERNANCE_36_PASS"
+  "updated_at": "2026-10-02T02:58:40.393732+00:00",
+  "validation_state": "THIRD_PARTY_ACTION_PINNING_37_PASS_MUTABLE_REFS_ZERO"
 }

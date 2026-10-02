@@ -1,0 +1,42 @@
+name: Durable Physical Retry Proof
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - 'app/services/production_durable_resume_service.py'
+      - '.github/workflows/real-multi-agent-production.yml'
+      - 'tests/test_production_durable_resume_service.py'
+      - 'tests/test_production_durable_resume_workflow.py'
+      - 'tests/test_harness_mission_supervisor_service.py'
+      - '.github/workflows/durable-physical-retry-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install focused runtime
+        run: |
+          python -m pip install -q -r requirements.txt pytest
+      - name: Prove durable physical retry contracts
+        run: |
+          pytest -q \
+            tests/test_production_durable_resume_service.py \
+            tests/test_production_durable_resume_workflow.py \
+            tests/test_harness_mission_supervisor_service.py
