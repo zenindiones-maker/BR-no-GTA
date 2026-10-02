@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 24,
+  "checkpoint_sequence": 25,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -64,9 +64,11 @@
     "final-candidate-zizmor-high-zero",
     "root-suite-cluster-remediation-tdd",
     "root-suite-cluster-focused-validation",
-    "root-suite-revalidation-pass"
+    "root-suite-revalidation-pass",
+    "independent-review-runtime-boundary-red-green",
+    "independent-review-runtime-boundary-focused-validation"
   ],
-  "current_step": "independent-security-review",
+  "current_step": "root-suite-revalidation-after-review-boundary-fix",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -241,14 +243,17 @@
     "remediation:actions-cache-expectation=FULL_SHA_PINNED",
     "remediation:openai-codex-action-expectation=FULL_SHA_PINNED",
     "root-suite-revalidation:command=python -m pytest -q",
-    "root-suite-revalidation:exit_code=0"
+    "root-suite-revalidation:exit_code=0",
+    "tdd:security-reviewer-runtime-boundary=RED_THEN_GREEN",
+    "tests:security_guardian+agent_office=133_PASS",
+    "review-runtime-boundary:security-domain-allowed-only-for-readonly-independent-reviewer"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000024-81fb029d",
-  "latest_verified_checkpoint_sha": "c2b89188e709c477785afe4400570c5aaba47577",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000025-ee1d4401",
+  "latest_verified_checkpoint_sha": "b66c0f19328775828824c2aa56024a69165ca4a8",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "dispatch independent read-only Security Guardian review on exact checkpointed candidate; promotion remains forbidden unless review PASS",
+  "next_step": "rerun exact root suite; if PASS execute independent read-only Security Guardian review",
   "open_blockers": [],
   "plan_steps": [
     "authority-contract",
@@ -368,6 +373,9 @@
     "security_canary": "BLOCK_THEN_PASS_NEW_SESSION",
     "security_guardian_foundation_core": "29_PASS",
     "security_guardian_foundation_focused": "45_PASS",
+    "security_reviewer_agent_office_focused": "133_PASS",
+    "security_reviewer_runtime_boundary_green": "1_PASS",
+    "security_reviewer_runtime_boundary_red": "CONFIRMED",
     "targeted_zizmor_high_after_template_fix": "1_DANGEROUS_TRIGGERS",
     "work_branch_force_push": "BLOCKED",
     "workflow_yaml_parse": "PASS",
@@ -375,6 +383,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "updated_at": "2026-10-02T10:28:53.145733+00:00",
-  "validation_state": "ROOT_SUITE_PASS_INDEPENDENT_REVIEW_PENDING"
+  "updated_at": "2026-10-02T10:32:53.318024+00:00",
+  "validation_state": "REVIEW_RUNTIME_BOUNDARY_TDD_GREEN_ROOT_REVALIDATION_PENDING"
 }

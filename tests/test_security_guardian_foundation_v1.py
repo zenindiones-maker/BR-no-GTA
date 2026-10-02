@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
+from app.services.agent_office_harness_service import build_agent_office_specialist_contract
 from app.services.security_guardian_service import (
     BLOCKING_DETERMINISTIC_CLASSES,
     CredentialInventoryItem,
@@ -715,3 +716,27 @@ def test_security_sensors_are_tool_capabilities_with_validator_execution_kind():
         assert record.execution_kind == "VALIDATOR"
         assert record.authority == "NONE"
         assert record.default_write_scope == ()
+
+
+def test_security_reviewer_registry_contract_projects_into_read_only_agent_office_lease():
+    record = GLOBAL_CAPABILITY_REGISTRY.get("security.review.repository")
+    assert record is not None
+    contract = build_agent_office_specialist_contract(
+        record=record,
+        payload={
+            "task_id": "security-independent-review",
+            "task_class": "security-review",
+            "objective": "Review the exact checkpointed candidate without mutation.",
+            "read_set": ["app", "tests", ".github", "docs/security"],
+            "mission_read_scope": ["app", "tests", ".github", "docs/security"],
+            "write_set": [],
+            "mission_write_scope": [],
+            "allowed_tools": ["rg", "cat", "pytest", "security-evidence"],
+            "allowed_actions": ["analyze", "inspect", "test"],
+        },
+    )
+    assert contract["agent_id"] == "codex-security-reviewer"
+    assert contract["mutation_capable"] is False
+    assert contract["side_effect_class"] == "READ_ONLY"
+    assert contract["mission_write_scope"] == []
+    assert contract["task"]["action"] == "analyze"

@@ -196,8 +196,18 @@ def build_agent_office_specialist_contract(
         raise PermissionError("Agent Office specialist capability is not executable")
     if record.executor_binding != AGENT_OFFICE_SPECIALIST_EXECUTOR_BINDING:
         raise PermissionError("Agent Office specialist Registry binding mismatch")
-    if str(record.domain or "") != "development":
-        raise PermissionError("Agent Office specialist must belong to development domain")
+    domain = str(record.domain or "")
+    security_readonly_reviewer = (
+        domain == "security"
+        and str(getattr(record, "execution_kind", "") or "").upper() == "INDEPENDENT_REVIEWER"
+        and str(getattr(record, "side_effect_class", "") or "").upper() == "READ_ONLY"
+        and not tuple(getattr(record, "default_write_scope", ()) or ())
+    )
+    if domain != "development" and not security_readonly_reviewer:
+        raise PermissionError(
+            "Agent Office specialist must belong to development domain or be an "
+            "explicit read-only security independent reviewer"
+        )
     if "DEVELOPMENT" not in tuple(record.allowed_actions or ()):
         raise PermissionError("Agent Office specialist must allow DEVELOPMENT")
     agent_id = str(record.agent_id or "").strip()

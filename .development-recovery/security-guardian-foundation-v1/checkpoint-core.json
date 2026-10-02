@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "security-foundation-development",
   "artifact_refs": [],
-  "authorization_id": "ec729fd6-a62e-461b-9bd0-76e091d6251c",
+  "authorization_id": "0ee38419-d11f-422e-98c6-8936ee96e627",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "5e1d7c9272c420d6e2a2406041e42286bde054064abfc61ca2f87e569d7c1f9d",
-  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000025-ee1d4401",
+  "checkpoint_digest": "c678a1bacfee79ec55316f4697ac37c652d138b132abadea0bad8eea3c902d31",
+  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000026-a8bf5d4b",
   "checkpoint_kind": "RECOVERY",
-  "checkpoint_sequence": 25,
+  "checkpoint_sequence": 26,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -69,11 +69,13 @@
     "final-candidate-zizmor-high-zero",
     "root-suite-cluster-remediation-tdd",
     "root-suite-cluster-focused-validation",
-    "root-suite-revalidation-pass"
+    "root-suite-revalidation-pass",
+    "independent-review-runtime-boundary-red-green",
+    "independent-review-runtime-boundary-focused-validation"
   ],
-  "content_digest": "4589efae9614a9435c88ce58914a7fddb45a2b68806d85db8f40a6fbd0fcd65e",
-  "created_at": "2026-10-02T10:28:58.790118+00:00",
-  "current_step": "independent-security-review",
+  "content_digest": "6687bc64992c306cc7b601b0b9d4bfd4dbe0bbfe3a45abe6f3d237b1f64b51d3",
+  "created_at": "2026-10-02T10:33:00.863243+00:00",
+  "current_step": "root-suite-revalidation-after-review-boundary-fix",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
@@ -234,13 +236,17 @@
     "remediation:actions-cache-expectation=FULL_SHA_PINNED",
     "remediation:openai-codex-action-expectation=FULL_SHA_PINNED",
     "root-suite-revalidation:command=python -m pytest -q",
-    "root-suite-revalidation:exit_code=0"
+    "root-suite-revalidation:exit_code=0",
+    "tdd:security-reviewer-runtime-boundary=RED_THEN_GREEN",
+    "tests:security_guardian+agent_office=133_PASS",
+    "review-runtime-boundary:security-domain-allowed-only-for-readonly-independent-reviewer"
   ],
   "excluded_paths": [],
   "failure_state": {},
   "included_paths": [
     ".github/CODEOWNERS",
     "SECURITY.md",
+    "app/services/agent_office_harness_service.py",
     "app/services/canonical_promotion_identity_service.py",
     "app/services/global_capability_registry.py",
     "app/services/gta6_change_detector.py",
@@ -402,14 +408,14 @@
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "dispatch independent read-only Security Guardian review on exact checkpointed candidate; promotion remains forbidden unless review PASS",
+  "next_step": "rerun exact root suite; if PASS execute independent read-only Security Guardian review",
   "open_blockers": [],
-  "previous_checkpoint_sha": "c2b89188e709c477785afe4400570c5aaba47577",
-  "progress_ledger_digest": "15e2a70cd689a12b51b749eb0fb2d9bec77d382f0a3f4c36cf1d92c6ddd396b6",
+  "previous_checkpoint_sha": "b66c0f19328775828824c2aa56024a69165ca4a8",
+  "progress_ledger_digest": "a236544a1dd4844c0d6ea87ef9f8efa8446966ef58fd3e9e77f0504d7af22050",
   "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "Root suite revalidation passed with exit code 0. Next step is independent read-only Security Guardian review on this exact checkpointed candidate. Do not repeat closed CodeQL/Zizmor/promotion-identity/affected-subgraph gates. Do not promote unless INDEPENDENT_REVIEW=PASS.",
+  "resume_instructions": "Independent-review runtime boundary was proven RED then fixed narrowly; focused Security Guardian + Agent Office tests are 133 PASS. Rerun exact root suite. If PASS, execute independent read-only Security Guardian review. Do not repeat CodeQL/Zizmor/promotion-identity/affected-subgraph gates and do not promote unless independent review PASS.",
   "runtime_namespace": "security-guardian-foundation-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -429,7 +435,7 @@
     ]
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "checkpoint-root-suite-pass-before-independent-review",
+  "task_id": "checkpoint-review-runtime-boundary-fix-before-root-revalidation",
   "test_state": {
     "affected_security_subgraph": "152_PASS",
     "canonical_promotion_deploy_key_probe_create": "PASS",
@@ -511,6 +517,9 @@
     "security_canary": "BLOCK_THEN_PASS_NEW_SESSION",
     "security_guardian_foundation_core": "29_PASS",
     "security_guardian_foundation_focused": "45_PASS",
+    "security_reviewer_agent_office_focused": "133_PASS",
+    "security_reviewer_runtime_boundary_green": "1_PASS",
+    "security_reviewer_runtime_boundary_red": "CONFIRMED",
     "targeted_zizmor_high_after_template_fix": "1_DANGEROUS_TRIGGERS",
     "work_branch_force_push": "BLOCKED",
     "workflow_yaml_parse": "PASS",
@@ -518,6 +527,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "validation_state": "ROOT_SUITE_PASS_INDEPENDENT_REVIEW_PENDING",
+  "validation_state": "REVIEW_RUNTIME_BOUNDARY_TDD_GREEN_ROOT_REVALIDATION_PENDING",
   "workspace_id": "security-guardian-foundation-v1"
 }
