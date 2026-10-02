@@ -64,7 +64,6 @@ jobs:
       BR_OWNER_AUDITION_LEDGER_REPOSITORY: zenindiones-maker/BR-no-GTA-audition-ledger
       HF_HOME: /tmp/br-owner-huggingface
       TOKENIZERS_PARALLELISM: "false"
-      BR_OWNER_REFERENCE_QA_CONTEXT: ${{ runner.temp }}/br-owner-voice/${{ github.run_id }}/${{ github.run_attempt }}/reference-qa-context.json
       BR_OWNER_STT_MODEL: large-v3-turbo
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -80,8 +79,8 @@ jobs:
           BR_OWNER_AUDITION_WORKSPACE="$RUNNER_TEMP/br-owner-voice/$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT"
           BR_OWNER_AUDITION_MANIFEST_PATH="$BR_OWNER_AUDITION_WORKSPACE/audition-manifest.json"
           BR_OWNER_AUDITION_DELIVERY_PATH="$BR_OWNER_AUDITION_WORKSPACE/delivery.json"
-          BR_OWNER_AUDITION_PACK_ID="BR_OWNER_V1_AUDITION_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
           BR_OWNER_REFERENCE_QA_CONTEXT="$BR_OWNER_AUDITION_WORKSPACE/reference-qa-context.json"
+          BR_OWNER_AUDITION_PACK_ID="BR_OWNER_V1_AUDITION_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
           BR_OWNER_AUDITION_TERMINAL_RECEIPT="$RUNNER_TEMP/br-owner-audition-public/owner-voice-audition-delivery-receipt.json"
           mkdir -p "$BR_OWNER_AUDITION_WORKSPACE" "$(dirname "$BR_OWNER_AUDITION_TERMINAL_RECEIPT")"
           chmod 700 "$BR_OWNER_AUDITION_WORKSPACE"
@@ -89,8 +88,8 @@ jobs:
             echo "BR_OWNER_AUDITION_WORKSPACE=$BR_OWNER_AUDITION_WORKSPACE"
             echo "BR_OWNER_AUDITION_MANIFEST_PATH=$BR_OWNER_AUDITION_MANIFEST_PATH"
             echo "BR_OWNER_AUDITION_DELIVERY_PATH=$BR_OWNER_AUDITION_DELIVERY_PATH"
-            echo "BR_OWNER_AUDITION_PACK_ID=$BR_OWNER_AUDITION_PACK_ID"
             echo "BR_OWNER_REFERENCE_QA_CONTEXT=$BR_OWNER_REFERENCE_QA_CONTEXT"
+            echo "BR_OWNER_AUDITION_PACK_ID=$BR_OWNER_AUDITION_PACK_ID"
             echo "BR_OWNER_AUDITION_TERMINAL_RECEIPT=$BR_OWNER_AUDITION_TERMINAL_RECEIPT"
           } >> "$GITHUB_ENV"
           echo "RUN_SCOPED_WORKSPACE=PASS"

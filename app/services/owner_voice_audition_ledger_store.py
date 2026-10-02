@@ -36,8 +36,13 @@ class OwnerVoiceAuditionGitLedgerStore:
     )->None:
         if branch!=ALLOWED_LEDGER_BRANCH:
             raise PermissionError(f"LEDGER_REF_NOT_ALLOWED:{branch}")
+        repository_ssh=str(repository_ssh)
+        if repository_ssh.startswith("git@github.com:"):
+            expected=f"git@github.com:{ALLOWED_LEDGER_REPOSITORY}.git"
+            if repository_ssh!=expected:
+                raise PermissionError(f"LEDGER_REPOSITORY_NOT_ALLOWED:{repository_ssh}")
         self.repo=Path(repo_root).resolve()
-        self.repository_ssh=str(repository_ssh)
+        self.repository_ssh=repository_ssh
         self.key_path=Path(ssh_private_key_path).resolve()
         self.branch=branch
         self.ref=ALLOWED_LEDGER_REF
