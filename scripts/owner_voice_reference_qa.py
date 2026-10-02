@@ -148,6 +148,20 @@ def _transcription_confidence(segments) -> float:
     return (sum(values) / len(values)) if values else 0.0
 
 
+
+def _audition_workspace(runner_temp: Path) -> Path:
+    configured=str(os.environ.get("BR_OWNER_AUDITION_WORKSPACE") or "").strip()
+    if configured:
+        root=Path(configured).expanduser().resolve()
+        root.mkdir(parents=True,exist_ok=True)
+        return root
+    from app.services.owner_voice_audition_handoff_service import run_scoped_workspace
+    return run_scoped_workspace(
+        runner_temp,
+        github_run_id=str(os.environ.get("GITHUB_RUN_ID") or "local"),
+        github_run_attempt=str(os.environ.get("GITHUB_RUN_ATTEMPT") or "1"),
+    )
+
 def main() -> int:
     import json
     import os
@@ -166,11 +180,12 @@ def main() -> int:
         )
 
     runner_temp = Path(os.environ.get("RUNNER_TEMP") or "/tmp").resolve()
+    audition_workspace=_audition_workspace(runner_temp)
     repository_root = Path.cwd().resolve()
     index = _load_reference_index()
     materialized = materialize_telegram_owner_references(
         index,
-        private_root=runner_temp / "br-owner-voice" / "qa-references",
+        private_root=audition_workspace / "qa-references",
         repository_root=repository_root,
         telegram_bot_token=token,
     )
@@ -179,7 +194,7 @@ def main() -> int:
     from faster_whisper.utils import download_model
 
     model_id = str(os.environ.get("BR_OWNER_STT_MODEL") or "small").strip()
-    stt_model_root = runner_temp / "br-owner-voice" / "stt-model"
+    stt_model_root = audition_workspace / "stt-model"
     stt_model_path = download_model(
         model_id,
         output_dir=str(stt_model_root),
@@ -196,7 +211,7 @@ def main() -> int:
         input_id = int(reference["telegram_input_id"])
         normalized = _normalize_reference(
             reference["runtime_path"],
-            runner_temp / "br-owner-voice" / "qa-normalized" / f"reference-{input_id}.wav",
+            audition_workspace / "qa-normalized" / f"reference-{input_id}.wav",
         )
         metrics = pcm16_quality_metrics(normalized)
         segments_iter, info = stt.transcribe(
@@ -234,7 +249,7 @@ def main() -> int:
     }
     output = Path(
         os.environ.get("BR_OWNER_REFERENCE_QA_CONTEXT")
-        or runner_temp / "br-owner-voice" / "reference-qa-context.json"
+        or audition_workspace / "reference-qa-context.json"
     ).expanduser()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(

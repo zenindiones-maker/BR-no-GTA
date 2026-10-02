@@ -3,6 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from app.services.owner_voice_audition_handoff_service import (
+    commit_audition_handoff,
+    run_scoped_workspace,
+)
+
 
 VOICE_IDENTITY_ID = "BR_OWNER_V1"
 MODEL_ID = "ResembleAI/Chatterbox-Multilingual-pt-br"
@@ -265,7 +270,7 @@ def main() -> int:
     index = _load_reference_index_from_environment()
     materialized = materialize_telegram_owner_references(
         index,
-        private_root=runner_temp / "br-owner-voice" / "clone-references",
+        private_root=run_scoped_workspace(runner_temp, github_run_id=str(os.environ.get("GITHUB_RUN_ID") or "local"), github_run_attempt=str(os.environ.get("GITHUB_RUN_ATTEMPT") or "1")) / "clone-references",
         repository_root=Path.cwd().resolve(),
         telegram_bot_token=token,
     )
@@ -285,7 +290,7 @@ def main() -> int:
 
     normalized = _normalize_owner_reference(
         selected["runtime_path"],
-        runner_temp / "br-owner-voice" / "selected-owner-reference-24k.wav",
+        run_scoped_workspace(runner_temp, github_run_id=str(os.environ.get("GITHUB_RUN_ID") or "local"), github_run_attempt=str(os.environ.get("GITHUB_RUN_ATTEMPT") or "1")) / "selected-owner-reference-24k.wav",
     )
     selected_for_generation = {
         **selected,
@@ -302,7 +307,7 @@ def main() -> int:
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     assets = download_ptbr_model_assets(
-        runner_temp / "br-owner-voice" / "chatterbox-model"
+        run_scoped_workspace(runner_temp, github_run_id=str(os.environ.get("GITHUB_RUN_ID") or "local"), github_run_attempt=str(os.environ.get("GITHUB_RUN_ATTEMPT") or "1")) / "chatterbox-model"
     )
     model = load_ptbr_chatterbox_model(assets, device=device)
     text = build_ptbr_audition_text()
@@ -311,63 +316,68 @@ def main() -> int:
         text=text,
     )
 
-    output_dir = runner_temp / "br-owner-voice" / "auditions"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    github_run_id=str(os.environ.get("GITHUB_RUN_ID") or "local")
+    github_run_attempt=str(os.environ.get("GITHUB_RUN_ATTEMPT") or "1")
+    output_dir=run_scoped_workspace(
+        runner_temp,
+        github_run_id=github_run_id,
+        github_run_attempt=github_run_attempt,
+    )
+    pack_id=f"BR_OWNER_V1_AUDITION_{github_run_id}_{github_run_attempt}"
     outputs: list[dict[str, Any]] = []
-    for index_no, request in enumerate(requests, start=1):
+    labels=("A","B","C")
+    for label, request in zip(labels,requests):
         _seed_everything(int(request["seed"]))
         kwargs = build_generation_kwargs(
             audio_prompt_path=request["audio_prompt_path"],
             cfg_weight=float(request["cfg_weight"]),
         )
         wav = model.generate(text, **kwargs)
-        output = output_dir / f"BR_OWNER_V1_PTBR_{index_no}.wav"
+        output = output_dir / f"{label}.wav"
         ta.save(str(output), wav.cpu(), model.sr)
         if not output.is_file() or output.stat().st_size <= 0:
             raise RuntimeError("OWNER_PTBR_AUDITION_EMPTY")
+        duration_seconds=float(wav.shape[-1])/float(model.sr)
         outputs.append({
-            "variant": index_no,
-            "path": str(output),
-            "cfg_weight": float(request["cfg_weight"]),
-            "sha256": _sha256_file(output),
-            "locale": "pt-BR",
-            "language_id": "pt",
-            "voice_identity_id": VOICE_IDENTITY_ID,
-            "reference_source": "TELEGRAM",
-            "reference_sha256": selected_sha,
-            "provider_default_voice_used": False,
-            "provider_preset_voice_used": False,
-            "generic_voice_fallback": False,
+            "candidate_id":label,
+            "path":str(output.resolve()),
+            "duration_seconds":duration_seconds,
+            "voice_identity_id":VOICE_IDENTITY_ID,
+            "model_id":MODEL_ID,
+            "model_revision":MODEL_REVISION,
+            "reference_sha256":selected_sha,
+            "generation_parameters":{
+                "cfg_weight":float(request["cfg_weight"]),
+                "seed":int(request["seed"]),
+                "exaggeration":0.5,
+                "temperature":0.8,
+                "repetition_penalty":1.2,
+                "min_p":0.05,
+                "top_p":1.0,
+            },
         })
 
-    manifest = {
-        "schema": "OwnerVoicePtBrAuditionSet/v1",
-        "voice_identity_id": VOICE_IDENTITY_ID,
-        "reference_source": "TELEGRAM",
-        "locale": "pt-BR",
-        "language_id": "pt",
-        "model_id": MODEL_ID,
-        "model_revision": MODEL_REVISION,
-        "code_revision": CHATTERBOX_CODE_REVISION,
-        "base_model_revision": BASE_MODEL_REVISION,
-        "selected_reference_sha256": selected_sha,
-        "selected_reference_input_id": selected_id,
-        "provider_default_voice_used": False,
-        "provider_preset_voice_used": False,
-        "generic_voice_fallback": False,
-        "human_review": "PENDING",
-        "audition_text": text,
-        "outputs": outputs,
-    }
-    manifest_path = resolve_audition_manifest_path(runner_temp)
-    manifest_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, sort_keys=True),
-        encoding="utf-8",
+    manifest_path=commit_audition_handoff(
+        workspace=output_dir,
+        pack_id=pack_id,
+        candidates=outputs,
+        metadata={
+            "audition_text":text,
+            "selected_reference_input_id":selected_id,
+            "selected_reference_sha256":selected_sha,
+            "reference_source":"TELEGRAM",
+            "model_id":MODEL_ID,
+            "model_revision":MODEL_REVISION,
+            "provider_default_voice_used":False,
+            "provider_preset_voice_used":False,
+            "generic_voice_fallback":False,
+        },
     )
-    try:
-        manifest_path.chmod(0o600)
-    except OSError:
-        pass
+    github_output=str(os.environ.get("GITHUB_OUTPUT") or "").strip()
+    if github_output:
+        with open(github_output,"a",encoding="utf-8") as stream:
+            stream.write(f"manifest_path={manifest_path}\n")
+            stream.write(f"pack_id={pack_id}\n")
 
     print("OWNER_PTBR_MODEL=CHATTERBOX_SINGLE_LANGUAGE_PT_BR")
     print("OWNER_PTBR_EXTERNAL_LOCALE=pt-BR")
