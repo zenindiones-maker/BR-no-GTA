@@ -1,0 +1,68 @@
+{
+  "artifact_refs": [],
+  "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
+  "canonical_branch": "work/gate6f-analytics-learning",
+  "checkpoint_sequence": 0,
+  "completed_steps": [
+    "refresh-canonical-and-runs",
+    "preserve-owner-voice-wip",
+    "reconcile-security-refs"
+  ],
+  "current_step": "security-foundation-pre-mutation-baseline",
+  "decisions": [
+    {
+      "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
+      "id": "sole-authority"
+    },
+    {
+      "decision": "Reuse Agent Office independent-review infrastructure and harness_review_independence_service; no new agent runtime.",
+      "id": "reuse-existing-reviewer-plane"
+    },
+    {
+      "decision": "Do not enable paid security products automatically; unsupported or paid controls become owner-action/approval findings.",
+      "id": "no-paid-security-autonomy"
+    }
+  ],
+  "do_not_repeat": [],
+  "evidence_refs": [
+    "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
+    "voice-recovery:a52a15155be146fc70b2f3cdf60d629eec5d7f9f",
+    "voice-staging:265909cd152df441ee44745683fda690995f9891",
+    "voice-run:36954054193:failure-before-side-effect"
+  ],
+  "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
+  "known_failures": [],
+  "latest_verified_checkpoint_id": null,
+  "latest_verified_checkpoint_sha": null,
+  "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
+  "next_step": "implement-read-only-security-contract-and-deterministic-sensors-by-tdd",
+  "open_blockers": [],
+  "plan_steps": [
+    "authority-contract",
+    "security-contracts",
+    "deterministic-sensors",
+    "github-posture-baseline",
+    "persistent-responsibility",
+    "canary",
+    "root-validation",
+    "independent-review",
+    "promotion",
+    "first-owner-voice-security-review"
+  ],
+  "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
+  "rejected_directions": [
+    "security-reviewer-write-authority",
+    "security-self-approval",
+    "guardian-secret-read",
+    "guardian-policy-authority",
+    "permanent-expensive-security-sprite"
+  ],
+  "schema_version": "DevelopmentProgressLedger/v1",
+  "side_effects": {
+    "known_completed": [],
+    "unknown_requires_reconciliation": []
+  },
+  "tests": {},
+  "updated_at": "2026-10-02T02:20:12.411910+00:00",
+  "validation_state": "PRE_MUTATION_BASELINE"
+}
