@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 34,
+  "checkpoint_sequence": 35,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -87,9 +87,11 @@
     "independent-security-review-chatgpt-readonly-authorized",
     "independent-security-review-output-contract-valid",
     "independent-security-review-independence-pass",
-    "independent-security-review-receipt-pass"
+    "independent-security-review-receipt-pass",
+    "promotion-readiness-v2-server-precheck",
+    "secret-non-provider-patterns-reconciled-unavailable"
   ],
-  "current_step": "independent-security-review-pass-persisted",
+  "current_step": "clean-promotion-candidate-materialization",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -349,14 +351,20 @@
     "independent-review:dangerous-bypass=ABSENT",
     "independent-review:repository-mutation=NONE",
     "independent-review:evidence=docs/security/evidence/security-independent-review-cp34-v1.jsonl",
-    "promotion:NOT_ATTEMPTED"
+    "promotion:NOT_ATTEMPTED",
+    "cp35-remote-readback:VERIFIED",
+    "github-security:secret-scanning=enabled",
+    "github-security:push-protection=enabled",
+    "github-security:non-provider-patterns=disabled",
+    "server-enforcement-unavailable:generic-patterns-require-organization-owned-Team+Secret-Protection",
+    "server-precheck:docs/security/evidence/security-promotion-readiness-v2-server-precheck.jsonl"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000034-ec8908b8",
-  "latest_verified_checkpoint_sha": "731fda6091ef4a2930d95957360da8d024fe8d07",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000035-fd04b46d",
+  "latest_verified_checkpoint_sha": "ae988d91074fa943d6a472092a69c01cd18db740",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "promotion remains a separate owner-governed action; do not promote implicitly",
+  "next_step": "restore cp36 onto exact canonical base, materialize recovery workflow payloads into canonical workflow paths, exclude all recovery-only metadata, then harden promotion readiness v2",
   "open_blockers": [],
   "plan_steps": [
     "authority-contract",
@@ -389,11 +397,10 @@
       "github-security:codeql-default-setup-configured",
       "github-environment:canonical-promotion:protected-branches-required-reviewer",
       "github-deploy-key:BR_CANONICAL_PROMOTION_DEPLOY_KEY_V1:id=165133219",
-      "github-ruleset:BR canonical promotion identity:id=24350572:active"
+      "github-ruleset:BR canonical promotion identity:id=24350572:active",
+      "github-security:non-provider-secret-patterns=SERVER_ENFORCEMENT_UNAVAILABLE_user-owned-repo"
     ],
-    "unknown_requires_reconciliation": [
-      "github-security:non-provider-secret-patterns-requested-readback-disabled"
-    ]
+    "unknown_requires_reconciliation": []
   },
   "tests": {
     "affected_security_subgraph": "152_PASS",
@@ -563,6 +570,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "updated_at": "2026-10-02T13:11:18.418581+00:00",
-  "validation_state": "ROOT_SUITE_PASS_INDEPENDENT_REVIEW_PASS_PROMOTION_NOT_ATTEMPTED"
+  "updated_at": "2026-10-02T13:48:21.656100+00:00",
+  "validation_state": "SECURITY_PROMOTION_READINESS_V2_SERVER_PRECHECK_RECONCILED"
 }
