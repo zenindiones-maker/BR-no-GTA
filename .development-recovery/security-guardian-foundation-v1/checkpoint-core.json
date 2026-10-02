@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "security-foundation-development",
   "artifact_refs": [],
-  "authorization_id": "d76ed693-5ab0-4c82-8e9a-573c4820241c",
+  "authorization_id": "ec343169-b840-477e-aaf5-0e6c2449563f",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "a18f957cf15ccb868ee06d1ffe1c0382910fd75762a4ffee3c6364554c3c4495",
-  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000017-54cedf15",
+  "checkpoint_digest": "615872b319179b8ce367b5dd23d60ba8eac991dbce62b5ce18aa6100c5bf8851",
+  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000018-946d6e60",
   "checkpoint_kind": "MILESTONE",
-  "checkpoint_sequence": 17,
+  "checkpoint_sequence": 18,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -47,11 +47,13 @@
     "codeql-exact-candidate-actions-rescan",
     "codeql-exact-candidate-rescan-complete",
     "codeql-actions-high-root-cause-query-reviewed",
-    "workflow-dispatch-executable-ref-boundary-red-green"
+    "workflow-dispatch-executable-ref-boundary-red-green",
+    "codeql-actions-four-highs-remediated",
+    "codeql-actions-post-fix-exact-rescan-zero-findings"
   ],
-  "content_digest": "a6d47025350aea36f4f18b4606c41e852a6d22ccff0382f1b4ec1337dc613f68",
-  "created_at": "2026-10-02T06:00:07.596475+00:00",
-  "current_step": "codeql-actions-high-remediation-ready-for-exact-rescan",
+  "content_digest": "77509c19e3759d2ad92cf37234cd346264b25d836fc2eff71209e0665a962893",
+  "created_at": "2026-10-02T06:04:45.018850+00:00",
+  "current_step": "codeql-final-python-exact-binding",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
@@ -169,12 +171,15 @@
     "obsidian-memory-inbox-workflow-sha256:ac206720ed334d1c41b12f44efad3164c990e1646d3945154cfeefa34cdd45b6",
     "dynamic-system-improvement-workflow-sha256:82d0ad6ac1ac1559d69b095e13c2af02a6e076f928cf0be0658f313c0376b66b",
     "obsidian-inbox-transport-focused-workflow-sha256:f8ffc6d30bfa2e34ddccfb991df1f375cf2dd5a632e11e82514f5361c3fd5602",
-    "codeql-query:actions/cache-poisoning/poisonable-step:security-severity=7.5"
+    "codeql-query:actions/cache-poisoning/poisonable-step:security-severity=7.5",
+    "codeql-actions-post-fix-sarif-sha256:2b8ccd6338dd02631fb6480423601a667b9defc22266bc7a6d213e476552a89e",
+    "codeql-actions-post-fix-evidence-sha256:eb226af802b61a799b3f57219f342aa3b5ef543a700fb7e9983bcf7cdb71c447",
+    "codeql-actions-post-fix:result_count=0",
+    "codeql-actions-post-fix:new_high_or_critical_vs_canonical=0",
+    "codeql-actions-post-fix:resolved_previous_high=4"
   ],
   "excluded_paths": [],
-  "failure_state": {
-    "codeql_new_actions_high_findings": 4
-  },
+  "failure_state": {},
   "included_paths": [
     ".github/CODEOWNERS",
     "SECURITY.md",
@@ -183,6 +188,7 @@
     "app/services/security_guardian_service.py",
     "app/services/telegram_hermes_dispatch_service.py",
     "app/services/telegram_system_improvement_dispatch_service.py",
+    "docs/security/evidence/codeql-actions-post-cache-fix-v1.jsonl",
     "docs/security/evidence/codeql-exact-candidate-baseline-v1.jsonl",
     "docs/security/evidence/codeql-python-exact-candidate-v1.jsonl",
     "requirements.txt",
@@ -331,17 +337,17 @@
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "run exact-candidate CodeQL Actions after dispatch-ref boundary fix; if zero new HIGH/CRITICAL, rebuild exact candidate and run Python exact; then close CodeQL new-high blocker",
+  "next_step": "run Python CodeQL on exact final candidate 0cf0fa50/08ff2490; if no new HIGH/CRITICAL vs canonical, close CodeQL blocker and proceed to canonical promotion identity hardening",
   "open_blockers": [
-    "CODEQL_NEW_HIGH_FINDINGS=4",
+    "CODEQL_FINAL_PYTHON_EXACT_BINDING_REQUIRED",
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED"
   ],
-  "previous_checkpoint_sha": "b3bd88886e16585d376e689cd86ad4706d77dda0",
-  "progress_ledger_digest": "58ff8a4717bdb82f64c5997e0df81cd7cb97035e473f514940ff5307ef862b31",
+  "previous_checkpoint_sha": "4660ecc17408f6afe9961046a0b63d84bba50d20",
+  "progress_ledger_digest": "4b94e93417b3e9ba315038009e183def13a81dd3db87765f49b2b47f9ac6cc2c",
   "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "Resume from cp17. Dispatch-ref boundary fix and 58 affected tests are durable. Run only exact-candidate CodeQL rescan needed for the 4 Actions HIGHs; do not rerun baseline/zizmor/canary; do not resume owner voice.",
+  "resume_instructions": "Resume from cp18. Actions CodeQL exact candidate is zero findings. Run only final Python exact binding on candidate 0cf0fa50/08ff2490, then close CodeQL blocker if no new HIGH/CRITICAL. Do not start owner voice or Agent OS V2.",
   "runtime_namespace": "security-guardian-foundation-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -358,11 +364,16 @@
     ]
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "checkpoint-before-codeql-actions-high-remediation-rescan",
+  "task_id": "checkpoint-before-final-python-codeql-binding",
   "test_state": {
     "codeql_actions_candidate_high": "4",
     "codeql_actions_candidate_results": "4",
+    "codeql_actions_new_high_or_critical_vs_canonical": "0",
     "codeql_actions_new_high_vs_canonical": "4",
+    "codeql_actions_post_fix_candidate_sha": "0cf0fa50ce6f51f8e976449ffa9dca53a92c4235",
+    "codeql_actions_post_fix_candidate_tree": "08ff24908e408338bcef5f21d5f834861e5751cd",
+    "codeql_actions_post_fix_results": "0",
+    "codeql_actions_resolved_previous_high": "4",
     "codeql_actions_resolved_vs_canonical": "7",
     "codeql_new_high_or_critical_vs_canonical": "4",
     "codeql_python_candidate_high": "39",
@@ -399,6 +410,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "validation_state": "DISPATCH_REF_BOUNDARY_GREEN_BEFORE_CODEQL_RESCAN",
+  "validation_state": "CODEQL_ACTIONS_ZERO_FINDINGS_PYTHON_FINAL_BINDING_PENDING",
   "workspace_id": "security-guardian-foundation-v1"
 }
