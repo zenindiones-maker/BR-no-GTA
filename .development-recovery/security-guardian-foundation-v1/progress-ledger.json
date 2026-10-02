@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 18,
+  "checkpoint_sequence": 19,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -46,9 +46,13 @@
     "codeql-actions-four-highs-remediated",
     "codeql-actions-post-fix-exact-rescan-zero-findings",
     "codeql-final-python-exact-binding",
-    "codeql-candidate-rescan-closed"
+    "codeql-candidate-rescan-closed",
+    "canonical-promotion-contract-red-green",
+    "legacy-direct-canonical-writers-disabled",
+    "canonical-promotion-workflow-static-validation",
+    "canonical-promotion-workflow-recovery-payload-preserved"
   ],
-  "current_step": "canonical-promotion-identity-hardening",
+  "current_step": "canonical-promotion-identity-server-enforcement",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -189,16 +193,21 @@
     "codeql-final-evidence-sha256:75fccca11a2f677cabcac7ff759a2d8374c6ab17c490267a4fe736b5dfdf5b5c",
     "codeql-python-final-sarif-sha256:8fa6b1eb7710ab131a02350a882a465b48fed86e90cf1f3a665ab1bcc802bb0a",
     "codeql-final:new_high_or_critical=0",
-    "codeql-blocker:CLOSED"
+    "codeql-blocker:CLOSED",
+    "canonical-promotion-workflow-payload-sha256:1e05758c8198f5939d7474d32827dc07ed2ef9a1a4481a85ba27195aaff45113",
+    "run001-bootstrap-payload-sha256:63b10db52396b636f04ef27050442675b145dd701d0f24d072b1a78e9490f05b",
+    "run001-final-products-executor-payload-sha256:5acd6278a7fb79c13acc65b5b8fc4e70bf8d0a87186c76691a989ca49fbb5c6a",
+    "workflow-restore-manifest-sha256:61770d11f5e13432bbf62db18b0b637ca9e1fb5790b04c364d6dccc784439937",
+    "canonical-promotion:direct-canonical-push-count=0"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000018-946d6e60",
-  "latest_verified_checkpoint_sha": "8958feb9b43d23bca0528ec6dc962bd4d7aa1e34",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000019-834b4ac4",
+  "latest_verified_checkpoint_sha": "c283f386ed07b2af69154b2b1e703d45bb7cfbaa",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "harden canonical promotion identity and prove promotion authority/ref/CAS/tree/candidate bindings before any canonical ref update",
+  "next_step": "provision one dedicated BR-no-GTA write deploy key, protected canonical-promotion environment, active canonical ruleset, then prove normal writer blocked and deploy-key probe bypass works",
   "open_blockers": [
-    "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED"
+    "CANONICAL_PROMOTION_IDENTITY_SERVER_ENFORCEMENT_REQUIRED"
   ],
   "plan_steps": [
     "authority-contract",
@@ -235,6 +244,9 @@
     ]
   },
   "tests": {
+    "canonical_promotion_diff_check": "PASS",
+    "canonical_promotion_identity_focused": "13_PASS",
+    "canonical_promotion_workflow_yaml": "PASS",
     "codeql_actions_candidate_high": "4",
     "codeql_actions_candidate_results": "4",
     "codeql_actions_final_results": "0",
@@ -263,6 +275,7 @@
     "codeql_rescan_status": "COMPLETE",
     "dangerous_workflow_trigger": "RESOLVED",
     "diff_check": "PASS",
+    "direct_canonical_push_count": "0",
     "dispatch_affected_subgraph": "58_PASS",
     "dispatch_ref_boundary_red_green": "3_PASS",
     "git_diff_check": "PASS",
@@ -275,6 +288,8 @@
     "osv_exact_candidate_new_vs_canonical": "0",
     "overbroad_workflow_permissions": "0",
     "pip_check": "PASS",
+    "run001_bootstrap_yaml": "PASS",
+    "run001_final_products_executor_yaml": "PASS",
     "security_canary": "BLOCK_THEN_PASS_NEW_SESSION",
     "security_guardian_foundation_core": "29_PASS",
     "security_guardian_foundation_focused": "45_PASS",
@@ -285,6 +300,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "updated_at": "2026-10-02T06:08:52.800547+00:00",
-  "validation_state": "CODEQL_BLOCKER_CLOSED_PROMOTION_IDENTITY_HARDENING_ACTIVE"
+  "updated_at": "2026-10-02T06:20:53.073993+00:00",
+  "validation_state": "PROMOTION_CONTRACT_GREEN_PRE_PRIVILEGED_IDENTITY_PROVISIONING"
 }

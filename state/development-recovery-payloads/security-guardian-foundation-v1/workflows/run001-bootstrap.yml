@@ -11,8 +11,8 @@ permissions: {}
 jobs:
   install-and-dispatch:
     permissions:
-      contents: write
-      actions: write
+      contents: read
+      actions: write # SECURITY-JUSTIFICATION: dispatch-only; canonical writes require dedicated promotion identity
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
@@ -61,8 +61,10 @@ jobs:
           git add -A
           git diff --cached --check
           git commit -m "feat(run001): enforce A1 voice and dispatch RUN-001 final products"
-          git push origin "HEAD:${TARGET_REF}"
           echo "FINAL_IMPLEMENTATION_HEAD=$(git rev-parse HEAD)"
+          echo "CANONICAL_PROMOTION_REQUIRED=TRUE" >&2
+          echo "RUN001_DIRECT_CANONICAL_WRITE=FORBIDDEN" >&2
+          exit 1
       - name: Dispatch final-products control plane
         run: |
           set -euo pipefail

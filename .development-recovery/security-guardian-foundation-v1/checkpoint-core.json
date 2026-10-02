@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "security-foundation-development",
   "artifact_refs": [],
-  "authorization_id": "8d0525e8-4cdc-4838-9ddf-24e4f72f2ce4",
+  "authorization_id": "b8390f72-93b5-4d4e-a8f5-25dfb8649082",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "e145086e0944cdaa6a6f179ab8eb5ab0d1a4ca64d3fcfd8ba07c2b4871a1a695",
-  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000019-834b4ac4",
+  "checkpoint_digest": "f10572a57d57bb7058aaf96e9e7fd0d6fd4962caaa57f65650e1886499412993",
+  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000020-d8ce1160",
   "checkpoint_kind": "MILESTONE",
-  "checkpoint_sequence": 19,
+  "checkpoint_sequence": 20,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -51,11 +51,15 @@
     "codeql-actions-four-highs-remediated",
     "codeql-actions-post-fix-exact-rescan-zero-findings",
     "codeql-final-python-exact-binding",
-    "codeql-candidate-rescan-closed"
+    "codeql-candidate-rescan-closed",
+    "canonical-promotion-contract-red-green",
+    "legacy-direct-canonical-writers-disabled",
+    "canonical-promotion-workflow-static-validation",
+    "canonical-promotion-workflow-recovery-payload-preserved"
   ],
-  "content_digest": "6095179d259df40c239cec8a8e40b6474173f12ced2450269d89590f6a72e160",
-  "created_at": "2026-10-02T06:08:54.328213+00:00",
-  "current_step": "canonical-promotion-identity-hardening",
+  "content_digest": "79ddbc995284e1dcb8045df26b735b4bcce39c64e68849071e57b22377c4dfc3",
+  "created_at": "2026-10-02T06:20:54.659184+00:00",
+  "current_step": "canonical-promotion-identity-server-enforcement",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
@@ -182,13 +186,19 @@
     "codeql-final-evidence-sha256:75fccca11a2f677cabcac7ff759a2d8374c6ab17c490267a4fe736b5dfdf5b5c",
     "codeql-python-final-sarif-sha256:8fa6b1eb7710ab131a02350a882a465b48fed86e90cf1f3a665ab1bcc802bb0a",
     "codeql-final:new_high_or_critical=0",
-    "codeql-blocker:CLOSED"
+    "codeql-blocker:CLOSED",
+    "canonical-promotion-workflow-payload-sha256:1e05758c8198f5939d7474d32827dc07ed2ef9a1a4481a85ba27195aaff45113",
+    "run001-bootstrap-payload-sha256:63b10db52396b636f04ef27050442675b145dd701d0f24d072b1a78e9490f05b",
+    "run001-final-products-executor-payload-sha256:5acd6278a7fb79c13acc65b5b8fc4e70bf8d0a87186c76691a989ca49fbb5c6a",
+    "workflow-restore-manifest-sha256:61770d11f5e13432bbf62db18b0b637ca9e1fb5790b04c364d6dccc784439937",
+    "canonical-promotion:direct-canonical-push-count=0"
   ],
   "excluded_paths": [],
   "failure_state": {},
   "included_paths": [
     ".github/CODEOWNERS",
     "SECURITY.md",
+    "app/services/canonical_promotion_identity_service.py",
     "app/services/global_capability_registry.py",
     "app/services/gta6_change_detector.py",
     "app/services/security_guardian_service.py",
@@ -212,6 +222,7 @@
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/browser-mcp-exploration.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/browser-ui-validation.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/cancel-stale-production.yml",
+    "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/canonical-promotion.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/capability-resolution-reuse-proof.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/ci.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/claude-code-auth-validation.yml",
@@ -337,6 +348,7 @@
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/youtube-platform-foundation-live-canary.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/youtube-private-upload-worker.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/ytdlp-format-diagnostic.yml",
+    "tests/test_canonical_promotion_identity.py",
     "tests/test_gta6_change_detector.py",
     "tests/test_security_guardian_foundation_v1.py",
     "tests/test_telegram_hermes_dispatch_transport.py"
@@ -344,16 +356,16 @@
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "harden canonical promotion identity and prove promotion authority/ref/CAS/tree/candidate bindings before any canonical ref update",
+  "next_step": "provision one dedicated BR-no-GTA write deploy key, protected canonical-promotion environment, active canonical ruleset, then prove normal writer blocked and deploy-key probe bypass works",
   "open_blockers": [
-    "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED"
+    "CANONICAL_PROMOTION_IDENTITY_SERVER_ENFORCEMENT_REQUIRED"
   ],
-  "previous_checkpoint_sha": "8958feb9b43d23bca0528ec6dc962bd4d7aa1e34",
-  "progress_ledger_digest": "1bd082636e72902860813a940504f3c8a94e57a9f4043e6c0353b06c86d9abb6",
+  "previous_checkpoint_sha": "c283f386ed07b2af69154b2b1e703d45bb7cfbaa",
+  "progress_ledger_digest": "38663ea946eaf9b0ab7a68fc1de56150a36a4cd19431c469a586bc3fea42016d",
   "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "Resume from cp19. CodeQL blocker is closed with final exact candidate 0cf0fa50/08ff2490 and NEW_HIGH_OR_CRITICAL=0. Proceed only to canonical promotion identity hardening. Do not start owner voice or Agent OS V2.",
+  "resume_instructions": "Resume from cp20. Promotion contract is GREEN and direct canonical writers are disabled. Next operation is privileged identity/ruleset provisioning. Do not resume owner voice.",
   "runtime_namespace": "security-guardian-foundation-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -370,8 +382,11 @@
     ]
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "close-codeql-open-promotion-identity-hardening",
+  "task_id": "checkpoint-before-canonical-promotion-identity-server-enforcement",
   "test_state": {
+    "canonical_promotion_diff_check": "PASS",
+    "canonical_promotion_identity_focused": "13_PASS",
+    "canonical_promotion_workflow_yaml": "PASS",
     "codeql_actions_candidate_high": "4",
     "codeql_actions_candidate_results": "4",
     "codeql_actions_final_results": "0",
@@ -400,6 +415,7 @@
     "codeql_rescan_status": "COMPLETE",
     "dangerous_workflow_trigger": "RESOLVED",
     "diff_check": "PASS",
+    "direct_canonical_push_count": "0",
     "dispatch_affected_subgraph": "58_PASS",
     "dispatch_ref_boundary_red_green": "3_PASS",
     "git_diff_check": "PASS",
@@ -412,6 +428,8 @@
     "osv_exact_candidate_new_vs_canonical": "0",
     "overbroad_workflow_permissions": "0",
     "pip_check": "PASS",
+    "run001_bootstrap_yaml": "PASS",
+    "run001_final_products_executor_yaml": "PASS",
     "security_canary": "BLOCK_THEN_PASS_NEW_SESSION",
     "security_guardian_foundation_core": "29_PASS",
     "security_guardian_foundation_focused": "45_PASS",
@@ -422,6 +440,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "validation_state": "CODEQL_BLOCKER_CLOSED_PROMOTION_IDENTITY_HARDENING_ACTIVE",
+  "validation_state": "PROMOTION_CONTRACT_GREEN_PRE_PRIVILEGED_IDENTITY_PROVISIONING",
   "workspace_id": "security-guardian-foundation-v1"
 }
