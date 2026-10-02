@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 8,
+  "checkpoint_sequence": 9,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -108,14 +108,17 @@
     "recovery-workflow-payload-count:138",
     "recovery-workflow-manifest-sha256:28ba6b8e39fc2efcfe3b51a4301ce9bd171a4297bfc2a30c5f0e796b621ae1b3",
     "recovery-toolchain-payload-sha256:be13470cdfce6e0eb4aa3232e00cf12842ed8cb3e0d5687cec9062dfb7ed2675",
-    "recovery-toolchain-manifest-sha256:89865afbdb518c7e87af44c4ff271ec65a019ed929b3f8d66218852f204cd7df"
+    "recovery-toolchain-manifest-sha256:89865afbdb518c7e87af44c4ff271ec65a019ed929b3f8d66218852f204cd7df",
+    "resume:SECURITY_GUARDIAN_FOUNDATION_V1-cp-000009-b055e7b5",
+    "resume-sha:5f309c86bde4b9716b466a2809f1c38071e03425",
+    "pre-long-operation-checkpoint:external-security-baseline"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000008-89d67bee",
-  "latest_verified_checkpoint_sha": "f4b5e8d50772eb7e8eb470805cb460643c217187",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000009-b055e7b5",
+  "latest_verified_checkpoint_sha": "5f309c86bde4b9716b466a2809f1c38071e03425",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "run pinned zizmor/osv/scorecard against candidate, sanitize evidence, classify blockers, then run security canary",
+  "next_step": "run pinned zizmor/osv/scorecard; sanitize evidence; classify blockers; then run security canary",
   "open_blockers": [
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED",
     "CODEQL_CANDIDATE_RESCAN_REQUIRED",
@@ -169,6 +172,6 @@
     "work_branch_force_push": "BLOCKED",
     "workflow_yaml_parse": "PASS"
   },
-  "updated_at": "2026-10-02T03:17:36.626291+00:00",
-  "validation_state": "SECURITY_TOOLCHAIN_STATIC_43_PASS_CHANGE_DETECTOR_12_PASS"
+  "updated_at": "2026-10-02T03:19:12.104422+00:00",
+  "validation_state": "CP10_READY_FOR_PINNED_EXTERNAL_SECURITY_BASELINE"
 }

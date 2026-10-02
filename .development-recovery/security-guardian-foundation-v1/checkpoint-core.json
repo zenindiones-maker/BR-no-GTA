@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "security-foundation-development",
   "artifact_refs": [],
-  "authorization_id": "d0c87146-a6e8-455a-98b7-86cb98267eed",
+  "authorization_id": "e8bbe189-bb46-4990-89e5-7dc0a66d83d3",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "c514c454fd5ff67357edff4e1652993b92017cc5ffff7e2b0c01771b5e59829b",
-  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000009-b055e7b5",
+  "checkpoint_digest": "3143591a04a6481fcb9b97967dc82305fd21cb180dbe1ebeb5058ebdc0e9c4b9",
+  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000010-e72eb41e",
   "checkpoint_kind": "MILESTONE",
-  "checkpoint_sequence": 9,
+  "checkpoint_sequence": 10,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -37,7 +37,7 @@
     "security-toolchain-static-validation"
   ],
   "content_digest": "531336fc0d9b999d859ce1c0ecab6dc15df7b5dbd39d0541e2c004f20155c2e5",
-  "created_at": "2026-10-02T03:17:38.204605+00:00",
+  "created_at": "2026-10-02T03:19:14.590102+00:00",
   "current_step": "execute-pinned-external-security-baseline",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
@@ -101,7 +101,10 @@
     "recovery-workflow-payload-count:138",
     "recovery-workflow-manifest-sha256:28ba6b8e39fc2efcfe3b51a4301ce9bd171a4297bfc2a30c5f0e796b621ae1b3",
     "recovery-toolchain-payload-sha256:be13470cdfce6e0eb4aa3232e00cf12842ed8cb3e0d5687cec9062dfb7ed2675",
-    "recovery-toolchain-manifest-sha256:89865afbdb518c7e87af44c4ff271ec65a019ed929b3f8d66218852f204cd7df"
+    "recovery-toolchain-manifest-sha256:89865afbdb518c7e87af44c4ff271ec65a019ed929b3f8d66218852f204cd7df",
+    "resume:SECURITY_GUARDIAN_FOUNDATION_V1-cp-000009-b055e7b5",
+    "resume-sha:5f309c86bde4b9716b466a2809f1c38071e03425",
+    "pre-long-operation-checkpoint:external-security-baseline"
   ],
   "excluded_paths": [],
   "failure_state": {},
@@ -256,18 +259,18 @@
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "run pinned zizmor/osv/scorecard against candidate, sanitize evidence, classify blockers, then run security canary",
+  "next_step": "run pinned zizmor/osv/scorecard; sanitize evidence; classify blockers; then run security canary",
   "open_blockers": [
     "CANONICAL_PROMOTION_IDENTITY_HARDENING_REQUIRED",
     "CODEQL_CANDIDATE_RESCAN_REQUIRED",
     "EXTERNAL_SECURITY_TOOLCHAIN_BASELINE_REQUIRED"
   ],
-  "previous_checkpoint_sha": "f4b5e8d50772eb7e8eb470805cb460643c217187",
-  "progress_ledger_digest": "bec1c4acd5b5e757c678aee274ec0ede28bdc5ca3d7d19e741daa91e19501474",
+  "previous_checkpoint_sha": "5f309c86bde4b9716b466a2809f1c38071e03425",
+  "progress_ledger_digest": "12f89ab52d7764ce93e35b36fabf2050abb0026f94b5ad4f7852a07eaf7288b7",
   "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "Resume from cp9. Static toolchain is green; run pinned external scanners and persist sanitized baseline. Workflow WIP and ignored security-toolchain config are preserved as non-executing recovery payloads. Do not resume owner voice.",
+  "resume_instructions": "Resume from cp10 and execute pinned external security baseline. Do not resume owner voice.",
   "runtime_namespace": "security-guardian-foundation-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -284,7 +287,7 @@
     ]
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "checkpoint-before-live-external-security-baseline",
+  "task_id": "checkpoint-before-pinned-external-security-baseline",
   "test_state": {
     "diff_check": "PASS",
     "gta6_change_detector": "12_PASS",
@@ -299,6 +302,6 @@
     "work_branch_force_push": "BLOCKED",
     "workflow_yaml_parse": "PASS"
   },
-  "validation_state": "SECURITY_TOOLCHAIN_STATIC_43_PASS_CHANGE_DETECTOR_12_PASS",
+  "validation_state": "CP10_READY_FOR_PINNED_EXTERNAL_SECURITY_BASELINE",
   "workspace_id": "security-guardian-foundation-v1"
 }
