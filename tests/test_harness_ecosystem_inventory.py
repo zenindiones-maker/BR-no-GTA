@@ -95,6 +95,7 @@ def test_worker_engine_classification_counts_physical_engines_not_runner_aliases
         "codex-readonly",
         "codex-development",
         "codex-independent-reviewer",
+        "codex-security-reviewer",
         "addy-specialist",
     }
     assert canonical_worker_engine_ids() == (

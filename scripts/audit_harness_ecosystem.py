@@ -433,6 +433,8 @@ def _worker_runner_identity(worker_id: str) -> tuple[str, str]:
     normalized = str(worker_id or "").strip()
     if normalized == "codex-development":
         return "WORKER_ENGINE", "codex"
+    if normalized == "codex-security-reviewer":
+        return "WORKER_ENGINE", "codex-independent-reviewer"
     if normalized == "addy-specialist":
         return "AGENT", "addy-agent-skills"
     return "WORKER_ENGINE", normalized
