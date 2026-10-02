@@ -119,6 +119,27 @@ CODEX_SHELL_ENVIRONMENT_POLICY_ARGS = (
     'shell_environment_policy.include_only=["PATH","USER","LOGNAME","LANG","LC_ALL","LC_CTYPE","TERM","TMPDIR","TEMP","TMP","PYTHONPATH","SHELL"]',
 )
 
+SPRITE_CAPABILITY_DROP_PREFIX = (
+    "setpriv",
+    "--bounding-set=-all",
+    "--inh-caps=-all",
+    "--ambient-caps=-all",
+    "--no-new-privs",
+    "--",
+)
+
+
+def codex_process_command(
+    command: list[str],
+    source: Mapping[str, str] | None = None,
+) -> list[str]:
+    source = os.environ if source is None else source
+    if not command or Path(str(command[0])).name != "codex":
+        return list(command)
+    if not str(source.get("SPRITE_STORAGE_DRIVER") or "").strip():
+        return list(command)
+    return [*SPRITE_CAPABILITY_DROP_PREFIX, *command]
+
 _SANDBOX_HOST_POLICY_PATTERNS = (
     "bwrap:",
     "failed rtm_newaddr",
@@ -219,7 +240,7 @@ def _run(
         },
     ) as span:
         completed = subprocess.run(
-            command,
+            codex_process_command(command),
             cwd=cwd,
             timeout=timeout,
             check=False,

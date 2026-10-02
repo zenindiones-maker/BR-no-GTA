@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 32,
+  "checkpoint_sequence": 33,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -79,9 +79,12 @@
     "independent-security-review-dispatch-attempted",
     "independent-security-review-auth-infra-blocked",
     "independent-security-review-receipt-block",
-    "security-reviewer-runtime-binding-focused-red"
+    "security-reviewer-runtime-binding-focused-red",
+    "security-reviewer-runtime-binding-tdd-red-green",
+    "sprite-codex-capability-drop-tdd-red-green",
+    "security-reviewer-runtime-focused-green"
   ],
-  "current_step": "independent-review-remediation-required",
+  "current_step": "independent-security-review-runtime-canary",
   "decisions": [
     {
       "decision": "DeepSeek Harness remains sole authority; Security Guardian is independent read-only reviewer only.",
@@ -318,16 +321,22 @@
     "independent-review:capability-accepted-by-codex-readonly=false",
     "independent-review:focused-red=test_security_reviewer_agent_id_has_registered_readonly_worker",
     "independent-review:receipt=docs/security/evidence/security-independent-review-cp31-v1.jsonl",
-    "independent-review:receipt-sha256=cdc420c9556880ce244d0e248be1459bdbf95c0fcc186a693ffcfba595051807"
+    "independent-review:receipt-sha256=cdc420c9556880ce244d0e248be1459bdbf95c0fcc186a693ffcfba595051807",
+    "tdd:security-reviewer-runtime-binding=3_RED_THEN_GREEN",
+    "tdd:sprite-codex-capability-drop=RED_THEN_GREEN",
+    "focused:reviewer-binding+sprite-capdrop=7_PASS",
+    "sprite-capdrop:setpriv--bounding-set=-all--inh-caps=-all--ambient-caps=-all--no-new-privs",
+    "codex-sandbox-bypass:dangerously-bypass-approvals-and-sandbox=ABSENT",
+    "independent-review:prior-BLOCK-preserved-as-history"
   ],
   "goal_digest": "f7e6b4a65a4394c922ad6f36fb4d0bfd2445982472d098b163b8c9c1ff8322c0",
   "known_failures": [],
-  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000032-a6cd6ff8",
-  "latest_verified_checkpoint_sha": "e15b859fe07437dcedb48e150921fd0d8755c328",
+  "latest_verified_checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000033-ce57caea",
+  "latest_verified_checkpoint_sha": "7799c968e0c9af76d2df4d3117dda338a984e43a",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "repair Security Guardian REVIEW/runtime binding with focused TDD; rerun only the focused reviewer runtime tests and independent review gate; promotion remains forbidden",
+  "next_step": "prove ChatGPT-authenticated Codex read-only execution on Sprite with capability-drop, then rerun only independent Security Guardian review on exact checkpointed candidate; promotion remains forbidden until PASS",
   "open_blockers": [
-    "INDEPENDENT_REVIEW_BLOCKED_RUNTIME_BINDING"
+    "INDEPENDENT_REVIEW_RETRY_PENDING_AFTER_RUNTIME_FIX"
   ],
   "plan_steps": [
     "authority-contract",
@@ -413,6 +422,7 @@
     "cp30_formal_readback": "VERIFIED",
     "cp30_recovery_commit_sha": "a10516e8b846190d84d0f30385f383715d0bb430",
     "cp30_recovery_tree_sha": "76d99e2ad561f6eb7c6dcd2e99da1ebf30bfd562",
+    "dangerous_codex_sandbox_bypass": "FORBIDDEN",
     "dangerous_workflow_trigger": "RESOLVED",
     "diff_check": "PASS",
     "direct_canonical_push_count": "0",
@@ -506,8 +516,12 @@
     "security_guardian_foundation_focused": "45_PASS",
     "security_reviewer_agent_office_focused": "133_PASS",
     "security_reviewer_runtime_binding_focused": "1_FAILED_EXPECTED_RED",
+    "security_reviewer_runtime_binding_tdd": "3_RED_THEN_GREEN",
     "security_reviewer_runtime_boundary_green": "1_PASS",
     "security_reviewer_runtime_boundary_red": "CONFIRMED",
+    "security_reviewer_runtime_focused": "7_PASS",
+    "sprite_capability_drop_prefix": "setpriv --bounding-set=-all --inh-caps=-all --ambient-caps=-all --no-new-privs --",
+    "sprite_codex_capability_drop_tdd": "2_RED_THEN_3_GREEN",
     "targeted_zizmor_high_after_template_fix": "1_DANGEROUS_TRIGGERS",
     "test_harness_isolation_expanded": "135_PASS",
     "test_harness_isolation_green": "3_PASS",
@@ -519,6 +533,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "updated_at": "2026-10-02T11:43:13.662093+00:00",
-  "validation_state": "ROOT_SUITE_PASS_INDEPENDENT_REVIEW_BLOCK_RUNTIME_BINDING"
+  "updated_at": "2026-10-02T12:18:50.291541+00:00",
+  "validation_state": "ROOT_SUITE_PASS_REVIEW_RUNTIME_FIX_FOCUSED_GREEN_INDEPENDENT_REVIEW_RETRY_PENDING"
 }

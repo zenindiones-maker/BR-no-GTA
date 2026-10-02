@@ -8,8 +8,10 @@ from pathlib import Path
 import pytest
 
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
-from app.services.agent_office_harness_service import build_agent_office_specialist_contract
-from app.services.agent_office.munder_adapter import registered_worker_runners
+from app.services.agent_office_harness_service import build_agent_office_specialist_contract, execute_authorized_agent_office_specialist
+from app.services.agent_office.munder_adapter import registered_worker_runners, CODEX_READONLY_CAPABILITIES
+from app.services.harness_authorization_service import issue_harness_authorization
+from app.services.harness_routing_policy_service import HarnessRoutingDecision
 from app.services.security_guardian_service import (
     BLOCKING_DETERMINISTIC_CLASSES,
     CredentialInventoryItem,
@@ -749,3 +751,74 @@ def test_security_reviewer_agent_id_has_registered_readonly_worker():
     runners = registered_worker_runners()
     assert record.agent_id in runners
     assert runners[record.agent_id].__name__ == "codex_readonly_worker"
+
+
+def test_security_reviewer_capability_is_accepted_by_readonly_worker():
+    assert "security.review.repository" in CODEX_READONLY_CAPABILITIES
+
+
+def test_security_reviewer_review_authorization_reaches_readonly_agent_office_boundary(monkeypatch, tmp_path):
+    record = GLOBAL_CAPABILITY_REGISTRY.get("security.review.repository")
+    assert record is not None
+    auth = issue_harness_authorization(
+        authorized_action="REVIEW",
+        subject="capability:security.review.repository",
+        lineage={"goal_id": "goal-security-review"},
+    )
+    routing = HarnessRoutingDecision(
+        routing_id="route-security-review",
+        intent="independent security review",
+        authorized_action="REVIEW",
+        candidate_capability_ids=("security.review.repository",),
+        selected_capability_id="security.review.repository",
+        selected_provider=record.provider_id,
+        selected_model=None,
+        selected_executor_binding=record.executor_binding,
+        selected_provider_executor_binding=None,
+        primary_provider=record.provider_id,
+        fallback_allowed=False,
+        fallback_candidates=(),
+        fallback_occurred=False,
+        evidence_expectations=("SecurityReviewReceipt/v1",),
+        rationale=("focused test",),
+        rejected_candidates=(),
+        policy_metadata={},
+    )
+    captured = {}
+
+    def fake_execute_authorized_agent_office(**kwargs):
+        captured.update(kwargs["payload"])
+        class Result:
+            status = "SUCCEEDED"
+            active = True
+            result = {"status": "SUCCEEDED", "evidence": {"worktree_isolation": "PASS"}}
+        return Result()
+
+    monkeypatch.setattr(
+        "app.services.agent_office_harness_service.execute_authorized_agent_office",
+        fake_execute_authorized_agent_office,
+    )
+    evidence = execute_authorized_agent_office_specialist(
+        authorization=auth,
+        routing_decision=routing,
+        payload={
+            "goal_id": "goal-security-review",
+            "mission_id": "mission-security-review",
+            "task_id": "security-review",
+            "task_class": "security-review",
+            "objective": "Review exact candidate without mutation.",
+            "read_set": ["app", "tests", ".github"],
+            "mission_read_scope": ["app", "tests", ".github"],
+            "write_set": [],
+            "mission_write_scope": [],
+            "allowed_tools": ["rg", "cat", "pytest", "security-evidence"],
+            "allowed_actions": ["analyze", "inspect", "test"],
+            "branch": "recovery/dev/security-guardian-foundation-v1",
+            "base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
+        },
+        repository_root=tmp_path,
+    )
+    assert evidence.status == "SUCCEEDED"
+    assert captured["allowed_agents"] == ["codex-security-reviewer"]
+    assert captured["allowed_capabilities"] == ["security.review.repository"]
+    assert captured["mission_write_scope"] == []

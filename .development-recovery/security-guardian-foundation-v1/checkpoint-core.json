@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "security-foundation-development",
   "artifact_refs": [],
-  "authorization_id": "e569c80e-3fcc-4684-b19d-54e472b2e75f",
+  "authorization_id": "962ccf9b-2b8d-4687-a882-8dc25647d2f3",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "c6141abd6bbf736ec5be4497aeb2ad9792dbb17253df267d519a2dd8ba0db50c",
-  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000033-ce57caea",
+  "checkpoint_digest": "497fe34d5db9d15a5e1459359d3771051c6978d7c47082e8ea50e7b1bfd075a1",
+  "checkpoint_id": "SECURITY_GUARDIAN_FOUNDATION_V1-cp-000034-ec8908b8",
   "checkpoint_kind": "RECOVERY",
-  "checkpoint_sequence": 33,
+  "checkpoint_sequence": 34,
   "completed_steps": [
     "refresh-canonical-and-runs",
     "preserve-owner-voice-wip",
@@ -84,11 +84,14 @@
     "independent-security-review-dispatch-attempted",
     "independent-security-review-auth-infra-blocked",
     "independent-security-review-receipt-block",
-    "security-reviewer-runtime-binding-focused-red"
+    "security-reviewer-runtime-binding-focused-red",
+    "security-reviewer-runtime-binding-tdd-red-green",
+    "sprite-codex-capability-drop-tdd-red-green",
+    "security-reviewer-runtime-focused-green"
   ],
-  "content_digest": "c24b7add4cb32961b8a45e0339d9698201bddbdefff3f494988621d2bee14697",
-  "created_at": "2026-10-02T11:43:20.756996+00:00",
-  "current_step": "independent-review-remediation-required",
+  "content_digest": "39730d1cf6d76faeb242064187688c76a420b2ad3526bf1050606026c11c0b4d",
+  "created_at": "2026-10-02T12:18:57.932727+00:00",
+  "current_step": "independent-security-review-runtime-canary",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "canonical:0e6704ecd60ed2f7266b4b299017910a6491e068",
@@ -305,20 +308,21 @@
     "independent-review:capability-accepted-by-codex-readonly=false",
     "independent-review:focused-red=test_security_reviewer_agent_id_has_registered_readonly_worker",
     "independent-review:receipt=docs/security/evidence/security-independent-review-cp31-v1.jsonl",
-    "independent-review:receipt-sha256=cdc420c9556880ce244d0e248be1459bdbf95c0fcc186a693ffcfba595051807"
+    "independent-review:receipt-sha256=cdc420c9556880ce244d0e248be1459bdbf95c0fcc186a693ffcfba595051807",
+    "tdd:security-reviewer-runtime-binding=3_RED_THEN_GREEN",
+    "tdd:sprite-codex-capability-drop=RED_THEN_GREEN",
+    "focused:reviewer-binding+sprite-capdrop=7_PASS",
+    "sprite-capdrop:setpriv--bounding-set=-all--inh-caps=-all--ambient-caps=-all--no-new-privs",
+    "codex-sandbox-bypass:dangerously-bypass-approvals-and-sandbox=ABSENT",
+    "independent-review:prior-BLOCK-preserved-as-history"
   ],
   "excluded_paths": [],
-  "failure_state": {
-    "finding_id": "security-independent-review-runtime-binding-unexecutable",
-    "focused_test": "test_security_reviewer_agent_id_has_registered_readonly_worker",
-    "focused_test_status": "FAILED_EXPECTED_RED",
-    "independent_review": "BLOCK",
-    "promotion_allowed": false,
-    "severity": "HIGH"
-  },
+  "failure_state": {},
   "included_paths": [
     ".github/CODEOWNERS",
     "SECURITY.md",
+    "app/services/agent_office/codex_bounded_worker.py",
+    "app/services/agent_office/munder_adapter.py",
     "app/services/agent_office_harness_service.py",
     "app/services/canonical_promotion_identity_service.py",
     "app/services/global_capability_registry.py",
@@ -476,6 +480,7 @@
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/youtube-platform-foundation-live-canary.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/youtube-private-upload-worker.yml",
     "state/development-recovery-payloads/security-guardian-foundation-v1/workflows/ytdlp-format-diagnostic.yml",
+    "tests/test_agent_office.py",
     "tests/test_canonical_promotion_identity.py",
     "tests/test_gta6_change_detector.py",
     "tests/test_pytest_workspace_isolation.py",
@@ -486,16 +491,16 @@
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "SECURITY_GUARDIAN_FOUNDATION_V1",
-  "next_step": "repair Security Guardian REVIEW/runtime binding with focused TDD; rerun only the focused reviewer runtime tests and independent review gate; promotion remains forbidden",
+  "next_step": "prove ChatGPT-authenticated Codex read-only execution on Sprite with capability-drop, then rerun only independent Security Guardian review on exact checkpointed candidate; promotion remains forbidden until PASS",
   "open_blockers": [
-    "INDEPENDENT_REVIEW_BLOCKED_RUNTIME_BINDING"
+    "INDEPENDENT_REVIEW_RETRY_PENDING_AFTER_RUNTIME_FIX"
   ],
-  "previous_checkpoint_sha": "e15b859fe07437dcedb48e150921fd0d8755c328",
-  "progress_ledger_digest": "29109887140eeae598c17becd9f1b054c47b34ecda55f449b56261572362427f",
+  "previous_checkpoint_sha": "7799c968e0c9af76d2df4d3117dda338a984e43a",
+  "progress_ledger_digest": "128c7290b3e1b209848a884a17ccfe0a04e11b35265dae89b48e30682b50dd8c",
   "recovery_ref": "recovery/dev/security-guardian-foundation-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "cp30 readback and root-suite normalization are closed. Root suite current remains PASS 3818/7/exit0 and must not be rerun absent contradictory evidence. Independent review gate is BLOCK: security.review.repository declares codex-security-reviewer but Agent Office registered_worker_runners lacks that agent id; codex_readonly_worker also does not accept security.review.repository, and execute_authorized_agent_office_specialist requires DEVELOPMENT authorization. Focused RED reproduces the first runtime mismatch. Do not rerun CodeQL, Zizmor, promotion identity or affected subgraph. Promotion forbidden. Next: focused TDD repair of reviewer runtime binding, then rerun only reviewer-focused tests and independent review.",
+  "resume_instructions": "Root suite remains closed PASS 3818/7/exit0. CodeQL/Zizmor/promotion-identity/affected-subgraph remain closed. Reviewer runtime binding and Sprite Codex capability-drop are focused GREEN (7 PASS). Next: on br-security-guardian-foundation-v1 use existing ChatGPT auth and run only read-only Codex canary with capability-drop, then rerun independent Security Guardian review on exact checkpointed candidate. Never use --dangerously-bypass-approvals-and-sandbox. Promotion forbidden until INDEPENDENT_REVIEW=PASS.",
   "runtime_namespace": "security-guardian-foundation-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -515,7 +520,7 @@
     ]
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "checkpoint-independent-review-runtime-binding-block",
+  "task_id": "checkpoint-security-reviewer-runtime-and-sprite-capability-drop",
   "test_state": {
     "affected_security_subgraph": "152_PASS",
     "canonical_promotion_deploy_key_probe_create": "PASS",
@@ -563,6 +568,7 @@
     "cp30_formal_readback": "VERIFIED",
     "cp30_recovery_commit_sha": "a10516e8b846190d84d0f30385f383715d0bb430",
     "cp30_recovery_tree_sha": "76d99e2ad561f6eb7c6dcd2e99da1ebf30bfd562",
+    "dangerous_codex_sandbox_bypass": "FORBIDDEN",
     "dangerous_workflow_trigger": "RESOLVED",
     "diff_check": "PASS",
     "direct_canonical_push_count": "0",
@@ -656,8 +662,12 @@
     "security_guardian_foundation_focused": "45_PASS",
     "security_reviewer_agent_office_focused": "133_PASS",
     "security_reviewer_runtime_binding_focused": "1_FAILED_EXPECTED_RED",
+    "security_reviewer_runtime_binding_tdd": "3_RED_THEN_GREEN",
     "security_reviewer_runtime_boundary_green": "1_PASS",
     "security_reviewer_runtime_boundary_red": "CONFIRMED",
+    "security_reviewer_runtime_focused": "7_PASS",
+    "sprite_capability_drop_prefix": "setpriv --bounding-set=-all --inh-caps=-all --ambient-caps=-all --no-new-privs --",
+    "sprite_codex_capability_drop_tdd": "2_RED_THEN_3_GREEN",
     "targeted_zizmor_high_after_template_fix": "1_DANGEROUS_TRIGGERS",
     "test_harness_isolation_expanded": "135_PASS",
     "test_harness_isolation_green": "3_PASS",
@@ -669,6 +679,6 @@
     "zizmor_post_dangerous_trigger_fix": "HIGH=0_MEDIUM=57_LOW=201",
     "zizmor_strict_collection": "PASS"
   },
-  "validation_state": "ROOT_SUITE_PASS_INDEPENDENT_REVIEW_BLOCK_RUNTIME_BINDING",
+  "validation_state": "ROOT_SUITE_PASS_REVIEW_RUNTIME_FIX_FOCUSED_GREEN_INDEPENDENT_REVIEW_RETRY_PENDING",
   "workspace_id": "security-guardian-foundation-v1"
 }

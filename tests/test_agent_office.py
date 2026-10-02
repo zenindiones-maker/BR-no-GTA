@@ -14,6 +14,7 @@ from app.services.agent_office.contracts import (
 )
 from app.services.agent_office.evidence import evidence_digest, sanitize_evidence
 from app.services.agent_office import munder_adapter
+from app.services.agent_office import codex_bounded_worker as codex_bounded_worker_module
 from app.services.agent_office.delegation import DelegatedTaskLease
 from app.services.agent_office.codex_bounded_worker import (
     CODEX_TUXEVIL_AUTH_MODE,
@@ -2592,3 +2593,88 @@ def test_codex_readonly_grounding_is_bounded_and_survives_intermediate_diagnosis
         "evidence=app/services/agent_office/codex_bounded_worker.py.",
     )
     assert all("SECRET_SHOULD_NOT_BE_CARRIED" not in row for row in rows)
+
+
+def test_codex_process_drops_linux_capabilities_on_sprite(monkeypatch, tmp_path):
+    observed = {}
+
+    def fake_run(command, **kwargs):
+        observed["command"] = list(command)
+        observed["kwargs"] = kwargs
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setenv("SPRITE_STORAGE_DRIVER", "juicefs")
+    monkeypatch.setattr(munder_adapter.subprocess, "run", fake_run)
+
+    munder_adapter._codex_process(
+        ["codex", "login", "status"],
+        cwd=tmp_path,
+        timeout_seconds=5,
+    )
+
+    assert observed["command"] == [
+        "setpriv",
+        "--bounding-set=-all",
+        "--inh-caps=-all",
+        "--ambient-caps=-all",
+        "--no-new-privs",
+        "--",
+        "codex",
+        "login",
+        "status",
+    ]
+    assert "--dangerously-bypass-approvals-and-sandbox" not in observed["command"]
+
+
+def test_codex_process_preserves_direct_command_outside_sprite(monkeypatch, tmp_path):
+    observed = {}
+
+    def fake_run(command, **kwargs):
+        observed["command"] = list(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.delenv("SPRITE_STORAGE_DRIVER", raising=False)
+    monkeypatch.setattr(munder_adapter.subprocess, "run", fake_run)
+
+    munder_adapter._codex_process(
+        ["codex", "login", "status"],
+        cwd=tmp_path,
+        timeout_seconds=5,
+    )
+
+    assert observed["command"] == ["codex", "login", "status"]
+
+
+def test_bounded_codex_run_drops_linux_capabilities_on_sprite(monkeypatch, tmp_path):
+    observed = {}
+
+    def fake_run(command, **kwargs):
+        observed["command"] = list(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setenv("SPRITE_STORAGE_DRIVER", "juicefs")
+    monkeypatch.setattr(codex_bounded_worker_module.subprocess, "run", fake_run)
+
+    codex_bounded_worker_module._run(
+        ["codex", "exec", "--sandbox", "read-only", "review"],
+        cwd=tmp_path,
+        timeout=5,
+        sanitized_env=True,
+    )
+
+    assert observed["command"][:6] == [
+        "setpriv",
+        "--bounding-set=-all",
+        "--inh-caps=-all",
+        "--ambient-caps=-all",
+        "--no-new-privs",
+        "--",
+    ]
+    assert observed["command"][6:] == [
+        "codex",
+        "exec",
+        "--sandbox",
+        "read-only",
+        "review",
+    ]
+    assert "--dangerously-bypass-approvals-and-sandbox" not in observed["command"]

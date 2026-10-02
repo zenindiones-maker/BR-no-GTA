@@ -358,12 +358,19 @@ def execute_authorized_agent_office_specialist(
     record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
     if record is None or record.executor_binding != AGENT_OFFICE_SPECIALIST_EXECUTOR_BINDING:
         raise PermissionError("Agent Office specialist Registry binding mismatch")
+    security_review = (
+        capability_id == "security.review.repository"
+        and str(record.execution_kind or "").upper() == "INDEPENDENT_REVIEWER"
+        and str(record.side_effect_class or "").upper() == "READ_ONLY"
+        and not tuple(record.default_write_scope or ())
+    )
+    expected_action = "REVIEW" if security_review else "DEVELOPMENT"
     auth = validate_harness_authorization(
         authorization,
-        expected_action="DEVELOPMENT",
+        expected_action=expected_action,
         expected_subject=f"capability:{capability_id}",
     )
-    if routing_decision.authorized_action != "DEVELOPMENT":
+    if routing_decision.authorized_action != expected_action:
         raise PermissionError("Agent Office specialist routing action mismatch")
     if routing_decision.selected_executor_binding != AGENT_OFFICE_SPECIALIST_EXECUTOR_BINDING:
         raise PermissionError("Agent Office specialist routing executor mismatch")

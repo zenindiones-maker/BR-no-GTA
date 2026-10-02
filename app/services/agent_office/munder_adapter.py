@@ -28,6 +28,7 @@ from app.services.agent_office.codex_bounded_worker import (
     canonical_command_tool,
     codex_bounded_development_worker,
     codex_execution_failure,
+    codex_process_command,
     codex_sanitized_environment,
     codex_tuxevil_provider_args,
     is_codex_sandbox_host_policy_failure,
@@ -262,9 +263,11 @@ def deterministic_read_only_worker(
 
 CODEX_READONLY_CAPABILITY = "agent-office.codex.readonly-analysis"
 CODEX_INDEPENDENT_REVIEW_CAPABILITY = "agent-office.codex.independent-review"
+CODEX_SECURITY_REVIEW_CAPABILITY = "security.review.repository"
 CODEX_READONLY_CAPABILITIES = {
     CODEX_READONLY_CAPABILITY,
     CODEX_INDEPENDENT_REVIEW_CAPABILITY,
+    CODEX_SECURITY_REVIEW_CAPABILITY,
 }
 
 
@@ -290,7 +293,7 @@ def _codex_process(
         metadata={"tool": "codex", "worker_mode": "read-only"},
     ) as span:
         completed = subprocess.run(
-            command,
+            codex_process_command(command),
             cwd=cwd,
             timeout=timeout_seconds,
             check=False,
@@ -603,6 +606,7 @@ def registered_worker_runners() -> dict[str, WorkerRunner]:
         "deterministic-analysis": deterministic_read_only_worker,
         "codex-readonly": codex_readonly_worker,
         "codex-independent-reviewer": codex_readonly_worker,
+        "codex-security-reviewer": codex_readonly_worker,
         "codex-development": codex_bounded_development_worker,
         "addy-specialist": addy_specialist_task_owner_worker,
     }
