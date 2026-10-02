@@ -574,7 +574,7 @@ _REGISTRY._records = tuple(sorted(
 SECURITY_SENSOR_RECORDS = (
     CapabilityRecord(
         capability_id="security.scan.github-actions",
-        capability_type="VALIDATOR",
+        capability_type="TOOL",
         domain="security/github-actions",
         implementation="Deterministic GitHub Actions policy scanner consumed by BR Security Guardian",
         input_contract="candidate SHA/tree + workflow/action text",
@@ -603,7 +603,7 @@ SECURITY_SENSOR_RECORDS = (
     ),
     CapabilityRecord(
         capability_id="security.scan.code",
-        capability_type="VALIDATOR",
+        capability_type="TOOL",
         domain="security/code",
         implementation="Deterministic normalized static-analysis evidence adapter",
         input_contract="candidate SHA/tree + sanitized static-analysis findings",
@@ -624,7 +624,7 @@ SECURITY_SENSOR_RECORDS = (
     ),
     CapabilityRecord(
         capability_id="security.scan.dependencies",
-        capability_type="VALIDATOR",
+        capability_type="TOOL",
         domain="security/dependencies",
         implementation="Deterministic normalized OSV/dependency-review evidence adapter",
         input_contract="candidate SHA/tree + sanitized dependency findings",
@@ -646,7 +646,7 @@ SECURITY_SENSOR_RECORDS = (
     ),
     CapabilityRecord(
         capability_id="security.scan.secrets",
-        capability_type="VALIDATOR",
+        capability_type="TOOL",
         domain="security/secrets",
         implementation="Deterministic secret-pattern scanner with fingerprint-only evidence",
         input_contract="candidate SHA/tree + repository text surfaces",
@@ -667,7 +667,7 @@ SECURITY_SENSOR_RECORDS = (
     ),
     CapabilityRecord(
         capability_id="security.scan.supply-chain",
-        capability_type="VALIDATOR",
+        capability_type="TOOL",
         domain="security/supply-chain",
         implementation="Deterministic normalized action-pinning/Scorecard/provenance evidence adapter",
         input_contract="candidate SHA/tree + sanitized supply-chain evidence",
@@ -689,7 +689,7 @@ SECURITY_SENSOR_RECORDS = (
     ),
     CapabilityRecord(
         capability_id="security.audit.github-posture",
-        capability_type="VALIDATOR",
+        capability_type="TOOL",
         domain="security/github-posture",
         implementation="Sanitized deterministic GitHub security-posture evidence adapter",
         input_contract="candidate SHA/tree + sanitized GitHub repository posture metadata",

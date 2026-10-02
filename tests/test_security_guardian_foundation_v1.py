@@ -697,3 +697,21 @@ def test_obsidian_transport_validation_dispatches_workflow_on_target_ref():
     assert 'gh workflow run obsidian-memory-inbox.yml' in text
     assert '--ref "$TARGET_REF"' in text
     assert '-f "target_ref=$TARGET_REF"' not in text
+
+
+def test_security_sensors_are_tool_capabilities_with_validator_execution_kind():
+    from app.services.global_capability_registry import SECURITY_SENSOR_RECORDS
+    expected={
+        "security.scan.github-actions",
+        "security.scan.code",
+        "security.scan.dependencies",
+        "security.scan.secrets",
+        "security.scan.supply-chain",
+        "security.audit.github-posture",
+    }
+    assert {r.capability_id for r in SECURITY_SENSOR_RECORDS} == expected
+    for record in SECURITY_SENSOR_RECORDS:
+        assert record.capability_type == "TOOL"
+        assert record.execution_kind == "VALIDATOR"
+        assert record.authority == "NONE"
+        assert record.default_write_scope == ()
