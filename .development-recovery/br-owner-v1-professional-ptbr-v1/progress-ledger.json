@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 9,
+  "checkpoint_sequence": 10,
   "completed_steps": [
     "professional-corpus-contracts",
     "private-corpus-audit-contract",
@@ -19,7 +19,7 @@
     "separate-ledger-repository-authority-boundary",
     "authority-ledger-focused-verification"
   ],
-  "current_step": "audit-contents-write-authority-and-ledger",
+  "current_step": "authority-ledger-post-hardening-green",
   "decisions": [
     {
       "decision": "Use private separate repository for durable audition delivery state; product repository job remains contents:read.",
@@ -48,6 +48,10 @@
     {
       "decision": "Preserve exact dirty workflow bytes under state/development-recovery-payloads because the existing OAuth credential intentionally lacks workflow scope; do not broaden credential authority.",
       "id": "workflow-wip-versioned-nonexecuting-recovery-payload"
+    },
+    {
+      "decision": "Ledger SSH credential is installed only on separate private ledger repository. Product repository has no authority from this key. GitHub rulesets are unavailable on the private ledger repository under the current plan; do not substitute a local JSON for remote enforcement.",
+      "id": "repository-credential-isolation-over-unavailable-ruleset"
     }
   ],
   "do_not_repeat": [
@@ -75,7 +79,13 @@
     "canonical-head:0e6704ecd60ed2f7266b4b299017910a6491e068",
     "blocked-push:oauth-app-lacks-workflow-scope",
     "workflow-payload:state/development-recovery-payloads/br-owner-v1-professional-ptbr-v1/owner-voice-human-audition-pack.yml",
-    "workflow-payload-sha256:04b70b2ce7977dfe1c7bc9e15513193f0a517ca47bb8f103e3f5c1e2cc6eaba8"
+    "workflow-payload-sha256:04b70b2ce7977dfe1c7bc9e15513193f0a517ca47bb8f103e3f5c1e2cc6eaba8",
+    "tests:owner-voice-affected-subgraph=87_PASS",
+    "authority:workflow-entire-contents-write=ABSENT",
+    "authority:direct-product-repo-store-constructor=REJECTED",
+    "github:product-rulesets=[]",
+    "github:private-ledger-rulesets=403-plan-unavailable",
+    "workflow-payload-sha256:9aa08a1cbe2d6d372ac7bf597d67c4992af8d0b4d3a2650bf2b08e3d51f2189f"
   ],
   "goal_digest": "2b8f10962dd2d81d67ab0c26d5f9223fb0ce02fd52433055ed819428dd4e4a3f",
   "known_failures": [
@@ -92,10 +102,10 @@
       "status": "DESIGN_REJECTED_AND_ROLLED_BACK"
     }
   ],
-  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000009-7517f805",
-  "latest_verified_checkpoint_sha": "cd9bd2a02e067b8af2ca29f7d6fd01039b928561",
+  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000010-7fb5d82e",
+  "latest_verified_checkpoint_sha": "7229ca2e49ee56cd5a32a404e997ff21010d6e78",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
-  "next_step": "prove-minimal-ledger-authority-and-side-effect-reconciliation-before-single-audition",
+  "next_step": "make-green-wip-executable-on-remote-staging-then-dispatch-exactly-one-audition",
   "open_blockers": [],
   "plan_steps": [
     "reference-audit",
@@ -124,15 +134,17 @@
     "unknown_requires_reconciliation": []
   },
   "tests": {
-    "authority_ledger_handoff_surface": "59_PASS",
+    "authority_ledger_handoff_surface": "87_PASS",
     "compile": "PASS",
     "diff_check": "PASS",
     "handoff_delivery_authority_surface": "95_PASS",
     "ledger_authority_store_outbox": "9_PASS",
+    "outbox_ambiguous_send": "SIDE_EFFECT_RECONCILIATION_REQUIRED",
     "previous_owner_voice_affected_subgraph": "100_PASS_NOT_RERUN",
     "product_repository_write_authority": "NONE",
-    "workflow_authority": "PASS"
+    "workflow_authority": "PASS",
+    "workflow_contents_write_global": "ABSENT"
   },
-  "updated_at": "2026-10-02T01:38:06.718855+00:00",
-  "validation_state": "MATERIAL_WIP_REMOTE_PRESERVATION_WITH_VERSIONED_NONEXECUTABLE_WORKFLOW_PAYLOAD"
+  "updated_at": "2026-10-02T01:45:07.118626+00:00",
+  "validation_state": "AUTHORITY_LEDGER_GREEN_87_PASS"
 }
