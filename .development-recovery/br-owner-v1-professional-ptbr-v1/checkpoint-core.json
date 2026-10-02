@@ -1,13 +1,13 @@
 {
   "agent_execution_identity": "voice-pipeline-development",
   "artifact_refs": [],
-  "authorization_id": "88b6218c-2c66-4b19-9f7a-2e853e31fe29",
+  "authorization_id": "9b4c7f2a-e9f5-402a-b28b-d99aeb7316d3",
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_digest": "4dc8c670d8ba232365cf6b0af6ac9f553d6ea59abfa0b2aa684ba23e4729d99a",
-  "checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000011-e931ee2d",
+  "checkpoint_digest": "ea6f0fffc4e7fd946c1cf6b808a407cf621e023dd32fc4ceef49985d7e1d7186",
+  "checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000012-13aaabe6",
   "checkpoint_kind": "MILESTONE",
-  "checkpoint_sequence": 11,
+  "checkpoint_sequence": 12,
   "completed_steps": [
     "professional-corpus-contracts",
     "private-corpus-audit-contract",
@@ -25,8 +25,8 @@
     "authority-ledger-focused-verification"
   ],
   "content_digest": "8f8e48322c7d212adb5e5a9395e776948c6abeda1eb6f81481ac48d6f653a9fd",
-  "created_at": "2026-10-02T01:45:08.096275+00:00",
-  "current_step": "authority-ledger-post-hardening-green",
+  "created_at": "2026-10-02T02:17:38.597403+00:00",
+  "current_step": "paused-for-security-guardian-foundation",
   "development_state": "REMOTE_CHECKPOINT_PENDING",
   "evidence_refs": [
     "staging:54a12c2387281686476aa42689e5f05a89ad75f2",
@@ -53,10 +53,20 @@
     "authority:direct-product-repo-store-constructor=REJECTED",
     "github:product-rulesets=[]",
     "github:private-ledger-rulesets=403-plan-unavailable",
+    "workflow-payload-sha256:9aa08a1cbe2d6d372ac7bf597d67c4992af8d0b4d3a2650bf2b08e3d51f2189f",
+    "staging:265909cd152df441ee44745683fda690995f9891",
+    "run:36954054193:failure-before-side-effect",
+    "failure:OWNER_REFERENCE_QA:name-os-not-defined",
+    "BLIND_TELEGRAM_RETRY=0",
+    "RAW_OWNER_AUDIO_IN_PUBLIC_ARTIFACT=0",
+    "OWNER_EPHEMERAL_PRIVATE_MATERIAL_CLEANED=PASS",
     "workflow-payload-sha256:9aa08a1cbe2d6d372ac7bf597d67c4992af8d0b4d3a2650bf2b08e3d51f2189f"
   ],
   "excluded_paths": [],
-  "failure_state": {},
+  "failure_state": {
+    "OWNER_REFERENCE_QA_NAMEERROR": "name 'os' is not defined",
+    "audition_run_id": 36954054193
+  },
   "included_paths": [
     "app/services/owner_voice_audition_ledger_store.py",
     "state/development-recovery-payloads/br-owner-v1-professional-ptbr-v1/owner-voice-human-audition-pack.yml",
@@ -66,14 +76,17 @@
   "large_evidence": [],
   "logical_schema_version": "DevelopmentRecoveryCheckpoint/v1",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
-  "next_step": "make-green-wip-executable-on-remote-staging-then-dispatch-exactly-one-audition",
-  "open_blockers": [],
-  "previous_checkpoint_sha": "7229ca2e49ee56cd5a32a404e997ff21010d6e78",
-  "progress_ledger_digest": "c299561594ea8c994cd103f9da1c9194d708ba7167f799202f0ad018217b0d1b",
+  "next_step": "resume-after-security-review-pass-and-fix-reference-qa-nameerror",
+  "open_blockers": [
+    "SECURITY_GUARDIAN_FOUNDATION_REQUIRED",
+    "OWNER_REFERENCE_QA_NAMEERROR"
+  ],
+  "previous_checkpoint_sha": "99dfaed7edb3cc488dc263aea4e7b0bc2ce470fb",
+  "progress_ledger_digest": "1485de163561b1b3ac12eaaf4655e7df6a9cd73fc7576c1ad2b877fa2314275a",
   "recovery_ref": "recovery/dev/br-owner-v1-professional-ptbr-v1",
   "remote_readback_status": "PENDING",
   "remote_write_status": "PENDING",
-  "resume_instructions": "Restore tested workflow payload into development workspace, make the GREEN change set executable on staging without broadening product write authority, then dispatch exactly one audition. No blind retry.",
+  "resume_instructions": "Resume from staging 265909cd after Security Guardian Foundation promotion and PASS SecurityReviewReceipt/v1. Fix owner_voice_reference_qa NameError by TDD. Do not blind rerun audition.",
   "runtime_namespace": "br-owner-v1-professional-ptbr-v1",
   "schema_version": "DevelopmentRecoveryCheckpointCore/v1",
   "side_effect_state": {
@@ -81,7 +94,7 @@
     "unknown_requires_reconciliation": []
   },
   "sprite_id": "br-no-gta-wave-a-promotion-clean-001",
-  "task_id": "post-authority-ledger-green-checkpoint",
+  "task_id": "security-guardian-preflight-handoff",
   "test_state": {
     "authority_ledger_handoff_surface": "87_PASS",
     "compile": "PASS",
@@ -94,6 +107,6 @@
     "workflow_authority": "PASS",
     "workflow_contents_write_global": "ABSENT"
   },
-  "validation_state": "AUTHORITY_LEDGER_GREEN_87_PASS",
+  "validation_state": "VOICE_WIP_PRESERVED_SECURITY_HANDOFF",
   "workspace_id": "br-owner-v1-professional-ptbr-v1"
 }

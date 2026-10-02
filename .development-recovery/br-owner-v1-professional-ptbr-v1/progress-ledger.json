@@ -2,7 +2,7 @@
   "artifact_refs": [],
   "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
   "canonical_branch": "work/gate6f-analytics-learning",
-  "checkpoint_sequence": 10,
+  "checkpoint_sequence": 11,
   "completed_steps": [
     "professional-corpus-contracts",
     "private-corpus-audit-contract",
@@ -19,7 +19,7 @@
     "separate-ledger-repository-authority-boundary",
     "authority-ledger-focused-verification"
   ],
-  "current_step": "authority-ledger-post-hardening-green",
+  "current_step": "paused-for-security-guardian-foundation",
   "decisions": [
     {
       "decision": "Use private separate repository for durable audition delivery state; product repository job remains contents:read.",
@@ -85,6 +85,13 @@
     "authority:direct-product-repo-store-constructor=REJECTED",
     "github:product-rulesets=[]",
     "github:private-ledger-rulesets=403-plan-unavailable",
+    "workflow-payload-sha256:9aa08a1cbe2d6d372ac7bf597d67c4992af8d0b4d3a2650bf2b08e3d51f2189f",
+    "staging:265909cd152df441ee44745683fda690995f9891",
+    "run:36954054193:failure-before-side-effect",
+    "failure:OWNER_REFERENCE_QA:name-os-not-defined",
+    "BLIND_TELEGRAM_RETRY=0",
+    "RAW_OWNER_AUDIO_IN_PUBLIC_ARTIFACT=0",
+    "OWNER_EPHEMERAL_PRIVATE_MATERIAL_CLEANED=PASS",
     "workflow-payload-sha256:9aa08a1cbe2d6d372ac7bf597d67c4992af8d0b4d3a2650bf2b08e3d51f2189f"
   ],
   "goal_digest": "2b8f10962dd2d81d67ab0c26d5f9223fb0ce02fd52433055ed819428dd4e4a3f",
@@ -102,11 +109,14 @@
       "status": "DESIGN_REJECTED_AND_ROLLED_BACK"
     }
   ],
-  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000010-7fb5d82e",
-  "latest_verified_checkpoint_sha": "7229ca2e49ee56cd5a32a404e997ff21010d6e78",
+  "latest_verified_checkpoint_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1-cp-000011-e931ee2d",
+  "latest_verified_checkpoint_sha": "99dfaed7edb3cc488dc263aea4e7b0bc2ce470fb",
   "mission_id": "BR_OWNER_V1_PROFESSIONAL_PTBR_V1",
-  "next_step": "make-green-wip-executable-on-remote-staging-then-dispatch-exactly-one-audition",
-  "open_blockers": [],
+  "next_step": "resume-after-security-review-pass-and-fix-reference-qa-nameerror",
+  "open_blockers": [
+    "SECURITY_GUARDIAN_FOUNDATION_REQUIRED",
+    "OWNER_REFERENCE_QA_NAMEERROR"
+  ],
   "plan_steps": [
     "reference-audit",
     "corpus-gap-analysis",
@@ -145,6 +155,6 @@
     "workflow_authority": "PASS",
     "workflow_contents_write_global": "ABSENT"
   },
-  "updated_at": "2026-10-02T01:45:07.118626+00:00",
-  "validation_state": "AUTHORITY_LEDGER_GREEN_87_PASS"
+  "updated_at": "2026-10-02T02:17:37.680875+00:00",
+  "validation_state": "VOICE_WIP_PRESERVED_SECURITY_HANDOFF"
 }
