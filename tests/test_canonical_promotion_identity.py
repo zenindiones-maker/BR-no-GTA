@@ -157,7 +157,9 @@ def test_canonical_promotion_workflow_is_narrow_and_credential_isolated():
     assert "StrictHostKeyChecking=no" not in text
     assert "--force" not in text
     assert "force=true" not in text
-    assert "development.canonical.promote" in text
+    assert "validate_trusted_promotion_evidence_bundle" in text
+    service = (ROOT / "app" / "services" / "canonical_promotion_identity_service.py").read_text(encoding="utf-8")
+    assert 'PROMOTION_AUTHORIZATION_SUBJECT = "development.canonical.promote"' in service
     assert "expected_old_oid" in text
     assert "candidate_sha" in text
     assert "candidate_tree_sha" in text
@@ -234,3 +236,136 @@ def test_canonical_acceptance_ruleset_is_layered_without_deploy_key_bypass():
         "alerts_threshold": "errors",
         "security_alerts_threshold": "high_or_higher",
     }]
+
+
+# SECURITY-PROMOTION-TRUST-BOUNDARY-REGRESSIONS
+def test_promotion_workflow_does_not_trust_dispatch_supplied_auth_or_review_receipt():
+    workflow = PROMOTION_WORKFLOW.read_text(encoding="utf-8")
+    assert "${{ inputs.security_review_receipt_sha256 }}" not in workflow
+    assert "${{ inputs.harness_authorization_id }}" not in workflow
+    assert "BR_CANONICAL_PROMOTION_EVIDENCE_BUNDLE_JSON" in workflow
+
+
+def test_promotion_workflow_separates_untrusted_candidate_preflight_from_write_credential_job():
+    workflow = PROMOTION_WORKFLOW.read_text(encoding="utf-8")
+    assert "  preflight:" in workflow
+    assert "  promote:" in workflow
+    assert "needs: preflight" in workflow
+    assert "path: trusted-control" in workflow
+    assert "ref: ${{ inputs.staging_ref }}" not in workflow
+    promote = workflow.split("  promote:", 1)[1]
+    assert "BR_CANONICAL_PROMOTION_SSH_KEY" in promote
+    assert "actions/checkout" not in promote
+    assert "python " not in promote
+    assert "candidate/" not in promote
+
+
+def test_security_guardian_policy_runs_on_every_security_staging_push_without_path_filter():
+    workflow = (ROOT / ".github" / "workflows" / "security-guardian-baseline.yml").read_text(encoding="utf-8")
+    assert '      - "staging/security-*"' in workflow
+    push_block = workflow.split("  push:", 1)[1].split("\npermissions:", 1)[0]
+    assert "paths:" not in push_block
+    assert "Deterministic policy contracts" in workflow
+
+
+def _trusted_evidence_bundle():
+    from app.services.security_guardian_service import SecurityReviewReceipt
+    receipt = SecurityReviewReceipt.create(
+        reviewed_candidate_sha=SHA_B,
+        reviewed_tree_sha=TREE,
+        reviewed_diff_sha256="e" * 64,
+        reviewer_identity="codex-security-reviewer",
+        reviewer_session="review-session",
+        reviewer_authorization="review-auth-1",
+        scanner_evidence=("codeql:pass", "root-suite:pass", "ci:pass"),
+        findings=(),
+        exceptions=(),
+        disposition="PASS",
+    )
+    binding = {
+        "target_ref": WORK_REF,
+        "expected_old_oid": SHA_A,
+        "candidate_sha": SHA_B,
+        "candidate_tree_sha": TREE,
+        "reviewed_diff_sha256": "e" * 64,
+        "security_review_receipt_sha256": receipt.content_sha256,
+    }
+    return {
+        "schema_version": "CanonicalPromotionEvidenceBundle/v1",
+        "trusted_source": "GITHUB_REPOSITORY_SECRET",
+        "promotion_authorization": {
+            "authorization_id": "promote-auth-1",
+            "authorized_action": "DEVELOPMENT",
+            "subject": "development.canonical.promote",
+            "issued_by": "deepseek_harness",
+            "status": "active",
+            "lineage": binding,
+        },
+        "reviewer_authorization": {
+            "authorization_id": "review-auth-1",
+            "authorized_action": "REVIEW",
+            "subject": "capability:security.review.repository",
+            "issued_by": "deepseek_harness",
+            "status": "consumed",
+            "lineage": {
+                "candidate_sha": SHA_B,
+                "candidate_tree_sha": TREE,
+                "reviewed_diff_sha256": "e" * 64,
+            },
+        },
+        "security_review_receipt": receipt.to_dict() if hasattr(receipt, "to_dict") else {
+            "reviewed_candidate_sha": receipt.reviewed_candidate_sha,
+            "reviewed_tree_sha": receipt.reviewed_tree_sha,
+            "reviewed_diff_sha256": receipt.reviewed_diff_sha256,
+            "reviewer_identity": receipt.reviewer_identity,
+            "reviewer_session": receipt.reviewer_session,
+            "reviewer_authorization": receipt.reviewer_authorization,
+            "scanner_evidence": list(receipt.scanner_evidence),
+            "findings": list(receipt.findings),
+            "exceptions": list(receipt.exceptions),
+            "final_disposition": receipt.final_disposition,
+            "content_sha256": receipt.content_sha256,
+            "schema_version": receipt.schema_version,
+        },
+    }
+
+
+def test_trusted_promotion_evidence_bundle_binds_real_semantic_evidence():
+    from app.services.canonical_promotion_identity_service import validate_trusted_promotion_evidence_bundle
+    result = validate_trusted_promotion_evidence_bundle(
+        _trusted_evidence_bundle(),
+        target_ref=WORK_REF,
+        expected_old_oid=SHA_A,
+        candidate_sha=SHA_B,
+        candidate_tree_sha=TREE,
+        reviewed_diff_sha256="e" * 64,
+    )
+    assert result["harness_authorization_id"] == "promote-auth-1"
+    assert result["security_review_disposition"] == "PASS"
+    assert len(result["security_review_receipt_sha256"]) == 64
+
+
+def test_trusted_promotion_evidence_bundle_rejects_caller_fabrication_and_binding_drift():
+    from app.services.canonical_promotion_identity_service import validate_trusted_promotion_evidence_bundle
+    forged = _trusted_evidence_bundle()
+    forged["trusted_source"] = "WORKFLOW_DISPATCH_INPUT"
+    with pytest.raises(PermissionError, match="TRUSTED_SOURCE"):
+        validate_trusted_promotion_evidence_bundle(
+            forged,
+            target_ref=WORK_REF,
+            expected_old_oid=SHA_A,
+            candidate_sha=SHA_B,
+            candidate_tree_sha=TREE,
+            reviewed_diff_sha256="e" * 64,
+        )
+    drift = _trusted_evidence_bundle()
+    drift["promotion_authorization"]["lineage"]["candidate_sha"] = "f" * 40
+    with pytest.raises(PermissionError, match="LINEAGE"):
+        validate_trusted_promotion_evidence_bundle(
+            drift,
+            target_ref=WORK_REF,
+            expected_old_oid=SHA_A,
+            candidate_sha=SHA_B,
+            candidate_tree_sha=TREE,
+            reviewed_diff_sha256="e" * 64,
+        )
