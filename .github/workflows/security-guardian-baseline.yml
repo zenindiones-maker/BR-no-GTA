@@ -49,7 +49,6 @@ jobs:
           retention-days: 14
 
   zizmor:
-    if: ${{ !startsWith(github.ref, 'refs/heads/staging/security-') }}
     name: Zizmor GitHub Actions security
     runs-on: ubuntu-24.04
     permissions:
@@ -78,7 +77,6 @@ jobs:
           color: "false"
 
   osv:
-    if: ${{ !startsWith(github.ref, 'refs/heads/staging/security-') }}
     name: OSV dependency vulnerability scan
     permissions:
       actions: read
