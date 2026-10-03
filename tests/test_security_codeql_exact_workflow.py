@@ -21,3 +21,12 @@ def test_ci_runs_full_checkpoint_on_security_staging():
     text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert '      - "staging/security-*"' in text
     assert 'ref_name.startswith("staging/security-")' in text
+
+
+def test_codeql_gate_resolves_security_severity_from_rule_descriptor():
+    text = (ROOT / ".github" / "workflows" / "security-codeql-exact.yml").read_text(encoding="utf-8")
+    assert 'driver.get("rules")' in text
+    assert 'rule_index = result.get("ruleIndex")' in text
+    assert 'result.get("ruleId")' in text
+    assert 'rule.get("properties") or {}' in text
+    assert 'security-severity' in text

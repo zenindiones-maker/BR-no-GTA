@@ -55,22 +55,42 @@ jobs:
 
           high_or_critical = []
           total_results = 0
+
           for path in sarif_files:
               payload = json.loads(path.read_text(encoding="utf-8"))
               for run in payload.get("runs", []):
+                  driver = ((run.get("tool") or {}).get("driver") or {})
+                  rules = driver.get("rules") or []
+                  rules_by_id = {
+                      str(rule.get("id")): rule
+                      for rule in rules
+                      if rule.get("id") is not None
+                  }
+
                   for result in run.get("results", []):
                       total_results += 1
-                      props = result.get("properties") or {}
+                      rule = None
+                      rule_index = result.get("ruleIndex")
+                      if isinstance(rule_index, int) and 0 <= rule_index < len(rules):
+                          rule = rules[rule_index]
+                      if rule is None:
+                          rule_id = result.get("ruleId")
+                          if rule_id is not None:
+                              rule = rules_by_id.get(str(rule_id))
+
+                      props = rule.get("properties") or {} if rule is not None else {}
                       raw = props.get("security-severity")
                       if raw is None:
                           continue
+
                       try:
                           severity = float(raw)
                       except (TypeError, ValueError):
                           continue
+
                       if severity >= 7.0:
                           high_or_critical.append({
-                              "rule_id": result.get("ruleId"),
+                              "rule_id": result.get("ruleId") or (rule or {}).get("id"),
                               "security_severity": severity,
                           })
 
