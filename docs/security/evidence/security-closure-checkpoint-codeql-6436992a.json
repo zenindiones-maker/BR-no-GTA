@@ -1,0 +1,42 @@
+{
+  "schema_version": "SecurityCheckpointEvidence/v1",
+  "checkpoint_scope": "SECURITY_GUARDIAN_FOUNDATION_V1",
+  "clean_candidate_sha": "6436992a4b31debccd7f31f6396c58bdded50b3f",
+  "clean_candidate_tree": "fbb07351d95d12f946c6c873a07512af4980c19b",
+  "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
+  "codeql": {
+    "schema_version": "CodeQLExactCandidateClosure/v1",
+    "status": "PASS",
+    "codeql_version": "2.27.1",
+    "codeql_binary_sha256": "5010324098d11f9e2d34e0fcf53bb44e40e8e3ffc8aecefe695269b54edaa413",
+    "actions": {
+      "candidate": 0,
+      "canonical": 7,
+      "resolved": 7,
+      "new": 0,
+      "new_high_or_critical": 0
+    },
+    "python": {
+      "candidate": 41,
+      "canonical": 42,
+      "resolved": 1,
+      "new": 0,
+      "new_high_or_critical": 0
+    }
+  },
+  "service_manager_reconciliation": {
+    "scanner_service": "security-codeql-exact-candidate",
+    "state": "STOPPED_AFTER_COMPLETE",
+    "helpers": [
+      "security-codeql-runtime-bootstrap-exact",
+      "security-codeql-runtime-repair-once"
+    ],
+    "helper_state": "STOPPED",
+    "rerun_performed": false
+  },
+  "scope_freeze": {
+    "root_suite_rerun": false,
+    "affected_subgraph_rerun": false,
+    "candidate_changed": false
+  }
+}
