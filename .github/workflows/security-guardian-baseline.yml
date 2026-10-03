@@ -8,28 +8,7 @@ on:
     branches:
       - main
       - work/gate6f-analytics-learning
-    paths:
-      - ".github/workflows/**"
-      - ".github/actions/**"
-      - ".github/CODEOWNERS"
-      - "SECURITY.md"
-      - "app/services/*auth*"
-      - "app/services/*authorization*"
-      - "app/services/*policy*"
-      - "app/services/*security*"
-      - "app/services/global_capability_registry*.py"
-      - "app/services/harness_durable_execution_v3.py"
-      - "app/services/*outbox*"
-      - "app/services/*publication*"
-      - "integrations/**"
-      - "requirements*.txt"
-      - "**/requirements*.txt"
-      - "pyproject.toml"
-      - "**/package-lock.json"
-      - "**/pnpm-lock.yaml"
-      - "**/yarn.lock"
-      - "**/Dockerfile*"
-      - "config/security/**"
+      - "staging/security-*"
 
 permissions: {}
 
@@ -70,6 +49,7 @@ jobs:
           retention-days: 14
 
   zizmor:
+    if: ${{ !startsWith(github.ref, 'refs/heads/staging/security-') }}
     name: Zizmor GitHub Actions security
     runs-on: ubuntu-24.04
     permissions:
@@ -98,6 +78,7 @@ jobs:
           color: "false"
 
   osv:
+    if: ${{ !startsWith(github.ref, 'refs/heads/staging/security-') }}
     name: OSV dependency vulnerability scan
     permissions:
       actions: read
@@ -111,6 +92,7 @@ jobs:
         ./
 
   scorecard:
+    if: ${{ !startsWith(github.ref, 'refs/heads/staging/security-') }}
     name: OpenSSF Scorecard posture
     runs-on: ubuntu-24.04
     permissions:
