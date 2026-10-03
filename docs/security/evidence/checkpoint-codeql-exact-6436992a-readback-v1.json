@@ -1,0 +1,11 @@
+{
+  "schema_version": "SecurityCheckpointRemoteReadback/v1",
+  "checkpoint_branch": "checkpoint/security-codeql-6436992a",
+  "checkpoint_commit_sha": "3ba46b24d246c9a07c8f7275c5945b5a7454cb1f",
+  "checkpoint_path": "docs/security/evidence/checkpoint-codeql-exact-6436992a-v1.json",
+  "checkpoint_blob_sha": "f348b335da9ba242178e88e0cd84b8cd84927244",
+  "candidate_sha": "6436992a4b31debccd7f31f6396c58bdded50b3f",
+  "codeql_exact_candidate_status": "PASS",
+  "remote_readback": "VERIFIED",
+  "rerun_performed": false
+}
