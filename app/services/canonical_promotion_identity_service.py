@@ -218,6 +218,153 @@ def validate_canonical_promotion_request(
     }
 
 
+
+TRUSTED_PROMOTION_EVIDENCE_SOURCE = "GITHUB_REPOSITORY_SECRET"
+REVIEW_AUTHORIZATION_SUBJECT = "capability:security.review.repository"
+
+
+def _require_mapping(value: Any, field: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise PermissionError(f"CANONICAL_PROMOTION_{field.upper()}_MISSING")
+    return value
+
+
+def _validate_authorization_record(
+    value: Mapping[str, Any],
+    *,
+    expected_action: str,
+    expected_subject: str,
+    allowed_statuses: frozenset[str],
+    field: str,
+) -> Mapping[str, Any]:
+    authorization_id = str(value.get("authorization_id") or "").strip()
+    if not authorization_id:
+        raise PermissionError(f"CANONICAL_PROMOTION_{field.upper()}_ID_MISSING")
+    if str(value.get("issued_by") or "") != "deepseek_harness":
+        raise PermissionError(f"CANONICAL_PROMOTION_{field.upper()}_ISSUER_MISMATCH")
+    if str(value.get("authorized_action") or "").strip().upper() != expected_action:
+        raise PermissionError(f"CANONICAL_PROMOTION_{field.upper()}_ACTION_MISMATCH")
+    if str(value.get("subject") or "").strip() != expected_subject:
+        raise PermissionError(f"CANONICAL_PROMOTION_{field.upper()}_SUBJECT_MISMATCH")
+    if str(value.get("status") or "").strip().lower() not in allowed_statuses:
+        raise PermissionError(f"CANONICAL_PROMOTION_{field.upper()}_STATUS_INVALID")
+    return value
+
+
+def validate_trusted_promotion_evidence_bundle(
+    bundle: Mapping[str, Any],
+    *,
+    target_ref: str,
+    expected_old_oid: str,
+    candidate_sha: str,
+    candidate_tree_sha: str,
+    reviewed_diff_sha256: str,
+) -> dict[str, Any]:
+    """Validate evidence delivered through the trusted canonical-workflow boundary."""
+    if str(bundle.get("schema_version") or "") != "CanonicalPromotionEvidenceBundle/v1":
+        raise PermissionError("CANONICAL_PROMOTION_EVIDENCE_SCHEMA_MISMATCH")
+    if str(bundle.get("trusted_source") or "") != TRUSTED_PROMOTION_EVIDENCE_SOURCE:
+        raise PermissionError("CANONICAL_PROMOTION_TRUSTED_SOURCE_MISMATCH")
+
+    target = str(target_ref or "").strip()
+    if target not in ALLOWED_CANONICAL_REFS:
+        raise PermissionError("CANONICAL_PROMOTION_TARGET_REF_MISMATCH")
+    expected_old = _sha40(expected_old_oid, "expected_old_oid")
+    candidate = _sha40(candidate_sha, "candidate_sha")
+    tree = _sha40(candidate_tree_sha, "candidate_tree_sha")
+    diff_sha = _sha64(reviewed_diff_sha256, "reviewed_diff_sha256")
+
+    receipt_raw = _require_mapping(bundle.get("security_review_receipt"), "security_review_receipt")
+    if str(receipt_raw.get("schema_version") or "") != "SecurityReviewReceipt/v1":
+        raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_SCHEMA_MISMATCH")
+
+    from app.services.security_guardian_service import SecurityReviewReceipt
+
+    receipt = SecurityReviewReceipt.create(
+        reviewed_candidate_sha=str(receipt_raw.get("reviewed_candidate_sha") or ""),
+        reviewed_tree_sha=str(receipt_raw.get("reviewed_tree_sha") or ""),
+        reviewed_diff_sha256=str(receipt_raw.get("reviewed_diff_sha256") or ""),
+        reviewer_identity=str(receipt_raw.get("reviewer_identity") or ""),
+        reviewer_session=str(receipt_raw.get("reviewer_session") or ""),
+        reviewer_authorization=str(receipt_raw.get("reviewer_authorization") or ""),
+        scanner_evidence=tuple(receipt_raw.get("scanner_evidence") or ()),
+        findings=tuple(receipt_raw.get("findings") or ()),
+        exceptions=tuple(receipt_raw.get("exceptions") or ()),
+        disposition=str(receipt_raw.get("final_disposition") or ""),
+    )
+    supplied_receipt_digest = _sha64(
+        str(receipt_raw.get("content_sha256") or ""),
+        "security_review_receipt.content_sha256",
+    )
+    if supplied_receipt_digest != receipt.content_sha256:
+        raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_DIGEST_MISMATCH")
+    if receipt.reviewed_candidate_sha != candidate:
+        raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_CANDIDATE_MISMATCH")
+    if receipt.reviewed_tree_sha != tree:
+        raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_TREE_MISMATCH")
+    if receipt.reviewed_diff_sha256 != diff_sha:
+        raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_DIFF_MISMATCH")
+    if receipt.final_disposition not in {"PASS", "PASS_WITH_ACCEPTED_RISK"}:
+        raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_NOT_PASS")
+
+    review_auth = _validate_authorization_record(
+        _require_mapping(bundle.get("reviewer_authorization"), "reviewer_authorization"),
+        expected_action="REVIEW",
+        expected_subject=REVIEW_AUTHORIZATION_SUBJECT,
+        allowed_statuses=frozenset({"active", "consumed"}),
+        field="reviewer_authorization",
+    )
+    if str(review_auth.get("authorization_id")) != receipt.reviewer_authorization:
+        raise PermissionError("CANONICAL_PROMOTION_REVIEWER_AUTHORIZATION_RECEIPT_MISMATCH")
+    review_lineage = _require_mapping(review_auth.get("lineage"), "reviewer_authorization_lineage")
+    for key, expected in {
+        "candidate_sha": candidate,
+        "candidate_tree_sha": tree,
+        "reviewed_diff_sha256": diff_sha,
+    }.items():
+        if str(review_lineage.get(key) or "").lower() != expected:
+            raise PermissionError(f"CANONICAL_PROMOTION_REVIEWER_LINEAGE_{key.upper()}_MISMATCH")
+
+    promotion_auth = _validate_authorization_record(
+        _require_mapping(bundle.get("promotion_authorization"), "promotion_authorization"),
+        expected_action=PROMOTION_AUTHORIZATION_ACTION,
+        expected_subject=PROMOTION_AUTHORIZATION_SUBJECT,
+        allowed_statuses=frozenset({"active"}),
+        field="promotion_authorization",
+    )
+    promotion_lineage = _require_mapping(
+        promotion_auth.get("lineage"), "promotion_authorization_lineage"
+    )
+    required_lineage = {
+        "target_ref": target,
+        "expected_old_oid": expected_old,
+        "candidate_sha": candidate,
+        "candidate_tree_sha": tree,
+        "reviewed_diff_sha256": diff_sha,
+        "security_review_receipt_sha256": receipt.content_sha256,
+    }
+    for key, expected in required_lineage.items():
+        observed = str(promotion_lineage.get(key) or "")
+        if key != "target_ref":
+            observed = observed.lower()
+        if observed != expected:
+            raise PermissionError(f"CANONICAL_PROMOTION_LINEAGE_{key.upper()}_MISMATCH")
+
+    return {
+        "schema_version": "CanonicalPromotionTrustedEvidenceValidation/v1",
+        "trusted_source": TRUSTED_PROMOTION_EVIDENCE_SOURCE,
+        "harness_authorization_id": str(promotion_auth["authorization_id"]),
+        "authorization_subject": str(promotion_auth["subject"]),
+        "authorization_action": str(promotion_auth["authorized_action"]).upper(),
+        "security_review_receipt_sha256": receipt.content_sha256,
+        "security_review_disposition": receipt.final_disposition,
+        "reviewer_authorization_id": str(review_auth["authorization_id"]),
+        "candidate_sha": candidate,
+        "candidate_tree_sha": tree,
+        "reviewed_diff_sha256": diff_sha,
+    }
+
+
 def canonical_promotion_ruleset_payload() -> dict[str, Any]:
     return {
         "name": "BR canonical promotion identity",
