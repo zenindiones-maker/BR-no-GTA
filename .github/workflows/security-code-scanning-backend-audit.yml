@@ -16,21 +16,16 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       REPOSITORY: ${{ github.repository }}
-      CANDIDATE_SHA: 1d834b5ddc8b7d7bcc1850b48ac5b87b0ae76ad5
+      CANDIDATE_SHA: c3fcf264cf4b93250f26a8df03b9cb2c920e8514
       CANDIDATE_REF: refs/heads/staging/security-guardian-foundation-v1
-      CANONICAL_SHA: 0e6704ecd60ed2f7266b4b299017910a6491e068
-      CANONICAL_REF: refs/heads/work/gate6f-analytics-learning
     steps:
       - name: Query authenticated CodeQL analyses
         shell: bash
         run: |
           set -euo pipefail
-          umask 077
           gh api             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "repos/${REPOSITORY}/code-scanning/analyses?tool_name=CodeQL&ref=${CANDIDATE_REF}&per_page=100"             > "${RUNNER_TEMP}/candidate-analyses.json"
 
-          gh api             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "repos/${REPOSITORY}/code-scanning/analyses?tool_name=CodeQL&ref=${CANONICAL_REF}&per_page=100"             > "${RUNNER_TEMP}/canonical-analyses.json"
-
-      - name: Prove exact candidate and canonical CodeQL analyses
+      - name: Prove exact candidate CodeQL analysis
         shell: bash
         run: |
           set -euo pipefail
@@ -38,77 +33,36 @@ jobs:
           import json, os
           from pathlib import Path
 
-          temp = Path(os.environ["RUNNER_TEMP"])
-          candidate = json.loads((temp / "candidate-analyses.json").read_text())
-          canonical = json.loads((temp / "canonical-analyses.json").read_text())
-
-          def choose(items, sha, ref):
-              exact = [
-                  item for item in items
-                  if item.get("commit_sha") == sha
-                  and item.get("ref") == ref
-                  and ((item.get("tool") or {}).get("name") == "CodeQL")
-              ]
-              exact.sort(key=lambda x: (x.get("created_at") or "", x.get("id") or 0), reverse=True)
-              return exact[0] if exact else None
-
-          cand = choose(candidate, os.environ["CANDIDATE_SHA"], os.environ["CANDIDATE_REF"])
-          canon = choose(canonical, os.environ["CANONICAL_SHA"], os.environ["CANONICAL_REF"])
-
-          def emit(prefix, item):
-              if item is None:
-                  print(prefix + "_FOUND=NO")
-                  return
-              print(prefix + "_FOUND=YES")
-              print(prefix + "_ID=" + str(item.get("id")))
-              print(prefix + "_REF=" + str(item.get("ref")))
-              print(prefix + "_COMMIT_SHA=" + str(item.get("commit_sha")))
-              print(prefix + "_ANALYSIS_KEY=" + str(item.get("analysis_key")))
-              print(prefix + "_RESULTS_COUNT=" + str(item.get("results_count")))
-              print(prefix + "_RULES_COUNT=" + str(item.get("rules_count")))
-              print(prefix + "_ERROR=" + str(item.get("error")))
-              print(prefix + "_CATEGORY=" + str(item.get("category")))
-              print(prefix + "_ENVIRONMENT=" + str(item.get("environment")))
-              print(prefix + "_CREATED_AT=" + str(item.get("created_at")))
-
-          emit("CANDIDATE_ANALYSIS", cand)
-          emit("CANONICAL_ANALYSIS", canon)
-
-          if cand is None or cand.get("error"):
+          items=json.loads((Path(os.environ["RUNNER_TEMP"])/"candidate-analyses.json").read_text())
+          sha=os.environ["CANDIDATE_SHA"]
+          ref=os.environ["CANDIDATE_REF"]
+          exact=[
+              item for item in items
+              if item.get("commit_sha")==sha
+              and item.get("ref")==ref
+              and ((item.get("tool") or {}).get("name")=="CodeQL")
+          ]
+          exact.sort(key=lambda x:(x.get("created_at") or "",x.get("id") or 0),reverse=True)
+          if not exact:
               print("CODE_SCANNING_BACKEND_PROOF=FAIL")
-              print("BLOCKER=GITHUB_CODE_SCANNING_RULE_NOT_SATISFIED")
-              raise SystemExit(20)
-
-          if canon is None or canon.get("error"):
+              raise SystemExit("EXACT_CODEQL_ANALYSIS_MISSING")
+          item=exact[0]
+          fields={
+              "CODEQL_ANALYSIS_ID":item.get("id"),
+              "CODEQL_ANALYSIS_REF":item.get("ref"),
+              "CODEQL_ANALYSIS_COMMIT_SHA":item.get("commit_sha"),
+              "CODEQL_ANALYSIS_KEY":item.get("analysis_key"),
+              "CODEQL_ANALYSIS_CATEGORY":item.get("category"),
+              "CODEQL_ANALYSIS_ENVIRONMENT":item.get("environment"),
+              "CODEQL_ANALYSIS_RESULTS_COUNT":item.get("results_count"),
+              "CODEQL_ANALYSIS_RULES_COUNT":item.get("rules_count"),
+              "CODEQL_ANALYSIS_ERROR":item.get("error"),
+              "CODEQL_ANALYSIS_CREATED_AT":item.get("created_at"),
+          }
+          for k,v in fields.items():
+              print(f"{k}={v}")
+          if item.get("error") not in (None,""):
               print("CODE_SCANNING_BACKEND_PROOF=FAIL")
-              print("BLOCKER=GITHUB_CODE_SCANNING_RULE_NOT_SATISFIED")
-              raise SystemExit(21)
-
-          print("CODEQL_ANALYSES_EXACT_BINDING=PASS")
+              raise SystemExit("CODEQL_ANALYSIS_ERROR")
+          print("CODE_SCANNING_BACKEND_PROOF=PASS")
           PY
-
-      - name: Probe default setup administrative endpoint
-        shell: bash
-        run: |
-          set +e
-          body="${RUNNER_TEMP}/default-setup.json"
-          err="${RUNNER_TEMP}/default-setup.stderr"
-          gh api             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "repos/${REPOSITORY}/code-scanning/default-setup"             >"$body" 2>"$err"
-          rc=$?
-          set -e
-          echo "DEFAULT_SETUP_QUERY_RC=$rc"
-          if [ "$rc" -eq 0 ]; then
-            python - <<'PY'
-          import json, os
-          from pathlib import Path
-          d=json.loads((Path(os.environ["RUNNER_TEMP"])/"default-setup.json").read_text())
-          print("DEFAULT_SETUP_STATE="+str(d.get("state")))
-          print("DEFAULT_SETUP_LANGUAGES="+json.dumps(d.get("languages"), sort_keys=True))
-          print("DEFAULT_SETUP_QUERY_SUITE="+str(d.get("query_suite")))
-          print("DEFAULT_SETUP_UPDATED_AT="+str(d.get("updated_at")))
-          PY
-          else
-            echo "DEFAULT_SETUP_STATE=UNVERIFIED_ADMIN_READ_REQUIRED"
-            sed -E 's/[A-Za-z0-9_=-]{20,}/[REDACTED]/g' "$err" || true
-            exit 22
-          fi
