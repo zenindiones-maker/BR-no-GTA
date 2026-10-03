@@ -192,6 +192,7 @@ jobs:
             --output-dir runtime/youtube-upload/review
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
           result = json.loads(Path("runtime/youtube-upload/result/youtube-upload-result.json").read_text())
           review = result.get("telegram_review")
