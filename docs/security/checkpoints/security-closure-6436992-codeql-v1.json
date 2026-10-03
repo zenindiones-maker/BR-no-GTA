@@ -1,0 +1,37 @@
+{
+  "schema_version": "SecurityClosureCheckpoint/v1",
+  "mission": "SECURITY_GUARDIAN_FOUNDATION_V1",
+  "candidate_sha": "6436992a4b31debccd7f31f6396c58bdded50b3f",
+  "candidate_tree_sha": "fbb07351d95d12f946c6c873a07512af4980c19b",
+  "canonical_base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
+  "scope_freeze": true,
+  "root_suite": "3829_PASS_7_SKIP",
+  "affected_security_subgraph": "170_PASS",
+  "recovery_metadata_in_candidate": 0,
+  "recovery_payloads_in_candidate": 0,
+  "codeql_exact_candidate": {
+    "schema_version": "CodeQLExactCandidateClosure/v1",
+    "status": "PASS",
+    "codeql_version": "2.27.1",
+    "codeql_binary_sha256": "5010324098d11f9e2d34e0fcf53bb44e40e8e3ffc8aecefe695269b54edaa413",
+    "actions": {
+      "candidate_result_count": 0,
+      "canonical_result_count": 7,
+      "resolved_vs_canonical_count": 7,
+      "new_vs_canonical_count": 0,
+      "new_high_or_critical_count": 0,
+      "candidate_sarif_sha256": "8b54204515c708b5ec2b486f96a453167cb0a09774f73dda45e84f9373aa7a99",
+      "canonical_sarif_sha256": "e26ce92ba5bc364f142fb3ac2777dbe4a173f1ffd033c713db918d7799ebca52"
+    },
+    "python": {
+      "candidate_result_count": 41,
+      "canonical_result_count": 42,
+      "resolved_vs_canonical_count": 1,
+      "new_vs_canonical_count": 0,
+      "new_high_or_critical_count": 0,
+      "candidate_sarif_sha256": "97ed7d33b069add832186f013470b2fe4530fe6c261fe235d478d76a19aa23ac",
+      "canonical_sarif_sha256": "eae2445a4f12f1fe774a73cf6b0f464be72731fff54da57e85b68ba319cf946b"
+    }
+  },
+  "remote_readback": "PENDING"
+}
