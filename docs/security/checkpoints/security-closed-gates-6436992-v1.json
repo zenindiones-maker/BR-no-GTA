@@ -1,0 +1,42 @@
+{
+  "schema_version": "SecurityClosedGateSnapshot/v1",
+  "candidate_sha": "6436992a4b31debccd7f31f6396c58bdded50b3f",
+  "candidate_tree_sha": "fbb07351d95d12f946c6c873a07512af4980c19b",
+  "root_suite": "3829_PASS_7_SKIP",
+  "affected_security_subgraph": "170_PASS",
+  "codeql_exact_candidate": {
+    "status": "PASS",
+    "python": {
+      "candidate": 41,
+      "canonical": 42,
+      "resolved": 1,
+      "new_high_or_critical": 0
+    },
+    "actions": {
+      "candidate": 0,
+      "canonical": 7,
+      "resolved": 7,
+      "new_high_or_critical": 0
+    }
+  },
+  "zizmor": {
+    "version": "1.30.1",
+    "status": "PASS_NO_HIGH",
+    "high": 0,
+    "medium": 59,
+    "low": 199
+  },
+  "secret_regression": {
+    "status": "PASS",
+    "new_fingerprints": 0,
+    "new_confirmed_patterns": 0
+  },
+  "osv_dependency_delta": {
+    "version": "2.6.0",
+    "status": "PASS",
+    "new_vulnerability_ids": []
+  },
+  "independent_review": "PENDING_AUTH_CONTINUITY",
+  "recovery_metadata_in_candidate": 0,
+  "recovery_payloads_in_candidate": 0
+}
