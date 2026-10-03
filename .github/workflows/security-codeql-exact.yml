@@ -1,0 +1,41 @@
+name: Security CodeQL Exact
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+      - "staging/security-*"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: security-codeql-exact-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  codeql:
+    name: CodeQL exact SHA
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write # SECURITY-JUSTIFICATION: exact-SHA CodeQL SARIF upload only
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact SHA
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          languages: python
+          queries: security-extended
+
+      - name: Analyze exact SHA
+        uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          category: "/language:python"

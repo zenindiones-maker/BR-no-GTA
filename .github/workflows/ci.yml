@@ -6,6 +6,7 @@ on:
       - main
       - work/gate6f-analytics-learning
       - work/gate6f-telegram-total-ingress
+      - "staging/security-*"
   pull_request:
     branches:
       - main
@@ -93,6 +94,7 @@ jobs:
           checkpoint = (
               event == "pull_request"
               or ref_name == "main"
+              or ref_name.startswith("staging/security-")
               or (event == "workflow_dispatch" and checkpoint_input)
               or "[checkpoint]" in lower_message
           )

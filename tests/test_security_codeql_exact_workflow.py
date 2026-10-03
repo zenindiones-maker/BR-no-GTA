@@ -1,0 +1,20 @@
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+def test_security_codeql_exact_runs_on_security_staging_and_canonical():
+    path = ROOT / ".github" / "workflows" / "security-codeql-exact.yml"
+    assert path.exists()
+    text = path.read_text(encoding="utf-8")
+    assert '      - "staging/security-*"' in text
+    assert "      - work/gate6f-analytics-learning" in text
+    assert "persist-credentials: false" in text
+    assert "security-events: write" in text
+    assert "github/codeql-action/init@" in text
+    assert "github/codeql-action/analyze@" in text
+    assert "security-extended" in text
+
+def test_ci_runs_full_checkpoint_on_security_staging():
+    text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert '      - "staging/security-*"' in text
+    assert 'ref_name.startswith("staging/security-")' in text
