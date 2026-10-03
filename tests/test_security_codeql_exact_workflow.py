@@ -9,13 +9,14 @@ def test_security_codeql_exact_runs_on_security_staging_and_canonical():
     assert '      - "staging/security-*"' in text
     assert "      - work/gate6f-analytics-learning" in text
     assert "persist-credentials: false" in text
-    assert "security-events: write" not in text
+    assert "security-events: write" in text
     assert "github/codeql-action/init@" in text
     assert "github/codeql-action/analyze@" in text
     assert "security-extended" in text
-    assert "upload: false" in text
+    assert "upload: true" in text
     assert "output: codeql-results" in text
     assert "Enforce no HIGH or CRITICAL CodeQL findings" in text
+    assert text.count("github/codeql-action/analyze@") == 1
 
 def test_ci_runs_full_checkpoint_on_security_staging():
     text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
