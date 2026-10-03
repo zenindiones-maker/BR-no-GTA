@@ -19,7 +19,6 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      security-events: write # SECURITY-JUSTIFICATION: exact-SHA CodeQL SARIF upload only
     timeout-minutes: 30
     steps:
       - name: Checkout exact SHA
@@ -35,7 +34,51 @@ jobs:
           languages: python
           queries: security-extended
 
-      - name: Analyze exact SHA
+      - name: Analyze exact SHA without SARIF upload
         uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           category: "/language:python"
+          upload: false
+          output: codeql-results
+
+      - name: Enforce no HIGH or CRITICAL CodeQL findings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          sarif_files = sorted(Path("codeql-results").glob("*.sarif"))
+          if not sarif_files:
+              raise SystemExit("CODEQL_SARIF_MISSING")
+
+          high_or_critical = []
+          total_results = 0
+          for path in sarif_files:
+              payload = json.loads(path.read_text(encoding="utf-8"))
+              for run in payload.get("runs", []):
+                  for result in run.get("results", []):
+                      total_results += 1
+                      props = result.get("properties") or {}
+                      raw = props.get("security-severity")
+                      if raw is None:
+                          continue
+                      try:
+                          severity = float(raw)
+                      except (TypeError, ValueError):
+                          continue
+                      if severity >= 7.0:
+                          high_or_critical.append({
+                              "rule_id": result.get("ruleId"),
+                              "security_severity": severity,
+                          })
+
+          print(f"CODEQL_TOTAL_RESULTS={total_results}")
+          print(f"CODEQL_HIGH_CRITICAL={len(high_or_critical)}")
+          if high_or_critical:
+              print(json.dumps(high_or_critical, sort_keys=True))
+              raise SystemExit("CODEQL_NEW_HIGH_CRITICAL_FOUND")
+          print("CODEQL_EXACT_SHA=PASS")
+          print("CODEQL_NEW_HIGH_CRITICAL=0")
+          PY
