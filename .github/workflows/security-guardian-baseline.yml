@@ -87,12 +87,13 @@ jobs:
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@c7c7bcb0773cc4678a674ada03a66cc5c4325476 # v2.6.0
     with:
       scan-args: |-
-        --include-git-root
-        -r
-        ./
+        --lockfile=requirements.txt:requirements/runtime.lock
+        --lockfile=requirements.txt:requirements/production-controller.lock
+        --lockfile=requirements.txt:requirements/security-ci.lock
+        --lockfile=video-engine/frontend/package-lock.json
 
   scorecard:
-    if: ${{ !startsWith(github.ref, 'refs/heads/staging/security-') }}
+    if: ${{ !startsWith(github.ref, 'refs/heads/staging/security-') && github.ref_name == github.event.repository.default_branch }}
     name: OpenSSF Scorecard posture
     runs-on: ubuntu-24.04
     permissions:
