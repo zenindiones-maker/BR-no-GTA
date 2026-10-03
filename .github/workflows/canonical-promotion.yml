@@ -1,4 +1,6 @@
 name: Canonical Promotion
+# POST-BOOTSTRAP ONLY: this workflow cannot install itself on canonical.
+# One-time external procedure: docs/security/CANONICAL_BOOTSTRAP_V1.md
 
 on:
   workflow_dispatch:
@@ -197,7 +199,9 @@ jobs:
           test "$(git -C "$repo" rev-parse "$CANDIDATE_SHA^{commit}")" = "$CANDIDATE_SHA"
           test "$(git -C "$repo" rev-parse "$CANDIDATE_SHA^{tree}")" = "$CANDIDATE_TREE_SHA"
           git -C "$repo" merge-base --is-ancestor "$EXPECTED_OLD_OID" "$CANDIDATE_SHA"
-          GIT_SSH_COMMAND="$ssh_cmd" git -C "$repo" push "$remote" "$CANDIDATE_SHA:$TARGET_REF"
+          before="$(GIT_SSH_COMMAND="$ssh_cmd" git ls-remote "$remote" "$TARGET_REF" | awk '{print $1}')"
+          test "$before" = "$EXPECTED_OLD_OID"
+          GIT_SSH_COMMAND="$ssh_cmd" git -C "$repo" push --force-with-lease="${TARGET_REF}:${EXPECTED_OLD_OID}" "$remote" "$CANDIDATE_SHA:$TARGET_REF"
           after="$(GIT_SSH_COMMAND="$ssh_cmd" git ls-remote "$remote" "$TARGET_REF" | awk '{print $1}')"
           test "$after" = "$CANDIDATE_SHA"
           test "$(git -C "$repo" rev-parse "$after^{tree}")" = "$CANDIDATE_TREE_SHA"

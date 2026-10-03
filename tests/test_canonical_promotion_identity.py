@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
+import shlex
+import subprocess
 
 import pytest
 
@@ -155,7 +158,10 @@ def test_canonical_promotion_workflow_is_narrow_and_credential_isolated():
     assert "environment: canonical-promotion" in text
     assert "BR_CANONICAL_PROMOTION_SSH_KEY" in text
     assert "StrictHostKeyChecking=no" not in text
-    assert "--force" not in text
+    pushes = [line for line in text.splitlines() if " push " in line]
+    assert len(pushes) == 1
+    flags = [part for part in shlex.split(pushes[0]) if part.startswith("-")]
+    assert flags == ["-C", "--force-with-lease=${TARGET_REF}:${EXPECTED_OLD_OID}"]
     assert "force=true" not in text
     assert "validate_trusted_promotion_evidence_bundle" in text
     service = (ROOT / "app" / "services" / "canonical_promotion_identity_service.py").read_text(encoding="utf-8")
@@ -369,3 +375,60 @@ def test_trusted_promotion_evidence_bundle_rejects_caller_fabrication_and_bindin
             candidate_tree_sha=TREE,
             reviewed_diff_sha256="e" * 64,
         )
+
+
+@pytest.mark.parametrize("race,non_fast_forward", [(False, False), (True, False), (False, True)])
+def test_actual_promotion_update_rejects_remote_race_even_on_candidate_ancestry(
+    tmp_path, race, non_fast_forward,
+):
+    """Run the workflow's actual update/readback shell against synthetic local Git."""
+    repo = tmp_path / "objects"
+    remote = tmp_path / "remote.git"
+    env = dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
+               GIT_AUTHOR_NAME="Test", GIT_AUTHOR_EMAIL="test@example.invalid",
+               GIT_COMMITTER_NAME="Test", GIT_COMMITTER_EMAIL="test@example.invalid")
+
+    def git(*args, input=None):
+        return subprocess.run(["git", *map(str, args)], input=input, text=True,
+                              capture_output=True, check=True, env=env).stdout.strip()
+
+    git("init", "--bare", repo)
+    git("init", "--bare", remote)
+    tree = git("-C", repo, "mktree", input="")
+    a = git("-C", repo, "commit-tree", tree, "-m", "A")
+    b = git("-C", repo, "commit-tree", tree, "-p", a, "-m", "B")
+    c = git("-C", repo, "commit-tree", tree, "-p", b, "-m", "candidate")
+    old, candidate = (b, a) if non_fast_forward else (a, c)
+    # Seed all objects without performing any network operation.
+    git("-C", repo, "push", remote, f"{c}:refs/heads/fixture")
+    git("--git-dir", remote, "update-ref", WORK_REF, old)
+    if race:
+        git("-C", repo, "merge-base", "--is-ancestor", b, c)
+
+    workflow = PROMOTION_WORKFLOW.read_text()
+    update = workflow.split("  promote:", 1)[1].split(
+        '          git -C "$repo" merge-base --is-ancestor', 1,
+    )[1].split('          echo "CANONICAL_PROMOTION_REMOTE_READBACK=VERIFIED"', 1)[0]
+    update = 'git -C "$repo" merge-base --is-ancestor' + update
+    assert 'test "$before" = "$EXPECTED_OLD_OID"' in update
+    if race:
+        push = next(line for line in update.splitlines() if " push " in line)
+        # Precisely after the immediate equality check, before the atomic update.
+        update = update.replace(push, 'git --git-dir="$remote" update-ref "$TARGET_REF" '
+                                '"$RACE_OID" "$EXPECTED_OLD_OID"\n' + push)
+    result = subprocess.run(
+        ["bash", "-c", "set -euo pipefail\n" + update], text=True, capture_output=True,
+        env=dict(env, repo=str(repo), remote=str(remote), ssh_cmd="false",
+                 TARGET_REF=WORK_REF, EXPECTED_OLD_OID=old, CANDIDATE_SHA=candidate,
+                 CANDIDATE_TREE_SHA=tree, RACE_OID=b),
+    )
+    observed = git("--git-dir", remote, "rev-parse", WORK_REF)
+    if race or non_fast_forward:
+        assert result.returncode != 0
+        assert observed == (b if race else old)
+        if race:
+            assert "stale info" in result.stderr
+    else:
+        assert result.returncode == 0, result.stderr
+        assert observed == c
+        assert git("--git-dir", remote, "rev-parse", f"{observed}^{{tree}}") == tree

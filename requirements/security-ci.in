@@ -1,3 +1,5 @@
 pytest==9.1.1
 beautifulsoup4==4.15.0
 lxml==6.1.3
+# tests/conftest.py -> app.database.config -> app.settings
+python-dotenv==1.2.3
