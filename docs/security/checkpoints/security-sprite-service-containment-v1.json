@@ -1,0 +1,67 @@
+{
+  "schema_version": "SecuritySpriteServiceContainment/v1",
+  "candidate_sha": "6436992a4b31debccd7f31f6396c58bdded50b3f",
+  "candidate_tree_sha": "fbb07351d95d12f946c6c873a07512af4980c19b",
+  "affected_sprites": [
+    {
+      "name": "br-security-guardian-foundation-v1",
+      "sprite_id": "sprite-564185e6-5073-4d24-8694-5e9b349d5ce9",
+      "credential_status": "NOT_LOGGED_IN",
+      "disposition": "DESTROY_AFTER_SANITIZED_EVIDENCE",
+      "one_shot_service_families": [
+        "codex-device-login*",
+        "codex-install-*",
+        "codex-cli-upgrade-*",
+        "codex-readonly-*-canary*",
+        "codex-point-default-*",
+        "codex-runtime-*-audit*",
+        "bwrap-cap-drop-canary",
+        "codex-auth-*"
+      ],
+      "observed_restart_examples": {
+        "codex-point-default-0160": 57,
+        "codex-install-0160": 34,
+        "codex-cli-upgrade-0160": 31,
+        "codex-readonly-tool-canary": 28
+      }
+    },
+    {
+      "name": "br-security-clean-candidate-final-validation",
+      "sprite_id": "sprite-fd407ee9-d541-42f9-81a9-4e8b99006231",
+      "credential_status": "NO_VALID_CODEX_CREDENTIAL",
+      "disposition": "DESTROY_AFTER_SANITIZED_EVIDENCE",
+      "one_shot_services": [
+        "security-root-suite-clean-candidate",
+        "security-root-suite-clean-candidate-attempt2",
+        "security-codeql-runtime-bootstrap-exact",
+        "security-codeql-runtime-extract-exact",
+        "security-codeql-runtime-repair-once",
+        "security-codeql-exact-candidate",
+        "security-independent-review-6436992"
+      ]
+    },
+    {
+      "name": "br-codex-security-reviewer-v1",
+      "sprite_id": "sprite-c8f8b94c-74e4-4f67-822b-58f7737f8b57",
+      "credential_status": "HUMAN_AUTH_REQUIRED",
+      "services": [],
+      "purpose": "INDEPENDENT_CODEX_REVIEWER_ONLY"
+    }
+  ],
+  "classification": {
+    "one_shot_required": [
+      "tests",
+      "CodeQL",
+      "Zizmor",
+      "OSV",
+      "independent review",
+      "install/bootstrap",
+      "auth/login",
+      "migration",
+      "canary",
+      "diagnostics"
+    ],
+    "long_lived_service_requires_harness_grant": true
+  },
+  "credential_material_persisted": false
+}
