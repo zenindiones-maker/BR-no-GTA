@@ -1,0 +1,100 @@
+name: Security Code Scanning Backend Audit
+
+on:
+  push:
+    branches:
+      - audit/code-scanning-backend-1d834
+
+permissions: {}
+
+jobs:
+  backend-audit:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      CANDIDATE_SHA: 1d834b5ddc8b7d7bcc1850b48ac5b87b0ae76ad5
+      CANDIDATE_REF: refs/heads/staging/security-guardian-foundation-v1
+      CANONICAL_SHA: 0e6704ecd60ed2f7266b4b299017910a6491e068
+      CANONICAL_REF: refs/heads/work/gate6f-analytics-learning
+    steps:
+      - name: Query authenticated GitHub code-scanning backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          gh api             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "repos/${REPOSITORY}/code-scanning/default-setup"             > "${RUNNER_TEMP}/default-setup.json"
+
+          gh api             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "repos/${REPOSITORY}/code-scanning/analyses?tool_name=CodeQL&ref=${CANDIDATE_REF}&per_page=100"             > "${RUNNER_TEMP}/candidate-analyses.json"
+
+          gh api             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "repos/${REPOSITORY}/code-scanning/analyses?tool_name=CodeQL&ref=${CANONICAL_REF}&per_page=100"             > "${RUNNER_TEMP}/canonical-analyses.json"
+
+      - name: Prove ruleset-relevant CodeQL analyses
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+          default_setup = json.loads((temp / "default-setup.json").read_text())
+          candidate = json.loads((temp / "candidate-analyses.json").read_text())
+          canonical = json.loads((temp / "canonical-analyses.json").read_text())
+
+          candidate_sha = os.environ["CANDIDATE_SHA"]
+          canonical_sha = os.environ["CANONICAL_SHA"]
+          candidate_ref = os.environ["CANDIDATE_REF"]
+          canonical_ref = os.environ["CANONICAL_REF"]
+
+          def choose(items, sha, ref):
+              exact = [
+                  item for item in items
+                  if item.get("commit_sha") == sha
+                  and item.get("ref") == ref
+                  and ((item.get("tool") or {}).get("name") == "CodeQL")
+              ]
+              exact.sort(key=lambda x: (x.get("created_at") or "", x.get("id") or 0), reverse=True)
+              return exact[0] if exact else None
+
+          cand = choose(candidate, candidate_sha, candidate_ref)
+          canon = choose(canonical, canonical_sha, canonical_ref)
+
+          print("DEFAULT_SETUP_STATE=" + str(default_setup.get("state")))
+          print("DEFAULT_SETUP_LANGUAGES=" + json.dumps(default_setup.get("languages"), sort_keys=True))
+          print("DEFAULT_SETUP_QUERY_SUITE=" + str(default_setup.get("query_suite")))
+          print("DEFAULT_SETUP_UPDATED_AT=" + str(default_setup.get("updated_at")))
+
+          def emit(prefix, item):
+              if item is None:
+                  print(prefix + "_FOUND=NO")
+                  return
+              print(prefix + "_FOUND=YES")
+              print(prefix + "_ID=" + str(item.get("id")))
+              print(prefix + "_REF=" + str(item.get("ref")))
+              print(prefix + "_COMMIT_SHA=" + str(item.get("commit_sha")))
+              print(prefix + "_ANALYSIS_KEY=" + str(item.get("analysis_key")))
+              print(prefix + "_RESULTS_COUNT=" + str(item.get("results_count")))
+              print(prefix + "_ERROR=" + str(item.get("error")))
+              print(prefix + "_CATEGORY=" + str(item.get("category")))
+              print(prefix + "_ENVIRONMENT=" + str(item.get("environment")))
+              print(prefix + "_CREATED_AT=" + str(item.get("created_at")))
+
+          emit("CANDIDATE_ANALYSIS", cand)
+          emit("CANONICAL_ANALYSIS", canon)
+
+          ok = (
+              default_setup.get("state") == "configured"
+              and cand is not None
+              and canon is not None
+              and not cand.get("error")
+              and not canon.get("error")
+          )
+          print("CODE_SCANNING_BACKEND_PROOF=" + ("PASS" if ok else "FAIL"))
+          if not ok:
+              print("BLOCKER=GITHUB_CODE_SCANNING_RULE_NOT_SATISFIED")
+              raise SystemExit(20)
+          PY
