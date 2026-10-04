@@ -287,3 +287,75 @@ cat "${DEPLOY_STATUS_FILE}"
     assert "RC=1" in cp.stdout
     assert "readback-fail:101:success" in cp.stdout
     assert "DEPLOYMENT_STATE=remote_readback_pending" in cp.stdout
+
+def test_persistent_runtime_does_not_inherit_deployment_lock_fd(tmp_path: Path):
+    body = r"""
+CONTROL="${HOME}/fake-control.sh"
+CHILD_PID_FILE="${HOME}/child.pid"
+cat > "${CONTROL}" <<'EOF'
+#!/bin/bash
+if [[ "${1:-}" == "start" ]]; then
+  nohup sleep 8 >/dev/null 2>&1 </dev/null &
+  printf '%s\n' "$!" > "${HOME}/child.pid"
+fi
+exit 0
+EOF
+chmod +x "${CONTROL}"
+control_for() { printf '%s\n' "${CONTROL}"; }
+mkdir -p "${RELEASES_DIR}/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+mkdir -p "${ENV_DIR}/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/bin"
+: > "${ENV_DIR}/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/bin/python"
+chmod +x "${ENV_DIR}/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/bin/python"
+exec 9>"${DEPLOY_LOCK}"
+flock -n 9
+start_release aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa "${RELEASES_DIR}/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "${ENV_DIR}/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+exec 9>&-
+SECOND="$(bash -c 'exec 9>"$1"; if flock -n 9; then echo ACQUIRED; else echo HELD; fi' _ "${DEPLOY_LOCK}")"
+printf 'SECOND_LOCK=%s\n' "${SECOND}"
+kill "$(cat "${CHILD_PID_FILE}")" 2>/dev/null || true
+"""
+    cp,_ = _run_shell(tmp_path, body)
+    assert "SECOND_LOCK=ACQUIRED" in cp.stdout
+
+
+def test_restart_recovery_precedes_remote_fetch_when_origin_is_unavailable(tmp_path: Path):
+    body = r"""
+PREVIOUS="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+DESIRED="dddddddddddddddddddddddddddddddddddddddd"
+EVENTS="${HOME}/restart-order.log"
+mkdir -p "${RELEASES_DIR}/${PREVIOUS}" "${ENV_DIR}/${PREVIOUS}/bin"
+: > "${ENV_DIR}/${PREVIOUS}/bin/python"
+chmod +x "${ENV_DIR}/${PREVIOUS}/bin/python"
+cat > "${DEPLOY_STATUS_FILE}" <<EOF
+CANONICAL_SHA=${DESIRED}
+CANDIDATE_TREE_SHA=cccccccccccccccccccccccccccccccccccccccc
+PREVIOUS_KNOWN_GOOD_SHA=${PREVIOUS}
+DEPLOYMENT_STATE=rollback_in_progress
+DEPLOYMENT_ID=101
+ROLLBACK_DEPLOYMENT_ID=
+A15_RUNTIME_IDENTITY=a15-telegram-production
+TIMESTAMP=2026-10-04T00:00:00Z
+EOF
+ensure_deploy_repo() { echo fetch >> "${EVENTS}"; return 1; }
+git_bare() {
+  if [[ "$1" == "rev-parse" ]]; then echo bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; return 0; fi
+  return 0
+}
+create_github_deployment() { echo 202; }
+publish_github_deployment_status() { :; }
+verify_github_deployment_status() { return 0; }
+control_for() { echo /fake/control.sh; }
+bash() { echo rollback >> "${EVENTS}"; return 0; }
+activate_release_pointer() { :; }
+set +e
+reconcile_runtime
+RC="$?"
+set -e
+printf 'RC=%s\n' "${RC}"
+cat "${EVENTS}"
+"""
+    cp,_ = _run_shell(tmp_path, body)
+    lines = cp.stdout.splitlines()
+    assert "rollback" in lines
+    assert "fetch" in lines
+    assert lines.index("rollback") < lines.index("fetch")
