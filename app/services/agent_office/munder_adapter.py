@@ -42,6 +42,7 @@ from app.services.performance_telemetry_service import (
     PerformanceSpan,
     emit_performance_event,
 )
+from app.services.development_continuity_policy_service import DevelopmentContinuityPolicy
 from app.services.task_output_contract_service import (
     task_output_contract_descriptor,
     validate_task_output_contract,
@@ -95,18 +96,67 @@ def _require_prewrite_continuity(
         )
     )
     checkpoint_sha = str(attestation.get("checkpoint_sha") or "").strip().lower()
+    content_digest = str(attestation.get("content_digest") or "").strip().lower()
+    valid = _verified_checkpoint_attestation(attestation, recovery_ref)
+    if not valid:
+        raise DevelopmentDurabilityAttestationError(
+            "REMOTE_READBACK_NOT_VERIFIED: prewrite checkpoint invalid"
+        )
+    return attestation
+
+
+def _verified_checkpoint_attestation(
+    attestation: Mapping[str, Any],
+    recovery_ref: str,
+) -> bool:
+    checkpoint_sha = str(attestation.get("checkpoint_sha") or "").strip().lower()
     attested_ref = str(attestation.get("recovery_ref") or "").strip()
     readback = str(attestation.get("remote_readback_status") or "").strip().upper()
     content_digest = str(attestation.get("content_digest") or "").strip().lower()
-    valid = (
+    return (
         re.fullmatch(r"[0-9a-f]{40}", checkpoint_sha) is not None
         and attested_ref == recovery_ref
         and readback == "VERIFIED"
         and re.fullmatch(r"[0-9a-f]{64}", content_digest) is not None
     )
-    if not valid:
+
+
+def _checkpoint_intermediate_material_state(
+    *,
+    workspace: Path,
+    mission_id: str,
+    task_id: str,
+    canonical_branch: str,
+    canonical_base_sha: str,
+    recovery_ref: str,
+    files_changed: tuple[str, ...],
+    commits: tuple[str, ...],
+    candidate: Mapping[str, Any] | None,
+    hook: DevelopmentDurabilityHook | None,
+) -> Mapping[str, Any]:
+    if not files_changed and not commits:
+        return {}
+    if hook is None:
         raise DevelopmentDurabilityAttestationError(
-            "REMOTE_READBACK_NOT_VERIFIED: prewrite checkpoint invalid"
+            "REMOTE_CHECKPOINT_HOOK_UNAVAILABLE"
+        )
+    attestation = dict(
+        hook(
+            checkpoint_event="AFTER_SIGNIFICANT_IMPLEMENTATION",
+            workspace=workspace,
+            mission_id=mission_id,
+            task_id=task_id,
+            canonical_branch=canonical_branch,
+            canonical_base_sha=canonical_base_sha,
+            recovery_ref=recovery_ref,
+            files_changed=files_changed,
+            commits=commits,
+            candidate=dict(candidate or {}),
+        )
+    )
+    if not _verified_checkpoint_attestation(attestation, recovery_ref):
+        raise DevelopmentDurabilityAttestationError(
+            "REMOTE_READBACK_NOT_VERIFIED"
         )
     return attestation
 
@@ -942,6 +992,14 @@ class MunderAdapter:
                 )
                 result["RECOVERY_REF"] = recovery_ref
             last_error = "worker execution failed"
+            intermediate_checkpoint_sha: str | None = None
+            intermediate_remote_readback: str | None = None
+            policy = DevelopmentContinuityPolicy()
+            attempt_timeout_seconds = (
+                min(float(timeout_seconds), float(policy.rpo_target_seconds))
+                if lease.write_set
+                else float(timeout_seconds)
+            )
             for attempt in range(1, lease.retry_budget + 2):
                 try:
                     with PerformanceSpan(
@@ -967,17 +1025,19 @@ class MunderAdapter:
                         metadata={
                             "retry_budget": lease.retry_budget,
                             "tool_call_budget": lease.tool_call_budget,
+                            "rpo_target_seconds": policy.rpo_target_seconds,
+                            "attempt_timeout_seconds": attempt_timeout_seconds,
                             "runner_module": getattr(runner, "__module__", ""),
                             "runner_name": getattr(runner, "__name__", type(runner).__name__),
                         },
                     ) as attempt_span:
                         parameter_count = len(inspect.signature(runner).parameters)
                         if parameter_count >= 5:
-                            raw = runner(task, workspace, timeout_seconds, lease, repository_root)
+                            raw = runner(task, workspace, attempt_timeout_seconds, lease, repository_root)
                         elif parameter_count >= 4:
-                            raw = runner(task, workspace, timeout_seconds, lease)
+                            raw = runner(task, workspace, attempt_timeout_seconds, lease)
                         else:
-                            raw = runner(task, workspace, timeout_seconds)
+                            raw = runner(task, workspace, attempt_timeout_seconds)
                         attempt_span.set(
                             output_size=len(
                                 json.dumps(raw, default=str).encode("utf-8")
@@ -1008,6 +1068,39 @@ class MunderAdapter:
                         break
                     if status == "BLOCKED" or result.get("recoverable") is not True:
                         break
+                    if lease.write_set:
+                        retry_changed = _changed_paths(workspace, spec.base_sha)
+                        retry_commits = _commits_ahead(workspace, spec.base_sha)
+                        if retry_changed or retry_commits:
+                            try:
+                                retry_attestation = _checkpoint_intermediate_material_state(
+                                    workspace=workspace,
+                                    mission_id=spec.mission_id,
+                                    task_id=task.task_id,
+                                    canonical_branch=spec.branch,
+                                    canonical_base_sha=spec.base_sha,
+                                    recovery_ref=recovery_ref,
+                                    files_changed=retry_changed,
+                                    commits=retry_commits,
+                                    candidate=(
+                                        result.get("candidate")
+                                        if isinstance(result.get("candidate"), dict)
+                                        else None
+                                    ),
+                                    hook=self._development_durability_hook,
+                                )
+                            except Exception as exc:
+                                result["status"] = "BLOCKED"
+                                result["error"] = "DEVELOPMENT_DURABILITY_BLOCKED"
+                                result["durability_reason"] = type(exc).__name__
+                                result["DEVELOPMENT_PROGRESS_DURABLE"] = "FAIL"
+                                result["LOCAL_ONLY_PROGRESS_DETECTED"] = "YES"
+                                result["PRESERVE_LOCAL_WORKSPACE"] = True
+                                break
+                            intermediate_remote_readback = "VERIFIED"
+                            intermediate_checkpoint_sha = str(
+                                retry_attestation.get("checkpoint_sha") or ""
+                            )
                     if event_sink:
                         event_sink(
                             task.task_id,
@@ -1070,6 +1163,11 @@ class MunderAdapter:
                             "TASK_PROGRESS",
                             {"state": "LOCAL_RETRY", "attempt": attempt},
                         )
+
+        if intermediate_remote_readback is not None:
+            result["INTERMEDIATE_REMOTE_READBACK"] = intermediate_remote_readback
+        if intermediate_checkpoint_sha is not None:
+            result["INTERMEDIATE_CHECKPOINT_SHA"] = intermediate_checkpoint_sha
 
         changed = _changed_paths(workspace, spec.base_sha)
         result["files_changed"] = list(changed)
