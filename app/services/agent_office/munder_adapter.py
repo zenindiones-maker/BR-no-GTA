@@ -63,6 +63,53 @@ def _recovery_ref_for_task(mission_id: str, task_id: str) -> str:
     return f"recovery/dev/{clean(mission_id)}/{clean(task_id)}"
 
 
+def _require_prewrite_continuity(
+    *,
+    workspace: Path,
+    mission_id: str,
+    task_id: str,
+    canonical_branch: str,
+    canonical_base_sha: str,
+    recovery_ref: str,
+    intended_paths: tuple[str, ...],
+    hook: DevelopmentDurabilityHook | None,
+) -> Mapping[str, Any]:
+    if hook is None:
+        raise DevelopmentDurabilityAttestationError(
+            "CONTINUITY_NOT_INITIALIZED: mutating task requires remote baseline"
+        )
+    attestation = dict(
+        hook(
+            checkpoint_event="BEFORE_FIRST_RISKY_MUTATION",
+            workspace=workspace,
+            mission_id=mission_id,
+            task_id=task_id,
+            canonical_branch=canonical_branch,
+            canonical_base_sha=canonical_base_sha,
+            recovery_ref=recovery_ref,
+            intended_paths=tuple(intended_paths),
+            files_changed=(),
+            commits=(),
+            candidate={},
+        )
+    )
+    checkpoint_sha = str(attestation.get("checkpoint_sha") or "").strip().lower()
+    attested_ref = str(attestation.get("recovery_ref") or "").strip()
+    readback = str(attestation.get("remote_readback_status") or "").strip().upper()
+    content_digest = str(attestation.get("content_digest") or "").strip().lower()
+    valid = (
+        re.fullmatch(r"[0-9a-f]{40}", checkpoint_sha) is not None
+        and attested_ref == recovery_ref
+        and readback == "VERIFIED"
+        and re.fullmatch(r"[0-9a-f]{64}", content_digest) is not None
+    )
+    if not valid:
+        raise DevelopmentDurabilityAttestationError(
+            "REMOTE_READBACK_NOT_VERIFIED: prewrite checkpoint invalid"
+        )
+    return attestation
+
+
 def _enforce_material_result_durability(
     *,
     result: dict[str, Any],
@@ -844,14 +891,46 @@ class MunderAdapter:
                     "delegation_id": lease.delegation_id,
                 },
             )
+        recovery_ref = _recovery_ref_for_task(spec.mission_id, task.task_id)
+        prewrite_attestation: Mapping[str, Any] | None = None
+        continuity_error: str | None = None
+        if lease.write_set:
+            try:
+                prewrite_attestation = _require_prewrite_continuity(
+                    workspace=workspace,
+                    mission_id=spec.mission_id,
+                    task_id=task.task_id,
+                    canonical_branch=spec.branch,
+                    canonical_base_sha=spec.base_sha,
+                    recovery_ref=recovery_ref,
+                    intended_paths=lease.write_set,
+                    hook=self._development_durability_hook,
+                )
+            except DevelopmentDurabilityAttestationError as exc:
+                continuity_error = str(exc)
+
         runner = self._worker_runner or self._worker_runners.get(task.agent)
-        if runner is None:
+        if continuity_error is not None:
+            result = {
+                "status": "BLOCKED",
+                "error": "DEVELOPMENT_DURABILITY_BLOCKED",
+                "durability_reason": continuity_error,
+                "DEVELOPMENT_PROGRESS_DURABLE": "FAIL",
+                "LOCAL_ONLY_PROGRESS_DETECTED": "NO",
+            }
+        elif runner is None:
             result = {
                 "status": "BLOCKED",
                 "error": "worker engine is not registered by the Harness",
             }
         else:
             result = {}
+            if prewrite_attestation is not None:
+                result["PREWRITE_REMOTE_READBACK"] = "VERIFIED"
+                result["PREWRITE_CHECKPOINT_SHA"] = str(
+                    prewrite_attestation.get("checkpoint_sha") or ""
+                )
+                result["RECOVERY_REF"] = recovery_ref
             last_error = "worker execution failed"
             for attempt in range(1, lease.retry_budget + 2):
                 try:
@@ -1017,7 +1096,7 @@ class MunderAdapter:
             task_id=task.task_id,
             canonical_branch=spec.branch,
             canonical_base_sha=spec.base_sha,
-            recovery_ref=_recovery_ref_for_task(spec.mission_id, task.task_id),
+            recovery_ref=recovery_ref,
             hook=self._development_durability_hook,
         )
 
