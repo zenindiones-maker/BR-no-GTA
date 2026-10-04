@@ -969,6 +969,8 @@ class MunderAdapter:
             except DevelopmentDurabilityAttestationError as exc:
                 continuity_error = str(exc)
 
+        intermediate_checkpoint_sha: str | None = None
+        intermediate_remote_readback: str | None = None
         runner = self._worker_runner or self._worker_runners.get(task.agent)
         if continuity_error is not None:
             result = {
@@ -992,8 +994,6 @@ class MunderAdapter:
                 )
                 result["RECOVERY_REF"] = recovery_ref
             last_error = "worker execution failed"
-            intermediate_checkpoint_sha: str | None = None
-            intermediate_remote_readback: str | None = None
             policy = DevelopmentContinuityPolicy()
             attempt_timeout_seconds = (
                 min(float(timeout_seconds), float(policy.rpo_target_seconds))
