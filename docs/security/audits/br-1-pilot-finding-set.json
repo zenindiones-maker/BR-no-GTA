@@ -61,6 +61,11 @@
       "candidate": "Git-ref interference between Development Continuity and Telegram runtime",
       "decision": "NOT_OPENED",
       "reason": "Remote recovery-ref writer fencing remains robust: EXPECTED_PREVIOUS_REMOTE_OID, non-force push, explicit recovery ref targeting, and independent remote readback are not bypassed by the Telegram supervisor."
+    },
+    {
+      "candidate": "Automatic promotion of Development Recovery commits/content into the canonical branch",
+      "decision": "NOT_OPENED",
+      "reason": "No automatic recovery-to-canonical promotion path was observed. Development checkpoint persistence rejects PROMOTION and is scoped to recovery/dev/**. The permanent canonical promotion workflow is workflow_dispatch-only, accepts only refs/heads/staging/security-* as staging_ref, requires exact old/candidate/tree binding, trusted Harness authorization plus SecurityReviewReceipt evidence, fast-forward ancestry, and uses the dedicated deploy-key identity. Active repository rulesets protect work/gate6f-analytics-learning and expose no user/repository-role/admin bypass."
     }
   ],
   "audit_notes": {
