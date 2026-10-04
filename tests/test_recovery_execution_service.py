@@ -162,6 +162,27 @@ def test_proposal_contract_requires_structured_patch_and_tests(tmp_path):
     )
 
 
+def test_recovery_apply_requires_development_continuity_hook(tmp_path):
+    root, base_sha, patch = _repo(tmp_path)
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    spec, _ = build_recovery_candidate_spec(
+        proposal=_proposal(patch),
+        review=_review(),
+        base_sha=base_sha,
+        artifact_dir=artifact_dir,
+        proposal_ref="artifact:task-results/task-04.json",
+        review_ref="artifact:task-results/task-05.json",
+        harness_decision_id="decision-recovery-test",
+    )
+    with pytest.raises(PermissionError, match="DEVELOPMENT_CONTINUITY_REQUIRED"):
+        apply_recovery_candidate(
+            spec=spec,
+            repository_root=root,
+            artifact_dir=artifact_dir,
+        )
+
+
 def test_recovery_candidate_apply_and_validate_are_sandboxed(tmp_path):
     root, base_sha, patch = _repo(tmp_path)
     artifact_dir = tmp_path / "artifacts"
