@@ -29,6 +29,15 @@ _SECRET_PATTERNS = (
     re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
     re.compile(rb"(?i)(?:api[_-]?key|access[_-]?token|client[_-]?secret|password)\s*[:=]\s*['\"]?[A-Za-z0-9_./+\-=]{12,}"),
 )
+_LARGE_INLINE_MAX_BYTES = 1_048_576
+_KNOWN_NON_SOURCE_SUFFIXES = (
+    ".7z", ".rar", ".xz", ".bz2", ".tgz", ".tar.gz", ".iso",
+    ".avi", ".webm", ".wav", ".flac", ".mp3", ".m4a", ".ogg",
+    ".sqlite3", ".parquet", ".arrow", ".feather", ".h5", ".hdf5",
+    ".pt", ".pth", ".onnx", ".safetensors", ".bin", ".ckpt",
+    ".npy", ".npz", ".pickle", ".pkl",
+)
+
 
 
 class CheckpointBlocked(RuntimeError):
@@ -142,11 +151,24 @@ class DevelopmentRecoveryCheckpointService:
                 data = candidate.read_bytes()
                 if any(pattern.search(data) for pattern in _SECRET_PATTERNS):
                     raise CheckpointBlocked("BLOCKED_SECRET_RISK", rel, "SECRET_LIKE_CONTENT", "secret scanner matched candidate")
-                if classification == "LARGE_EVIDENCE":
+                low = rel.lower()
+                suffix_non_source = any(low.endswith(suffix) for suffix in _KNOWN_NON_SOURCE_SUFFIXES)
+                contains_nul = b"\x00" in data[:8192]
+                oversized = len(data) > _LARGE_INLINE_MAX_BYTES
+                if classification == "LARGE_EVIDENCE" or suffix_non_source or contains_nul or oversized:
+                    if classification == "LARGE_EVIDENCE":
+                        classification_reason = "PATH_OR_SUFFIX_POLICY"
+                    elif suffix_non_source:
+                        classification_reason = "NON_SOURCE_SUFFIX"
+                    elif contains_nul:
+                        classification_reason = "BINARY_CONTENT"
+                    else:
+                        classification_reason = "SIZE_THRESHOLD"
                     large.append({
                         "path": rel,
                         "sha256": _sha_bytes(data),
                         "size_bytes": len(data),
+                        "classification_reason": classification_reason,
                         "policy": "locator+digest+provenance; bytes excluded from recovery git",
                     })
                     continue
@@ -397,6 +419,10 @@ class DevelopmentRecoveryCheckpointService:
             if cp.returncode != 0:
                 raise RuntimeError((cp.stderr or cp.stdout).strip())
             commit = cp.stdout.strip()
+
+        # Make the local checkpoint reachable before any later crash or remote I/O.
+        local_ref = _local_degraded_ref(recovery_ref)
+        _run(self.repo, "git", "update-ref", local_ref, commit)
         self._fault("after_local_snapshot")
 
         if _run(self.repo, "git", "write-tree") != active_index_before:
@@ -411,7 +437,6 @@ class DevelopmentRecoveryCheckpointService:
 
         def local_degraded(reason: str) -> dict[str, Any]:
             local_ref = _local_degraded_ref(recovery_ref)
-            _run(self.repo, "git", "update-ref", local_ref, commit)
             degraded_core = dict(core)
             degraded_core["development_state"] = "LOCAL_DEGRADED"
             degraded_core["remote_write_status"] = "FAILED"
@@ -443,7 +468,6 @@ class DevelopmentRecoveryCheckpointService:
             if _remote_transport_unavailable(detail):
                 return local_degraded(detail or "REMOTE_WRITE_TRANSPORT_FAILURE")
             local_ref = _local_degraded_ref(recovery_ref)
-            _run(self.repo, "git", "update-ref", local_ref, commit)
             raise CheckpointConflict(
                 "RECOVERY_REF_CONFLICT non-fast-forward remote update rejected"
             )
@@ -473,6 +497,10 @@ class DevelopmentRecoveryCheckpointService:
         read_core["remote_readback_status"] = "VERIFIED"
         logical = self._assemble(remote_oid, read_core, read_ledger, tree_sha=remote_tree)
         logical["checkpoint_write"] = "WRITTEN"
+        local_ref = _local_degraded_ref(recovery_ref)
+        local_oid = _run(self.repo, "git", "rev-parse", "--verify", local_ref, check=False)
+        if local_oid == commit:
+            _run(self.repo, "git", "update-ref", "-d", local_ref, commit)
         self._fault("after_confirmation")
         return logical
 
