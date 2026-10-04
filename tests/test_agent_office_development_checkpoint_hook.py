@@ -42,6 +42,7 @@ def test_hook_issues_subordinate_checkpoint_authorization_and_advances_ledger(tm
         goal_id="goal-1",
         issue_authorization=issue_auth,
         persist_capability=persist_capability,
+        recovery_loader=lambda **_: {"outcome": "NO_RECOVERY_STATE"},
     )
 
     first = hook(
@@ -101,6 +102,7 @@ def test_hook_does_not_claim_durable_when_capability_readback_is_not_verified(tm
         goal_id="goal-1",
         issue_authorization=lambda **_: type("Auth", (), {"authorization_id": "cp-auth"})(),
         persist_capability=persist_capability,
+        recovery_loader=lambda **_: {"outcome": "NO_RECOVERY_STATE"},
     )
     result = hook(
         checkpoint_event="AFTER_ATOMIC_TASK_COMPLETION",
