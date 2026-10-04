@@ -14,6 +14,8 @@ CONFIG_DIR="${HOME}/.config/br-no-gta"
 DEPLOY_LOCK="${STATE_DIR}/telegram-a15-deploy.lock"
 KNOWN_GOOD_FILE="${STATE_DIR}/telegram-a15-known-good.sha"
 DEPLOY_STATUS_FILE="${STATE_DIR}/telegram-a15-deployment.env"
+DEPLOYMENT_ENVIRONMENT="a15-telegram-production"
+RUNTIME_IDENTITY="a15-telegram-production"
 
 mkdir -p "${DEPLOY_ROOT}" "${RELEASES_DIR}" "${ENV_DIR}" "${STATE_DIR}" "${CONFIG_DIR}"
 chmod 700 "${DEPLOY_ROOT}" "${STATE_DIR}" "${CONFIG_DIR}" 2>/dev/null || true
@@ -136,30 +138,109 @@ activate_release_pointer() {
   mv -Tf "${temporary}" "${CURRENT_LINK}"
 }
 
+github_deployment_payload() {
+  local sha="$1" tree="$2" previous="$3" kind="$4" timestamp
+  timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '{"ref":"%s","environment":"%s","auto_merge":false,"required_contexts":[],"description":"BR-no-GTA A15 Telegram exact SHA deployment","payload":{"canonical_sha":"%s","candidate_tree_sha":"%s","previous_known_good_sha":"%s","a15_runtime_identity":"%s","deployment_kind":"%s","timestamp":"%s"}}\n' \
+    "${sha}" "${DEPLOYMENT_ENVIRONMENT}" "${sha}" "${tree}" "${previous}" "${RUNTIME_IDENTITY}" "${kind}" "${timestamp}"
+}
+
+create_github_deployment() {
+  local sha="$1" tree="$2" previous="$3" kind="$4"
+  local payload_file deployment_id
+  command -v gh >/dev/null 2>&1 || {
+    echo "GITHUB_DEPLOYMENT=FAIL gh unavailable" >&2
+    return 1
+  }
+  payload_file="$(mktemp "${STATE_DIR}/github-deployment.XXXXXX.json")"
+  github_deployment_payload "${sha}" "${tree}" "${previous}" "${kind}" > "${payload_file}"
+  if ! deployment_id="$(
+    gh api --method POST \
+      -H "Accept: application/vnd.github+json" \
+      "repos/${REPOSITORY}/deployments" \
+      --input "${payload_file}" \
+      --jq '.id'
+  )"; then
+    rm -f "${payload_file}"
+    echo "GITHUB_DEPLOYMENT=FAIL create" >&2
+    return 1
+  fi
+  rm -f "${payload_file}"
+  [[ "${deployment_id}" =~ ^[0-9]+$ ]] || {
+    echo "GITHUB_DEPLOYMENT=FAIL invalid deployment id" >&2
+    return 1
+  }
+  printf '%s\n' "${deployment_id}"
+}
+
+publish_github_deployment_status() {
+  local deployment_id="$1" state="$2" lifecycle="$3"
+  local payload_file rc
+  [[ "${deployment_id}" =~ ^[0-9]+$ ]] || return 1
+  payload_file="$(mktemp "${STATE_DIR}/github-deployment-status.XXXXXX.json")"
+  printf '{"state":"%s","description":"%s","environment":"%s","auto_inactive":false}\n' \
+    "${state}" "${lifecycle}" "${DEPLOYMENT_ENVIRONMENT}" > "${payload_file}"
+  set +e
+  gh api --method POST \
+    -H "Accept: application/vnd.github+json" \
+    "repos/${REPOSITORY}/deployments/${deployment_id}/statuses" \
+    --input "${payload_file}" >/dev/null
+  rc="$?"
+  set -e
+  rm -f "${payload_file}"
+  return "${rc}"
+}
+
 rollback_known_good() {
-  local previous_sha="$1" previous_release previous_env control
+  local previous_sha="$1" failed_deployment_id="${2:-}" failed_desired_sha="${3:-}"
+  local previous_release previous_env control previous_tree
+  ROLLBACK_DEPLOYMENT_ID=""
   [[ -n "${previous_sha}" ]] || {
     echo "ROLLBACK=UNAVAILABLE no previous known-good SHA" >&2
     return 1
   }
+  if [[ -n "${failed_deployment_id}" ]]; then
+    publish_github_deployment_status "${failed_deployment_id}" "failure" "candidate_failed" || true
+  fi
   previous_release="$(release_path "${previous_sha}")"
   previous_env="$(env_path "${previous_sha}")"
   [[ -d "${previous_release}" && -x "${previous_env}/bin/python" ]] || {
     echo "ROLLBACK=FAIL previous known-good materialization unavailable" >&2
     return 1
   }
+  previous_tree="$(git_bare rev-parse "${previous_sha}^{tree}")"
+  ROLLBACK_DEPLOYMENT_ID="$(
+    create_github_deployment "${previous_sha}" "${previous_tree}" "${failed_desired_sha}" "rollback" 2>/dev/null || true
+  )"
+  if [[ -n "${ROLLBACK_DEPLOYMENT_ID}" ]]; then
+    publish_github_deployment_status "${ROLLBACK_DEPLOYMENT_ID}" "in_progress" "rollback_in_progress" || true
+  fi
+
   control="$(control_for "${previous_release}")"
-  BR_CANONICAL_BRANCH="${CANONICAL_BRANCH}"   BR_TELEGRAM_RUNTIME_ENV_ROOT="${previous_env}"   BR_TELEGRAM_RUNTIME_RELEASE_SHA="${previous_sha}"   BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START=1     bash "${control}" start
-  BR_CANONICAL_BRANCH="${CANONICAL_BRANCH}"   BR_TELEGRAM_RUNTIME_ENV_ROOT="${previous_env}"   BR_TELEGRAM_RUNTIME_RELEASE_SHA="${previous_sha}"     bash "${control}" status >/dev/null
+  BR_CANONICAL_BRANCH="${CANONICAL_BRANCH}" \
+  BR_TELEGRAM_RUNTIME_ENV_ROOT="${previous_env}" \
+  BR_TELEGRAM_RUNTIME_RELEASE_SHA="${previous_sha}" \
+  BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START=1 \
+    bash "${control}" start
+  BR_CANONICAL_BRANCH="${CANONICAL_BRANCH}" \
+  BR_TELEGRAM_RUNTIME_ENV_ROOT="${previous_env}" \
+  BR_TELEGRAM_RUNTIME_RELEASE_SHA="${previous_sha}" \
+    bash "${control}" status >/dev/null
+
   activate_release_pointer "${previous_release}"
   printf '%s\n' "${previous_sha}" > "${KNOWN_GOOD_FILE}"
+  if [[ -n "${ROLLBACK_DEPLOYMENT_ID}" ]]; then
+    publish_github_deployment_status "${ROLLBACK_DEPLOYMENT_ID}" "success" "rollback_success" || true
+  fi
   echo "ROLLBACK_RUNTIME_REVISION=${previous_sha}"
+  echo "ROLLBACK_DEPLOYMENT_ID=${ROLLBACK_DEPLOYMENT_ID:-UNAVAILABLE}"
   echo "ROLLBACK_GATEWAY_SINGLETON=PASS"
   echo "ROLLBACK_GATEWAY_READY=PASS"
 }
 
 write_deployment_state() {
   local desired="$1" previous="$2" state="$3" tree="$4"
+  local deployment_id="${5:-}" rollback_deployment_id="${6:-}"
   local tmp="${DEPLOY_STATUS_FILE}.tmp.$$"
   umask 077
   {
@@ -167,7 +248,9 @@ write_deployment_state() {
     printf 'CANDIDATE_TREE_SHA=%q\n' "${tree}"
     printf 'PREVIOUS_KNOWN_GOOD_SHA=%q\n' "${previous}"
     printf 'DEPLOYMENT_STATE=%q\n' "${state}"
-    printf 'A15_RUNTIME_IDENTITY=%q\n' "a15-telegram-production"
+    printf 'DEPLOYMENT_ID=%q\n' "${deployment_id}"
+    printf 'ROLLBACK_DEPLOYMENT_ID=%q\n' "${rollback_deployment_id}"
+    printf 'A15_RUNTIME_IDENTITY=%q\n' "${RUNTIME_IDENTITY}"
     printf 'TIMESTAMP=%q\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   } > "${tmp}"
   mv "${tmp}" "${DEPLOY_STATUS_FILE}"
@@ -183,6 +266,9 @@ reconcile_runtime() {
   ensure_deploy_repo
   local DESIRED_SHA ACTIVE_RUNTIME_SHA PREVIOUS_KNOWN_GOOD_SHA
   local candidate_output candidate_release candidate_tree candidate_env previous_release
+  local DEPLOYMENT_ID ROLLBACK_DEPLOYMENT_ID
+  DEPLOYMENT_ID=""
+  ROLLBACK_DEPLOYMENT_ID=""
 
   DESIRED_SHA="$(desired_sha)"
   ACTIVE_RUNTIME_SHA="$(active_sha 2>/dev/null || true)"
@@ -209,10 +295,21 @@ reconcile_runtime() {
   candidate_tree="$(printf '%s\n' "${candidate_output}" | awk -F= '/^CANDIDATE_TREE_SHA=/{print $2; exit}')"
   candidate_env="$(ensure_runtime_env "${DESIRED_SHA}" "${candidate_release}")"
 
-  write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "in_progress" "${candidate_tree}"
+  if ! DEPLOYMENT_ID="$(
+    create_github_deployment "${DESIRED_SHA}" "${candidate_tree}" "${PREVIOUS_KNOWN_GOOD_SHA}" "candidate"
+  )"; then
+    write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "failure" "${candidate_tree}" "" ""
+    echo "TELEGRAM_DEPLOY=FAIL GitHub deployment record unavailable; known-good preserved" >&2
+    return 1
+  fi
+  write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "queued" "${candidate_tree}" "${DEPLOYMENT_ID}" ""
+  publish_github_deployment_status "${DEPLOYMENT_ID}" "queued" "queued"
+  publish_github_deployment_status "${DEPLOYMENT_ID}" "in_progress" "in_progress"
+  write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "in_progress" "${candidate_tree}" "${DEPLOYMENT_ID}" ""
 
   if ! candidate_preflight "${DESIRED_SHA}" "${candidate_release}" "${candidate_env}"; then
-    write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "failure" "${candidate_tree}"
+    publish_github_deployment_status "${DEPLOYMENT_ID}" "failure" "preflight_failed" || true
+    write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "failure" "${candidate_tree}" "${DEPLOYMENT_ID}" ""
     echo "TELEGRAM_DEPLOY_PREFLIGHT=FAIL known-good listener preserved" >&2
     return 1
   fi
@@ -225,23 +322,25 @@ reconcile_runtime() {
   stop_known_good "${previous_release}" "${PREVIOUS_KNOWN_GOOD_SHA}" || true
 
   if ! start_release "${DESIRED_SHA}" "${candidate_release}" "${candidate_env}"; then
-    write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "rollback_in_progress" "${candidate_tree}"
-    rollback_known_good "${PREVIOUS_KNOWN_GOOD_SHA}"
-    write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "rollback_success" "${candidate_tree}"
+    write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "rollback_in_progress" "${candidate_tree}" "${DEPLOYMENT_ID}" ""
+    rollback_known_good "${PREVIOUS_KNOWN_GOOD_SHA}" "${DEPLOYMENT_ID}" "${DESIRED_SHA}"
+    write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "rollback_success" "${candidate_tree}" "${DEPLOYMENT_ID}" "${ROLLBACK_DEPLOYMENT_ID}"
     return 1
   fi
 
   if ! attest_release "${DESIRED_SHA}" "${candidate_release}" "${candidate_env}"; then
     BR_CANONICAL_BRANCH="${CANONICAL_BRANCH}"     BR_TELEGRAM_RUNTIME_ENV_ROOT="${candidate_env}"     BR_TELEGRAM_RUNTIME_RELEASE_SHA="${DESIRED_SHA}"       bash "$(control_for "${candidate_release}")" stop || true
-    write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "rollback_in_progress" "${candidate_tree}"
-    rollback_known_good "${PREVIOUS_KNOWN_GOOD_SHA}"
-    write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "rollback_success" "${candidate_tree}"
+    write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "rollback_in_progress" "${candidate_tree}" "${DEPLOYMENT_ID}" ""
+    rollback_known_good "${PREVIOUS_KNOWN_GOOD_SHA}" "${DEPLOYMENT_ID}" "${DESIRED_SHA}"
+    write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "rollback_success" "${candidate_tree}" "${DEPLOYMENT_ID}" "${ROLLBACK_DEPLOYMENT_ID}"
     return 1
   fi
 
   activate_release_pointer "${candidate_release}"
   printf '%s\n' "${DESIRED_SHA}" > "${KNOWN_GOOD_FILE}"
-  write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "success" "${candidate_tree}"
+  publish_github_deployment_status "${DEPLOYMENT_ID}" "success" "success"
+  write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "success" "${candidate_tree}" "${DEPLOYMENT_ID}" ""
+  echo "GITHUB_DEPLOYMENT_ID=${DEPLOYMENT_ID}"
   echo "A15_DEPLOYMENT_EXACT_SHA=PASS"
   echo "ACTIVE_RUNTIME_SHA=${DESIRED_SHA}"
   echo "DEPLOYMENT=SUCCESS"
