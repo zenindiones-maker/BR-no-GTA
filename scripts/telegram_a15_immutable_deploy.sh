@@ -191,6 +191,16 @@ publish_github_deployment_status() {
   return "${rc}"
 }
 
+verify_github_deployment_status() {
+  local deployment_id="$1" expected_state="$2" observed
+  [[ "${deployment_id}" =~ ^[0-9]+$ ]] || return 1
+  command -v gh >/dev/null 2>&1 || return 1
+  observed="$(
+    gh api -H "Accept: application/vnd.github+json"       "repos/${REPOSITORY}/deployments/${deployment_id}/statuses"       --jq '.[0].state' 2>/dev/null || true
+  )"
+  [[ "${observed}" == "${expected_state}" ]]
+}
+
 rollback_known_good() {
   local previous_sha="$1" failed_deployment_id="${2:-}" failed_desired_sha="${3:-}"
   local previous_release previous_env control previous_tree
@@ -230,12 +240,53 @@ rollback_known_good() {
   activate_release_pointer "${previous_release}"
   printf '%s\n' "${previous_sha}" > "${KNOWN_GOOD_FILE}"
   if [[ -n "${ROLLBACK_DEPLOYMENT_ID}" ]]; then
-    publish_github_deployment_status "${ROLLBACK_DEPLOYMENT_ID}" "success" "rollback_success" || true
+    publish_github_deployment_status "${ROLLBACK_DEPLOYMENT_ID}" "success" "rollback_success" || return 1
+    verify_github_deployment_status "${ROLLBACK_DEPLOYMENT_ID}" "success" || {
+      echo "ROLLBACK_REMOTE_READBACK=FAIL" >&2
+      return 1
+    }
+    echo "ROLLBACK_REMOTE_READBACK=VERIFIED"
   fi
   echo "ROLLBACK_RUNTIME_REVISION=${previous_sha}"
   echo "ROLLBACK_DEPLOYMENT_ID=${ROLLBACK_DEPLOYMENT_ID:-UNAVAILABLE}"
   echo "ROLLBACK_GATEWAY_SINGLETON=PASS"
   echo "ROLLBACK_GATEWAY_READY=PASS"
+}
+
+recover_interrupted_deployment() {
+  [[ -s "${DEPLOY_STATUS_FILE}" ]] || return 0
+  local CANONICAL_SHA="" CANDIDATE_TREE_SHA="" PREVIOUS_KNOWN_GOOD_SHA=""
+  local DEPLOYMENT_STATE="" DEPLOYMENT_ID="" ROLLBACK_DEPLOYMENT_ID=""
+  local A15_RUNTIME_IDENTITY="" TIMESTAMP=""
+  source "${DEPLOY_STATUS_FILE}"
+  case "${DEPLOYMENT_STATE:-}" in
+    rollback_in_progress|in_progress|queued)
+      [[ -n "${PREVIOUS_KNOWN_GOOD_SHA:-}" ]] || {
+        echo "RESTART_RECOVERY=FAIL missing previous known-good SHA" >&2
+        return 1
+      }
+      write_deployment_state "${CANONICAL_SHA:-}" "${PREVIOUS_KNOWN_GOOD_SHA}" "rollback_in_progress" "${CANDIDATE_TREE_SHA:-}" "${DEPLOYMENT_ID:-}" "${ROLLBACK_DEPLOYMENT_ID:-}"
+      rollback_known_good "${PREVIOUS_KNOWN_GOOD_SHA}" "${DEPLOYMENT_ID:-}" "${CANONICAL_SHA:-}"
+      write_deployment_state "${CANONICAL_SHA:-}" "${PREVIOUS_KNOWN_GOOD_SHA}" "rollback_success" "${CANDIDATE_TREE_SHA:-}" "${DEPLOYMENT_ID:-}" "${ROLLBACK_DEPLOYMENT_ID:-}"
+      echo "RESTART_RECOVERY=PASS"
+      ;;
+    remote_readback_pending)
+      if verify_github_deployment_status "${DEPLOYMENT_ID:-}" "success"; then
+        write_deployment_state "${CANONICAL_SHA:-}" "${PREVIOUS_KNOWN_GOOD_SHA:-}" "success" "${CANDIDATE_TREE_SHA:-}" "${DEPLOYMENT_ID:-}" "${ROLLBACK_DEPLOYMENT_ID:-}"
+        echo "RESTART_REMOTE_READBACK=VERIFIED"
+        return 0
+      fi
+      echo "RESTART_REMOTE_READBACK=PENDING" >&2
+      return 1
+      ;;
+    rollback_success|success|failure|"")
+      return 0
+      ;;
+    *)
+      echo "RESTART_RECOVERY=FAIL unknown deployment state: ${DEPLOYMENT_STATE}" >&2
+      return 1
+      ;;
+  esac
 }
 
 write_deployment_state() {
@@ -264,6 +315,7 @@ reconcile_runtime() {
   fi
 
   ensure_deploy_repo
+  recover_interrupted_deployment
   local DESIRED_SHA ACTIVE_RUNTIME_SHA PREVIOUS_KNOWN_GOOD_SHA
   local candidate_output candidate_release candidate_tree candidate_env previous_release
   local DEPLOYMENT_ID ROLLBACK_DEPLOYMENT_ID
@@ -339,7 +391,13 @@ reconcile_runtime() {
   activate_release_pointer "${candidate_release}"
   printf '%s\n' "${DESIRED_SHA}" > "${KNOWN_GOOD_FILE}"
   publish_github_deployment_status "${DEPLOYMENT_ID}" "success" "success"
+  if ! verify_github_deployment_status "${DEPLOYMENT_ID}" "success"; then
+    write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "remote_readback_pending" "${candidate_tree}" "${DEPLOYMENT_ID}" ""
+    echo "DEPLOYMENT_REMOTE_READBACK=FAIL" >&2
+    return 1
+  fi
   write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "success" "${candidate_tree}" "${DEPLOYMENT_ID}" ""
+  echo "DEPLOYMENT_REMOTE_READBACK=VERIFIED"
   echo "GITHUB_DEPLOYMENT_ID=${DEPLOYMENT_ID}"
   echo "A15_DEPLOYMENT_EXACT_SHA=PASS"
   echo "ACTIVE_RUNTIME_SHA=${DESIRED_SHA}"
