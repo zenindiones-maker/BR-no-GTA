@@ -5,7 +5,7 @@
 **Audited branch:** `work/gate6f-analytics-learning`  
 **Audited HEAD:** `c8b9f2275e5288e5c4cefe9474075d21ca1023f0`  
 **Status:** IN PROGRESS  
-**Finding budget:** 10 total / 6 remaining
+**Finding budget:** 10 total / 5 remaining
 
 This document is a durable audit ledger. A finding marked **LOCKED** is accepted into BR-1 but is not considered remediated or closed.
 
@@ -61,20 +61,22 @@ The 90-second heartbeat is intentionally liveness-only, so dirty development sta
 
 **Impact:** loss of recent development progress and violation of the declared durability/RPO guarantee. This finding does not imply unauthorized execution or direct secret exposure.
 
-## Active candidate findings
-
-### BR-1-F006 — PROPOSED / MEDIUM candidate
+### BR-1-F006 — MEDIUM
 **Category:** Durability / Artifact Classification / Large-Evidence Boundary  
 **Evidence class:** OBSERVED  
 **Confidence:** HIGH
 
-**Title:** Development Recovery classifies large evidence by a narrow path/extension allowlist with no size threshold, allowing large unrecognized media/archive/database artifacts under recoverable source paths to be committed inline
+**Title:** Development Recovery classifies large evidence by a narrow path/extension allowlist with no size threshold, allowing large or non-source artifacts in unrecognized formats under recoverable source paths to be committed inline
 
-The locator-only path is correctly enforced for artifacts that are actually classified `LARGE_EVIDENCE`. The capture boundary itself is incomplete: classification recognizes only fixed large-evidence directories plus `.sqlite`, `.db`, `.mp4`, `.mov`, `.zip`, `.tar`, and `.gz`, while recoverable source roots include `app/`, `tests/`, `scripts/`, `.github/`, `docs/`, `config/`, and `schemas/`. No byte-size threshold is applied before those source files are selected into the recovery tree.
+Development Recovery correctly excludes bytes for artifacts classified as `LARGE_EVIDENCE`, but classification depends only on a fixed set of path prefixes and file extensions and applies no byte-size threshold. Files under recoverable source roots that use unrecognized media, archive, database, model, dataset, or binary formats can therefore be treated as normal recoverable source and committed into `recovery/dev/**` despite the normative requirement that large media and evidence remain locator-only.
 
-Thus formats such as `.wav`, `.flac`, `.png`, `.jpg`, `.webm`, `.7z`, `.sqlite3`, `.parquet`, `.npy`, `.npz`, or any other sufficiently large unrecognized file can be treated as normal recoverable source when placed under a recoverable root. `restore()` does not inline correctly classified `large_evidence`; this candidate is therefore a capture/classification defect, not a locator-consumer defect.
+**Impact:** the observed defect is violation of the locator-only durability boundary. Expected operational consequences include repository growth and increased checkpoint latency or push failure as object sizes grow. Potential exposure of sensitive binary/media material exists but is not claimed as demonstrated.
 
-**Budget effect:** none until locked.
+**Required remediation invariant:** `LARGE_OR_NON_SOURCE_ARTIFACT => BYTES_NOT_IN_RECOVERY_TREE`
+
+**Preferred control:** path/type policy + explicit byte-size ceiling + exact-byte sensitivity inspection; do not rely only on filename extensions.
+
+**Boundary qualification:** the correctly classified `LARGE_EVIDENCE` path remains locator-only; the defect is incomplete capture-time classification/size enforcement.
 
 ## Candidate explicitly not opened
 
