@@ -343,7 +343,15 @@ def test_agent_office_serializes_overlapping_write_sets(tmp_path, monkeypatch):
 
     result = AgentOfficeService(
         root,
-        adapter=MunderAdapter(worker_runners={"specialist": runner}),
+        adapter=MunderAdapter(
+            worker_runners={"specialist": runner},
+            development_durability_hook=lambda **kwargs: {
+                "checkpoint_sha": "c" * 40,
+                "recovery_ref": kwargs["recovery_ref"],
+                "remote_readback_status": "VERIFIED",
+                "content_digest": "d" * 64,
+            },
+        ),
     ).execute(
         spec,
         [
