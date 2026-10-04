@@ -82,5 +82,25 @@
   "audit_notes": {
     "telegram_project_isolation": "BR-no-GTA and Hazewave Telegram systems are separate projects and must not share bot tokens, config roots, state roots, supervisors, deployment roots, recovery state, or authority.",
     "current_scope": "This file records findings for BR-1 only and does not assert remediation or closure."
-  }
+  },
+  "candidate_findings": [
+    {
+      "id": "BR-1-F006",
+      "status": "PROPOSED_NOT_LOCKED",
+      "severity_candidate": "MEDIUM",
+      "primary_category": "Durability / Artifact Classification / Large-Evidence Boundary",
+      "title": "Development Recovery classifies large evidence by a narrow path/extension allowlist with no size threshold, allowing large unrecognized media/archive/database artifacts under recoverable source paths to be committed inline",
+      "evidence_class": "OBSERVED",
+      "confidence": "HIGH",
+      "observed_code_facts": [
+        "LARGE_EVIDENCE classification is based only on fixed path prefixes and a short extension list: .sqlite, .db, .mp4, .mov, .zip, .tar, .gz.",
+        "RECOVERABLE_SOURCE paths include app/, tests/, scripts/, .github/, docs/, config/, schemas/.",
+        "No byte-size threshold is applied before selecting RECOVERABLE_SOURCE files for the recovery tree.",
+        "The large-evidence locator-only mechanism is correctly enforced for files that are actually classified LARGE_EVIDENCE.",
+        "restore() materializes only checkpoint.included_paths; large_evidence metadata is not automatically restored inline by DevelopmentRecoveryCheckpointService."
+      ],
+      "qualification": "This is not a locator-consumer bug for correctly classified LARGE_EVIDENCE. The defect is incomplete classification/size enforcement at capture time. Sensitive-binary exposure remains potential unless demonstrated with a concrete artifact.",
+      "budget_effect": "NONE_UNTIL_LOCKED"
+    }
+  ]
 }
