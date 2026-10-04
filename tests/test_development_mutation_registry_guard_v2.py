@@ -14,6 +14,10 @@ EXPECTED_MUTATORS = {
         "app.services.development_checkpoint_capability_service."
         "execute_development_checkpoint_persist_capability"
     ),
+    "development.canonical.promotion-authorize": (
+        "app.services.canonical_promotion_authorization_service."
+        "issue_exact_canonical_promotion_authorization"
+    ),
     "harness.recovery.apply-local": (
         "app.services.recovery_execution_service.execute_recovery_apply_capability"
     ),
@@ -41,6 +45,9 @@ def test_mutating_executor_bindings_contain_durability_boundaries():
     recovery_checkpoint = (
         root / "app/services/development_recovery_checkpoint_service.py"
     ).read_text()
+    promotion_authority = (
+        root / "app/services/canonical_promotion_authorization_service.py"
+    ).read_text()
 
     assert "HarnessDevelopmentCheckpointHook" in office
     assert "development_durability_hook=durability_hook" in office
@@ -54,3 +61,7 @@ def test_mutating_executor_bindings_contain_durability_boundaries():
     assert 'CAPABILITY_ID = "development.checkpoint.persist"' in checkpoint
     assert "DevelopmentRecoveryCheckpointService" in checkpoint
     assert "remote_readback_status" in recovery_checkpoint
+    assert "_trusted_control_identity" in promotion_authority
+    assert "validate_harness_authorization" in promotion_authority
+    assert "route_harness_request" in promotion_authority
+    assert "CANONICAL_PROMOTION_SECURITY_REVIEW_NOT_PASS" in promotion_authority
