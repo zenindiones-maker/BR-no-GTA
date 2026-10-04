@@ -45,6 +45,19 @@ def _run(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProc
     return cp
 
 
+def _trusted_control_identity() -> tuple[str, bool]:
+    root = Path(__file__).resolve().parents[2]
+    head = _run(root, "git", "rev-parse", "HEAD").stdout.decode("ascii").strip().lower()
+    status = _run(
+        root,
+        "git",
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+    ).stdout.decode("utf-8", errors="strict").strip()
+    return head, not bool(status)
+
+
 def _sha40(value: str, field: str) -> str:
     text = str(value or "").strip().lower()
     if not _HEX40.fullmatch(text):
@@ -110,6 +123,16 @@ def issue_exact_canonical_promotion_authorization(
 
     expected_old = _sha40(expected_old_oid, "expected_old_oid")
     expected_candidate = _sha40(expected_candidate_sha, "expected_candidate_sha")
+
+    control_sha, control_clean = _trusted_control_identity()
+    if control_sha != expected_old:
+        raise PermissionError(
+            "CANONICAL_PROMOTION_TRUSTED_CONTROL_SHA_MISMATCH:"
+            f"expected={expected_old}:observed={control_sha}"
+        )
+    if not control_clean:
+        raise PermissionError("CANONICAL_PROMOTION_TRUSTED_CONTROL_DIRTY")
+
     observed_old = _ls_remote(repo, target)
     if observed_old != expected_old:
         raise PermissionError(
