@@ -8,10 +8,13 @@ import re
 import subprocess
 import sys
 import tempfile
-from typing import Any, Iterable, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from app.services.harness_authorization_service import (
     validate_harness_authorization,
+)
+from app.services.agent_office.development_checkpoint_hook_service import (
+    HarnessDevelopmentCheckpointHook,
 )
 
 
@@ -151,7 +154,7 @@ def _normalize_test_commands(value: Any) -> tuple[tuple[str, ...], ...]:
             if (
                 not target.startswith("tests/")
                 or ".." in target.split("/")
-                or any(char in target for char in (";", "|", "&", "$", "\`"))
+                or any(char in target for char in (";", "|", "&", "$", "`"))
             ):
                 raise ValueError("focused pytest target is not allowlisted")
         commands.append(command)
@@ -410,12 +413,82 @@ def _verify_patch(
     return patch_path, paths
 
 
+DevelopmentDurabilityHook = Callable[..., Mapping[str, Any]]
+
+
+def _verified_development_checkpoint(
+    *,
+    hook: DevelopmentDurabilityHook,
+    checkpoint_event: str,
+    workspace: Path,
+    context: Mapping[str, Any],
+    intended_paths: tuple[str, ...] = (),
+    files_changed: tuple[str, ...] = (),
+    commits: tuple[str, ...] = (),
+    candidate: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    recovery_ref = str(context.get("recovery_ref") or "")
+    result = dict(
+        hook(
+            checkpoint_event=checkpoint_event,
+            workspace=workspace,
+            mission_id=str(context.get("mission_id") or ""),
+            task_id=str(context.get("task_id") or ""),
+            canonical_branch=str(context.get("canonical_branch") or ""),
+            canonical_base_sha=str(context.get("canonical_base_sha") or ""),
+            recovery_ref=recovery_ref,
+            intended_paths=intended_paths,
+            files_changed=files_changed,
+            commits=commits,
+            candidate=dict(candidate or {}),
+        )
+    )
+    checkpoint_sha = str(result.get("checkpoint_sha") or "").strip().lower()
+    content_digest = str(result.get("content_digest") or "").strip().lower()
+    if (
+        str(result.get("remote_readback_status") or "").strip().upper()
+        != "VERIFIED"
+        or str(result.get("recovery_ref") or "") != recovery_ref
+        or _SHA40_RE.fullmatch(checkpoint_sha) is None
+        or _SHA256_RE.fullmatch(content_digest) is None
+    ):
+        raise PermissionError(
+            "DEVELOPMENT_DURABILITY_BLOCKED: recovery checkpoint readback not verified"
+        )
+    return result
+
+
+def _recovery_ref_component(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9._-]+", "-", str(value).lower()).strip("-._")
+    return normalized[:64] or "unknown"
+
+
 def apply_recovery_candidate(
     *,
     spec: RecoveryCandidateSpec,
     repository_root: str | Path,
     artifact_dir: str | Path,
+    durability_hook: DevelopmentDurabilityHook | None = None,
+    durability_context: Mapping[str, Any] | None = None,
 ) -> tuple[RecoveryApplyReceipt, str]:
+    if durability_hook is None:
+        raise PermissionError("DEVELOPMENT_CONTINUITY_REQUIRED")
+    context = dict(durability_context or {})
+    required_context = (
+        "mission_id",
+        "task_id",
+        "canonical_branch",
+        "canonical_base_sha",
+        "recovery_ref",
+    )
+    missing_context = [key for key in required_context if not str(context.get(key) or "").strip()]
+    if missing_context:
+        raise PermissionError(
+            "DEVELOPMENT_CONTINUITY_REQUIRED: missing " + ",".join(missing_context)
+        )
+    if str(context["canonical_base_sha"]) != spec.base_sha:
+        raise PermissionError("DEVELOPMENT_CONTINUITY_BASE_MISMATCH")
+
     root = Path(repository_root).resolve()
     observed_head = _git_output(root, "rev-parse", "HEAD")
     if observed_head != spec.base_sha:
@@ -454,6 +527,13 @@ def apply_recovery_candidate(
             cwd=root,
         )
         worktree_added = True
+        _verified_development_checkpoint(
+            hook=durability_hook,
+            checkpoint_event="BEFORE_FIRST_RISKY_MUTATION",
+            workspace=sandbox,
+            context=context,
+            intended_paths=tuple(reviewed_paths),
+        )
         _run(
             ("git", "apply", "--check", str(patch_path)),
             cwd=sandbox,
@@ -502,6 +582,15 @@ def apply_recovery_candidate(
             "rev-parse",
             "HEAD",
         )
+        post_checkpoint = _verified_development_checkpoint(
+            hook=durability_hook,
+            checkpoint_event="AFTER_ATOMIC_TASK_COMPLETION",
+            workspace=sandbox,
+            context=context,
+            files_changed=normalized_changed,
+            commits=(candidate_sha,),
+            candidate={"RESULT_COMMIT_SHA": candidate_sha},
+        )
         receipt = RecoveryApplyReceipt(
             candidate_sha=candidate_sha,
             base_sha=spec.base_sha,
@@ -514,6 +603,12 @@ def apply_recovery_candidate(
                 "PATCH_HASH_VERIFIED": "PASS",
                 "PATH_ALLOWLIST_ENFORCED": "PASS",
                 "SANDBOXED_MUTATION": "PASS",
+                "DEVELOPMENT_PROGRESS_DURABLE": "PASS",
+                "REMOTE_READBACK_VERIFIED": (
+                    "PASS"
+                    if post_checkpoint.get("remote_readback_status") == "VERIFIED"
+                    else "FAIL"
+                ),
             },
             result="PASS",
         )
@@ -795,10 +890,42 @@ def execute_recovery_apply_capability(
     )
     if auth.harness_decision_id != spec.harness_decision_id:
         raise PermissionError("recovery apply Harness decision mismatch")
+    goal_id = str(dict(auth.lineage or {}).get("goal_id") or auth.execution_id)
+    mission_id = str(payload.get("mission_id") or auth.execution_id)
+    spec_digest = sha256(
+        json.dumps(
+            spec.to_dict(),
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    task_id = str(payload.get("task_id") or f"recovery-apply-{spec_digest[:12]}")
+    recovery_ref = (
+        "recovery/dev/recovery-apply/"
+        + _recovery_ref_component(mission_id)
+        + "/"
+        + _recovery_ref_component(task_id)
+    )
+    canonical_branch = str(
+        payload.get("canonical_branch") or "work/gate6f-analytics-learning"
+    )
+    durability_hook = HarnessDevelopmentCheckpointHook(
+        parent_authorization=auth,
+        goal_id=goal_id,
+    )
     receipt, receipt_ref = apply_recovery_candidate(
         spec=spec,
         repository_root=payload.get("repository_root") or ".",
         artifact_dir=payload.get("artifact_dir") or ".",
+        durability_hook=durability_hook,
+        durability_context={
+            "mission_id": mission_id,
+            "task_id": task_id,
+            "canonical_branch": canonical_branch,
+            "canonical_base_sha": spec.base_sha,
+            "recovery_ref": recovery_ref,
+        },
     )
     return {
         **receipt.to_dict(),

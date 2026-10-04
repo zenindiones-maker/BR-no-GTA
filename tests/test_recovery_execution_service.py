@@ -202,10 +202,29 @@ def test_recovery_candidate_apply_and_validate_are_sandboxed(tmp_path):
     assert _git(root, "rev-parse", "HEAD") == base_sha
     assert (root / "app" / "value.txt").read_text() == "before\n"
 
+    durability_events = []
+
+    def durability_hook(**kwargs):
+        durability_events.append(kwargs)
+        return {
+            "checkpoint_sha": ("c" if len(durability_events) == 1 else "d") * 40,
+            "recovery_ref": "recovery/dev/test/recovery-apply",
+            "remote_readback_status": "VERIFIED",
+            "content_digest": ("1" if len(durability_events) == 1 else "2") * 64,
+        }
+
     apply_receipt, apply_ref = apply_recovery_candidate(
         spec=spec,
         repository_root=root,
         artifact_dir=artifact_dir,
+        durability_hook=durability_hook,
+        durability_context={
+            "mission_id": "test",
+            "task_id": "recovery-apply",
+            "canonical_branch": "work/gate6f-analytics-learning",
+            "canonical_base_sha": base_sha,
+            "recovery_ref": "recovery/dev/test/recovery-apply",
+        },
     )
     assert apply_receipt.result == "PASS"
     assert apply_receipt.changed_files == ("app/value.txt",)
@@ -215,7 +234,13 @@ def test_recovery_candidate_apply_and_validate_are_sandboxed(tmp_path):
         "PATCH_HASH_VERIFIED": "PASS",
         "PATH_ALLOWLIST_ENFORCED": "PASS",
         "SANDBOXED_MUTATION": "PASS",
+        "DEVELOPMENT_PROGRESS_DURABLE": "PASS",
+        "REMOTE_READBACK_VERIFIED": "PASS",
     }
+    assert [event["checkpoint_event"] for event in durability_events] == [
+        "BEFORE_FIRST_RISKY_MUTATION",
+        "AFTER_ATOMIC_TASK_COMPLETION",
+    ]
     assert apply_ref.startswith("artifact:recovery-apply/")
     assert _git(root, "rev-parse", "HEAD") == base_sha
     assert (root / "app" / "value.txt").read_text() == "before\n"
