@@ -121,7 +121,7 @@ stop_known_good() {
 start_release() {
   local sha="$1" release="$2" env_root="$3" control
   control="$(control_for "${release}")"
-  BR_CANONICAL_BRANCH="${CANONICAL_BRANCH}"   BR_TELEGRAM_RUNTIME_ENV_ROOT="${env_root}"   BR_TELEGRAM_RUNTIME_RELEASE_SHA="${sha}"   BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START=1     bash "${control}" start
+  BR_CANONICAL_BRANCH="${CANONICAL_BRANCH}"   BR_TELEGRAM_RUNTIME_ENV_ROOT="${env_root}"   BR_TELEGRAM_RUNTIME_RELEASE_SHA="${sha}"   BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START=1     bash "${control}" start 9>&-
 }
 
 attest_release() {
@@ -231,11 +231,11 @@ rollback_known_good() {
   BR_TELEGRAM_RUNTIME_ENV_ROOT="${previous_env}" \
   BR_TELEGRAM_RUNTIME_RELEASE_SHA="${previous_sha}" \
   BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START=1 \
-    bash "${control}" start
+    bash "${control}" start 9>&-
   BR_CANONICAL_BRANCH="${CANONICAL_BRANCH}" \
   BR_TELEGRAM_RUNTIME_ENV_ROOT="${previous_env}" \
   BR_TELEGRAM_RUNTIME_RELEASE_SHA="${previous_sha}" \
-    bash "${control}" status >/dev/null
+    bash "${control}" status 9>&- >/dev/null
 
   activate_release_pointer "${previous_release}"
   printf '%s\n' "${previous_sha}" > "${KNOWN_GOOD_FILE}"
@@ -314,8 +314,8 @@ reconcile_runtime() {
     return 0
   fi
 
-  ensure_deploy_repo
   recover_interrupted_deployment
+  ensure_deploy_repo
   local DESIRED_SHA ACTIVE_RUNTIME_SHA PREVIOUS_KNOWN_GOOD_SHA
   local candidate_output candidate_release candidate_tree candidate_env previous_release
   local DEPLOYMENT_ID ROLLBACK_DEPLOYMENT_ID
