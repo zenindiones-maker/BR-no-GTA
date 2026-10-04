@@ -61,6 +61,21 @@ The 90-second heartbeat is intentionally liveness-only, so dirty development sta
 
 **Impact:** loss of recent development progress and violation of the declared durability/RPO guarantee. This finding does not imply unauthorized execution or direct secret exposure.
 
+## Active candidate findings
+
+### BR-1-F006 — PROPOSED / MEDIUM candidate
+**Category:** Durability / Artifact Classification / Large-Evidence Boundary  
+**Evidence class:** OBSERVED  
+**Confidence:** HIGH
+
+**Title:** Development Recovery classifies large evidence by a narrow path/extension allowlist with no size threshold, allowing large unrecognized media/archive/database artifacts under recoverable source paths to be committed inline
+
+The locator-only path is correctly enforced for artifacts that are actually classified `LARGE_EVIDENCE`. The capture boundary itself is incomplete: classification recognizes only fixed large-evidence directories plus `.sqlite`, `.db`, `.mp4`, `.mov`, `.zip`, `.tar`, and `.gz`, while recoverable source roots include `app/`, `tests/`, `scripts/`, `.github/`, `docs/`, `config/`, and `schemas/`. No byte-size threshold is applied before those source files are selected into the recovery tree.
+
+Thus formats such as `.wav`, `.flac`, `.png`, `.jpg`, `.webm`, `.7z`, `.sqlite3`, `.parquet`, `.npy`, `.npz`, or any other sufficiently large unrecognized file can be treated as normal recoverable source when placed under a recoverable root. `restore()` does not inline correctly classified `large_evidence`; this candidate is therefore a capture/classification defect, not a locator-consumer defect.
+
+**Budget effect:** none until locked.
+
 ## Candidate explicitly not opened
 
 **Git-ref interference between Development Continuity and Telegram runtime:** NOT OPENED.
