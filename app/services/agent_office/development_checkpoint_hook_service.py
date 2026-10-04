@@ -8,7 +8,22 @@ from typing import Any, Callable
 from app.services.development_checkpoint_capability_service import (
     execute_development_checkpoint_persist_capability,
 )
+from app.services.development_recovery_checkpoint_service import (
+    DevelopmentRecoveryCheckpointService,
+)
 from app.services.harness_authorization_service import issue_harness_authorization
+
+
+def _load_remote_recovery(
+    *,
+    workspace: Path,
+    recovery_ref: str,
+    canonical_branch: str,
+) -> dict[str, Any]:
+    return DevelopmentRecoveryCheckpointService(Path(workspace)).resume(
+        recovery_ref,
+        canonical_branch=canonical_branch,
+    )
 
 
 class HarnessDevelopmentCheckpointHook:
@@ -23,11 +38,13 @@ class HarnessDevelopmentCheckpointHook:
         persist_capability: Callable[..., dict[str, Any]] = (
             execute_development_checkpoint_persist_capability
         ),
+        recovery_loader: Callable[..., dict[str, Any]] = _load_remote_recovery,
     ) -> None:
         self.parent_authorization = parent_authorization
         self.goal_id = str(goal_id)
         self._issue_authorization = issue_authorization
         self._persist_capability = persist_capability
+        self._recovery_loader = recovery_loader
         self._ledgers: dict[tuple[str, str, str], dict[str, Any]] = {}
 
     @staticmethod
@@ -77,6 +94,66 @@ class HarnessDevelopmentCheckpointHook:
             "updated_at": self._now(),
         }
 
+    def _load_or_initialize_ledger(
+        self,
+        *,
+        workspace: Path,
+        mission_id: str,
+        task_id: str,
+        canonical_branch: str,
+        canonical_base_sha: str,
+        recovery_ref: str,
+    ) -> dict[str, Any]:
+        key = (str(mission_id), str(task_id), str(recovery_ref))
+        if key in self._ledgers:
+            return dict(self._ledgers[key])
+
+        resumed = dict(
+            self._recovery_loader(
+                workspace=Path(workspace),
+                recovery_ref=str(recovery_ref),
+                canonical_branch=str(canonical_branch),
+            )
+        )
+        outcome = str(resumed.get("outcome") or "")
+        if outcome == "NO_RECOVERY_STATE":
+            return self._new_ledger(
+                mission_id=str(mission_id),
+                task_id=str(task_id),
+                canonical_branch=str(canonical_branch),
+                canonical_base_sha=str(canonical_base_sha),
+                recovery_ref=str(recovery_ref),
+            )
+        if outcome != "RESUME_READY":
+            raise RuntimeError(f"RECOVERY_RESUME_BLOCKED: {outcome or 'UNKNOWN'}")
+
+        checkpoint = resumed.get("checkpoint")
+        if not isinstance(checkpoint, dict):
+            raise RuntimeError("RECOVERY_RESUME_BLOCKED: INVALID_CHECKPOINT")
+        ledger = checkpoint.get("progress_ledger")
+        if not isinstance(ledger, dict):
+            raise RuntimeError("RECOVERY_RESUME_BLOCKED: MISSING_PROGRESS_LEDGER")
+        if (
+            str(ledger.get("mission_id") or "") != str(mission_id)
+            or str(ledger.get("recovery_ref") or "") != str(recovery_ref)
+            or str(ledger.get("canonical_branch") or "") != str(canonical_branch)
+            or str(ledger.get("canonical_base_sha") or "") != str(canonical_base_sha)
+        ):
+            raise RuntimeError("RECOVERY_RESUME_BLOCKED: LEDGER_IDENTITY_MISMATCH")
+
+        restored = dict(ledger)
+        recovery_sha = str(checkpoint.get("recovery_commit_sha") or "")
+        checkpoint_id = str(checkpoint.get("checkpoint_id") or "")
+        sequence = checkpoint.get("checkpoint_sequence")
+        if recovery_sha:
+            restored["latest_verified_checkpoint_sha"] = recovery_sha
+        if checkpoint_id:
+            restored["latest_verified_checkpoint_id"] = checkpoint_id
+        if isinstance(sequence, int):
+            restored["checkpoint_sequence"] = sequence
+        self._ledgers[key] = dict(restored)
+        return restored
+
     def __call__(
         self,
         *,
@@ -90,19 +167,28 @@ class HarnessDevelopmentCheckpointHook:
         files_changed: tuple[str, ...] = (),
         commits: tuple[str, ...] = (),
         candidate: dict[str, Any] | None = None,
+        intended_paths: tuple[str, ...] = (),
         **_: Any,
     ) -> dict[str, Any]:
         key = (str(mission_id), str(task_id), str(recovery_ref))
-        ledger = dict(
-            self._ledgers.get(key)
-            or self._new_ledger(
-                mission_id=str(mission_id),
-                task_id=str(task_id),
-                canonical_branch=str(canonical_branch),
-                canonical_base_sha=str(canonical_base_sha),
-                recovery_ref=str(recovery_ref),
-            )
+        ledger = self._load_or_initialize_ledger(
+            workspace=Path(workspace),
+            mission_id=str(mission_id),
+            task_id=str(task_id),
+            canonical_branch=str(canonical_branch),
+            canonical_base_sha=str(canonical_base_sha),
+            recovery_ref=str(recovery_ref),
         )
+
+        completed = list(ledger.get("completed_steps") or [])
+        if checkpoint_event not in completed:
+            completed.append(str(checkpoint_event))
+        ledger["completed_steps"] = completed
+        ledger["updated_at"] = self._now()
+        if checkpoint_event == "AFTER_ATOMIC_TASK_COMPLETION":
+            ledger["validation_state"] = "TASK_COMPLETE_DURABLE"
+            ledger["current_step"] = None
+            ledger["next_step"] = "handoff or candidate derivation"
         checkpoint_auth = self._issue_authorization(
             authorized_action="DEVELOPMENT",
             subject="development.checkpoint.persist",
@@ -117,12 +203,10 @@ class HarnessDevelopmentCheckpointHook:
                 "task_id": str(task_id),
             },
         )
-        included_paths = sorted(set(str(p) for p in files_changed if str(p).strip()))
-        if not included_paths:
-            # A pre-mutation checkpoint still binds the intended bounded write set
-            # through the caller-supplied paths when present; an empty baseline is
-            # valid and records mission/ledger state without inventing source bytes.
-            included_paths = []
+        selected_paths = files_changed or intended_paths
+        included_paths = sorted(
+            set(str(p) for p in selected_paths if str(p).strip())
+        )
 
         request = {
             "mission_id": str(mission_id),
@@ -176,15 +260,7 @@ class HarnessDevelopmentCheckpointHook:
             updated["latest_verified_checkpoint_sha"] = str(
                 result["recovery_commit_sha"]
             )
-            completed = list(updated.get("completed_steps") or [])
-            if checkpoint_event not in completed:
-                completed.append(str(checkpoint_event))
-            updated["completed_steps"] = completed
             updated["updated_at"] = self._now()
-            if checkpoint_event == "AFTER_ATOMIC_TASK_COMPLETION":
-                updated["validation_state"] = "TASK_COMPLETE_DURABLE"
-                updated["current_step"] = None
-                updated["next_step"] = "handoff or candidate derivation"
             self._ledgers[key] = updated
 
         return {
