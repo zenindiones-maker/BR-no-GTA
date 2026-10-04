@@ -871,7 +871,7 @@ class MunderAdapter:
                         capability_id=task.capability,
                         mission_id=spec.mission_id,
                         task_id=task.task_id,
-                        delegation_id=lease.delegation_id,
+                        delegation_id=lease.delegation_id,
                         authorization_id=lease.authorization_id,
                         work_class="NECESSARY" if attempt == 1 else "REPEATED",
                         attempt=attempt,
