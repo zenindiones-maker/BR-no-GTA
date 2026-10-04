@@ -48,3 +48,32 @@ def test_persistence_supervisor_targets_deploy_manager_not_development_root():
     assert 'bash "${DEPLOY_MANAGER}" reconcile' in supervisor
     assert 'git -C "${ROOT}"' not in supervisor
     assert 'working tree' not in supervisor.lower()
+
+
+def test_a15_deploy_publishes_exact_github_deployment_record_before_stop():
+    text = (ROOT / "scripts" / "telegram_a15_immutable_deploy.sh").read_text(encoding="utf-8")
+    assert 'DEPLOYMENT_ENVIRONMENT="a15-telegram-production"' in text
+    assert "create_github_deployment()" in text
+    assert "publish_github_deployment_status()" in text
+    assert '"auto_merge":false' in text
+    assert '"required_contexts":[]' in text
+    assert '"canonical_sha"' in text
+    assert '"candidate_tree_sha"' in text
+    assert '"previous_known_good_sha"' in text
+    assert '"a15_runtime_identity"' in text
+
+    reconcile = text.split("reconcile_runtime()", 1)[1]
+    assert reconcile.index("create_github_deployment") < reconcile.index("stop_known_good")
+    assert 'publish_github_deployment_status "${DEPLOYMENT_ID}" "queued"' in reconcile
+    assert 'publish_github_deployment_status "${DEPLOYMENT_ID}" "in_progress"' in reconcile
+    assert 'publish_github_deployment_status "${DEPLOYMENT_ID}" "success"' in reconcile
+
+
+def test_a15_rollback_uses_distinct_previous_sha_deployment_record():
+    text = (ROOT / "scripts" / "telegram_a15_immutable_deploy.sh").read_text(encoding="utf-8")
+    rollback = text.split("rollback_known_good()", 1)[1].split("write_deployment_state()", 1)[0]
+    assert "ROLLBACK_DEPLOYMENT_ID=" in rollback
+    assert 'create_github_deployment "${previous_sha}"' in rollback
+    assert '"rollback_in_progress"' in rollback
+    assert '"rollback_success"' in rollback
+    assert 'publish_github_deployment_status "${failed_deployment_id}" "failure"' in rollback
