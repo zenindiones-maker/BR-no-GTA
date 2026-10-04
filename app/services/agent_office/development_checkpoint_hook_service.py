@@ -11,7 +11,10 @@ from app.services.development_checkpoint_capability_service import (
 from app.services.development_recovery_checkpoint_service import (
     DevelopmentRecoveryCheckpointService,
 )
-from app.services.harness_authorization_service import issue_harness_authorization
+from app.services.harness_authorization_service import (
+    consume_harness_authorization,
+    issue_harness_authorization,
+)
 
 
 def _load_remote_recovery(
@@ -39,12 +42,14 @@ class HarnessDevelopmentCheckpointHook:
             execute_development_checkpoint_persist_capability
         ),
         recovery_loader: Callable[..., dict[str, Any]] = _load_remote_recovery,
+        consume_authorization: Callable[[Any], None] = consume_harness_authorization,
     ) -> None:
         self.parent_authorization = parent_authorization
         self.goal_id = str(goal_id)
         self._issue_authorization = issue_authorization
         self._persist_capability = persist_capability
         self._recovery_loader = recovery_loader
+        self._consume_authorization = consume_authorization
         self._ledgers: dict[tuple[str, str, str], dict[str, Any]] = {}
 
     @staticmethod
@@ -242,12 +247,15 @@ class HarnessDevelopmentCheckpointHook:
                 "latest_verified_checkpoint_sha"
             ),
         }
-        result = self._persist_capability(
-            authorization=checkpoint_auth,
-            repo_root=Path(workspace),
-            ledger=ledger,
-            checkpoint_request=request,
-        )
+        try:
+            result = self._persist_capability(
+                authorization=checkpoint_auth,
+                repo_root=Path(workspace),
+                ledger=ledger,
+                checkpoint_request=request,
+            )
+        finally:
+            self._consume_authorization(checkpoint_auth)
 
         verified = (
             str(result.get("development_state") or "") == "DURABLE"

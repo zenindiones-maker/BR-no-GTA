@@ -50,6 +50,7 @@ def test_hook_issues_checkpoint_auth_and_checkpoints_intended_write_set(tmp_path
         issue_authorization=issue,
         persist_capability=persist,
         recovery_loader=lambda **_: {"outcome": "NO_RECOVERY_STATE"},
+        consume_authorization=lambda _auth: None,
     )
 
     first = hook(
@@ -138,6 +139,7 @@ def test_fresh_hook_resumes_remote_ledger_before_next_checkpoint(tmp_path: Path)
         issue_authorization=lambda **_: SimpleNamespace(authorization_id="checkpoint-auth"),
         persist_capability=persist,
         recovery_loader=load,
+        consume_authorization=lambda _auth: None,
     )
     result = hook(
         checkpoint_event="AFTER_ATOMIC_TASK_COMPLETION",
