@@ -63,6 +63,10 @@ The 90-second heartbeat is intentionally liveness-only, so dirty development sta
 
 Remote recovery-ref writer fencing remains robust at the audited HEAD: `EXPECTED_PREVIOUS_REMOTE_OID`, non-force push, explicit recovery-ref targeting, and independent remote readback are not shown to be bypassed by the Telegram supervisor.
 
+**Automatic promotion of Development Recovery into canonical:** NOT OPENED.
+
+No automatic `recovery/dev/** -> canonical` path was observed. Development checkpoint persistence rejects `PROMOTION` and is scoped to `recovery/dev/**`. The permanent canonical promotion path is manual `workflow_dispatch`, accepts only `refs/heads/staging/security-*` as the staging ref, requires exact old/candidate/tree binding plus trusted Harness authorization and Security Review evidence, and performs a guarded fast-forward update under the dedicated promotion identity. Active repository rulesets additionally protect `work/gate6f-analytics-learning` with no user/repository-role/admin bypass.
+
 ## Project-isolation note
 
 BR-no-GTA and Hazewave Telegram systems are separate projects. Bot tokens, config roots, state roots, supervisors, deployment roots, recovery state, and authority must remain project-local and must not be treated as shared evidence or infrastructure.
