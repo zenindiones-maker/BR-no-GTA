@@ -7,6 +7,7 @@ import inspect
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import subprocess
 import tempfile
@@ -48,6 +49,90 @@ from app.services.task_output_contract_service import (
 
 WorkerRunner = Callable[..., dict[str, Any]]
 EventSink = Callable[[str, str, dict[str, Any]], None]
+DevelopmentDurabilityHook = Callable[..., Mapping[str, Any]]
+
+
+class DevelopmentDurabilityAttestationError(RuntimeError):
+    pass
+
+
+def _recovery_ref_for_task(mission_id: str, task_id: str) -> str:
+    def clean(value: str) -> str:
+        normalized = re.sub(r"[^a-z0-9._-]+", "-", str(value).lower()).strip("-._")
+        return normalized[:54] or "unknown"
+    return f"recovery/dev/{clean(mission_id)}/{clean(task_id)}"
+
+
+def _enforce_material_result_durability(
+    *,
+    result: dict[str, Any],
+    workspace: Path,
+    mission_id: str,
+    task_id: str,
+    canonical_branch: str,
+    canonical_base_sha: str,
+    recovery_ref: str,
+    hook: DevelopmentDurabilityHook | None,
+) -> None:
+    material = bool(result.get("files_changed") or result.get("commits"))
+    if result.get("status") != "SUCCEEDED":
+        return
+    if not material:
+        result["DEVELOPMENT_PROGRESS_DURABLE"] = "NOT_APPLICABLE"
+        result["LOCAL_ONLY_PROGRESS_DETECTED"] = "NO"
+        return
+
+    result["LOCAL_ONLY_PROGRESS_DETECTED"] = "YES"
+    result["DEVELOPMENT_PROGRESS_DURABLE"] = "FAIL"
+    if hook is None:
+        result["status"] = "BLOCKED"
+        result["error"] = "DEVELOPMENT_DURABILITY_BLOCKED"
+        result["durability_reason"] = "REMOTE_CHECKPOINT_HOOK_UNAVAILABLE"
+        return
+
+    try:
+        attestation = dict(
+            hook(
+                checkpoint_event="AFTER_ATOMIC_TASK_COMPLETION",
+                workspace=workspace,
+                mission_id=mission_id,
+                task_id=task_id,
+                canonical_branch=canonical_branch,
+                canonical_base_sha=canonical_base_sha,
+                recovery_ref=recovery_ref,
+                files_changed=tuple(result.get("files_changed") or ()),
+                commits=tuple(result.get("commits") or ()),
+                candidate=dict(result.get("candidate") or {}),
+            )
+        )
+    except Exception as exc:
+        result["status"] = "BLOCKED"
+        result["error"] = "DEVELOPMENT_DURABILITY_BLOCKED"
+        result["durability_reason"] = type(exc).__name__
+        return
+
+    checkpoint_sha = str(attestation.get("checkpoint_sha") or "").strip().lower()
+    attested_ref = str(attestation.get("recovery_ref") or "").strip()
+    readback = str(attestation.get("remote_readback_status") or "").strip().upper()
+    content_digest = str(attestation.get("content_digest") or "").strip().lower()
+    valid = (
+        re.fullmatch(r"[0-9a-f]{40}", checkpoint_sha) is not None
+        and attested_ref == recovery_ref
+        and readback == "VERIFIED"
+        and re.fullmatch(r"[0-9a-f]{64}", content_digest) is not None
+    )
+    if not valid:
+        result["status"] = "BLOCKED"
+        result["error"] = "DEVELOPMENT_DURABILITY_BLOCKED"
+        result["durability_reason"] = "REMOTE_READBACK_NOT_VERIFIED"
+        return
+
+    result["LOCAL_ONLY_PROGRESS_DETECTED"] = "NO"
+    result["DEVELOPMENT_PROGRESS_DURABLE"] = "PASS"
+    result["REMOTE_READBACK"] = "VERIFIED"
+    result["RECOVERY_CHECKPOINT_SHA"] = checkpoint_sha
+    result["RECOVERY_REF"] = recovery_ref
+    result["RECOVERY_CONTENT_DIGEST"] = content_digest
 
 
 def _utc_now() -> str:
@@ -721,6 +806,7 @@ class MunderAdapter:
         *,
         worker_runner: WorkerRunner | None = None,
         worker_runners: Mapping[str, WorkerRunner] | None = None,
+        development_durability_hook: DevelopmentDurabilityHook | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if worker_runner is not None and worker_runners is not None:
@@ -731,6 +817,7 @@ class MunderAdapter:
             if worker_runners is None
             else worker_runners
         )
+        self._development_durability_hook = development_durability_hook
         self._clock = clock
 
     def _run_worker(
@@ -784,7 +871,7 @@ class MunderAdapter:
                         capability_id=task.capability,
                         mission_id=spec.mission_id,
                         task_id=task.task_id,
-                        delegation_id=lease.delegation_id,
+                        delegation_id=lease.delegation_id,
                         authorization_id=lease.authorization_id,
                         work_class="NECESSARY" if attempt == 1 else "REPEATED",
                         attempt=attempt,
@@ -922,6 +1009,17 @@ class MunderAdapter:
             except PermissionError as exc:
                 result["status"] = "BLOCKED"
                 result["error"] = str(exc)
+
+        _enforce_material_result_durability(
+            result=result,
+            workspace=workspace,
+            mission_id=spec.mission_id,
+            task_id=task.task_id,
+            canonical_branch=spec.branch,
+            canonical_base_sha=spec.base_sha,
+            recovery_ref=_recovery_ref_for_task(spec.mission_id, task.task_id),
+            hook=self._development_durability_hook,
+        )
 
         result["task_id"] = task.task_id
         result["agent"] = task.agent
