@@ -27,6 +27,10 @@ Development Recovery correctly prevents `recovery/dev/**` from directly triggeri
 
 **Boundary violated:** non-canonical recovery material can cross into a credential-bearing runtime.
 
+**Additional observed reachability:** an already-running Telegram gateway can consume restored non-canonical code without an explicit restart. The conversation path uses function-local imports for `harness_mission_execution_router` and `telegram_hermes_dispatch_service`, while Registry executors are resolved at execution time through `importlib.import_module()`. A restored module that is not already cached in `sys.modules` can therefore be loaded by a later normal request in the live credential-bearing process. The lazy-loaded dispatch services include external side effects such as GitHub Actions `workflow_dispatch`.
+
+This evidence broadens F002 beyond `restore + start/restart/foreground`; it does **not** open a separate finding because the violated invariant remains the same authority/plane-isolation boundary.
+
 ### BR-1-F003 — HIGH
 **Category:** Integrity / TOCTOU / Secret Boundary  
 **Evidence class:** OBSERVED  
@@ -62,6 +66,10 @@ The 90-second heartbeat is intentionally liveness-only, so dirty development sta
 **Git-ref interference between Development Continuity and Telegram runtime:** NOT OPENED.
 
 Remote recovery-ref writer fencing remains robust at the audited HEAD: `EXPECTED_PREVIOUS_REMOTE_OID`, non-force push, explicit recovery-ref targeting, and independent remote readback are not shown to be bypassed by the Telegram supervisor.
+
+**Live lazy-loading of restored recovery content as a separate finding:** SUBSUMED BY BR-1-F002.
+
+The code-level path is real, but it is additional reachability for F002 rather than a distinct invariant violation.
 
 **Automatic promotion of Development Recovery into canonical:** NOT OPENED.
 
