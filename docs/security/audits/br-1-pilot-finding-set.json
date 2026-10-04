@@ -24,7 +24,13 @@
       "title": "Restored non-canonical Development Recovery content can cross into the credential-bearing Telegram runtime through the shared development ROOT",
       "status": "LOCKED",
       "summary": "Development Recovery correctly prevents recovery/dev/** from directly triggering deployment, but restore() can materialize non-canonical source into the same mutable ROOT from which Telegram start/restart/foreground execute.",
-      "distinction": "Non-canonical recovery material crossing into a credential-bearing runtime."
+      "distinction": "Non-canonical recovery material crossing into a credential-bearing runtime.",
+      "additional_evidence": [
+        "An already-running Telegram gateway can lazily import repository modules from the shared ROOT after restore(), without an explicit runtime restart. telegram_conversation_service performs function-local imports for harness_mission_execution_router and telegram_hermes_dispatch_service.",
+        "CapabilityAdapter resolves Registry executor bindings at execution time through resolve_registry_executor(), which uses importlib.import_module(module_name). A restored module not already present in sys.modules can therefore become executable in the live credential-bearing process on a later normal request.",
+        "Observed lazy-loaded dispatch services can produce external side effects, including GitHub Actions workflow_dispatch via GitHubActionsDispatcher."
+      ],
+      "scope_qualification": "This expands the observed reachability of F002 beyond explicit start/restart/foreground. It does not create a distinct violated invariant, so no additional finding is opened from this path at present."
     },
     {
       "id": "BR-1-F003",
@@ -66,6 +72,11 @@
       "candidate": "Automatic promotion of Development Recovery commits/content into the canonical branch",
       "decision": "NOT_OPENED",
       "reason": "No automatic recovery-to-canonical promotion path was observed. Development checkpoint persistence rejects PROMOTION and is scoped to recovery/dev/**. The permanent canonical promotion workflow is workflow_dispatch-only, accepts only refs/heads/staging/security-* as staging_ref, requires exact old/candidate/tree binding, trusted Harness authorization plus SecurityReviewReceipt evidence, fast-forward ancestry, and uses the dedicated deploy-key identity. Active repository rulesets protect work/gate6f-analytics-learning and expose no user/repository-role/admin bypass."
+    },
+    {
+      "candidate": "Separate residual side-effect finding for live lazy-loading of restored recovery content",
+      "decision": "SUBSUMED_BY_BR-1-F002",
+      "reason": "The live-runtime lazy-import path is real code-level evidence, but it violates the same authority/plane-isolation invariant already captured by F002. It broadens F002 reachability beyond explicit restart rather than constituting an independent finding."
     }
   ],
   "audit_notes": {
