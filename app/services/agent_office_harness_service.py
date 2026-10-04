@@ -4,6 +4,10 @@ from pathlib import Path
 from typing import Any
 
 from app.services.agent_office.contracts import AgentOfficeExecutionSpec, AgentOfficeTask
+from app.services.agent_office.development_checkpoint_hook_service import (
+    HarnessDevelopmentCheckpointHook,
+)
+from app.services.agent_office.munder_adapter import MunderAdapter
 from app.services.agent_office.service import AgentOfficeService
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_authorization_service import (
@@ -101,7 +105,14 @@ def execute_agent_office_capability(
         raise ValueError("Agent Office tasks must be a list")
     spec = AgentOfficeExecutionSpec.from_mapping(spec_payload)
     tasks = [AgentOfficeTask.from_mapping(item) for item in tasks_raw]
-    return AgentOfficeService(root).execute(spec, tasks).to_dict()
+    durability_hook = HarnessDevelopmentCheckpointHook(
+        parent_authorization=authorization,
+        goal_id=spec.goal_id,
+    )
+    adapter = MunderAdapter(
+        development_durability_hook=durability_hook,
+    )
+    return AgentOfficeService(root, adapter=adapter).execute(spec, tasks).to_dict()
 
 
 def execute_authorized_agent_office(
