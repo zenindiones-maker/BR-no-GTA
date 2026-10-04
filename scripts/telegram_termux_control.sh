@@ -12,7 +12,11 @@ READY_FILE="${STATE_DIR}/telegram-gateway.ready"
 MAINTENANCE_FILE="${STATE_DIR}/telegram-gateway.maintenance"
 START_LOCK_DIR="${STATE_DIR}/telegram-gateway.start.lock"
 SUPERVISOR_PID_FILE="${STATE_DIR}/telegram-supervisor.pid"
-PYTHON_BIN="${ROOT}/.venv/bin/python"
+CANONICAL_BRANCH="${BR_CANONICAL_BRANCH:-work/gate6f-analytics-learning}"
+RUNTIME_RELEASE_SHA="${BR_TELEGRAM_RUNTIME_RELEASE_SHA:-$(git -C "${ROOT}" rev-parse HEAD 2>/dev/null || true)}"
+DEPLOY_ENV_BASE="${HOME}/.local/share/br-no-gta/deploy/envs"
+RUNTIME_ENV_ROOT="${BR_TELEGRAM_RUNTIME_ENV_ROOT:-${DEPLOY_ENV_BASE}/${RUNTIME_RELEASE_SHA}}"
+PYTHON_BIN="${RUNTIME_ENV_ROOT}/bin/python"
 
 mkdir -p "${STATE_DIR}" "${CONFIG_DIR}"
 chmod 700 "${STATE_DIR}" "${CONFIG_DIR}" 2>/dev/null || true
@@ -27,8 +31,9 @@ ensure_gateway_python_runtime() {
     echo "TELEGRAM_RUNTIME_PYTHON=FAIL no bootstrap python available" >&2
     return 1
   fi
-  echo "TELEGRAM_RUNTIME_PYTHON=RECONCILING VENV=${ROOT}/.venv"
-  "${bootstrap_python}" -m venv "${ROOT}/.venv"
+  echo "TELEGRAM_RUNTIME_PYTHON=RECONCILING VENV=${RUNTIME_ENV_ROOT}"
+  mkdir -p "${DEPLOY_ENV_BASE}"
+  "${bootstrap_python}" -m venv "${RUNTIME_ENV_ROOT}"
   if [[ ! -x "${PYTHON_BIN}" ]]; then
     echo "TELEGRAM_RUNTIME_PYTHON=FAIL venv python unavailable after reconciliation" >&2
     return 1
@@ -186,20 +191,13 @@ load_token() {
 }
 
 configure_cloud_routing() {
-  local current_branch
-  current_branch="$(git -C "${ROOT}" branch --show-current 2>/dev/null || true)"
-  if [[ -z "${BR_OMNIROUTE_REF:-}" && -n "${current_branch}" ]]; then
-    export BR_OMNIROUTE_REF="${current_branch}"
+  if [[ -z "${BR_OMNIROUTE_REF:-}" ]]; then
+    export BR_OMNIROUTE_REF="${CANONICAL_BRANCH}"
   fi
-  if [[ -z "${GITHUB_ACTIONS_RENDER_REF:-}" && -n "${current_branch}" ]]; then
-    export GITHUB_ACTIONS_RENDER_REF="${current_branch}"
+  if [[ -z "${GITHUB_ACTIONS_RENDER_REF:-}" ]]; then
+    export GITHUB_ACTIONS_RENDER_REF="${CANONICAL_BRANCH}"
   fi
   export GITHUB_ACTIONS_REPOSITORY="${GITHUB_ACTIONS_REPOSITORY:-zenindiones-maker/BR-no-GTA}"
-
-  if [[ -z "${BR_OMNIROUTE_REF:-}" ]]; then
-    echo "TELEGRAM_CONTROL=FAIL não foi possível resolver BR_OMNIROUTE_REF" >&2
-    return 1
-  fi
 }
 
 gateway_pids() {
@@ -287,8 +285,7 @@ current_branch() {
 
 remote_repo_revision() {
   local branch remote
-  branch="$(current_branch)"
-  [[ -n "${branch}" ]] || return 1
+  branch="${CANONICAL_BRANCH}"
   remote="$(git -C "${ROOT}" ls-remote --heads origin "refs/heads/${branch}" 2>/dev/null | awk 'NR==1 {print $1}')"
   [[ -n "${remote}" ]] || return 1
   printf '%s\n' "${remote}"
@@ -302,36 +299,9 @@ loaded_runtime_revision() {
   printf '%s\n' "${runtime_revision}"
 }
 
-working_tree_clean() {
-  [[ -z "$(git -C "${ROOT}" status --porcelain --untracked-files=normal 2>/dev/null)" ]]
-}
-
-sync_branch_ff_only() {
-  local branch local_head remote_head
-  branch="$(current_branch)"
-  [[ -n "${branch}" ]] || {
-    echo "TELEGRAM_DEPLOY=FAIL detached HEAD" >&2
-    return 1
-  }
-  if ! working_tree_clean; then
-    echo "TELEGRAM_DEPLOY=FAIL worktree is dirty; refusing automatic sync" >&2
-    return 1
-  fi
-  git -C "${ROOT}" fetch origin "${branch}"
-  local_head="$(git -C "${ROOT}" rev-parse HEAD)"
-  remote_head="$(git -C "${ROOT}" rev-parse "origin/${branch}")"
-  echo "LOCAL_HEAD=${local_head}"
-  echo "REMOTE_HEAD=${remote_head}"
-  if [[ "${local_head}" == "${remote_head}" ]]; then
-    echo "TELEGRAM_DEPLOY_SYNC=ALREADY_CURRENT"
-    return 0
-  fi
-  if ! git -C "${ROOT}" merge-base --is-ancestor "${local_head}" "${remote_head}"; then
-    echo "TELEGRAM_DEPLOY=FAIL local branch is not a fast-forward ancestor of origin/${branch}" >&2
-    return 1
-  fi
-  git -C "${ROOT}" merge --ff-only "origin/${branch}"
-  echo "TELEGRAM_DEPLOY_SYNC=FAST_FORWARDED"
+reconcile_gateway() {
+  echo "TELEGRAM_DEPLOY=FAIL immutable release control cannot self-update; use telegram_a15_immutable_deploy.sh" >&2
+  return 2
 }
 
 runtime_revision_report() {
@@ -570,7 +540,7 @@ handoff_owner_voice_references() {
   export TELEGRAM_CONTROL_STATE_FILE="${STATE_DIR}/telegram-control.json"
   export BR_GITHUB_REPOSITORY="zenindiones-maker/BR-no-GTA"
   export BR_GITHUB_BRANCH
-  BR_GITHUB_BRANCH="$(git -C "${ROOT}" branch --show-current 2>/dev/null || true)"
+  BR_GITHUB_BRANCH="${CANONICAL_BRANCH}"
   export BR_OWNER_VOICE_HANDOFF_STATE_FILE="${STATE_DIR}/owner-voice-reference-handoff.json"
   cd "${ROOT}"
   "${PYTHON_BIN}" scripts/owner_voice_reference_handoff.py
@@ -750,26 +720,6 @@ cleanup_gateway_deploy_state() {
   release_start_lock
 }
 
-reconcile_gateway() {
-  : > "${MAINTENANCE_FILE}"
-  trap 'cleanup_gateway_deploy_state' EXIT INT TERM
-  echo "TELEGRAM_DEPLOY_RECONCILE=START"
-  reap_untracked_legacy_supervisors
-  sync_branch_ff_only || return $?
-  if ! candidate_runtime_preflight; then
-    echo "TELEGRAM_DEPLOY_PREFLIGHT=FAIL known-good listener preserved when available" >&2
-    return 1
-  fi
-  echo "TELEGRAM_DEPLOY_PREFLIGHT=PASS"
-  stop_gateway
-  BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START=1 start_gateway
-  runtime_revision_report
-  publish_runtime_status
-  echo "TELEGRAM_DEPLOY_RECONCILE=PASS"
-  cleanup_gateway_deploy_state
-  trap - EXIT INT TERM
-}
-
 foreground_gateway() {
   local -a pids=()
   mapfile -t pids < <(gateway_pids)
@@ -941,6 +891,9 @@ case "${1:-start}" in
   heartbeat)
     heartbeat_gateway
     ;;
+  preflight)
+    candidate_runtime_preflight
+    ;;
   logs)
     tail -n "${2:-80}" "${LOG_FILE}" 2>/dev/null || true
     ;;
@@ -960,7 +913,7 @@ case "${1:-start}" in
     obsidian_bridge "$@"
     ;;
   *)
-    echo "uso: $0 {start|stop|restart|reconcile|status|heartbeat|doctor|logs [N]|foreground|source-proof [INPUT_ID]|presentation-proof [TEST_INPUT_ID] [SOURCE_INPUT_ID]|obsidian-bridge [INPUT_ID]}" >&2
+    echo "uso: $0 {start|stop|restart|reconcile|status|heartbeat|preflight|doctor|logs [N]|foreground|source-proof [INPUT_ID]|presentation-proof [TEST_INPUT_ID] [SOURCE_INPUT_ID]|obsidian-bridge [INPUT_ID]}" >&2
     exit 2
     ;;
 esac
