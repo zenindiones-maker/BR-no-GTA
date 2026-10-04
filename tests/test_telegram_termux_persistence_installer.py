@@ -18,7 +18,8 @@ def test_supervisor_template_does_not_expand_parent_positional_parameters():
     body = _unquoted_heredoc_body(source, 'cat >"${SUPERVISOR}" <<EOF')
     unsafe = re.findall(r"(?<!\\)\$[0-9]+", body)
     assert unsafe == []
-    assert "awk 'NR==1 {print \\$1}'" in body
+    assert 'bash "\\${DEPLOY_MANAGER}" reconcile' in body
+    assert 'bash "\\${CURRENT_CONTROL}" heartbeat' in body
 
 
 def test_installer_keeps_strict_shell_mode():
