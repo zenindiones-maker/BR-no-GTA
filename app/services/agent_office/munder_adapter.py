@@ -122,8 +122,7 @@ def _enforce_material_result_durability(
     hook: DevelopmentDurabilityHook | None,
 ) -> None:
     material = bool(result.get("files_changed") or result.get("commits"))
-    if result.get("status") != "SUCCEEDED":
-        return
+    original_status = str(result.get("status") or "")
     if not material:
         result["DEVELOPMENT_PROGRESS_DURABLE"] = "NOT_APPLICABLE"
         result["LOCAL_ONLY_PROGRESS_DETECTED"] = "NO"
@@ -131,16 +130,23 @@ def _enforce_material_result_durability(
 
     result["LOCAL_ONLY_PROGRESS_DETECTED"] = "YES"
     result["DEVELOPMENT_PROGRESS_DURABLE"] = "FAIL"
+    result["PRESERVE_LOCAL_WORKSPACE"] = True
     if hook is None:
-        result["status"] = "BLOCKED"
-        result["error"] = "DEVELOPMENT_DURABILITY_BLOCKED"
+        if original_status == "SUCCEEDED":
+            result["status"] = "BLOCKED"
+            result["error"] = "DEVELOPMENT_DURABILITY_BLOCKED"
         result["durability_reason"] = "REMOTE_CHECKPOINT_HOOK_UNAVAILABLE"
         return
 
+    checkpoint_event = (
+        "AFTER_ATOMIC_TASK_COMPLETION"
+        if original_status == "SUCCEEDED"
+        else "BEFORE_AGENT_HANDOFF"
+    )
     try:
         attestation = dict(
             hook(
-                checkpoint_event="AFTER_ATOMIC_TASK_COMPLETION",
+                checkpoint_event=checkpoint_event,
                 workspace=workspace,
                 mission_id=mission_id,
                 task_id=task_id,
@@ -153,8 +159,9 @@ def _enforce_material_result_durability(
             )
         )
     except Exception as exc:
-        result["status"] = "BLOCKED"
-        result["error"] = "DEVELOPMENT_DURABILITY_BLOCKED"
+        if original_status == "SUCCEEDED":
+            result["status"] = "BLOCKED"
+            result["error"] = "DEVELOPMENT_DURABILITY_BLOCKED"
         result["durability_reason"] = type(exc).__name__
         return
 
@@ -169,13 +176,15 @@ def _enforce_material_result_durability(
         and re.fullmatch(r"[0-9a-f]{64}", content_digest) is not None
     )
     if not valid:
-        result["status"] = "BLOCKED"
-        result["error"] = "DEVELOPMENT_DURABILITY_BLOCKED"
+        if original_status == "SUCCEEDED":
+            result["status"] = "BLOCKED"
+            result["error"] = "DEVELOPMENT_DURABILITY_BLOCKED"
         result["durability_reason"] = "REMOTE_READBACK_NOT_VERIFIED"
         return
 
     result["LOCAL_ONLY_PROGRESS_DETECTED"] = "NO"
     result["DEVELOPMENT_PROGRESS_DURABLE"] = "PASS"
+    result["PRESERVE_LOCAL_WORKSPACE"] = False
     result["REMOTE_READBACK"] = "VERIFIED"
     result["RECOVERY_CHECKPOINT_SHA"] = checkpoint_sha
     result["RECOVERY_REF"] = recovery_ref

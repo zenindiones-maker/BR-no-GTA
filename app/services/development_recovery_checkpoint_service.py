@@ -65,6 +65,33 @@ def _digest_without(payload: dict[str, Any], *keys: str) -> str:
     return _sha_bytes(canonical_json(clean))
 
 
+def _remote_transport_unavailable(detail: str) -> bool:
+    text = str(detail or "").lower()
+    markers = (
+        "could not read from remote repository",
+        "could not resolve host",
+        "failed to connect",
+        "connection refused",
+        "connection timed out",
+        "network is unreachable",
+        "unable to access",
+        "does not appear to be a git repository",
+        "temporary failure",
+        "name or service not known",
+    )
+    return any(marker in text for marker in markers)
+
+
+def _local_degraded_ref(recovery_ref: str) -> str:
+    suffix = recovery_ref.removeprefix("recovery/dev/").strip("/")
+    safe = "/".join(
+        re.sub(r"[^A-Za-z0-9._-]+", "-", part).strip("-._") or "unknown"
+        for part in suffix.split("/")
+        if part
+    )
+    return f"refs/br-no-gta-recovery-local/{safe or 'unknown'}"
+
+
 class DevelopmentRecoveryCheckpointService:
     def __init__(self, repo_root: Path | str, *, remote: str = "origin", fault_injector=None):
         self.repo = Path(repo_root).resolve()
@@ -197,13 +224,24 @@ class DevelopmentRecoveryCheckpointService:
         if checkpoint_kind == "PROMOTION":
             raise PermissionError("development recovery service cannot create promotion checkpoints")
 
-        current_canonical = self._canonical_oid(canonical_branch)
+        remote_available = True
+        try:
+            current_canonical = self._canonical_oid(canonical_branch)
+        except RuntimeError as exc:
+            if expected_previous_remote_oid is None or not _remote_transport_unavailable(str(exc)):
+                raise
+            remote_available = False
+            current_canonical = canonical_base_sha
+
         if current_canonical != canonical_base_sha:
             raise CheckpointConflict(
                 f"RECONCILIATION_REQUIRED canonical moved: base={canonical_base_sha} current={current_canonical}"
             )
 
-        observed_remote_before = self._remote_oid(recovery_ref)
+        if remote_available:
+            observed_remote_before = self._remote_oid(recovery_ref)
+        else:
+            observed_remote_before = expected_previous_remote_oid
         if expected_previous_remote_oid is not None:
             if observed_remote_before != expected_previous_remote_oid:
                 raise CheckpointConflict(
@@ -221,7 +259,17 @@ class DevelopmentRecoveryCheckpointService:
         paths, large = self._candidate_files(included_paths, excluded_paths)
         content_digest = self._content_digest(paths)
         progress_digest = ledger_digest(ledger)
-        previous_oid, previous_core, _ = self._latest(recovery_ref)
+        if remote_available:
+            previous_oid, previous_core, _ = self._latest(recovery_ref)
+        else:
+            previous_oid = expected_previous_remote_oid
+            previous_core = None
+            if previous_oid:
+                state_rel = f".development-recovery/{recovery_ref.split('/')[-1]}"
+                previous_core = self._show_json(
+                    previous_oid,
+                    f"{state_rel}/checkpoint-core.json",
+                )
 
         if previous_core:
             previous_sequence = int(previous_core.get("checkpoint_sequence", 0))
@@ -361,6 +409,26 @@ class DevelopmentRecoveryCheckpointService:
             if source_before != source_after:
                 raise RuntimeError("ACTIVE_WORKTREE_SEMANTICS_PRESERVED invariant violated")
 
+        def local_degraded(reason: str) -> dict[str, Any]:
+            local_ref = _local_degraded_ref(recovery_ref)
+            _run(self.repo, "git", "update-ref", local_ref, commit)
+            degraded_core = dict(core)
+            degraded_core["development_state"] = "LOCAL_DEGRADED"
+            degraded_core["remote_write_status"] = "FAILED"
+            degraded_core["remote_readback_status"] = "FAILED"
+            logical = self._assemble(commit, degraded_core, ledger, tree_sha=tree)
+            logical["checkpoint_write"] = "LOCAL_ONLY_WRITTEN"
+            logical["durability_mode"] = "LOCAL_DEGRADED"
+            logical["remote_durability"] = "FAIL"
+            logical["local_recovery_ref"] = local_ref
+            logical["local_recovery_commit_sha"] = commit
+            logical["local_recovery_tree_sha"] = tree
+            logical["degraded_reason"] = reason[:500]
+            return logical
+
+        if not remote_available:
+            return local_degraded("REMOTE_UNAVAILABLE_DURING_CHECKPOINT")
+
         expected = self._remote_oid(recovery_ref)
         if expected != previous_oid:
             raise CheckpointConflict("RECOVERY_REF_CONFLICT before remote write")
@@ -371,7 +439,14 @@ class DevelopmentRecoveryCheckpointService:
             cwd=self.repo, text=True, capture_output=True, check=False,
         )
         if push.returncode != 0:
-            raise CheckpointConflict("RECOVERY_REF_CONFLICT non-fast-forward remote update rejected")
+            detail = (push.stderr or push.stdout or "").strip()
+            if _remote_transport_unavailable(detail):
+                return local_degraded(detail or "REMOTE_WRITE_TRANSPORT_FAILURE")
+            local_ref = _local_degraded_ref(recovery_ref)
+            _run(self.repo, "git", "update-ref", local_ref, commit)
+            raise CheckpointConflict(
+                "RECOVERY_REF_CONFLICT non-fast-forward remote update rejected"
+            )
 
         self._fault("after_remote_write_before_readback")
         remote_oid = self._remote_oid(recovery_ref)
