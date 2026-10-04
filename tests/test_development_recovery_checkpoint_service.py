@@ -134,3 +134,68 @@ def test_resume_detects_canonical_movement_and_side_effect_unknown(tmp_path: Pat
     run(repo,"git","push","origin","HEAD:work/gate6f-analytics-learning")
     moved = service.resume("recovery/dev/m1", canonical_branch="work/gate6f-analytics-learning")
     assert moved["outcome"] == "RECONCILIATION_REQUIRED"
+
+
+def test_network_loss_after_verified_baseline_creates_local_degraded_ref_and_upgrades_later(tmp_path: Path):
+    repo, remote = init_repo(tmp_path)
+    base = run(repo, "git", "rev-parse", "HEAD")
+    service = DevelopmentRecoveryCheckpointService(repo)
+    first = service.persist(
+        ledger=ledger(repo, base),
+        mission_id="m1", task_id="t1", checkpoint_kind="RECOVERY",
+        canonical_branch="work/gate6f-analytics-learning", canonical_base_sha=base,
+        recovery_ref="recovery/dev/m1", workspace_id="w1", sprite_id="s1",
+        runtime_namespace="rt1", agent_execution_identity="agent1", authorization_id="auth1",
+        included_paths=["app", "tests"], excluded_paths=[],
+    )
+    prior = first["recovery_commit_sha"]
+
+    (repo / "app" / "base.py").write_text("BASE = 77\n")
+    next_ledger = ledger(repo, base, seq=1)
+    next_ledger["latest_verified_checkpoint_id"] = first["checkpoint_id"]
+    next_ledger["latest_verified_checkpoint_sha"] = prior
+    next_ledger["current_step"] = "offline-work"
+
+    run(repo, "git", "remote", "set-url", "origin", str(tmp_path / "offline.git"))
+    degraded = DevelopmentRecoveryCheckpointService(repo).persist(
+        ledger=next_ledger,
+        mission_id="m1", task_id="t2", checkpoint_kind="RECOVERY",
+        canonical_branch="work/gate6f-analytics-learning", canonical_base_sha=base,
+        recovery_ref="recovery/dev/m1", workspace_id="w1", sprite_id="s1",
+        runtime_namespace="rt1", agent_execution_identity="agent1", authorization_id="auth2",
+        included_paths=["app", "tests"], excluded_paths=[],
+        expected_previous_remote_oid=prior,
+    )
+    assert degraded["development_state"] == "LOCAL_DEGRADED"
+    assert degraded["durability_mode"] == "LOCAL_DEGRADED"
+    assert degraded["remote_durability"] == "FAIL"
+    assert degraded["remote_readback_status"] == "FAILED"
+    local_ref = degraded["local_recovery_ref"]
+    assert local_ref.startswith("refs/br-no-gta-recovery-local/")
+    assert run(repo, "git", "rev-parse", local_ref) == degraded["local_recovery_commit_sha"]
+    assert run(repo, "git", "show", f"{local_ref}:app/base.py") == "BASE = 77"
+
+    remote_canonical = subprocess.run(
+        ["git", "--git-dir", str(remote), "rev-parse", "refs/heads/work/gate6f-analytics-learning"],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    assert remote_canonical == base
+    remote_recovery = subprocess.run(
+        ["git", "--git-dir", str(remote), "rev-parse", "refs/heads/recovery/dev/m1"],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    assert remote_recovery == prior
+
+    run(repo, "git", "remote", "set-url", "origin", str(remote))
+    upgraded = DevelopmentRecoveryCheckpointService(repo).persist(
+        ledger=next_ledger,
+        mission_id="m1", task_id="t2", checkpoint_kind="RECOVERY",
+        canonical_branch="work/gate6f-analytics-learning", canonical_base_sha=base,
+        recovery_ref="recovery/dev/m1", workspace_id="w1", sprite_id="s1",
+        runtime_namespace="rt1", agent_execution_identity="agent1", authorization_id="auth2",
+        included_paths=["app", "tests"], excluded_paths=[],
+        expected_previous_remote_oid=prior,
+    )
+    assert upgraded["development_state"] == "DURABLE"
+    assert upgraded["remote_readback_status"] == "VERIFIED"
+    assert upgraded["recovery_commit_sha"] != prior

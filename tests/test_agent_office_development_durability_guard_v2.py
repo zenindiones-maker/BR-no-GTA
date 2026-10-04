@@ -105,3 +105,64 @@ def test_readonly_success_does_not_require_development_checkpoint(tmp_path: Path
     )
     assert result["status"] == "SUCCEEDED"
     assert result["DEVELOPMENT_PROGRESS_DURABLE"] == "NOT_APPLICABLE"
+
+
+def test_failed_material_work_is_checkpointed_before_handoff(tmp_path: Path):
+    result = {
+        "status": "FAILED",
+        "error": "worker failed after mutation",
+        "files_changed": ["app/services/x.py"],
+        "commits": [],
+    }
+    calls = []
+
+    def hook(**kwargs):
+        calls.append(kwargs)
+        return {
+            "checkpoint_sha": "c" * 40,
+            "recovery_ref": "recovery/dev/mission-1/task-1",
+            "remote_readback_status": "VERIFIED",
+            "content_digest": "d" * 64,
+        }
+
+    _enforce_material_result_durability(
+        result=result,
+        workspace=tmp_path,
+        mission_id="mission-1",
+        task_id="task-1",
+        canonical_branch="work/gate6f-analytics-learning",
+        canonical_base_sha="b" * 40,
+        recovery_ref="recovery/dev/mission-1/task-1",
+        hook=hook,
+    )
+    assert result["status"] == "FAILED"
+    assert result["DEVELOPMENT_PROGRESS_DURABLE"] == "PASS"
+    assert result["LOCAL_ONLY_PROGRESS_DETECTED"] == "NO"
+    assert calls[0]["checkpoint_event"] == "BEFORE_AGENT_HANDOFF"
+
+
+def test_failed_material_work_marks_local_durability_failure_when_checkpoint_fails(tmp_path: Path):
+    result = {
+        "status": "FAILED",
+        "error": "worker failed after mutation",
+        "files_changed": ["app/services/x.py"],
+        "commits": [],
+    }
+
+    def hook(**_kwargs):
+        raise RuntimeError("remote unavailable")
+
+    _enforce_material_result_durability(
+        result=result,
+        workspace=tmp_path,
+        mission_id="mission-1",
+        task_id="task-1",
+        canonical_branch="work/gate6f-analytics-learning",
+        canonical_base_sha="b" * 40,
+        recovery_ref="recovery/dev/mission-1/task-1",
+        hook=hook,
+    )
+    assert result["status"] == "FAILED"
+    assert result["DEVELOPMENT_PROGRESS_DURABLE"] == "FAIL"
+    assert result["LOCAL_ONLY_PROGRESS_DETECTED"] == "YES"
+    assert result["PRESERVE_LOCAL_WORKSPACE"] is True
