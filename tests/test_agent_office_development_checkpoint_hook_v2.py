@@ -176,3 +176,34 @@ def test_fresh_hook_fails_closed_when_remote_recovery_requires_reconciliation(tm
             recovery_ref="recovery/dev/mission-1/task-1",
             intended_paths=("app/services/x.py",),
         )
+
+
+def test_checkpoint_authorization_is_consumed_even_when_persist_fails(tmp_path: Path):
+    consumed = []
+
+    def issue(**_kwargs):
+        return SimpleNamespace(authorization_id="checkpoint-auth")
+
+    def persist(**_kwargs):
+        raise RuntimeError("simulated checkpoint write failure")
+
+    hook = HarnessDevelopmentCheckpointHook(
+        parent_authorization=_parent(),
+        goal_id="goal-1",
+        issue_authorization=issue,
+        persist_capability=persist,
+        recovery_loader=lambda **_: {"outcome": "NO_RECOVERY_STATE"},
+        consume_authorization=lambda auth: consumed.append(auth.authorization_id),
+    )
+    with pytest.raises(RuntimeError, match="simulated checkpoint write failure"):
+        hook(
+            checkpoint_event="BEFORE_FIRST_RISKY_MUTATION",
+            workspace=tmp_path,
+            mission_id="mission-1",
+            task_id="task-1",
+            canonical_branch="work/gate6f-analytics-learning",
+            canonical_base_sha="a" * 40,
+            recovery_ref="recovery/dev/mission-1/task-1",
+            intended_paths=("app/services/x.py",),
+        )
+    assert consumed == ["checkpoint-auth"]
