@@ -220,22 +220,23 @@ def test_large_unknown_binary_under_source_path_is_locator_only(tmp_path: Path):
     assert evidence["app/model.weights"]["classification_reason"] in {"BINARY_CONTENT", "SIZE_THRESHOLD", "NON_SOURCE_SUFFIX"}
 
 
-def test_large_unknown_text_under_source_path_is_locator_only_by_size(tmp_path: Path):
+def test_oversized_recoverable_source_fails_closed_instead_of_locator_only(tmp_path: Path):
     repo,_ = init_repo(tmp_path)
     base = run(repo,"git","rev-parse","HEAD")
     payload = ("x" * (2 * 1024 * 1024 + 1)).encode()
-    (repo/"app"/"huge.unknown").write_bytes(payload)
+    (repo/"app"/"huge.py").write_bytes(payload)
     service = DevelopmentRecoveryCheckpointService(repo)
-    result = service.persist(
-        ledger=ledger(repo,base), mission_id="m1", task_id="t1", checkpoint_kind="RECOVERY",
-        canonical_branch="work/gate6f-analytics-learning", canonical_base_sha=base,
-        recovery_ref="recovery/dev/m1", workspace_id="w1", sprite_id="s1",
-        runtime_namespace="rt1", agent_execution_identity="agent1", authorization_id="auth1",
-        included_paths=["app"], excluded_paths=[],
-    )
-    assert "app/huge.unknown" not in result["included_paths"]
-    evidence = {item["path"]: item for item in result["large_evidence"]}
-    assert evidence["app/huge.unknown"]["classification_reason"] == "SIZE_THRESHOLD"
+    with pytest.raises(CheckpointBlocked) as exc:
+        service.persist(
+            ledger=ledger(repo,base), mission_id="m1", task_id="t1", checkpoint_kind="RECOVERY",
+            canonical_branch="work/gate6f-analytics-learning", canonical_base_sha=base,
+            recovery_ref="recovery/dev/m1", workspace_id="w1", sprite_id="s1",
+            runtime_namespace="rt1", agent_execution_identity="agent1", authorization_id="auth1",
+            included_paths=["app"], excluded_paths=[],
+        )
+    assert exc.value.state == "BLOCKED_RECOVERABLE_SOURCE_TOO_LARGE"
+    assert exc.value.blocked_path == "app/huge.py"
+    assert exc.value.classification == "RECOVERABLE_SOURCE"
 
 
 def test_crash_after_local_snapshot_preserves_named_local_recovery_ref(tmp_path: Path):
