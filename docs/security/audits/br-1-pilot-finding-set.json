@@ -1,0 +1,70 @@
+{
+  "schema_version": "PilotFindingSet/v1",
+  "audit_id": "BR-1",
+  "repository": "zenindiones-maker/BR-no-GTA",
+  "audited_branch": "work/gate6f-analytics-learning",
+  "audited_head": "c8b9f2275e5288e5c4cefe9474075d21ca1023f0",
+  "status": "IN_PROGRESS",
+  "finding_budget_total": 10,
+  "finding_budget_remaining": 6,
+  "locked_findings": [
+    {
+      "id": "BR-1-F001",
+      "severity": "HIGH",
+      "primary_category": "Architecture / Coupling / Deployment Isolation",
+      "title": "Telegram runtime deployment is coupled to the mutable development worktree",
+      "status": "LOCKED",
+      "summary": "The Telegram runtime deployment path depends on the mutable development checkout, allowing legitimate development state to block canonical convergence and automatic recovery.",
+      "distinction": "Deployment/runtime convergence and availability coupling."
+    },
+    {
+      "id": "BR-1-F002",
+      "severity": "MEDIUM",
+      "primary_category": "Authority / Plane Isolation / Noncanonical Execution",
+      "title": "Restored non-canonical Development Recovery content can cross into the credential-bearing Telegram runtime through the shared development ROOT",
+      "status": "LOCKED",
+      "summary": "Development Recovery correctly prevents recovery/dev/** from directly triggering deployment, but restore() can materialize non-canonical source into the same mutable ROOT from which Telegram start/restart/foreground execute.",
+      "distinction": "Non-canonical recovery material crossing into a credential-bearing runtime."
+    },
+    {
+      "id": "BR-1-F003",
+      "severity": "HIGH",
+      "primary_category": "Integrity / TOCTOU / Secret Boundary",
+      "title": "Development Recovery scans and digests live worktree bytes before staging potentially different bytes, allowing a DURABLE recovery tree to diverge from content_digest and bypass the recovery secret-scan boundary",
+      "status": "LOCKED",
+      "evidence_class": "OBSERVED",
+      "confidence": "HIGH",
+      "causal_statement": "persist() performs path/secret scanning and content_digest computation through separate reads of the mutable worktree, then later stages those paths into a temporary Git index without freezing the byte set or revalidating the staged blobs. A mutation between those phases can therefore cause the recovery tree to contain bytes different from those represented by the recorded content_digest. Because recovery-path secret scanning occurs only during the earlier read and is not repeated against the exact staged blobs or resulting tree, secret-like content introduced during that window can bypass that barrier and be included in the recovery commit while remote tree readback still succeeds and the checkpoint reaches DURABLE.",
+      "required_remediation_invariant": "SCANNED_BYTES == DIGESTED_BYTES == COMMITTED_TREE_BYTES == REMOTE_READBACK_BYTES",
+      "impact": {
+        "integrity": "HIGH",
+        "potential_confidentiality": "HIGH",
+        "qualification": "Secret exposure is a directly reachable consequence of the same code path but remains labeled potential until reproduced by a dedicated secret-like mutation test."
+      },
+      "distinction": "Non-atomic recovery snapshot capture; validated/digested bytes are not guaranteed to equal committed/pushed bytes."
+    },
+    {
+      "id": "BR-1-F004",
+      "severity": "MEDIUM",
+      "primary_category": "Durability / RPO Monitoring / Enforcement",
+      "title": "Development Continuity defines a 300 s RPO target and 600 s hard maximum but has no observed closed-loop monitor enforcing elapsed time since the last verified remote checkpoint",
+      "status": "LOCKED",
+      "evidence_class": "OBSERVED",
+      "confidence": "HIGH",
+      "causal_statement": "The continuity policy contains correct decision logic for WATCHDOG events, including mandatory checkpointing at the 600-second hard maximum, but no runtime component observed in the audited HEAD calculates elapsed time from the last independently verified remote checkpoint, periodically invokes that policy, or alerts/blocks when the hard maximum is exceeded. The 90-second heartbeat is intentionally liveness-only, so dirty development state can remain beyond the declared RPO hard maximum without automatic detection or enforcement when no qualifying semantic checkpoint event occurs.",
+      "impact": "Primary impact is loss of recent development progress and violation of a declared durability/RPO guarantee. No unauthorized execution or direct secret exposure is implied.",
+      "distinction": "RPO policy exists, but closed-loop operational enforcement is not observed."
+    }
+  ],
+  "non_findings": [
+    {
+      "candidate": "Git-ref interference between Development Continuity and Telegram runtime",
+      "decision": "NOT_OPENED",
+      "reason": "Remote recovery-ref writer fencing remains robust: EXPECTED_PREVIOUS_REMOTE_OID, non-force push, explicit recovery ref targeting, and independent remote readback are not bypassed by the Telegram supervisor."
+    }
+  ],
+  "audit_notes": {
+    "telegram_project_isolation": "BR-no-GTA and Hazewave Telegram systems are separate projects and must not share bot tokens, config roots, state roots, supervisors, deployment roots, recovery state, or authority.",
+    "current_scope": "This file records findings for BR-1 only and does not assert remediation or closure."
+  }
+}
