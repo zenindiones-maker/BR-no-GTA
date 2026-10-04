@@ -160,6 +160,7 @@ def test_promotion_authorization_rejects_block_receipt(monkeypatch, tmp_path: Pa
 
 def test_promotion_authorization_rejects_remote_cas_or_candidate_drift(monkeypatch, tmp_path: Path):
     repo, base, candidate, tree, diff, review_auth, receipt = review_fixture(monkeypatch, tmp_path)
+    monkeypatch.setattr(promotion_authority, "_trusted_control_identity", lambda: ("f" * 40, True))
     with pytest.raises(PermissionError, match="CANONICAL_PROMOTION_CAS_MISMATCH"):
         issue_exact_canonical_promotion_authorization(
             repository_root=repo,
@@ -171,6 +172,7 @@ def test_promotion_authorization_rejects_remote_cas_or_candidate_drift(monkeypat
             reviewer_authorization_id=review_auth.authorization_id,
             goal_id="goal-promote", mission_id="mission-promote", task_id="task-promote",
         )
+    monkeypatch.setattr(promotion_authority, "_trusted_control_identity", lambda: (base, True))
     with pytest.raises(PermissionError, match="CANDIDATE_MISMATCH"):
         issue_exact_canonical_promotion_authorization(
             repository_root=repo,
@@ -217,3 +219,20 @@ def test_promotion_authorization_rejects_dirty_trusted_control(monkeypatch, tmp_
     )
     with pytest.raises(PermissionError, match="TRUSTED_CONTROL_DIRTY"):
         issue(repo, base, candidate, review_auth, receipt)
+
+
+def test_promotion_authorization_rejects_unpersisted_review_authorization(monkeypatch, tmp_path: Path):
+    repo, base, candidate, tree, diff, review_auth, receipt = review_fixture(monkeypatch, tmp_path)
+    with pytest.raises(PermissionError, match="provenance was not found"):
+        issue_exact_canonical_promotion_authorization(
+            repository_root=repo,
+            target_ref=WORK_REF,
+            staging_ref=STAGING_REF,
+            expected_old_oid=base,
+            expected_candidate_sha=candidate,
+            security_review_receipt=receipt,
+            reviewer_authorization_id="fabricated-review-authorization-id",
+            goal_id="goal-promote",
+            mission_id="mission-promote",
+            task_id="task-promote",
+        )
