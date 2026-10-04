@@ -13,21 +13,19 @@ def test_persistence_supervisor_reconciles_remote_runtime_drift():
     )
     supervisor = text.split("while true; do", 1)[1]
     assert "TELEGRAM_SUPERVISOR=RECONCILING_GATEWAY" in supervisor
-    assert "TELEGRAM_SUPERVISOR=REMOTE_DRIFT" in supervisor
-    assert "ls-remote --heads origin" in supervisor
-    assert "local_head=" in supervisor
-    assert "remote_head=" in supervisor
-    assert "reconcile" in supervisor
+    assert "REASON=DESIRED_STATE_CHECK" in supervisor
+    assert 'bash "\${DEPLOY_MANAGER}" reconcile' in supervisor
+    assert 'git -C "\${ROOT}"' not in supervisor
     assert "REMOTE_CHECK_SECONDS=60" in text
 
 
-def test_persistence_upgrade_reconciles_instead_of_adopting_old_local_head():
+def test_persistence_upgrade_reconciles_through_immutable_deploy_manager():
     text = (ROOT / "scripts/install_telegram_termux_persistence.sh").read_text(
         encoding="utf-8"
     )
-    marker = 'if bash "${CONTROL}" status >/dev/null 2>&1; then'
-    section = text.split(marker, 1)[1]
-    assert 'bash "${CONTROL}" reconcile' in section
+    assert 'DEPLOY_MANAGER="${CONFIG_DIR}/telegram-a15-deploy-manager.sh"' in text
+    assert 'bash "${DEPLOY_MANAGER}" reconcile' in text
+    assert 'bash "${CONTROL}" reconcile' not in text
 
 
 def test_a15_doctor_exposes_runtime_revision_and_group_privacy_readiness():
@@ -160,7 +158,7 @@ def test_termux_supervisor_publishes_fresh_runtime_heartbeat():
         encoding="utf-8"
     )
     supervisor = installer.split("while true; do", 1)[1]
-    assert 'bash "\\${CONTROL}" heartbeat' in supervisor
+    assert 'bash "\\${CURRENT_CONTROL}" heartbeat' in supervisor
     assert "heartbeat_gateway()" in control
     assert "publish_runtime_status" in control
     assert "heartbeat)" in control
@@ -268,22 +266,20 @@ def test_all_runtime_entrypoints_enforce_ready_proof():
     assert "runtime_ready_matches" in report
     assert "TELEGRAM_GATEWAY_READY=PASS" in report
 
-def test_runtime_reconcile_suppresses_owner_voice_handoff_by_contract():
-    text = (ROOT / "scripts/telegram_termux_control.sh").read_text(
+def test_immutable_deploy_suppresses_owner_voice_handoff_by_contract():
+    text = (ROOT / "scripts/telegram_a15_immutable_deploy.sh").read_text(
         encoding="utf-8"
     )
-    section = text.split("reconcile_gateway()", 1)[1].split(
-        "foreground_gateway()", 1
-    )[0]
-    assert "BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START=1" in section
-    assert "start_gateway" in section
+    assert "BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START=1" in text
+    assert "start_release" in text
 
 
 def test_a15_runtime_ready_uses_platform_safe_profile_and_optional_markitdown():
     text = (ROOT / "scripts/telegram_termux_control.sh").read_text(
         encoding="utf-8"
     )
-    assert 'PYTHON_BIN="${ROOT}/.venv/bin/python"' in text
+    assert 'PYTHON_BIN="${RUNTIME_ENV_ROOT}/bin/python"' in text
+    assert 'DEPLOY_ENV_BASE="${HOME}/.local/share/br-no-gta/deploy/envs"' in text
     assert "A15_RUNTIME_DEPENDENCY_PROFILE=" in text
     assert 'requirements/a15-telegram.txt' in text
     assert "A15_REQUIRED_DEPENDENCIES=PASS" in text
@@ -296,16 +292,14 @@ def test_a15_runtime_ready_uses_platform_safe_profile_and_optional_markitdown():
     assert "import markitdown" not in dependency
     assert "|| return $?" in dependency
     assert 'pip install -r "${ROOT}/requirements.txt"' not in text
-    reconcile = text.split("reconcile_gateway()", 1)[1].split(
-        "foreground_gateway()", 1
-    )[0]
-    cleanup = text.split("cleanup_gateway_deploy_state()", 1)[1].split(
-        "reconcile_gateway()", 1
-    )[0]
-    assert reconcile.index("candidate_runtime_preflight") < reconcile.index("stop_gateway")
-    assert 'rm -f "${START_LOCK_DIR}"' not in reconcile
-    assert "cleanup_gateway_deploy_state" in reconcile
-    assert "release_start_lock" in cleanup
+
+    deploy = (ROOT / "scripts/telegram_a15_immutable_deploy.sh").read_text(
+        encoding="utf-8"
+    )
+    reconcile = deploy.split("reconcile_runtime()", 1)[1]
+    assert reconcile.index("candidate_preflight") < reconcile.index("stop_known_good")
+    assert "rollback_known_good" in reconcile
+    assert "BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START=1" in deploy
 
 
 def test_termux_heartbeat_publishes_semantic_lineage_attestations_only_on_exact_runtime():
