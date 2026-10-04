@@ -199,3 +199,62 @@ def test_network_loss_after_verified_baseline_creates_local_degraded_ref_and_upg
     assert upgraded["development_state"] == "DURABLE"
     assert upgraded["remote_readback_status"] == "VERIFIED"
     assert upgraded["recovery_commit_sha"] != prior
+
+
+def test_large_unknown_binary_under_source_path_is_locator_only(tmp_path: Path):
+    repo,_ = init_repo(tmp_path)
+    base = run(repo,"git","rev-parse","HEAD")
+    payload = b"\x00\x01\x02BINARY" * 20000
+    (repo/"app"/"model.weights").write_bytes(payload)
+    service = DevelopmentRecoveryCheckpointService(repo)
+    result = service.persist(
+        ledger=ledger(repo,base), mission_id="m1", task_id="t1", checkpoint_kind="RECOVERY",
+        canonical_branch="work/gate6f-analytics-learning", canonical_base_sha=base,
+        recovery_ref="recovery/dev/m1", workspace_id="w1", sprite_id="s1",
+        runtime_namespace="rt1", agent_execution_identity="agent1", authorization_id="auth1",
+        included_paths=["app"], excluded_paths=[],
+    )
+    assert "app/model.weights" not in result["included_paths"]
+    evidence = {item["path"]: item for item in result["large_evidence"]}
+    assert evidence["app/model.weights"]["size_bytes"] == len(payload)
+    assert evidence["app/model.weights"]["classification_reason"] in {"BINARY_CONTENT", "SIZE_THRESHOLD", "NON_SOURCE_SUFFIX"}
+
+
+def test_large_unknown_text_under_source_path_is_locator_only_by_size(tmp_path: Path):
+    repo,_ = init_repo(tmp_path)
+    base = run(repo,"git","rev-parse","HEAD")
+    payload = ("x" * (2 * 1024 * 1024 + 1)).encode()
+    (repo/"app"/"huge.unknown").write_bytes(payload)
+    service = DevelopmentRecoveryCheckpointService(repo)
+    result = service.persist(
+        ledger=ledger(repo,base), mission_id="m1", task_id="t1", checkpoint_kind="RECOVERY",
+        canonical_branch="work/gate6f-analytics-learning", canonical_base_sha=base,
+        recovery_ref="recovery/dev/m1", workspace_id="w1", sprite_id="s1",
+        runtime_namespace="rt1", agent_execution_identity="agent1", authorization_id="auth1",
+        included_paths=["app"], excluded_paths=[],
+    )
+    assert "app/huge.unknown" not in result["included_paths"]
+    evidence = {item["path"]: item for item in result["large_evidence"]}
+    assert evidence["app/huge.unknown"]["classification_reason"] == "SIZE_THRESHOLD"
+
+
+def test_crash_after_local_snapshot_preserves_named_local_recovery_ref(tmp_path: Path):
+    repo,_ = init_repo(tmp_path)
+    base = run(repo,"git","rev-parse","HEAD")
+    (repo/"app"/"base.py").write_text("BASE = 99\n")
+    def fail(stage):
+        if stage == "after_local_snapshot":
+            raise RuntimeError("CRASH_AFTER_LOCAL_SNAPSHOT")
+    service = DevelopmentRecoveryCheckpointService(repo, fault_injector=fail)
+    with pytest.raises(RuntimeError, match="CRASH_AFTER_LOCAL_SNAPSHOT"):
+        service.persist(
+            ledger=ledger(repo,base), mission_id="m1", task_id="t1", checkpoint_kind="RECOVERY",
+            canonical_branch="work/gate6f-analytics-learning", canonical_base_sha=base,
+            recovery_ref="recovery/dev/m1", workspace_id="w1", sprite_id="s1",
+            runtime_namespace="rt1", agent_execution_identity="agent1", authorization_id="auth1",
+            included_paths=["app"], excluded_paths=[],
+        )
+    local_ref = "refs/br-no-gta-recovery-local/m1"
+    oid = run(repo,"git","rev-parse",local_ref)
+    assert len(oid) == 40
+    assert run(repo,"git","show",f"{local_ref}:app/base.py") == "BASE = 99"
