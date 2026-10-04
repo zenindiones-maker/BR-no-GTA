@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import subprocess
 import tempfile
 import time
@@ -1229,127 +1230,151 @@ class MunderAdapter:
                 if _lease_conflict(leases[left_id], leases[right_id]):
                     conflicts.append((left_id, right_id))
 
-        with tempfile.TemporaryDirectory(prefix="br-agent-office-") as temp_dir:
-            mission_root = Path(temp_dir).resolve()
-            mailbox = mission_root / "mailbox.jsonl"
-            for index, task in enumerate(tasks):
-                workspace = mission_root / f"worker-{index + 1}-{task.task_id}"
-                _git(repository_root, "worktree", "add", "--detach", str(workspace), spec.base_sha)
-                worktrees[task.task_id] = workspace
-                with mailbox.open("a", encoding="utf-8") as stream:
-                    stream.write(
-                        json.dumps(
-                            {
-                                "to": task.agent,
-                                "task_id": task.task_id,
-                                "delegation_id": leases[task.task_id].delegation_id,
-                            }
-                        ) + "\n"
+        mission_root = Path(tempfile.mkdtemp(prefix="br-agent-office-")).resolve()
+        preserved_worktrees: dict[str, str] = {}
+        mailbox = mission_root / "mailbox.jsonl"
+        for index, task in enumerate(tasks):
+            workspace = mission_root / f"worker-{index + 1}-{task.task_id}"
+            _git(repository_root, "worktree", "add", "--detach", str(workspace), spec.base_sha)
+            worktrees[task.task_id] = workspace
+            with mailbox.open("a", encoding="utf-8") as stream:
+                stream.write(
+                    json.dumps(
+                        {
+                            "to": task.agent,
+                            "task_id": task.task_id,
+                            "delegation_id": leases[task.task_id].delegation_id,
+                        }
+                    ) + "\n"
+                )
+
+        pending = set(ordered_tasks)
+        completed: set[str] = set()
+        failed: set[str] = set()
+        wave_count = 0
+        parallel_task_count = 0
+        serial_task_count = 0
+        critical_path_ms = 0.0
+        cumulative_task_ms = 0.0
+        try:
+            while pending:
+                dependency_blocked = [
+                    task_id
+                    for task_id in sorted(pending)
+                    if any(dep in failed for dep in ordered_tasks[task_id].depends_on)
+                ]
+                for task_id in dependency_blocked:
+                    task = ordered_tasks[task_id]
+                    lease = leases[task_id]
+                    blocked = {
+                        "status": "BLOCKED",
+                        "error": "dependency failed",
+                        "task_id": task_id,
+                        "agent": task.agent,
+                        "capability": task.capability,
+                        "delegation_id": lease.delegation_id,
+                        "files_changed": [],
+                        "commits": [],
+                        "commands": [],
+                        "tests": [],
+                        "artifacts": [],
+                        "task_duration_ms": 0.0,
+                    }
+                    ref, digest = _persist_task_artifact(
+                        repository_root, spec, task_id, blocked
                     )
+                    blocked["artifact_ref"] = ref
+                    blocked["artifact_sha256"] = digest
+                    per_agent.append(blocked)
+                    failed.add(task_id)
+                    completed.add(task_id)
+                    pending.remove(task_id)
+                    if event_sink:
+                        event_sink(task_id, "TASK_ESCALATION_REQUIRED", {"reason": "dependency failed"})
 
-            pending = set(ordered_tasks)
-            completed: set[str] = set()
-            failed: set[str] = set()
-            wave_count = 0
-            parallel_task_count = 0
-            serial_task_count = 0
-            critical_path_ms = 0.0
-            cumulative_task_ms = 0.0
-            try:
-                while pending:
-                    dependency_blocked = [
-                        task_id
-                        for task_id in sorted(pending)
-                        if any(dep in failed for dep in ordered_tasks[task_id].depends_on)
-                    ]
-                    for task_id in dependency_blocked:
-                        task = ordered_tasks[task_id]
-                        lease = leases[task_id]
-                        blocked = {
-                            "status": "BLOCKED",
-                            "error": "dependency failed",
-                            "task_id": task_id,
-                            "agent": task.agent,
-                            "capability": task.capability,
-                            "delegation_id": lease.delegation_id,
-                            "files_changed": [],
-                            "commits": [],
-                            "commands": [],
-                            "tests": [],
-                            "artifacts": [],
-                            "task_duration_ms": 0.0,
-                        }
-                        ref, digest = _persist_task_artifact(
-                            repository_root, spec, task_id, blocked
-                        )
-                        blocked["artifact_ref"] = ref
-                        blocked["artifact_sha256"] = digest
-                        per_agent.append(blocked)
-                        failed.add(task_id)
-                        completed.add(task_id)
-                        pending.remove(task_id)
-                        if event_sink:
-                            event_sink(task_id, "TASK_ESCALATION_REQUIRED", {"reason": "dependency failed"})
+                if not pending:
+                    break
+                eligible = [
+                    task_id
+                    for task_id in sorted(pending)
+                    if set(ordered_tasks[task_id].depends_on).issubset(completed)
+                ]
+                if not eligible:
+                    mission_errors.append("task DAG contains a dependency cycle")
+                    break
 
-                    if not pending:
+                wave: list[str] = []
+                for task_id in eligible:
+                    if len(wave) >= spec.max_parallelism:
                         break
-                    eligible = [
-                        task_id
-                        for task_id in sorted(pending)
-                        if set(ordered_tasks[task_id].depends_on).issubset(completed)
-                    ]
-                    if not eligible:
-                        mission_errors.append("task DAG contains a dependency cycle")
-                        break
-
-                    wave: list[str] = []
-                    for task_id in eligible:
-                        if len(wave) >= spec.max_parallelism:
-                            break
-                        if any(_lease_conflict(leases[task_id], leases[other]) for other in wave):
-                            continue
-                        wave.append(task_id)
-                    if not wave:
-                        wave = [eligible[0]]
-                    wave_count += 1
-                    if len(wave) > 1:
-                        parallel_task_count += len(wave)
-                    else:
-                        serial_task_count += 1
-
-                    with ThreadPoolExecutor(max_workers=min(spec.max_parallelism, len(wave))) as pool:
-                        futures = {
-                            pool.submit(
-                                self._run_worker,
-                                ordered_tasks[task_id],
-                                worktrees[task_id],
-                                spec,
-                                max(0.0, spec.time_budget_seconds - (self._clock() - start_tick)),
-                                leases[task_id],
-                                repository_root,
-                                event_sink,
-                            ): task_id
-                            for task_id in wave
-                        }
-                        wave_results = []
-                        for future in as_completed(futures):
-                            item = future.result()
-                            wave_results.append(item)
-                            per_agent.append(item)
-                            task_id = futures[future]
-                            pending.remove(task_id)
-                            completed.add(task_id)
-                            if item.get("status") != "SUCCEEDED":
-                                failed.add(task_id)
-                        durations = [float(item.get("task_duration_ms") or 0.0) for item in wave_results]
-                        cumulative_task_ms += sum(durations)
-                        critical_path_ms += max(durations, default=0.0)
-            finally:
-                for workspace in worktrees.values():
-                    if workspace.parent != mission_root:
-                        mission_errors.append("unsafe worktree cleanup target refused")
+                    if any(_lease_conflict(leases[task_id], leases[other]) for other in wave):
                         continue
-                    _git(repository_root, "worktree", "remove", "--force", str(workspace), check=False)
+                    wave.append(task_id)
+                if not wave:
+                    wave = [eligible[0]]
+                wave_count += 1
+                if len(wave) > 1:
+                    parallel_task_count += len(wave)
+                else:
+                    serial_task_count += 1
+
+                with ThreadPoolExecutor(max_workers=min(spec.max_parallelism, len(wave))) as pool:
+                    futures = {
+                        pool.submit(
+                            self._run_worker,
+                            ordered_tasks[task_id],
+                            worktrees[task_id],
+                            spec,
+                            max(0.0, spec.time_budget_seconds - (self._clock() - start_tick)),
+                            leases[task_id],
+                            repository_root,
+                            event_sink,
+                        ): task_id
+                        for task_id in wave
+                    }
+                    wave_results = []
+                    for future in as_completed(futures):
+                        item = future.result()
+                        wave_results.append(item)
+                        per_agent.append(item)
+                        task_id = futures[future]
+                        pending.remove(task_id)
+                        completed.add(task_id)
+                        if item.get("status") != "SUCCEEDED":
+                            failed.add(task_id)
+                    durations = [float(item.get("task_duration_ms") or 0.0) for item in wave_results]
+                    cumulative_task_ms += sum(durations)
+                    critical_path_ms += max(durations, default=0.0)
+        finally:
+            results_by_task = {
+                str(item.get("task_id")): item
+                for item in per_agent
+                if isinstance(item, dict) and item.get("task_id")
+            }
+            for task_id, workspace in worktrees.items():
+                if workspace.parent != mission_root:
+                    mission_errors.append("unsafe worktree cleanup target refused")
+                    continue
+                item = results_by_task.get(task_id)
+                preserve = bool(
+                    item
+                    and item.get("PRESERVE_LOCAL_WORKSPACE") is True
+                    and (item.get("files_changed") or item.get("commits"))
+                )
+                if preserve:
+                    item["PRESERVED_WORKSPACE_PATH"] = str(workspace)
+                    preserved_worktrees[task_id] = str(workspace)
+                    continue
+                _git(
+                    repository_root,
+                    "worktree",
+                    "remove",
+                    "--force",
+                    str(workspace),
+                    check=False,
+                )
+            if not preserved_worktrees:
+                shutil.rmtree(mission_root, ignore_errors=True)
 
         per_agent.sort(key=lambda item: str(item.get("task_id", "")))
         elapsed = self._clock() - start_tick
@@ -1452,6 +1477,8 @@ class MunderAdapter:
             "CRITICAL_PATH_MS": round(critical_path_ms, 3),
             "WALL_CLOCK_MS": round(wall_ms, 3),
             "candidate_commits": list(candidate_commits),
+            "LOCAL_DEGRADED_WORKSPACES_PRESERVED": len(preserved_worktrees),
+            "preserved_worktrees": dict(sorted(preserved_worktrees.items())),
             "deterministic_digest": evidence_digest(evidence_payload),
         }
         if event_sink:
