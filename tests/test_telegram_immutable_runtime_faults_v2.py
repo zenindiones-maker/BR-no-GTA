@@ -1,0 +1,220 @@
+from __future__ import annotations
+
+from pathlib import Path
+import os
+import subprocess
+import time
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "telegram_a15_immutable_deploy.sh"
+
+
+def _prefix() -> str:
+    text = SCRIPT.read_text(encoding="utf-8")
+    return text.split('case "${1:-reconcile}" in', 1)[0]
+
+
+def _run_shell(tmp_path: Path, body: str, *, check: bool = True):
+    home = tmp_path / "home"
+    home.mkdir(exist_ok=True)
+    env = dict(os.environ)
+    env["HOME"] = str(home)
+    cp = subprocess.run(
+        ["bash"],
+        input=_prefix() + "\n" + body,
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+    if check and cp.returncode != 0:
+        raise AssertionError(
+            f"shell failed rc={cp.returncode}\nstdout={cp.stdout}\nstderr={cp.stderr}"
+        )
+    return cp, home
+
+
+def _success_overrides() -> str:
+    return r'''
+EVENTS="${HOME}/events.log"
+ensure_deploy_repo() { :; }
+desired_sha() { printf '%s\n' "dddddddddddddddddddddddddddddddddddddddd"; }
+active_sha() { printf '%s\n' "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; }
+materialize_release() {
+  mkdir -p "${RELEASES_DIR}/dddddddddddddddddddddddddddddddddddddddd"
+  printf '%s\n' "CANDIDATE_TREE_SHA=cccccccccccccccccccccccccccccccccccccccc"
+  printf '%s\n' "${RELEASES_DIR}/dddddddddddddddddddddddddddddddddddddddd"
+}
+ensure_runtime_env() {
+  local root="${ENV_DIR}/dddddddddddddddddddddddddddddddddddddddd"
+  mkdir -p "${root}/bin"
+  : > "${root}/bin/python"
+  chmod +x "${root}/bin/python"
+  printf '%s\n' "${root}"
+}
+candidate_preflight() { echo "preflight" >> "${EVENTS}"; return 0; }
+stop_known_good() { echo "stop" >> "${EVENTS}"; return 0; }
+start_release() { echo "start" >> "${EVENTS}"; return 0; }
+attest_release() { echo "attest" >> "${EVENTS}"; return 0; }
+activate_release_pointer() { echo "activate" >> "${EVENTS}"; return 0; }
+create_github_deployment() { echo "101"; }
+publish_github_deployment_status() {
+  echo "status:$1:$2:$3" >> "${EVENTS}"
+  return 0
+}
+'''
+
+
+def test_dirty_development_workspace_does_not_block_runtime_reconcile(tmp_path: Path):
+    cp, home = _run_shell(
+        tmp_path,
+        _success_overrides()
+        + r'''
+DEV="${HOME}/GTA/BR"
+mkdir -p "${DEV}"
+git -C "${DEV}" init -q
+git -C "${DEV}" config user.name Test
+git -C "${DEV}" config user.email test@example.invalid
+mkdir -p "${DEV}/app"
+printf 'A=1\n' > "${DEV}/app/base.py"
+git -C "${DEV}" add app/base.py
+git -C "${DEV}" commit -qm base
+printf 'A=2\n' > "${DEV}/app/base.py"
+git -C "${DEV}" add app/base.py
+git -C "${DEV}" commit -qm local-only
+printf 'dirty\n' >> "${DEV}/app/base.py"
+printf 'untracked\n' > "${DEV}/config.yaml"
+BEFORE="$(git -C "${DEV}" status --porcelain=v1 -uall)"
+reconcile_runtime
+AFTER="$(git -C "${DEV}" status --porcelain=v1 -uall)"
+printf 'DEV_STATE_EQUAL=%s\n' "$([[ "${BEFORE}" == "${AFTER}" ]] && echo YES || echo NO)"
+cat "${EVENTS}"
+''',
+    )
+    assert "DEPLOYMENT=SUCCESS" in cp.stdout
+    assert "ACTIVE_RUNTIME_SHA=dddddddddddddddddddddddddddddddddddddddd" in cp.stdout
+    assert "DEV_STATE_EQUAL=YES" in cp.stdout
+    lines = cp.stdout.splitlines()
+    assert lines.index("preflight") < lines.index("stop") < lines.index("start")
+    assert "status:101:queued:queued" in lines
+    assert "status:101:in_progress:in_progress" in lines
+    assert "status:101:success:success" in lines
+
+
+def test_preflight_failure_preserves_known_good_listener(tmp_path: Path):
+    body = _success_overrides() + r'''
+candidate_preflight() { echo "preflight-fail" >> "${EVENTS}"; return 1; }
+set +e
+reconcile_runtime
+RC="$?"
+set -e
+printf 'RC=%s\n' "${RC}"
+cat "${EVENTS}"
+'''
+    cp, _ = _run_shell(tmp_path, body, check=True)
+    assert "RC=1" in cp.stdout
+    assert "preflight-fail" in cp.stdout
+    assert "\nstop\n" not in f"\n{cp.stdout}\n"
+    assert "\nstart\n" not in f"\n{cp.stdout}\n"
+    assert "status:101:failure:preflight_failed" in cp.stdout
+
+
+def test_rollback_known_good_restarts_previous_sha_and_records_distinct_deployment(tmp_path: Path):
+    previous = "a" * 40
+    desired = "d" * 40
+    body = r'''
+EVENTS="${HOME}/rollback-events.log"
+PREVIOUS="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+DESIRED="dddddddddddddddddddddddddddddddddddddddd"
+FAILED_DEPLOYMENT="101"
+mkdir -p "${RELEASES_DIR}/${PREVIOUS}" "${ENV_DIR}/${PREVIOUS}/bin"
+: > "${ENV_DIR}/${PREVIOUS}/bin/python"
+chmod +x "${ENV_DIR}/${PREVIOUS}/bin/python"
+git_bare() {
+  if [[ "$1" == "rev-parse" ]]; then
+    echo "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    return 0
+  fi
+  return 0
+}
+create_github_deployment() {
+  echo "202"
+}
+publish_github_deployment_status() {
+  echo "status:$1:$2:$3" >> "${EVENTS}"
+  return 0
+}
+control_for() {
+  echo "/fake/control.sh"
+}
+bash() {
+  echo "control:$*" >> "${EVENTS}"
+  return 0
+}
+activate_release_pointer() {
+  echo "activate:$1" >> "${EVENTS}"
+  return 0
+}
+rollback_known_good "${PREVIOUS}" "${FAILED_DEPLOYMENT}" "${DESIRED}"
+cat "${EVENTS}"
+printf 'KNOWN_GOOD=%s\n' "$(cat "${KNOWN_GOOD_FILE}")"
+'''
+    cp, _ = _run_shell(tmp_path, body)
+    assert f"ROLLBACK_RUNTIME_REVISION={previous}" in cp.stdout
+    assert "ROLLBACK_DEPLOYMENT_ID=202" in cp.stdout
+    assert "ROLLBACK_GATEWAY_SINGLETON=PASS" in cp.stdout
+    assert "ROLLBACK_GATEWAY_READY=PASS" in cp.stdout
+    assert "status:101:failure:candidate_failed" in cp.stdout
+    assert "status:202:in_progress:rollback_in_progress" in cp.stdout
+    assert "status:202:success:rollback_success" in cp.stdout
+    assert f"KNOWN_GOOD={previous}" in cp.stdout
+
+
+def test_deployment_lock_allows_only_one_reconcile_writer(tmp_path: Path):
+    home = tmp_path / "home"
+    home.mkdir()
+    marker = home / "preflight-entered"
+    harness = tmp_path / "reconcile-harness.sh"
+    harness.write_text(
+        _prefix()
+        + "\n"
+        + _success_overrides()
+        + r'''
+candidate_preflight() {
+  touch "${HOME}/preflight-entered"
+  sleep 1
+  return 0
+}
+reconcile_runtime
+''',
+        encoding="utf-8",
+    )
+    env = dict(os.environ)
+    env["HOME"] = str(home)
+
+    first = subprocess.Popen(
+        ["bash", str(harness)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
+    deadline = time.time() + 5
+    while not marker.exists() and time.time() < deadline:
+        time.sleep(0.02)
+    assert marker.exists(), "first deploy never reached preflight under lock"
+
+    second = subprocess.run(
+        ["bash", str(harness)],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+    first_out, first_err = first.communicate(timeout=10)
+
+    assert first.returncode == 0, first_err
+    assert "DEPLOYMENT=SUCCESS" in first_out
+    assert second.returncode == 0
+    assert "DEPLOYMENT_CONCURRENCY=HELD" in second.stdout
