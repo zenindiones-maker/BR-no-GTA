@@ -63,6 +63,10 @@ publish_github_deployment_status() {
   echo "status:$1:$2:$3" >> "${EVENTS}"
   return 0
 }
+verify_github_deployment_status() {
+  echo "readback:$1:$2" >> "${EVENTS}"
+  return 0
+}
 '''
 
 
@@ -100,6 +104,7 @@ cat "${EVENTS}"
     assert "status:101:queued:queued" in lines
     assert "status:101:in_progress:in_progress" in lines
     assert "status:101:success:success" in lines
+    assert "readback:101:success" in lines
 
 
 def test_preflight_failure_preserves_known_good_listener(tmp_path: Path):
@@ -145,6 +150,10 @@ publish_github_deployment_status() {
   echo "status:$1:$2:$3" >> "${EVENTS}"
   return 0
 }
+verify_github_deployment_status() {
+  echo "readback:$1:$2" >> "${EVENTS}"
+  return 0
+}
 control_for() {
   echo "/fake/control.sh"
 }
@@ -168,6 +177,7 @@ printf 'KNOWN_GOOD=%s\n' "$(cat "${KNOWN_GOOD_FILE}")"
     assert "status:101:failure:candidate_failed" in cp.stdout
     assert "status:202:in_progress:rollback_in_progress" in cp.stdout
     assert "status:202:success:rollback_success" in cp.stdout
+    assert "readback:202:success" in cp.stdout
     assert f"KNOWN_GOOD={previous}" in cp.stdout
 
 
@@ -218,3 +228,62 @@ reconcile_runtime
     assert "DEPLOYMENT=SUCCESS" in first_out
     assert second.returncode == 0
     assert "DEPLOYMENT_CONCURRENCY=HELD" in second.stdout
+
+
+def test_restart_reconciles_persisted_interrupted_candidate_back_to_known_good(tmp_path: Path):
+    body = r"""
+PREVIOUS="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+DESIRED="dddddddddddddddddddddddddddddddddddddddd"
+EVENTS="${HOME}/restart-events.log"
+mkdir -p "${RELEASES_DIR}/${PREVIOUS}" "${ENV_DIR}/${PREVIOUS}/bin"
+: > "${ENV_DIR}/${PREVIOUS}/bin/python"
+chmod +x "${ENV_DIR}/${PREVIOUS}/bin/python"
+cat > "${DEPLOY_STATUS_FILE}" <<EOF
+CANONICAL_SHA=${DESIRED}
+CANDIDATE_TREE_SHA=cccccccccccccccccccccccccccccccccccccccc
+PREVIOUS_KNOWN_GOOD_SHA=${PREVIOUS}
+DEPLOYMENT_STATE=rollback_in_progress
+DEPLOYMENT_ID=101
+ROLLBACK_DEPLOYMENT_ID=
+A15_RUNTIME_IDENTITY=a15-telegram-production
+TIMESTAMP=2026-10-04T00:00:00Z
+EOF
+printf "%s\n" "${PREVIOUS}" > "${KNOWN_GOOD_FILE}"
+ensure_deploy_repo() { :; }
+desired_sha() { printf "%s\n" "${DESIRED}"; }
+active_sha() { return 1; }
+git_bare() {
+  if [[ "$1" == "rev-parse" ]]; then echo bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; return 0; fi
+  return 0
+}
+create_github_deployment() { echo 202; }
+publish_github_deployment_status() { echo "status:$1:$2:$3" >> "${EVENTS}"; }
+verify_github_deployment_status() { return 0; }
+control_for() { echo /fake/control.sh; }
+bash() { echo "control:$*" >> "${EVENTS}"; return 0; }
+activate_release_pointer() { echo "activate:$1" >> "${EVENTS}"; }
+recover_interrupted_deployment
+cat "${EVENTS}"
+cat "${DEPLOY_STATUS_FILE}"
+"""
+    cp,_ = _run_shell(tmp_path, body)
+    assert "status:202:success:rollback_success" in cp.stdout
+    assert "DEPLOYMENT_STATE=rollback_success" in cp.stdout
+    assert "PREVIOUS_KNOWN_GOOD_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" in cp.stdout
+
+
+def test_successful_candidate_fails_closed_when_remote_status_readback_is_missing(tmp_path: Path):
+    body = _success_overrides() + r"""
+verify_github_deployment_status() { echo "readback-fail:$1:$2" >> "${EVENTS}"; return 1; }
+set +e
+reconcile_runtime
+RC="$?"
+set -e
+printf 'RC=%s\n' "${RC}"
+cat "${EVENTS}"
+cat "${DEPLOY_STATUS_FILE}"
+"""
+    cp,_ = _run_shell(tmp_path, body)
+    assert "RC=1" in cp.stdout
+    assert "readback-fail:101:success" in cp.stdout
+    assert "DEPLOYMENT_STATE=remote_readback_pending" in cp.stdout
