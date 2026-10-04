@@ -155,6 +155,13 @@ class DevelopmentRecoveryCheckpointService:
                 suffix_non_source = any(low.endswith(suffix) for suffix in _KNOWN_NON_SOURCE_SUFFIXES)
                 contains_nul = b"\x00" in data[:8192]
                 oversized = len(data) > _LARGE_INLINE_MAX_BYTES
+                if classification == "RECOVERABLE_SOURCE" and oversized:
+                    raise CheckpointBlocked(
+                        "BLOCKED_RECOVERABLE_SOURCE_TOO_LARGE",
+                        rel,
+                        classification,
+                        "recoverable source exceeds inline recovery limit; preserve workspace until durably externalized",
+                    )
                 if classification == "LARGE_EVIDENCE" or suffix_non_source or contains_nul or oversized:
                     if classification == "LARGE_EVIDENCE":
                         classification_reason = "PATH_OR_SUFFIX_POLICY"
