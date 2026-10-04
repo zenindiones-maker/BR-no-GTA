@@ -14,6 +14,7 @@ from app.services.harness_authorization_service import (
     resolve_harness_authorization,
 )
 from app.services.security_guardian_service import SecurityReviewReceipt
+import app.services.canonical_promotion_authorization_service as promotion_authority
 from app.services.canonical_promotion_authorization_service import (
     CAPABILITY_ID,
     issue_exact_canonical_promotion_authorization,
@@ -63,6 +64,7 @@ def review_fixture(monkeypatch, tmp_path: Path, *, disposition: str = "PASS"):
     monkeypatch.setenv("BR_TEST_DATABASE", str(db))
     initialize_schema()
     repo, base, candidate, tree, diff = init_repo(tmp_path)
+    monkeypatch.setattr(promotion_authority, "_trusted_control_identity", lambda: (base, True))
     review_auth = issue_harness_authorization(
         authorized_action="REVIEW",
         subject="capability:security.review.repository",
@@ -193,3 +195,25 @@ def test_registry_promotion_authorizer_has_no_canonical_write_or_security_guardi
     assert record.default_write_scope == ()
     assert record.agent_id != "codex-security-reviewer"
     assert "canonical ref write" not in record.side_effects
+
+
+def test_promotion_authorization_rejects_candidate_self_authorization_control_plane(monkeypatch, tmp_path: Path):
+    repo, base, candidate, tree, diff, review_auth, receipt = review_fixture(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        promotion_authority,
+        "_trusted_control_identity",
+        lambda: (candidate, True),
+    )
+    with pytest.raises(PermissionError, match="TRUSTED_CONTROL_SHA_MISMATCH"):
+        issue(repo, base, candidate, review_auth, receipt)
+
+
+def test_promotion_authorization_rejects_dirty_trusted_control(monkeypatch, tmp_path: Path):
+    repo, base, candidate, tree, diff, review_auth, receipt = review_fixture(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        promotion_authority,
+        "_trusted_control_identity",
+        lambda: (base, False),
+    )
+    with pytest.raises(PermissionError, match="TRUSTED_CONTROL_DIRTY"):
+        issue(repo, base, candidate, review_auth, receipt)
