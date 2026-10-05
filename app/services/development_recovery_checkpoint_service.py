@@ -151,6 +151,11 @@ class DevelopmentRecoveryCheckpointService:
                 data = candidate.read_bytes()
                 if any(pattern.search(data) for pattern in _SECRET_PATTERNS):
                     raise CheckpointBlocked("BLOCKED_SECRET_RISK", rel, "SECRET_LIKE_CONTENT", "secret scanner matched candidate")
+                ignored = subprocess.run(
+                    ["git", "check-ignore", "-q", "--", rel], cwd=self.repo, check=False
+                ).returncode == 0
+                if ignored and classification != "RECOVERABLE_SOURCE":
+                    continue
                 if classification == "RECOVERABLE_SOURCE":
                     selected.add(rel)
                     continue
@@ -174,11 +179,6 @@ class DevelopmentRecoveryCheckpointService:
                         "classification_reason": classification_reason,
                         "policy": "locator+digest+provenance; bytes excluded from recovery git",
                     })
-                    continue
-                ignored = subprocess.run(
-                    ["git", "check-ignore", "-q", "--", rel], cwd=self.repo, check=False
-                ).returncode == 0
-                if ignored and classification != "RECOVERABLE_SOURCE":
                     continue
                 if classification in {"RECOVERABLE_SOURCE", "UNCLASSIFIED"}:
                     selected.add(rel)
