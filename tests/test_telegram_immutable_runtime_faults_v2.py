@@ -318,5 +318,5 @@ printf 'ATTEST_RC=%s\n' "$RC"
 def test_rollback_uses_exact_identity_attestation_not_canonical_status():
     source = SCRIPT.read_text(encoding="utf-8")
     body = source.split("rollback_known_good() {", 1)[1].split("\n}", 1)[0]
-    assert 'attest_release "\${previous_sha}" "\${previous_release}" "\${previous_env}" "\${previous_tree}"' in body
-    assert 'bash "\${control}" status' not in body
+    assert 'attest_release "${previous_sha}" "${previous_release}" "${previous_env}" "${previous_tree}"' in body
+    assert 'bash "${control}" status' not in body
