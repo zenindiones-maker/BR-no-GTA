@@ -1,0 +1,38 @@
+{
+  "schema_version": "ExactBoundSecurityReviewBoundary/v1",
+  "repository": "zenindiones-maker/BR-no-GTA",
+  "canonical_ref": "work/gate6f-analytics-learning",
+  "canonical_head": "c8b9f2275e5288e5c4cefe9474075d21ca1023f0",
+  "staging_ref": "staging/security-durable-development-immutable-runtime-v2-final-consolidation",
+  "staging_head": "d0def6f84ac5e889ebc688037da8c72368988c2d",
+  "candidate_sha": "d0def6f84ac5e889ebc688037da8c72368988c2d",
+  "relation_to_canonical": "FAST_FORWARD_AHEAD",
+  "behind_by": 0,
+  "ahead_by": 65,
+  "required_reviewer_capability": "security.review.repository",
+  "required_reviewer_agent_id": "codex-security-reviewer",
+  "required_health_policy": "CODEX_AUTH_REQUIRED",
+  "reviewer_runtime_observations": [
+    {
+      "workspace": "br-v2-final-validation-20261005",
+      "codex_cli": "0.151.0",
+      "codex_login_status": "NOT_LOGGED_IN"
+    },
+    {
+      "workspace": "br-ddir-v2-security-remediation",
+      "codex_cli": "0.151.0",
+      "codex_login_status": "NOT_LOGGED_IN"
+    }
+  ],
+  "remote_pr_review_for_exact_staging": "NONE_FOUND",
+  "boundary": "EXACT_BOUND_INDEPENDENT_SECURITY_REVIEW",
+  "blocker": "AUTHENTICATED_INDEPENDENT_REVIEWER_UNAVAILABLE",
+  "forbidden_bypass": [
+    "fabricate reviewer execution principal",
+    "fabricate REVIEW authorization",
+    "fabricate ReviewIndependenceEvidence/v1",
+    "fabricate SecurityReviewReceipt/v1",
+    "issue development.canonical.promote authorization without consumed exact REVIEW authorization"
+  ],
+  "next_causal_action": "Run the registered codex-security-reviewer in a separate read-only Agent Office session with valid Codex authentication, bound to the exact canonical/staging/tree/diff; then persist sanitized ReviewIndependenceEvidence/v1 and SecurityReviewReceipt/v1."
+}
