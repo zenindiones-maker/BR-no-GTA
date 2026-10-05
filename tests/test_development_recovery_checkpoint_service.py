@@ -258,3 +258,40 @@ def test_crash_after_local_snapshot_preserves_named_local_recovery_ref(tmp_path:
     oid = run(repo,"git","rev-parse",local_ref)
     assert len(oid) == 40
     assert run(repo,"git","show",f"{local_ref}:app/base.py") == "BASE = 99"
+
+
+def test_large_recoverable_source_is_preserved_in_remote_checkpoint(tmp_path: Path):
+    repo, _ = init_repo(tmp_path)
+    base = run(repo, "git", "rev-parse", "HEAD")
+    payload = "# source\n" + ("x = 1\n" * 180000)
+    (repo / "app" / "huge.py").write_text(payload, encoding="utf-8")
+    result = DevelopmentRecoveryCheckpointService(repo).persist(
+        ledger=ledger(repo, base),
+        mission_id="m1", task_id="t1", checkpoint_kind="RECOVERY",
+        canonical_branch="work/gate6f-analytics-learning", canonical_base_sha=base,
+        recovery_ref="recovery/dev/m1", workspace_id="w1", sprite_id="s1",
+        runtime_namespace="rt1", agent_execution_identity="agent1",
+        authorization_id="auth1", included_paths=["app"], excluded_paths=[],
+    )
+    assert "app/huge.py" in result["included_paths"]
+    restored = run(repo, "git", "show", f"{result['recovery_commit_sha']}:app/huge.py")
+    assert restored.startswith("# source")
+    assert len(restored) > 1_048_576
+
+
+def test_large_evidence_without_verified_external_bytes_blocks_durable_checkpoint(tmp_path: Path):
+    repo, _ = init_repo(tmp_path)
+    base = run(repo, "git", "rev-parse", "HEAD")
+    (repo / "artifacts").mkdir()
+    (repo / "artifacts" / "trace.zip").write_bytes(b"x" * 4096)
+    with pytest.raises(CheckpointBlocked) as exc:
+        DevelopmentRecoveryCheckpointService(repo).persist(
+            ledger=ledger(repo, base),
+            mission_id="m1", task_id="t1", checkpoint_kind="RECOVERY",
+            canonical_branch="work/gate6f-analytics-learning", canonical_base_sha=base,
+            recovery_ref="recovery/dev/m1", workspace_id="w1", sprite_id="s1",
+            runtime_namespace="rt1", agent_execution_identity="agent1",
+            authorization_id="auth1", included_paths=["artifacts"], excluded_paths=[],
+        )
+    assert exc.value.state == "BLOCKED_UNDURABLE_MATERIAL"
+    assert exc.value.blocked_path == "artifacts/trace.zip"
