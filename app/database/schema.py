@@ -1185,6 +1185,38 @@ def _migrate_harness_authorizations(connection) -> None:
     )
 
 
+def _migrate_trusted_security_review_receipts(connection) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS trusted_security_review_receipts (
+            receipt_ref TEXT PRIMARY KEY,
+            receipt_sha256 TEXT NOT NULL UNIQUE,
+            candidate_sha TEXT NOT NULL,
+            candidate_tree_sha TEXT NOT NULL,
+            reviewed_diff_sha256 TEXT NOT NULL,
+            reviewer_authorization_id TEXT NOT NULL,
+            reviewer_authorization_status TEXT NOT NULL,
+            reviewer_execution_principal_ref TEXT NOT NULL,
+            reviewer_execution_principal_sha256 TEXT NOT NULL,
+            review_independence_ref TEXT NOT NULL,
+            review_independence_sha256 TEXT NOT NULL,
+            review_independence_decision TEXT NOT NULL,
+            reviewed_task_result_ref TEXT NOT NULL,
+            reviewed_task_result_sha256 TEXT NOT NULL,
+            reviewer_session_ref TEXT NOT NULL,
+            final_disposition TEXT NOT NULL,
+            issued_by TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_trusted_security_review_candidate
+        ON trusted_security_review_receipts(candidate_sha, candidate_tree_sha, reviewed_diff_sha256);
+        CREATE INDEX IF NOT EXISTS idx_trusted_security_review_authorization
+        ON trusted_security_review_receipts(reviewer_authorization_id);
+        """
+    )
+
+
 def _migrate_harness_learning_plane(connection) -> None:
     """Persist Harness-governed operational learning without creating a second Brain."""
 
@@ -2373,6 +2405,7 @@ def initialize_schema() -> None:
         _migrate_production_plans(connection)
         _migrate_gta6_media_intelligence(connection)
         _migrate_harness_authorizations(connection)
+        _migrate_trusted_security_review_receipts(connection)
         _migrate_harness_learning_plane(connection)
         _migrate_memory_workspace_plane(connection)
         _migrate_continuous_operation_plane(connection)

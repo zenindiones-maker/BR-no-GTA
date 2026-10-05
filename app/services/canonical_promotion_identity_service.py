@@ -6,6 +6,10 @@ import json
 import re
 from typing import Any, Mapping
 
+from app.services.trusted_security_review_receipt_service import (
+    resolve_trusted_security_review_receipt,
+)
+
 ALLOWED_CANONICAL_REFS = frozenset({
     "refs/heads/work/gate6f-analytics-learning",
 })
@@ -198,7 +202,7 @@ def validate_canonical_promotion_request(
         raise PermissionError("CANONICAL_PROMOTION_TREE_MISMATCH")
     if not candidate_is_descendant_of_expected_old:
         raise PermissionError("CANONICAL_PROMOTION_NON_FAST_FORWARD")
-    if str(security_review_disposition).upper() not in {"PASS", "PASS_WITH_ACCEPTED_RISK"}:
+    if str(security_review_disposition).upper() != "PASS":
         raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_NOT_PASS")
     if str(authorization_subject) != PROMOTION_AUTHORIZATION_SUBJECT:
         raise PermissionError("CANONICAL_PROMOTION_HARNESS_AUTHORIZATION_SUBJECT_MISMATCH")
@@ -274,47 +278,36 @@ def validate_trusted_promotion_evidence_bundle(
     tree = _sha40(candidate_tree_sha, "candidate_tree_sha")
     diff_sha = _sha64(reviewed_diff_sha256, "reviewed_diff_sha256")
 
-    receipt_raw = _require_mapping(bundle.get("security_review_receipt"), "security_review_receipt")
-    if str(receipt_raw.get("schema_version") or "") != "SecurityReviewReceipt/v1":
-        raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_SCHEMA_MISMATCH")
-
-    from app.services.security_guardian_service import SecurityReviewReceipt
-
-    receipt = SecurityReviewReceipt.create(
-        reviewed_candidate_sha=str(receipt_raw.get("reviewed_candidate_sha") or ""),
-        reviewed_tree_sha=str(receipt_raw.get("reviewed_tree_sha") or ""),
-        reviewed_diff_sha256=str(receipt_raw.get("reviewed_diff_sha256") or ""),
-        reviewer_identity=str(receipt_raw.get("reviewer_identity") or ""),
-        reviewer_session=str(receipt_raw.get("reviewer_session") or ""),
-        reviewer_authorization=str(receipt_raw.get("reviewer_authorization") or ""),
-        scanner_evidence=tuple(receipt_raw.get("scanner_evidence") or ()),
-        findings=tuple(receipt_raw.get("findings") or ()),
-        exceptions=tuple(receipt_raw.get("exceptions") or ()),
-        disposition=str(receipt_raw.get("final_disposition") or ""),
-    )
+    receipt_ref = str(bundle.get("security_review_receipt_ref") or "").strip()
+    if not receipt_ref:
+        raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_RECEIPT_REF_MISSING")
     supplied_receipt_digest = _sha64(
-        str(receipt_raw.get("content_sha256") or ""),
-        "security_review_receipt.content_sha256",
+        str(bundle.get("security_review_receipt_sha256") or ""),
+        "security_review_receipt_sha256",
     )
-    if supplied_receipt_digest != receipt.content_sha256:
-        raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_DIGEST_MISMATCH")
-    if receipt.reviewed_candidate_sha != candidate:
+    receipt = resolve_trusted_security_review_receipt(
+        receipt_ref,
+        supplied_receipt_digest,
+    )
+    if receipt.candidate_sha != candidate:
         raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_CANDIDATE_MISMATCH")
-    if receipt.reviewed_tree_sha != tree:
+    if receipt.candidate_tree_sha != tree:
         raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_TREE_MISMATCH")
     if receipt.reviewed_diff_sha256 != diff_sha:
         raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_DIFF_MISMATCH")
-    if receipt.final_disposition not in {"PASS", "PASS_WITH_ACCEPTED_RISK"}:
+    if receipt.review_independence_decision != "PASS":
+        raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_INDEPENDENCE_NOT_PASS")
+    if receipt.final_disposition != "PASS":
         raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_NOT_PASS")
 
     review_auth = _validate_authorization_record(
         _require_mapping(bundle.get("reviewer_authorization"), "reviewer_authorization"),
         expected_action="REVIEW",
         expected_subject=REVIEW_AUTHORIZATION_SUBJECT,
-        allowed_statuses=frozenset({"active", "consumed"}),
+        allowed_statuses=frozenset({"consumed"}),
         field="reviewer_authorization",
     )
-    if str(review_auth.get("authorization_id")) != receipt.reviewer_authorization:
+    if str(review_auth.get("authorization_id")) != receipt.reviewer_authorization_id:
         raise PermissionError("CANONICAL_PROMOTION_REVIEWER_AUTHORIZATION_RECEIPT_MISMATCH")
     review_lineage = _require_mapping(review_auth.get("lineage"), "reviewer_authorization_lineage")
     for key, expected in {
@@ -341,7 +334,8 @@ def validate_trusted_promotion_evidence_bundle(
         "candidate_sha": candidate,
         "candidate_tree_sha": tree,
         "reviewed_diff_sha256": diff_sha,
-        "security_review_receipt_sha256": receipt.content_sha256,
+        "security_review_receipt_ref": receipt.receipt_ref,
+        "security_review_receipt_sha256": receipt.receipt_sha256,
     }
     for key, expected in required_lineage.items():
         observed = str(promotion_lineage.get(key) or "")
@@ -356,7 +350,8 @@ def validate_trusted_promotion_evidence_bundle(
         "harness_authorization_id": str(promotion_auth["authorization_id"]),
         "authorization_subject": str(promotion_auth["subject"]),
         "authorization_action": str(promotion_auth["authorized_action"]).upper(),
-        "security_review_receipt_sha256": receipt.content_sha256,
+        "security_review_receipt_ref": receipt.receipt_ref,
+        "security_review_receipt_sha256": receipt.receipt_sha256,
         "security_review_disposition": receipt.final_disposition,
         "reviewer_authorization_id": str(review_auth["authorization_id"]),
         "candidate_sha": candidate,

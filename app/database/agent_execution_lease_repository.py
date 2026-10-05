@@ -133,3 +133,17 @@ def list_task_events(*, mission_id: str) -> list[dict[str, Any]]:
         {**dict(row), "payload": json.loads(row["payload"])}
         for row in rows
     ]
+
+
+def get_task_event(event_id: int) -> dict[str, Any] | None:
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT id,mission_id,task_id,delegation_id,event_type,payload,created_at "
+            "FROM agent_execution_events WHERE id=?",
+            (int(event_id),),
+        ).fetchone()
+    if row is None:
+        return None
+    result = dict(row)
+    result["payload"] = json.loads(result.get("payload") or "{}")
+    return result

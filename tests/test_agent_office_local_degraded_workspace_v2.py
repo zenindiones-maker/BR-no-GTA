@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import subprocess
@@ -169,3 +170,190 @@ def test_failed_dirty_writer_preserves_worktree_when_remote_durability_fails(tmp
     assert str(preserved) in _git(root, "worktree", "list", "--porcelain")
     assert result.evidence["LOCAL_DEGRADED_WORKSPACES_PRESERVED"] == 1
     assert events == ["BEFORE_FIRST_RISKY_MUTATION", "BEFORE_AGENT_HANDOFF"]
+
+
+def test_worker_exception_after_edit_becomes_typed_failure_and_preserves_workspace(tmp_path: Path):
+    root, sha = _repo(tmp_path)
+
+    def hook(**kwargs):
+        raise RuntimeError("checkpoint unavailable")
+
+    adapter = MunderAdapter(worker_runner=lambda *_args, **_kwargs: {}, development_durability_hook=hook)
+
+    def explode_after_edit(task, workspace, spec, remaining, lease, repository_root, event_sink):
+        (workspace / "app" / "wip.py").write_text("VALUE = 99\n", encoding="utf-8")
+        raise RuntimeError("worker exploded after mutation")
+
+    adapter._run_worker = explode_after_edit  # type: ignore[method-assign]
+    result = adapter.execute(
+        _spec(sha),
+        (_task(),),
+        root,
+        leases={"task-preserve": _lease(sha)},
+    )
+
+    assert len(result.per_agent_results) == 1
+    item = result.per_agent_results[0]
+    assert item["task_id"] == "task-preserve"
+    assert item["status"] == "FAILED"
+    assert item["failure_class"] == "RuntimeError"
+    assert item["PRESERVE_LOCAL_WORKSPACE"] is True
+    assert item["LOCAL_ONLY_PROGRESS_DETECTED"] == "YES"
+    assert item["DEVELOPMENT_PROGRESS_DURABLE"] == "FAIL"
+    preserved = Path(item["PRESERVED_WORKSPACE_PATH"])
+    assert (preserved / "app" / "wip.py").read_text(encoding="utf-8") == "VALUE = 99\n"
+
+
+def _task_named(task_id: str, *, depends_on: tuple[str, ...] = ()) -> AgentOfficeTask:
+    return replace(_task(), task_id=task_id, depends_on=depends_on)
+
+
+def _lease_named(sha: str, task_id: str) -> DelegatedTaskLease:
+    return replace(
+        _lease(sha),
+        task_id=task_id,
+        delegation_id=f"delegation:{task_id}",
+    )
+
+
+def test_worker_commit_then_future_exception_attempts_checkpoint_and_records_verified_readback(tmp_path: Path):
+    root, sha = _repo(tmp_path)
+    checkpoint_calls = []
+
+    def hook(**kwargs):
+        checkpoint_calls.append(kwargs)
+        return {
+            "checkpoint_sha": "c" * 40,
+            "recovery_ref": f"recovery/dev/mission-preserve/{kwargs['task_id']}",
+            "remote_readback_status": "VERIFIED",
+            "content_digest": "d" * 64,
+        }
+
+    adapter = MunderAdapter(
+        worker_runner=lambda *_args, **_kwargs: {},
+        development_durability_hook=hook,
+    )
+
+    def explode_after_commit(task, workspace, spec, remaining, lease, repository_root, event_sink):
+        (workspace / "app" / "committed.py").write_text("VALUE = 7\n", encoding="utf-8")
+        _git(workspace, "add", "app/committed.py")
+        _git(workspace, "commit", "-m", "worker partial commit")
+        raise RuntimeError("post-commit failure")
+
+    adapter._run_worker = explode_after_commit  # type: ignore[method-assign]
+    result = adapter.execute(
+        _spec(sha),
+        (_task(),),
+        root,
+        leases={"task-preserve": _lease(sha)},
+    )
+
+    item = result.per_agent_results[0]
+    assert item["status"] == "FAILED"
+    assert item["failure_class"] == "RuntimeError"
+    assert item["commits"]
+    assert item["DEVELOPMENT_PROGRESS_DURABLE"] == "PASS"
+    assert item["REMOTE_READBACK"] == "VERIFIED"
+    assert item["PRESERVE_LOCAL_WORKSPACE"] is False
+    assert checkpoint_calls
+    assert checkpoint_calls[-1]["checkpoint_event"] == "BEFORE_AGENT_HANDOFF"
+    assert checkpoint_calls[-1]["commits"]
+
+
+def test_future_exception_does_not_abort_unrelated_completed_task_collection(tmp_path: Path):
+    root, sha = _repo(tmp_path)
+    first = _task_named("task-fails")
+    second = _task_named("task-succeeds")
+    spec = replace(_spec(sha), max_parallelism=2)
+
+    adapter = MunderAdapter(
+        worker_runner=lambda *_args, **_kwargs: {},
+        development_durability_hook=None,
+    )
+
+    def mixed_run(task, workspace, spec, remaining, lease, repository_root, event_sink):
+        if task.task_id == "task-fails":
+            raise RuntimeError("isolated worker failure")
+        return {
+            "status": "SUCCEEDED",
+            "task_id": task.task_id,
+            "agent": task.agent,
+            "capability": task.capability,
+            "delegation_id": lease.delegation_id,
+            "files_changed": [],
+            "commits": [],
+            "commands": [],
+            "tests": [],
+            "artifacts": [],
+            "task_duration_ms": 1.0,
+            "PRESERVE_LOCAL_WORKSPACE": False,
+            "LOCAL_ONLY_PROGRESS_DETECTED": "NO",
+            "DEVELOPMENT_PROGRESS_DURABLE": "NOT_APPLICABLE",
+        }
+
+    adapter._run_worker = mixed_run  # type: ignore[method-assign]
+    result = adapter.execute(
+        spec,
+        (first, second),
+        root,
+        leases={
+            first.task_id: _lease_named(sha, first.task_id),
+            second.task_id: _lease_named(sha, second.task_id),
+        },
+    )
+
+    by_task = {item["task_id"]: item for item in result.per_agent_results}
+    assert by_task["task-fails"]["status"] == "FAILED"
+    assert by_task["task-fails"]["failure_stage"] == "future_result_exception"
+    assert by_task["task-succeeds"]["status"] == "SUCCEEDED"
+    assert result.status == "PARTIAL"
+
+
+def test_no_change_future_exception_is_cleanly_removable_only_after_explicit_clean_inspection(tmp_path: Path):
+    root, sha = _repo(tmp_path)
+    adapter = MunderAdapter(
+        worker_runner=lambda *_args, **_kwargs: {},
+        development_durability_hook=None,
+    )
+
+    def fail_without_mutation(task, workspace, spec, remaining, lease, repository_root, event_sink):
+        raise RuntimeError("failed before mutation")
+
+    adapter._run_worker = fail_without_mutation  # type: ignore[method-assign]
+    result = adapter.execute(
+        _spec(sha),
+        (_task(),),
+        root,
+        leases={"task-preserve": _lease(sha)},
+    )
+
+    item = result.per_agent_results[0]
+    assert item["status"] == "FAILED"
+    assert item["WORKSPACE_STATE"] == "PROVEN_CLEAN"
+    assert item["files_changed"] == []
+    assert item["commits"] == []
+    assert item["DEVELOPMENT_PROGRESS_DURABLE"] == "NOT_APPLICABLE"
+    assert item["PRESERVE_LOCAL_WORKSPACE"] is False
+    assert "PRESERVED_WORKSPACE_PATH" not in item
+
+
+def test_missing_task_result_is_unknown_and_never_force_removed(tmp_path: Path):
+    root, sha = _repo(tmp_path)
+    cyclic = _task_named("task-cycle", depends_on=("task-cycle",))
+    adapter = MunderAdapter(worker_runner=lambda *_args, **_kwargs: {})
+
+    result = adapter.execute(
+        _spec(sha),
+        (cyclic,),
+        root,
+        leases={cyclic.task_id: _lease_named(sha, cyclic.task_id)},
+    )
+
+    item = next(row for row in result.per_agent_results if row["task_id"] == cyclic.task_id)
+    assert item["status"] == "FAILED"
+    assert item["failure_class"] == "MissingTaskResult"
+    assert item["WORKSPACE_STATE"] == "UNKNOWN"
+    assert item["PRESERVE_LOCAL_WORKSPACE"] is True
+    preserved = Path(item["PRESERVED_WORKSPACE_PATH"])
+    assert preserved.is_dir()
+    assert str(preserved) in _git(root, "worktree", "list", "--porcelain")

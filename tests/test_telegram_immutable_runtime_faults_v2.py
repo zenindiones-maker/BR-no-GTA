@@ -5,6 +5,8 @@ import os
 import subprocess
 import time
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "telegram_a15_immutable_deploy.sh"
@@ -54,6 +56,7 @@ ensure_runtime_env() {
   printf '%s\n' "${root}"
 }
 candidate_preflight() { echo "preflight" >> "${EVENTS}"; return 0; }
+verify_release_filesystem() { return 0; }
 stop_known_good() { echo "stop" >> "${EVENTS}"; return 0; }
 start_release() { echo "start" >> "${EVENTS}"; return 0; }
 attest_release() { echo "attest" >> "${EVENTS}"; return 0; }
@@ -157,6 +160,7 @@ verify_github_deployment_status() {
 control_for() {
   echo "/fake/control.sh"
 }
+verify_release_filesystem() { return 0; }
 bash() {
   echo "control:$*" >> "${EVENTS}"
   return 0
@@ -260,6 +264,7 @@ create_github_deployment() { echo 202; }
 publish_github_deployment_status() { echo "status:$1:$2:$3" >> "${EVENTS}"; }
 verify_github_deployment_status() { return 0; }
 control_for() { echo /fake/control.sh; }
+verify_release_filesystem() { return 0; }
 bash() { echo "control:$*" >> "${EVENTS}"; return 0; }
 activate_release_pointer() { echo "activate:$1" >> "${EVENTS}"; }
 recover_interrupted_deployment
@@ -336,6 +341,8 @@ exit 0
 EOF
 chmod +x "${CONTROL}"
 control_for() { printf '%s\n' "${CONTROL}"; }
+git_bare() { printf '%s\n' "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"; }
+verify_release_filesystem() { return 0; }
 mkdir -p "${RELEASES_DIR}/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 mkdir -p "${ENV_DIR}/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/bin"
 : > "${ENV_DIR}/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/bin/python"
@@ -393,3 +400,141 @@ cat "${EVENTS}"
     assert "rollback" in lines
     assert "fetch" in lines
     assert lines.index("rollback") < lines.index("fetch")
+
+
+def test_runtime_attestation_proves_tracked_worktree_and_index_cleanliness():
+    control = (ROOT / "scripts" / "telegram_termux_control.sh").read_text(encoding="utf-8")
+    body = control.split("runtime_identity_attest() {", 1)[1].split("\n}", 1)[0]
+    assert 'status --porcelain=v1 --untracked-files=no --ignore-submodules=none' in body
+    assert 'diff --quiet --ignore-submodules=none HEAD --' in body
+    assert 'diff --cached --quiet --ignore-submodules=none HEAD --' in body
+    assert "TRACKED_WORKTREE_DIRTY" in body
+    assert "INDEX_DIRTY" in body
+    assert "SUBMODULE_DIRTY" in body
+
+
+def test_runtime_attestation_does_not_fail_on_untracked_runtime_state_contract():
+    control = (ROOT / "scripts" / "telegram_termux_control.sh").read_text(encoding="utf-8")
+    body = control.split("runtime_identity_attest() {", 1)[1].split("\n}", 1)[0]
+    assert "--untracked-files=no" in body
+    assert "--untracked-files=all" not in body
+
+
+def _verify_release_filesystem_case(tmp_path: Path, mutation: str = ""):
+    body = r"""
+RELEASE="${HOME}/release"
+mkdir -p "${RELEASE}/app" "${RELEASE}/scripts"
+git -C "${RELEASE}" init -q
+git -C "${RELEASE}" config user.name Test
+git -C "${RELEASE}" config user.email test@example.invalid
+git -C "${RELEASE}" config core.filemode true
+printf 'VALUE = 1\n' > "${RELEASE}/app/base.py"
+printf '#!/bin/sh\necho ok\n' > "${RELEASE}/scripts/run.sh"
+git -C "${RELEASE}" add app/base.py scripts/run.sh
+git -C "${RELEASE}" commit -qm base
+SHA="$(git -C "${RELEASE}" rev-parse HEAD)"
+TREE="$(git -C "${RELEASE}" rev-parse HEAD^{tree})"
+""" + mutation + r"""
+set +e
+verify_release_filesystem "${SHA}" "${RELEASE}" "${TREE}"
+RC="$?"
+set -e
+printf 'VERIFY_RC=%s\n' "${RC}"
+"""
+    return _run_shell(tmp_path, body, check=True)[0]
+
+
+def test_exact_release_checkout_passes_filesystem_verification(tmp_path: Path):
+    cp = _verify_release_filesystem_case(tmp_path)
+    assert "VERIFY_RC=0" in cp.stdout
+
+
+def test_untracked_runtime_state_does_not_false_fail_source_attestation(tmp_path: Path):
+    cp = _verify_release_filesystem_case(
+        tmp_path,
+        r"""
+mkdir -p "${RELEASE}/.runtime"
+printf 'ephemeral\n' > "${RELEASE}/.runtime/state.json"
+""",
+    )
+    assert "VERIFY_RC=0" in cp.stdout
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        r"""printf 'VALUE = 2\n' > "${RELEASE}/app/base.py"
+""",
+        r"""printf '#!/bin/sh\necho changed\n' > "${RELEASE}/scripts/run.sh"
+""",
+        r"""rm "${RELEASE}/app/base.py"
+""",
+        r"""chmod +x "${RELEASE}/app/base.py"
+""",
+    ],
+)
+def test_tracked_worktree_drift_with_unchanged_head_and_tree_fails_closed(tmp_path: Path, mutation: str):
+    cp = _verify_release_filesystem_case(tmp_path, mutation)
+    assert "VERIFY_RC=1" in cp.stdout
+    assert "reason=TRACKED_WORKTREE_DIRTY" in cp.stderr
+
+
+def test_staged_tracked_modification_fails_as_index_dirty(tmp_path: Path):
+    cp = _verify_release_filesystem_case(
+        tmp_path,
+        r"""
+printf 'VALUE = 3\n' > "${RELEASE}/app/base.py"
+git -C "${RELEASE}" add app/base.py
+""",
+    )
+    assert "VERIFY_RC=1" in cp.stdout
+    assert "reason=INDEX_DIRTY" in cp.stderr
+
+
+def test_submodule_worktree_divergence_fails_as_submodule_dirty(tmp_path: Path):
+    body = r"""
+CHILD="${HOME}/child"
+RELEASE="${HOME}/release"
+mkdir -p "${CHILD}" "${RELEASE}"
+git -C "${CHILD}" init -q
+git -C "${CHILD}" config user.name Test
+git -C "${CHILD}" config user.email test@example.invalid
+printf 'CHILD=1\n' > "${CHILD}/child.py"
+git -C "${CHILD}" add child.py
+git -C "${CHILD}" commit -qm child-base
+
+git -C "${RELEASE}" init -q
+git -C "${RELEASE}" config user.name Test
+git -C "${RELEASE}" config user.email test@example.invalid
+git -c protocol.file.allow=always -C "${RELEASE}" submodule add -q "${CHILD}" vendor/child
+git -C "${RELEASE}" commit -qm parent-base
+SHA="$(git -C "${RELEASE}" rev-parse HEAD)"
+TREE="$(git -C "${RELEASE}" rev-parse HEAD^{tree})"
+printf 'CHILD=2\n' > "${RELEASE}/vendor/child/child.py"
+set +e
+verify_release_filesystem "${SHA}" "${RELEASE}" "${TREE}"
+RC="$?"
+set -e
+printf 'VERIFY_RC=%s\n' "${RC}"
+"""
+    cp, _ = _run_shell(tmp_path, body, check=True)
+    assert "VERIFY_RC=1" in cp.stdout
+    assert "reason=SUBMODULE_DIRTY" in cp.stderr
+
+
+def test_runtime_success_publication_is_gated_by_exact_attestation():
+    control = (ROOT / "scripts" / "telegram_termux_control.sh").read_text(encoding="utf-8")
+    body = control.split("publish_runtime_status() {", 1)[1].split("\npublish_semantic_lineage_statuses()", 1)[0]
+    assert "runtime_identity_attest" in body
+    assert body.index("runtime_identity_attest") < body.index('state="success"')
+
+
+def test_index_refresh_failure_is_fail_closed_in_runtime_and_release_attestation():
+    control = (ROOT / "scripts" / "telegram_termux_control.sh").read_text(encoding="utf-8")
+    runtime = control.split("runtime_identity_attest() {", 1)[1].split("\n}", 1)[0]
+    deploy = SCRIPT.read_text(encoding="utf-8")
+    release = deploy.split("verify_release_filesystem() {", 1)[1].split("\n}", 1)[0]
+    assert 'update-index --refresh >/dev/null 2>&1 || true' not in runtime
+    assert 'update-index --refresh >/dev/null 2>&1 || true' not in release
+    assert "INDEX_REFRESH_FAILED" in runtime
+    assert "INDEX_REFRESH_FAILED" in release

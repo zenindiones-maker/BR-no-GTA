@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
-from typing import Any, Mapping
+from typing import Any
 
 from app.services.canonical_promotion_identity_service import (
     ALLOWED_CANONICAL_REFS,
@@ -22,7 +22,9 @@ from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
 )
-from app.services.security_guardian_service import SecurityReviewReceipt
+from app.services.trusted_security_review_receipt_service import (
+    resolve_trusted_security_review_receipt,
+)
 
 
 CAPABILITY_ID = "development.canonical.promotion-authorize"
@@ -73,28 +75,6 @@ def _ls_remote(repo: Path, ref: str) -> str:
     return text.split()[0].lower()
 
 
-def _receipt_from(value: SecurityReviewReceipt | Mapping[str, Any]) -> SecurityReviewReceipt:
-    if isinstance(value, SecurityReviewReceipt):
-        return value
-    raw = dict(value)
-    receipt = SecurityReviewReceipt.create(
-        reviewed_candidate_sha=str(raw.get("reviewed_candidate_sha") or ""),
-        reviewed_tree_sha=str(raw.get("reviewed_tree_sha") or ""),
-        reviewed_diff_sha256=str(raw.get("reviewed_diff_sha256") or ""),
-        reviewer_identity=str(raw.get("reviewer_identity") or ""),
-        reviewer_session=str(raw.get("reviewer_session") or ""),
-        reviewer_authorization=str(raw.get("reviewer_authorization") or ""),
-        scanner_evidence=tuple(raw.get("scanner_evidence") or ()),
-        findings=tuple(raw.get("findings") or ()),
-        exceptions=tuple(raw.get("exceptions") or ()),
-        disposition=str(raw.get("final_disposition") or ""),
-    )
-    supplied = str(raw.get("content_sha256") or "").strip().lower()
-    if supplied != receipt.content_sha256:
-        raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_DIGEST_MISMATCH")
-    return receipt
-
-
 def issue_exact_canonical_promotion_authorization(
     *,
     repository_root: str | Path,
@@ -102,7 +82,8 @@ def issue_exact_canonical_promotion_authorization(
     staging_ref: str,
     expected_old_oid: str,
     expected_candidate_sha: str,
-    security_review_receipt: SecurityReviewReceipt | Mapping[str, Any],
+    security_review_receipt_ref: str,
+    security_review_receipt_sha256: str,
     reviewer_authorization_id: str,
     goal_id: str,
     mission_id: str,
@@ -163,14 +144,19 @@ def issue_exact_canonical_promotion_authorization(
     ).stdout
     diff_sha = sha256(diff).hexdigest()
 
-    receipt = _receipt_from(security_review_receipt)
-    if receipt.reviewed_candidate_sha != observed_candidate:
+    receipt = resolve_trusted_security_review_receipt(
+        security_review_receipt_ref,
+        security_review_receipt_sha256,
+    )
+    if receipt.candidate_sha != observed_candidate:
         raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_CANDIDATE_MISMATCH")
-    if receipt.reviewed_tree_sha != tree:
+    if receipt.candidate_tree_sha != tree:
         raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_TREE_MISMATCH")
     if receipt.reviewed_diff_sha256 != diff_sha:
         raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_DIFF_MISMATCH")
-    if receipt.final_disposition not in {"PASS", "PASS_WITH_ACCEPTED_RISK"}:
+    if receipt.review_independence_decision != "PASS":
+        raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_INDEPENDENCE_NOT_PASS")
+    if receipt.final_disposition != "PASS":
         raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_NOT_PASS")
 
     review_auth = validate_harness_authorization(
@@ -179,8 +165,10 @@ def issue_exact_canonical_promotion_authorization(
         expected_subject=REVIEW_SUBJECT,
         allowed_statuses=("consumed",),
     )
-    if receipt.reviewer_authorization != review_auth.authorization_id:
+    if receipt.reviewer_authorization_id != review_auth.authorization_id:
         raise PermissionError("CANONICAL_PROMOTION_REVIEW_AUTH_RECEIPT_MISMATCH")
+    if receipt.reviewer_authorization_status != "consumed":
+        raise PermissionError("CANONICAL_PROMOTION_REVIEW_AUTH_NOT_CONSUMED")
     review_lineage = dict(review_auth.lineage or {})
     for key, expected in {
         "candidate_sha": observed_candidate,
@@ -234,7 +222,8 @@ def issue_exact_canonical_promotion_authorization(
         "candidate_sha": observed_candidate,
         "candidate_tree_sha": tree,
         "reviewed_diff_sha256": diff_sha,
-        "security_review_receipt_sha256": receipt.content_sha256,
+        "security_review_receipt_ref": receipt.receipt_ref,
+        "security_review_receipt_sha256": receipt.receipt_sha256,
         "reviewer_authorization_id": review_auth.authorization_id,
         "reviewer_authorization_status": review_auth.status,
         "one_attempt_only": True,

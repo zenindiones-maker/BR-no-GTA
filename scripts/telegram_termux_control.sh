@@ -395,6 +395,43 @@ runtime_identity_attest() {
     }
   fi
 
+  local index_refresh_rc=0
+  git -C "${ROOT}" update-index --refresh >/dev/null 2>&1 || index_refresh_rc="$?"
+  if ! git -C "${ROOT}" diff --cached --quiet --ignore-submodules=none HEAD --; then
+    echo "TELEGRAM_RUNTIME_EXACT_ATTESTATION=FAIL reason=INDEX_DIRTY" >&2
+    return 2
+  fi
+  local tracked_status submodule_state
+  if ! submodule_state="$(git -C "${ROOT}" submodule status --recursive 2>/dev/null)"; then
+    echo "TELEGRAM_RUNTIME_EXACT_ATTESTATION=FAIL reason=SUBMODULE_STATUS_FAILED" >&2
+    return 2
+  fi
+  if printf '%s\n' "${submodule_state}" | grep -Eq '^[+-U]'; then
+    echo "TELEGRAM_RUNTIME_EXACT_ATTESTATION=FAIL reason=SUBMODULE_DIRTY" >&2
+    return 2
+  fi
+  if [[ -n "${submodule_state}" ]] && ! git -C "${ROOT}" submodule foreach --quiet --recursive 'git diff --quiet HEAD -- && git diff --cached --quiet HEAD --' >/dev/null 2>&1; then
+    echo "TELEGRAM_RUNTIME_EXACT_ATTESTATION=FAIL reason=SUBMODULE_DIRTY" >&2
+    return 2
+  fi
+  if ! git -C "${ROOT}" diff --quiet --ignore-submodules=none HEAD --; then
+    echo "TELEGRAM_RUNTIME_EXACT_ATTESTATION=FAIL reason=TRACKED_WORKTREE_DIRTY" >&2
+    return 2
+  fi
+  if ! tracked_status="$(git -C "${ROOT}" status --porcelain=v1 --untracked-files=no --ignore-submodules=none 2>/dev/null)"; then
+    echo "TELEGRAM_RUNTIME_EXACT_ATTESTATION=FAIL reason=TRACKED_STATUS_CHECK_FAILED" >&2
+    return 2
+  fi
+  if [[ -n "${tracked_status}" ]]; then
+    echo "TELEGRAM_RUNTIME_EXACT_ATTESTATION=FAIL reason=TRACKED_WORKTREE_DIRTY" >&2
+    return 2
+  fi
+
+  if [[ "${index_refresh_rc}" -ne 0 ]]; then
+    echo "TELEGRAM_RUNTIME_EXACT_ATTESTATION=FAIL reason=INDEX_REFRESH_FAILED" >&2
+    return 2
+  fi
+
   mapfile -t pids < <(gateway_pids)
   [[ "${#pids[@]}" -eq 1 ]] || return 2
   tracked_pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
@@ -445,7 +482,14 @@ publish_runtime_status() {
   state="error"
   if [[ "${#pids[@]}" -eq 1 && -n "${local_head}" && -n "${loaded}" && "${local_head}" == "${remote_head}" && "${loaded}" == "${local_head}" ]] && runtime_ready_matches; then
     if [[ "${pid}" =~ ^[0-9]+$ ]] && kill -0 "${pid}" 2>/dev/null; then
-      state="success"
+      local expected_tree
+      expected_tree="$(git -C "${ROOT}" rev-parse HEAD^{tree} 2>/dev/null || true)"
+      local BR_TELEGRAM_RUNTIME_RELEASE_SHA="${local_head}"
+      local BR_TELEGRAM_GATEWAY_REVISION="${local_head}"
+      local BR_TELEGRAM_EXPECTED_TREE_SHA="${expected_tree}"
+      if runtime_identity_attest >/dev/null 2>&1; then
+        state="success"
+      fi
     fi
   fi
   description="pid=${pid:-none} instances=${#pids[@]} sha=${loaded:-missing} local=${local_head:0:12} runtime=${loaded:0:12} remote=${remote_head:0:12}"

@@ -1432,10 +1432,65 @@ class MunderAdapter:
                     }
                     wave_results = []
                     for future in as_completed(futures):
-                        item = future.result()
+                        task_id = futures[future]
+                        task = ordered_tasks[task_id]
+                        lease = leases[task_id]
+                        try:
+                            item = future.result()
+                        except Exception as exc:
+                            workspace = worktrees[task_id]
+                            changed = _changed_paths(workspace, spec.base_sha)
+                            commits = _commits_ahead(workspace, spec.base_sha)
+                            item = {
+                                "status": "FAILED",
+                                "error": _safe_worker_exception_reason(exc),
+                                "failure_class": type(exc).__name__,
+                                "failure_stage": "future_result_exception",
+                                "task_id": task_id,
+                                "agent": task.agent,
+                                "capability": task.capability,
+                                "delegation_id": lease.delegation_id,
+                                "files_changed": list(changed),
+                                "commits": list(commits),
+                                "commands": [],
+                                "tests": [],
+                                "artifacts": [],
+                                "task_duration_ms": 0.0,
+                                "PRESERVE_LOCAL_WORKSPACE": bool(changed or commits),
+                                "LOCAL_ONLY_PROGRESS_DETECTED": "YES" if (changed or commits) else "NO",
+                                "DEVELOPMENT_PROGRESS_DURABLE": "FAIL" if (changed or commits) else "NOT_APPLICABLE",
+                                "WORKSPACE_STATE": "MATERIAL_CHANGES" if (changed or commits) else "PROVEN_CLEAN",
+                            }
+                            _enforce_material_result_durability(
+                                result=item,
+                                workspace=workspace,
+                                mission_id=spec.mission_id,
+                                task_id=task_id,
+                                canonical_branch=spec.branch,
+                                canonical_base_sha=spec.base_sha,
+                                recovery_ref=_recovery_ref_for_task(spec.mission_id, task_id),
+                                hook=self._development_durability_hook,
+                            )
+                            artifact_ref, artifact_sha = _persist_task_artifact(
+                                repository_root,
+                                spec,
+                                task_id,
+                                item,
+                            )
+                            item["artifact_ref"] = artifact_ref
+                            item["artifact_sha256"] = artifact_sha
+                            if event_sink:
+                                event_sink(
+                                    task_id,
+                                    "TASK_FAILED",
+                                    {
+                                        "status": "FAILED",
+                                        "failure_class": type(exc).__name__,
+                                        "failure_stage": "future_result_exception",
+                                    },
+                                )
                         wave_results.append(item)
                         per_agent.append(item)
-                        task_id = futures[future]
                         pending.remove(task_id)
                         completed.add(task_id)
                         if item.get("status") != "SUCCEEDED":
@@ -1454,10 +1509,33 @@ class MunderAdapter:
                     mission_errors.append("unsafe worktree cleanup target refused")
                     continue
                 item = results_by_task.get(task_id)
+                if item is None:
+                    item = {
+                        "status": "FAILED",
+                        "error": "TASK_RESULT_MISSING",
+                        "failure_class": "MissingTaskResult",
+                        "failure_stage": "cleanup_result_resolution",
+                        "task_id": task_id,
+                        "agent": ordered_tasks[task_id].agent,
+                        "capability": ordered_tasks[task_id].capability,
+                        "delegation_id": leases[task_id].delegation_id,
+                        "files_changed": list(_changed_paths(workspace, spec.base_sha)),
+                        "commits": list(_commits_ahead(workspace, spec.base_sha)),
+                        "commands": [],
+                        "tests": [],
+                        "artifacts": [],
+                        "task_duration_ms": 0.0,
+                        "PRESERVE_LOCAL_WORKSPACE": True,
+                        "LOCAL_ONLY_PROGRESS_DETECTED": "UNKNOWN",
+                        "DEVELOPMENT_PROGRESS_DURABLE": "FAIL",
+                        "WORKSPACE_STATE": "UNKNOWN",
+                    }
+                    per_agent.append(item)
+                    results_by_task[task_id] = item
+                    failed.add(task_id)
                 preserve = bool(
-                    item
-                    and item.get("PRESERVE_LOCAL_WORKSPACE") is True
-                    and (item.get("files_changed") or item.get("commits"))
+                    item.get("PRESERVE_LOCAL_WORKSPACE") is True
+                    or item.get("DEVELOPMENT_PROGRESS_DURABLE") == "FAIL"
                 )
                 if preserve:
                     item["PRESERVED_WORKSPACE_PATH"] = str(workspace)

@@ -56,6 +56,59 @@ active_sha() {
   git -C "${release}" rev-parse HEAD 2>/dev/null
 }
 
+verify_release_filesystem() {
+  local sha="$1" release="$2" expected_tree="$3"
+  local observed_head observed_tree tracked_status submodule_state
+  [[ -d "${release}" ]] || {
+    echo "A15_RELEASE=FAIL reason=RELEASE_MISSING" >&2
+    return 1
+  }
+  observed_head="$(git -C "${release}" rev-parse HEAD 2>/dev/null || true)"
+  [[ "${observed_head}" == "${sha}" ]] || {
+    echo "A15_RELEASE=FAIL reason=COMMIT_MISMATCH" >&2
+    return 1
+  }
+  observed_tree="$(git -C "${release}" rev-parse "HEAD^{tree}" 2>/dev/null || true)"
+  [[ "${observed_tree}" == "${expected_tree}" ]] || {
+    echo "A15_RELEASE=FAIL reason=TREE_MISMATCH" >&2
+    return 1
+  }
+  local index_refresh_rc=0
+  git -C "${release}" update-index --refresh >/dev/null 2>&1 || index_refresh_rc="$?"
+  if ! git -C "${release}" diff --cached --quiet --ignore-submodules=none HEAD --; then
+    echo "A15_RELEASE=FAIL reason=INDEX_DIRTY" >&2
+    return 1
+  fi
+  if ! submodule_state="$(git -C "${release}" submodule status --recursive 2>/dev/null)"; then
+    echo "A15_RELEASE=FAIL reason=SUBMODULE_STATUS_FAILED" >&2
+    return 1
+  fi
+  if printf '%s\n' "${submodule_state}" | grep -Eq '^[+-U]'; then
+    echo "A15_RELEASE=FAIL reason=SUBMODULE_DIRTY" >&2
+    return 1
+  fi
+  if [[ -n "${submodule_state}" ]] && ! git -C "${release}" submodule foreach --quiet --recursive 'git diff --quiet HEAD -- && git diff --cached --quiet HEAD --' >/dev/null 2>&1; then
+    echo "A15_RELEASE=FAIL reason=SUBMODULE_DIRTY" >&2
+    return 1
+  fi
+  if ! git -C "${release}" diff --quiet --ignore-submodules=none HEAD --; then
+    echo "A15_RELEASE=FAIL reason=TRACKED_WORKTREE_DIRTY" >&2
+    return 1
+  fi
+  if ! tracked_status="$(git -C "${release}" status --porcelain=v1 --untracked-files=no --ignore-submodules=none 2>/dev/null)"; then
+    echo "A15_RELEASE=FAIL reason=TRACKED_STATUS_CHECK_FAILED" >&2
+    return 1
+  fi
+  [[ -z "${tracked_status}" ]] || {
+    echo "A15_RELEASE=FAIL reason=TRACKED_WORKTREE_DIRTY" >&2
+    return 1
+  }
+  if [[ "${index_refresh_rc}" -ne 0 ]]; then
+    echo "A15_RELEASE=FAIL reason=INDEX_REFRESH_FAILED" >&2
+    return 1
+  fi
+}
+
 materialize_release() {
   local sha="$1" release expected_tree actual_tree
   release="$(release_path "${sha}")"
@@ -72,10 +125,7 @@ materialize_release() {
     echo "A15_RELEASE=FAIL tree identity mismatch" >&2
     return 1
   }
-  if [[ -n "$(git -C "${release}" status --porcelain --untracked-files=all)" ]]; then
-    echo "A15_RELEASE=FAIL immutable candidate checkout is dirty" >&2
-    return 1
-  fi
+  verify_release_filesystem "${sha}" "${release}" "${expected_tree}"
   printf 'CANDIDATE_TREE_SHA=%s\n' "${actual_tree}"
   printf '%s\n' "${release}"
 }
@@ -119,7 +169,9 @@ stop_known_good() {
 }
 
 start_release() {
-  local sha="$1" release="$2" env_root="$3" control
+  local sha="$1" release="$2" env_root="$3" control expected_tree
+  expected_tree="$(git_bare rev-parse "${sha}^{tree}")"
+  verify_release_filesystem "${sha}" "${release}" "${expected_tree}" || return 1
   control="$(control_for "${release}")"
   BR_CANONICAL_BRANCH="${CANONICAL_BRANCH}"   BR_TELEGRAM_RUNTIME_ENV_ROOT="${env_root}"   BR_TELEGRAM_RUNTIME_RELEASE_SHA="${sha}"   BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START=1     bash "${control}" start 9>&-
 }
@@ -367,6 +419,12 @@ reconcile_runtime() {
     return 1
   fi
   echo "TELEGRAM_DEPLOY_PREFLIGHT=PASS"
+  if ! verify_release_filesystem "${DESIRED_SHA}" "${candidate_release}" "${candidate_tree}"; then
+    publish_github_deployment_status "${DEPLOYMENT_ID}" "failure" "candidate_filesystem_dirty" || true
+    write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "failure" "${candidate_tree}" "${DEPLOYMENT_ID}" ""
+    echo "TELEGRAM_DEPLOY=FAIL candidate runtime filesystem changed after preflight; known-good preserved" >&2
+    return 1
+  fi
 
   previous_release=""
   if [[ -n "${PREVIOUS_KNOWN_GOOD_SHA}" ]]; then

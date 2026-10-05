@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 import os
 import shlex
 import subprocess
@@ -274,27 +275,37 @@ def test_security_guardian_policy_runs_on_every_security_staging_push_without_pa
     assert "Deterministic policy contracts" in workflow
 
 
-def _trusted_evidence_bundle():
-    from app.services.security_guardian_service import SecurityReviewReceipt
-    receipt = SecurityReviewReceipt.create(
-        reviewed_candidate_sha=SHA_B,
-        reviewed_tree_sha=TREE,
+def _trusted_receipt_record():
+    return SimpleNamespace(
+        receipt_ref="trusted-security-review:" + ("f" * 32),
+        receipt_sha256="d" * 64,
+        candidate_sha=SHA_B,
+        candidate_tree_sha=TREE,
         reviewed_diff_sha256="e" * 64,
-        reviewer_identity="codex-security-reviewer",
-        reviewer_session="review-session",
-        reviewer_authorization="review-auth-1",
-        scanner_evidence=("codeql:pass", "root-suite:pass", "ci:pass"),
-        findings=(),
-        exceptions=(),
-        disposition="PASS",
+        reviewer_authorization_id="review-auth-1",
+        reviewer_authorization_status="consumed",
+        reviewer_execution_principal_ref="delegation:review-1",
+        reviewer_execution_principal_sha256="1" * 64,
+        review_independence_ref="agent_execution_event:1",
+        review_independence_sha256="2" * 64,
+        review_independence_decision="PASS",
+        reviewed_task_result_ref="artifact://security-review/1",
+        reviewed_task_result_sha256="3" * 64,
+        reviewer_session_ref="review-session",
+        final_disposition="PASS",
     )
+
+
+def _trusted_evidence_bundle():
+    receipt = _trusted_receipt_record()
     binding = {
         "target_ref": WORK_REF,
         "expected_old_oid": SHA_A,
         "candidate_sha": SHA_B,
         "candidate_tree_sha": TREE,
         "reviewed_diff_sha256": "e" * 64,
-        "security_review_receipt_sha256": receipt.content_sha256,
+        "security_review_receipt_ref": receipt.receipt_ref,
+        "security_review_receipt_sha256": receipt.receipt_sha256,
     }
     return {
         "schema_version": "CanonicalPromotionEvidenceBundle/v1",
@@ -319,24 +330,26 @@ def _trusted_evidence_bundle():
                 "reviewed_diff_sha256": "e" * 64,
             },
         },
-        "security_review_receipt": receipt.to_dict() if hasattr(receipt, "to_dict") else {
-            "reviewed_candidate_sha": receipt.reviewed_candidate_sha,
-            "reviewed_tree_sha": receipt.reviewed_tree_sha,
-            "reviewed_diff_sha256": receipt.reviewed_diff_sha256,
-            "reviewer_identity": receipt.reviewer_identity,
-            "reviewer_session": receipt.reviewer_session,
-            "reviewer_authorization": receipt.reviewer_authorization,
-            "scanner_evidence": list(receipt.scanner_evidence),
-            "findings": list(receipt.findings),
-            "exceptions": list(receipt.exceptions),
-            "final_disposition": receipt.final_disposition,
-            "content_sha256": receipt.content_sha256,
-            "schema_version": receipt.schema_version,
-        },
+        "security_review_receipt_ref": receipt.receipt_ref,
+        "security_review_receipt_sha256": receipt.receipt_sha256,
     }
 
 
-def test_trusted_promotion_evidence_bundle_binds_real_semantic_evidence():
+def _stub_trusted_receipt(monkeypatch):
+    import app.services.canonical_promotion_identity_service as identity
+    receipt = _trusted_receipt_record()
+    monkeypatch.setattr(
+        identity,
+        "resolve_trusted_security_review_receipt",
+        lambda ref, digest: receipt
+        if (ref, digest) == (receipt.receipt_ref, receipt.receipt_sha256)
+        else (_ for _ in ()).throw(PermissionError("TRUSTED_SECURITY_REVIEW_RECEIPT_NOT_FOUND")),
+    )
+    return receipt
+
+
+def test_trusted_promotion_evidence_bundle_binds_real_semantic_evidence(monkeypatch):
+    _stub_trusted_receipt(monkeypatch)
     from app.services.canonical_promotion_identity_service import validate_trusted_promotion_evidence_bundle
     result = validate_trusted_promotion_evidence_bundle(
         _trusted_evidence_bundle(),
@@ -351,7 +364,8 @@ def test_trusted_promotion_evidence_bundle_binds_real_semantic_evidence():
     assert len(result["security_review_receipt_sha256"]) == 64
 
 
-def test_trusted_promotion_evidence_bundle_rejects_caller_fabrication_and_binding_drift():
+def test_trusted_promotion_evidence_bundle_rejects_caller_fabrication_and_binding_drift(monkeypatch):
+    _stub_trusted_receipt(monkeypatch)
     from app.services.canonical_promotion_identity_service import validate_trusted_promotion_evidence_bundle
     forged = _trusted_evidence_bundle()
     forged["trusted_source"] = "WORKFLOW_DISPATCH_INPUT"
@@ -432,3 +446,28 @@ def test_actual_promotion_update_rejects_remote_race_even_on_candidate_ancestry(
         assert result.returncode == 0, result.stderr
         assert observed == c
         assert git("--git-dir", remote, "rev-parse", f"{observed}^{{tree}}") == tree
+
+
+def test_trusted_promotion_evidence_bundle_rejects_embedded_caller_created_review_mapping(monkeypatch):
+    _stub_trusted_receipt(monkeypatch)
+    from app.services.canonical_promotion_identity_service import validate_trusted_promotion_evidence_bundle
+    forged = _trusted_evidence_bundle()
+    forged.pop("security_review_receipt_ref")
+    forged.pop("security_review_receipt_sha256")
+    forged["security_review_receipt"] = {
+        "schema_version": "SecurityReviewReceipt/v1",
+        "reviewed_candidate_sha": SHA_B,
+        "reviewed_tree_sha": TREE,
+        "reviewed_diff_sha256": "e" * 64,
+        "final_disposition": "PASS",
+        "content_sha256": "a" * 64,
+    }
+    with pytest.raises(PermissionError, match="RECEIPT_REF_MISSING"):
+        validate_trusted_promotion_evidence_bundle(
+            forged,
+            target_ref=WORK_REF,
+            expected_old_oid=SHA_A,
+            candidate_sha=SHA_B,
+            candidate_tree_sha=TREE,
+            reviewed_diff_sha256="e" * 64,
+        )
