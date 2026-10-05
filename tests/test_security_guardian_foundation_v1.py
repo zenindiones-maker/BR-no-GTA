@@ -761,10 +761,18 @@ def test_security_reviewer_capability_is_accepted_by_readonly_worker():
 def test_security_reviewer_review_authorization_reaches_readonly_agent_office_boundary(monkeypatch, tmp_path):
     record = GLOBAL_CAPABILITY_REGISTRY.get("security.review.repository")
     assert record is not None
+    candidate_sha = "a" * 40
+    candidate_tree_sha = "b" * 40
+    reviewed_diff_sha256 = "c" * 64
     auth = issue_harness_authorization(
         authorized_action="REVIEW",
         subject="capability:security.review.repository",
-        lineage={"goal_id": "goal-security-review"},
+        lineage={
+            "goal_id": "goal-security-review",
+            "candidate_sha": candidate_sha,
+            "candidate_tree_sha": candidate_tree_sha,
+            "reviewed_diff_sha256": reviewed_diff_sha256,
+        },
     )
     routing = HarnessRoutingDecision(
         routing_id="route-security-review",
@@ -815,7 +823,10 @@ def test_security_reviewer_review_authorization_reaches_readonly_agent_office_bo
             "allowed_tools": ["rg", "cat", "pytest", "security-evidence"],
             "allowed_actions": ["analyze", "inspect", "test"],
             "branch": "recovery/dev/security-guardian-foundation-v1",
-            "base_sha": "0e6704ecd60ed2f7266b4b299017910a6491e068",
+            "base_sha": candidate_sha,
+            "candidate_sha": candidate_sha,
+            "candidate_tree_sha": candidate_tree_sha,
+            "reviewed_diff_sha256": reviewed_diff_sha256,
         },
         repository_root=tmp_path,
     )
