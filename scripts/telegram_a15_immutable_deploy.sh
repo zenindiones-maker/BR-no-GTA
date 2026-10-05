@@ -314,8 +314,8 @@ reconcile_runtime() {
     return 0
   fi
 
-  ensure_deploy_repo
   recover_interrupted_deployment
+  ensure_deploy_repo
   local DESIRED_SHA ACTIVE_RUNTIME_SHA PREVIOUS_KNOWN_GOOD_SHA active_tree
   local candidate_output candidate_release candidate_tree candidate_env previous_release
   local DEPLOYMENT_ID ROLLBACK_DEPLOYMENT_ID
