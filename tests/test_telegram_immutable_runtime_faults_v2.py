@@ -287,3 +287,36 @@ cat "${DEPLOY_STATUS_FILE}"
     assert "RC=1" in cp.stdout
     assert "readback-fail:101:success" in cp.stdout
     assert "DEPLOYMENT_STATE=remote_readback_pending" in cp.stdout
+
+
+def test_start_release_closes_deployment_lock_fd_before_control_child():
+    source = SCRIPT.read_text(encoding="utf-8")
+    body = source.split("start_release() {", 1)[1].split("\n}", 1)[0]
+    assert '9>&-' in body
+
+
+def test_attest_release_propagates_status_failure_even_if_doctor_succeeds(tmp_path: Path):
+    body = r"""
+control_for() { echo /fake/control.sh; }
+bash() {
+  case "$*" in
+    *" status") return 7 ;;
+    *" doctor") return 0 ;;
+  esac
+  return 0
+}
+set +e
+attest_release aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa /fake/release /fake/env bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+RC="$?"
+set -e
+printf 'ATTEST_RC=%s\n' "$RC"
+"""
+    cp, _ = _run_shell(tmp_path, body)
+    assert "ATTEST_RC=7" in cp.stdout
+
+
+def test_rollback_uses_exact_identity_attestation_not_canonical_status():
+    source = SCRIPT.read_text(encoding="utf-8")
+    body = source.split("rollback_known_good() {", 1)[1].split("\n}", 1)[0]
+    assert 'attest_release "\${previous_sha}" "\${previous_release}" "\${previous_env}" "\${previous_tree}"' in body
+    assert 'bash "\${control}" status' not in body
