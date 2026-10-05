@@ -154,7 +154,7 @@ class DevelopmentRecoveryCheckpointService:
                 ignored = subprocess.run(
                     ["git", "check-ignore", "-q", "--", rel], cwd=self.repo, check=False
                 ).returncode == 0
-                if ignored and classification != "RECOVERABLE_SOURCE":
+                if ignored and classification == "UNCLASSIFIED":
                     continue
                 if classification == "RECOVERABLE_SOURCE":
                     selected.add(rel)
