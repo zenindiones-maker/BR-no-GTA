@@ -371,6 +371,43 @@ runtime_ready_matches() {
   [[ "${ready_revision}" == "${expected}" ]]
 }
 
+runtime_identity_attest() {
+  local expected="${BR_TELEGRAM_RUNTIME_RELEASE_SHA:-${BR_TELEGRAM_GATEWAY_REVISION:-}}"
+  local expected_tree="${BR_TELEGRAM_EXPECTED_TREE_SHA:-}"
+  local local_head local_tree tracked_pid
+  local -a pids=()
+
+  [[ "${expected}" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "TELEGRAM_RUNTIME_EXACT_ATTESTATION=FAIL invalid expected revision" >&2
+    return 2
+  }
+  local_head="$(git -C "${ROOT}" rev-parse HEAD 2>/dev/null || true)"
+  [[ "${local_head}" == "${expected}" ]] || {
+    echo "TELEGRAM_RUNTIME_EXACT_ATTESTATION=FAIL local revision mismatch" >&2
+    return 2
+  }
+  if [[ -n "${expected_tree}" ]]; then
+    [[ "${expected_tree}" =~ ^[0-9a-f]{40}$ ]] || return 2
+    local_tree="$(git -C "${ROOT}" rev-parse HEAD^{tree} 2>/dev/null || true)"
+    [[ "${local_tree}" == "${expected_tree}" ]] || {
+      echo "TELEGRAM_RUNTIME_EXACT_ATTESTATION=FAIL tree mismatch" >&2
+      return 2
+    }
+  fi
+
+  mapfile -t pids < <(gateway_pids)
+  [[ "${#pids[@]}" -eq 1 ]] || return 2
+  tracked_pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
+  [[ "${tracked_pid}" =~ ^[0-9]+$ ]] || return 2
+  [[ "${pids[0]}" == "${tracked_pid}" ]] || return 2
+  kill -0 "${tracked_pid}" 2>/dev/null || return 2
+
+  local BR_TELEGRAM_GATEWAY_REVISION="${expected}"
+  runtime_revision_matches || return 2
+  runtime_ready_matches || return 2
+  echo "TELEGRAM_RUNTIME_EXACT_ATTESTATION=PASS"
+}
+
 wait_for_runtime_ready() {
   local pid="$1"
   local wait_seconds="${TELEGRAM_GATEWAY_STARTUP_WAIT_SECONDS:-45}"
@@ -887,6 +924,9 @@ case "${1:-start}" in
     ;;
   status)
     status_gateway
+    ;;
+  runtime-attest)
+    runtime_identity_attest
     ;;
   heartbeat)
     heartbeat_gateway
