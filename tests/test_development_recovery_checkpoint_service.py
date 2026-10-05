@@ -201,7 +201,7 @@ def test_network_loss_after_verified_baseline_creates_local_degraded_ref_and_upg
     assert upgraded["recovery_commit_sha"] != prior
 
 
-def test_large_unknown_binary_under_source_path_is_locator_only(tmp_path: Path):
+def test_large_unknown_binary_under_source_path_is_preserved_as_recoverable_source(tmp_path: Path):
     repo,_ = init_repo(tmp_path)
     base = run(repo,"git","rev-parse","HEAD")
     payload = b"\x00\x01\x02BINARY" * 20000
@@ -214,13 +214,16 @@ def test_large_unknown_binary_under_source_path_is_locator_only(tmp_path: Path):
         runtime_namespace="rt1", agent_execution_identity="agent1", authorization_id="auth1",
         included_paths=["app"], excluded_paths=[],
     )
-    assert "app/model.weights" not in result["included_paths"]
-    evidence = {item["path"]: item for item in result["large_evidence"]}
-    assert evidence["app/model.weights"]["size_bytes"] == len(payload)
-    assert evidence["app/model.weights"]["classification_reason"] in {"BINARY_CONTENT", "SIZE_THRESHOLD", "NON_SOURCE_SUFFIX"}
+    assert "app/model.weights" in result["included_paths"]
+    assert result["large_evidence"] == []
+    restored = subprocess.run(
+        ["git", "-C", str(repo), "show", f"{result['recovery_commit_sha']}:app/model.weights"],
+        check=True, capture_output=True,
+    ).stdout
+    assert restored == payload
 
 
-def test_large_unknown_text_under_source_path_is_locator_only_by_size(tmp_path: Path):
+def test_large_unknown_text_under_source_path_is_preserved_by_source_policy(tmp_path: Path):
     repo,_ = init_repo(tmp_path)
     base = run(repo,"git","rev-parse","HEAD")
     payload = ("x" * (2 * 1024 * 1024 + 1)).encode()
@@ -233,9 +236,8 @@ def test_large_unknown_text_under_source_path_is_locator_only_by_size(tmp_path: 
         runtime_namespace="rt1", agent_execution_identity="agent1", authorization_id="auth1",
         included_paths=["app"], excluded_paths=[],
     )
-    assert "app/huge.unknown" not in result["included_paths"]
-    evidence = {item["path"]: item for item in result["large_evidence"]}
-    assert evidence["app/huge.unknown"]["classification_reason"] == "SIZE_THRESHOLD"
+    assert "app/huge.unknown" in result["included_paths"]
+    assert result["large_evidence"] == []
 
 
 def test_crash_after_local_snapshot_preserves_named_local_recovery_ref(tmp_path: Path):
