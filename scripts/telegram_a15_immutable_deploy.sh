@@ -121,14 +121,22 @@ stop_known_good() {
 start_release() {
   local sha="$1" release="$2" env_root="$3" control
   control="$(control_for "${release}")"
-  BR_CANONICAL_BRANCH="${CANONICAL_BRANCH}"   BR_TELEGRAM_RUNTIME_ENV_ROOT="${env_root}"   BR_TELEGRAM_RUNTIME_RELEASE_SHA="${sha}"   BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START=1     bash "${control}" start
+  BR_CANONICAL_BRANCH="${CANONICAL_BRANCH}"   BR_TELEGRAM_RUNTIME_ENV_ROOT="${env_root}"   BR_TELEGRAM_RUNTIME_RELEASE_SHA="${sha}"   BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START=1     bash "${control}" start 9>&-
 }
 
 attest_release() {
-  local sha="$1" release="$2" env_root="$3" control
+  local sha="$1" release="$2" env_root="$3" expected_tree="${4:-}" control
   control="$(control_for "${release}")"
-  BR_CANONICAL_BRANCH="${CANONICAL_BRANCH}"   BR_TELEGRAM_RUNTIME_ENV_ROOT="${env_root}"   BR_TELEGRAM_RUNTIME_RELEASE_SHA="${sha}"     bash "${control}" status >/dev/null
-  BR_CANONICAL_BRANCH="${CANONICAL_BRANCH}"   BR_TELEGRAM_RUNTIME_ENV_ROOT="${env_root}"   BR_TELEGRAM_RUNTIME_RELEASE_SHA="${sha}"     bash "${control}" doctor >/dev/null
+  BR_CANONICAL_BRANCH="${CANONICAL_BRANCH}" \
+  BR_TELEGRAM_RUNTIME_ENV_ROOT="${env_root}" \
+  BR_TELEGRAM_RUNTIME_RELEASE_SHA="${sha}" \
+  BR_TELEGRAM_GATEWAY_REVISION="${sha}" \
+  BR_TELEGRAM_EXPECTED_TREE_SHA="${expected_tree}" \
+    bash "${control}" runtime-attest >/dev/null || return $?
+  BR_CANONICAL_BRANCH="${CANONICAL_BRANCH}" \
+  BR_TELEGRAM_RUNTIME_ENV_ROOT="${env_root}" \
+  BR_TELEGRAM_RUNTIME_RELEASE_SHA="${sha}" \
+    bash "${control}" doctor >/dev/null || return $?
 }
 
 activate_release_pointer() {
@@ -226,16 +234,8 @@ rollback_known_good() {
     publish_github_deployment_status "${ROLLBACK_DEPLOYMENT_ID}" "in_progress" "rollback_in_progress" || true
   fi
 
-  control="$(control_for "${previous_release}")"
-  BR_CANONICAL_BRANCH="${CANONICAL_BRANCH}" \
-  BR_TELEGRAM_RUNTIME_ENV_ROOT="${previous_env}" \
-  BR_TELEGRAM_RUNTIME_RELEASE_SHA="${previous_sha}" \
-  BR_TELEGRAM_SUPPRESS_OWNER_VOICE_HANDOFF_ON_START=1 \
-    bash "${control}" start
-  BR_CANONICAL_BRANCH="${CANONICAL_BRANCH}" \
-  BR_TELEGRAM_RUNTIME_ENV_ROOT="${previous_env}" \
-  BR_TELEGRAM_RUNTIME_RELEASE_SHA="${previous_sha}" \
-    bash "${control}" status >/dev/null
+  start_release "${previous_sha}" "${previous_release}" "${previous_env}"
+  attest_release "${previous_sha}" "${previous_release}" "${previous_env}" "${previous_tree}"
 
   activate_release_pointer "${previous_release}"
   printf '%s\n' "${previous_sha}" > "${KNOWN_GOOD_FILE}"
@@ -316,7 +316,7 @@ reconcile_runtime() {
 
   ensure_deploy_repo
   recover_interrupted_deployment
-  local DESIRED_SHA ACTIVE_RUNTIME_SHA PREVIOUS_KNOWN_GOOD_SHA
+  local DESIRED_SHA ACTIVE_RUNTIME_SHA PREVIOUS_KNOWN_GOOD_SHA active_tree
   local candidate_output candidate_release candidate_tree candidate_env previous_release
   local DEPLOYMENT_ID ROLLBACK_DEPLOYMENT_ID
   DEPLOYMENT_ID=""
@@ -336,7 +336,8 @@ reconcile_runtime() {
   if [[ "${DESIRED_SHA}" == "${ACTIVE_RUNTIME_SHA}" && -n "${ACTIVE_RUNTIME_SHA}" ]]; then
     candidate_release="$(release_path "${ACTIVE_RUNTIME_SHA}")"
     candidate_env="$(env_path "${ACTIVE_RUNTIME_SHA}")"
-    if attest_release "${ACTIVE_RUNTIME_SHA}" "${candidate_release}" "${candidate_env}"; then
+    active_tree="$(git_bare rev-parse "${ACTIVE_RUNTIME_SHA}^{tree}")"
+    if attest_release "${ACTIVE_RUNTIME_SHA}" "${candidate_release}" "${candidate_env}" "${active_tree}"; then
       echo "NO_DEPLOY_REQUIRED"
       return 0
     fi
@@ -380,7 +381,7 @@ reconcile_runtime() {
     return 1
   fi
 
-  if ! attest_release "${DESIRED_SHA}" "${candidate_release}" "${candidate_env}"; then
+  if ! attest_release "${DESIRED_SHA}" "${candidate_release}" "${candidate_env}" "${candidate_tree}"; then
     BR_CANONICAL_BRANCH="${CANONICAL_BRANCH}"     BR_TELEGRAM_RUNTIME_ENV_ROOT="${candidate_env}"     BR_TELEGRAM_RUNTIME_RELEASE_SHA="${DESIRED_SHA}"       bash "$(control_for "${candidate_release}")" stop || true
     write_deployment_state "${DESIRED_SHA}" "${PREVIOUS_KNOWN_GOOD_SHA}" "rollback_in_progress" "${candidate_tree}" "${DEPLOYMENT_ID}" ""
     rollback_known_good "${PREVIOUS_KNOWN_GOOD_SHA}" "${DEPLOYMENT_ID}" "${DESIRED_SHA}"
