@@ -100,6 +100,69 @@ AGENT_OFFICE_RECORD = CapabilityRecord(
     health_policy="EXECUTOR_RUNTIME_REQUIRED",
 )
 
+CANONICAL_PROMOTION_AUTHORIZE_RECORD = CapabilityRecord(
+    capability_id="development.canonical.promotion-authorize",
+    capability_type="CAPABILITY",
+    domain="development-governance",
+    implementation=(
+        "DeepSeek Harness exact-bound canonical promotion authorization gate"
+    ),
+    input_contract=(
+        "current canonical/staging Git refs + consumed exact-bound independent review "
+        "authorization + PASS SecurityReviewReceipt/v1 + goal/mission/task provenance"
+    ),
+    output_contract=(
+        "persisted HarnessAuthorization for development.canonical.promote with exact lineage"
+    ),
+    requirements=(
+        "trusted Harness Routing/Policy decision",
+        "consumed independent REVIEW authorization",
+        "PASS or PASS_WITH_ACCEPTED_RISK SecurityReviewReceipt/v1",
+        "exact remote canonical/staging/tree/diff verification",
+        "fast-forward ancestry",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("DEVELOPMENT",),
+    policy_tags=("development", "governance", "canonical-promotion", "authorization", "fail-closed"),
+    security_boundary=(
+        "DeepSeek Harness remains sole authority. This gate may persist only one exact-bound "
+        "promotion authorization after independent review; it has no repository write, deploy, "
+        "secret, ruleset, publication, reviewer or canonical-ref mutation authority."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL_PLUS_REMOTE_GIT_READ",
+    quality_class="EXACT_BOUND_FAIL_CLOSED",
+    evidence_contract="CanonicalPromotionAuthorizationEvidence/v1",
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.canonical_promotion_authorization_service."
+        "issue_exact_canonical_promotion_authorization"
+    ),
+    version="1",
+    provider_id="internal",
+    agent_id="deepseek-harness-governance",
+    side_effects=("Harness authorization persistence",),
+    authority="NONE",
+    memory_write="NONE",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+    supports_parallelism=False,
+    supports_retry=False,
+    supports_resume=False,
+    supports_review=True,
+    side_effect_class="BOUNDED_MUTATION",
+    default_read_scope=(".git",),
+    default_write_scope=(),
+    allowed_tools=("git", "python"),
+    health_policy="REMOTE_GIT_READBACK_REQUIRED",
+    execution_kind="VALIDATOR",
+    functional_roles=("GOVERNANCE_VALIDATION",),
+)
+
+
 DEVELOPMENT_CHECKPOINT_PERSIST_RECORD = CapabilityRecord(
     capability_id="development.checkpoint.persist",
     capability_type="EXECUTOR",
@@ -1724,6 +1787,7 @@ _YOUTUBE_DEPARTMENT_RECORDS = youtube_department_records()
 
 for _record in (
     AGENT_OFFICE_RECORD,
+    CANONICAL_PROMOTION_AUTHORIZE_RECORD,
     DEVELOPMENT_CHECKPOINT_PERSIST_RECORD,
     HERMES_MULTIAGENT_RUNTIME_RECORD,
     ARTIFACT_EVIDENCE_REUSE_RECORD,
