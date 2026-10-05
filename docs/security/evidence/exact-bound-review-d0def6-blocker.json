@@ -34,5 +34,7 @@
     "fabricate SecurityReviewReceipt/v1",
     "issue development.canonical.promote authorization without consumed exact REVIEW authorization"
   ],
-  "next_causal_action": "Run the registered codex-security-reviewer in a separate read-only Agent Office session with valid Codex authentication, bound to the exact canonical/staging/tree/diff; then persist sanitized ReviewIndependenceEvidence/v1 and SecurityReviewReceipt/v1."
+  "next_causal_action": "Run the registered codex-security-reviewer in a separate read-only Agent Office session with valid Codex authentication, bound to the exact canonical/staging/tree/diff; then persist sanitized ReviewIndependenceEvidence/v1 and SecurityReviewReceipt/v1.",
+  "reviewed_tree_sha": "93a79285ffd5c50e2c70a6d82071bdeb97c1ed45",
+  "reviewed_diff_sha256": "2b0d9df57670ad51142e7ea96214b50603b557f69b9bc6d7010ea2a9ef839f21"
 }
