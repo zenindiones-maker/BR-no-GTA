@@ -318,13 +318,21 @@ def build_agent_office_specialist_contract(
         )
         objective = (objective + context_block)[:4000]
 
+    security_review_task = str(record.capability_id) == "security.review.repository"
+    requested_role = str(
+        payload.get("role")
+        or ("REVIEW" if security_review_task else "REGISTRY_ENGINEERING_TASK_OWNER")
+    ).strip()
+    if security_review_task and requested_role.upper() != "REVIEW":
+        raise PermissionError("security review Agent Office role must be REVIEW")
+
     task = {
         "task_id": str(payload.get("task_id") or "task").strip(),
         "agent": agent_id,
         "capability": str(record.capability_id),
         "action": "edit" if mutation_capable else "analyze",
         "objective": objective,
-        "role": str(payload.get("role") or "REGISTRY_ENGINEERING_TASK_OWNER"),
+        "role": requested_role,
         "owned_task_class": task_class,
         "allowed_paths": allowed_paths,
         "allowed_tools": list(requested_tools),
@@ -396,9 +404,46 @@ def execute_authorized_agent_office_specialist(
     if not mission_id or not task_id:
         raise ValueError("mission_id/task_id are required")
 
+    specialist_payload = {**payload, "task_id": task_id}
+    if security_review:
+        bindings = {
+            "candidate_sha": str(
+                payload.get("candidate_sha") or auth.lineage.get("candidate_sha") or ""
+            ).strip().lower(),
+            "candidate_tree_sha": str(
+                payload.get("candidate_tree_sha")
+                or auth.lineage.get("candidate_tree_sha")
+                or ""
+            ).strip().lower(),
+            "reviewed_diff_sha256": str(
+                payload.get("reviewed_diff_sha256")
+                or auth.lineage.get("reviewed_diff_sha256")
+                or ""
+            ).strip().lower(),
+        }
+        import re
+        if re.fullmatch(r"[0-9a-f]{40}", bindings["candidate_sha"]) is None:
+            raise ValueError("security review candidate_sha binding missing")
+        if re.fullmatch(r"[0-9a-f]{40}", bindings["candidate_tree_sha"]) is None:
+            raise ValueError("security review candidate_tree_sha binding missing")
+        if re.fullmatch(r"[0-9a-f]{64}", bindings["reviewed_diff_sha256"]) is None:
+            raise ValueError("security review reviewed_diff_sha256 binding missing")
+        original_objective = str(
+            specialist_payload.get("task") or specialist_payload.get("objective") or ""
+        ).strip()
+        specialist_payload["objective"] = (
+            original_objective
+            + "\n\nSECURITY_REVIEW_BINDING:\n"
+            + f"candidate_sha={bindings['candidate_sha']}\n"
+            + f"candidate_tree_sha={bindings['candidate_tree_sha']}\n"
+            + f"reviewed_diff_sha256={bindings['reviewed_diff_sha256']}\n"
+        )
+        specialist_payload["role"] = "REVIEW"
+        specialist_payload["expected_outputs"] = ["SecurityReviewTaskResult/v1"]
+
     contract = build_agent_office_specialist_contract(
         record=record,
-        payload={**payload, "task_id": task_id},
+        payload=specialist_payload,
     )
     task = contract["task"]
     agent_id = contract["agent_id"]

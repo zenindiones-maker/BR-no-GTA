@@ -47,6 +47,10 @@ from app.services.task_output_contract_service import (
     task_output_contract_descriptor,
     validate_task_output_contract,
 )
+from app.services.security_review_task_result_service import (
+    SCHEMA as SECURITY_REVIEW_TASK_RESULT_SCHEMA,
+    SecurityReviewTaskResult,
+)
 
 
 WorkerRunner = Callable[..., dict[str, Any]]
@@ -641,12 +645,28 @@ def codex_readonly_worker(
             parsed=json.loads(raw.decode("utf-8"))
             consumed_inputs.append({"artifact_ref":str(ref),"content_sha256":sha256(raw).hexdigest(),"bytes_read":len(raw),"schema":parsed.get("schema"),"producer_task_id":parsed.get("producer_task_id") or parsed.get("task_id"),"producer_agent_id":parsed.get("producer_agent_id") or "deterministic-analysis"})
             artifact_context.append(parsed)
+    security_review_task = task.capability == CODEX_SECURITY_REVIEW_CAPABILITY
     output_contract = task_output_contract_descriptor(task.role)
     expected_schema = str(output_contract.get("schema") or "").strip()
     required_fields = [
         str(item) for item in (output_contract.get("required_fields") or ())
         if str(item).strip()
     ]
+    if security_review_task:
+        expected_schema = SECURITY_REVIEW_TASK_RESULT_SCHEMA
+        required_fields = [
+            "candidate_sha",
+            "candidate_tree_sha",
+            "reviewed_diff_sha256",
+            "reviewer_session_ref",
+            "critical_findings",
+            "high_findings",
+            "medium_findings",
+            "low_findings",
+            "findings",
+            "final_disposition",
+            "evidence_refs",
+        ]
     if (
         str(task.role or "").upper() == "DIAGNOSIS"
         and any(str(item).strip() == "IncidentDiagnosisEvidence/v1" for item in task.expected_outputs)
@@ -672,10 +692,19 @@ def codex_readonly_worker(
         else "Return exactly one bounded JSON object grounded in the task evidence. "
     )
     review_instruction = (
-        "For REVIEW, verdict must be ACCEPT, REVISE, or REJECT. Review independently from "
-        "persisted artifacts only; do not assume the proposal is correct. "
-        if str(task.role or "").upper() == "REVIEW"
-        else ""
+        (
+            "For SECURITY REVIEW, return final_disposition PASS or BLOCK. "
+            "PASS is forbidden when critical_findings, high_findings, or medium_findings is nonzero. "
+            "candidate_sha, candidate_tree_sha, and reviewed_diff_sha256 must exactly match "
+            "the SECURITY_REVIEW_BINDING in the task. "
+        )
+        if security_review_task
+        else (
+            "For REVIEW, verdict must be ACCEPT, REVISE, or REJECT. Review independently from "
+            "persisted artifacts only; do not assume the proposal is correct. "
+            if str(task.role or "").upper() == "REVIEW"
+            else ""
+        )
     )
     prompt = (
         "You are a subordinate read-only Agent Office worker under DeepSeek Harness authority. "
@@ -744,7 +773,21 @@ def codex_readonly_worker(
         }
     inherited_grounding = _grounded_context_from_objective(task.objective)
     domain_evidence=None
-    if consumed_inputs:
+    if security_review_task:
+        try:
+            parsed_review = json.loads(output)
+            domain_evidence = SecurityReviewTaskResult.from_mapping(parsed_review).to_dict()
+        except (json.JSONDecodeError, TypeError, ValueError, PermissionError) as exc:
+            return {
+                "status": "FAILED",
+                "error": "Codex security review output failed SecurityReviewTaskResult/v1 validation",
+                "failure_stage": "readonly_result_validation",
+                "stderr_class": "INVALID_SECURITY_REVIEW_TASK_RESULT",
+                "retryability": "DETERMINISTIC_NO_RETRY",
+                "recoverable": False,
+                "validation_error_class": type(exc).__name__,
+            }
+    elif consumed_inputs:
         try:
             domain_evidence=json.loads(output)
         except json.JSONDecodeError:
@@ -767,6 +810,7 @@ def codex_readonly_worker(
     return {
         "status": "SUCCEEDED",
         "summary": output,
+        "domain_evidence": domain_evidence,
         "grounded_context": list(inherited_grounding),
         "commands": ["codex exec --sandbox read-only"],
         "artifacts": [],

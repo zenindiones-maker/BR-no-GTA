@@ -743,6 +743,7 @@ def test_security_reviewer_registry_contract_projects_into_read_only_agent_offic
     assert contract["side_effect_class"] == "READ_ONLY"
     assert contract["mission_write_scope"] == []
     assert contract["task"]["action"] == "analyze"
+    assert contract["task"]["role"] == "REVIEW"
 
 
 def test_security_reviewer_agent_id_has_registered_readonly_worker():
@@ -906,3 +907,64 @@ def test_runtime_dependency_locks_are_hash_pinned_and_bind_safe_floors():
         assert line in runtime
         assert line in prod
     assert "pillow==12.3.0" in runtime
+
+
+def test_security_reviewer_rejects_untyped_free_text_result(tmp_path, monkeypatch):
+    import json
+    import subprocess
+    import app.services.agent_office.munder_adapter as munder
+    from app.services.agent_office.contracts import AgentOfficeTask
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "README.md").write_text("review me\n", encoding="utf-8")
+    task = AgentOfficeTask.from_mapping(
+        {
+            "task_id": "security-review",
+            "agent": "codex-security-reviewer",
+            "capability": "security.review.repository",
+            "action": "analyze",
+            "objective": "Review exact candidate.",
+            "role": "REVIEW",
+            "allowed_paths": ["README.md"],
+            "read_set": ["README.md"],
+            "expected_outputs": ["SecurityReviewTaskResult/v1"],
+        }
+    )
+
+    def fake_process(command, *, cwd, timeout_seconds):
+        if command == ["codex", "login", "status"]:
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        stdout = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "command_execution",
+                            "command": "cat README.md",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "agent_message",
+                            "text": "PASS - looks good",
+                        },
+                    }
+                ),
+            ]
+        )
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(munder, "_codex_process", fake_process)
+    result = munder.codex_readonly_worker(
+        task,
+        root,
+        30,
+        repository_root=root,
+    )
+    assert result["status"] == "FAILED"
+    assert result["stderr_class"] == "INVALID_SECURITY_REVIEW_TASK_RESULT"

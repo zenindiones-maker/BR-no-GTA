@@ -147,6 +147,7 @@ def issue_exact_canonical_promotion_authorization(
     receipt = resolve_trusted_security_review_receipt(
         security_review_receipt_ref,
         security_review_receipt_sha256,
+        repository_root=repo,
     )
     if receipt.candidate_sha != observed_candidate:
         raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_CANDIDATE_MISMATCH")

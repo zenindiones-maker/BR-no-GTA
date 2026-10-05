@@ -76,6 +76,7 @@ def init_repo(tmp_path: Path):
 
 def _persist_review_execution(
     *,
+    repository_root: Path,
     review_auth,
     candidate: str,
     tree: str,
@@ -86,64 +87,25 @@ def _persist_review_execution(
     lease_authorization_id: str | None = None,
     reviewer_session_ref: str = "codex-session-review-1",
 ):
-    lease = DelegatedTaskLease(
-        mission_id="mission-review",
-        task_id="task-review",
-        goal_id="goal-review",
-        harness_decision_id="route-review-123",
-        authorization_id=lease_authorization_id or review_auth.authorization_id,
+    _ref, _digest, event_id, _artifact = _persist_review_execution_with_real_artifact(
+        repository_root=repository_root,
+        review_auth=review_auth,
+        candidate=candidate,
+        tree=tree,
+        diff=diff,
+        task_disposition=disposition,
+        event_disposition=disposition,
+        decision=decision,
         delegation_id=delegation_id,
-        agent_id="codex-independent-reviewer",
-        capability_ids=("security.review.repository",),
-        base_sha=candidate,
-        allowed_paths=("app", "scripts", "tests"),
-        allowed_tools=("git", "python"),
-        allowed_actions=("read", "review"),
-        forbidden_actions=tuple(sorted(MANDATORY_FORBIDDEN_ACTIONS)),
-        input_artifact_refs=(),
-        expected_outputs=("SecurityReviewReceipt/v1",),
-        acceptance_criteria=("exact-bound independent review",),
-        evidence_requirements=("ReviewIndependenceEvidence/v1",),
-        time_budget_seconds=600,
-        cost_budget=0.0,
-        tool_call_budget=100,
-        retry_budget=0,
-        max_parallelism=1,
-        expires_at=(datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat(),
-        escalation_conditions=("finding",),
-        owned_task_class="security-review",
-        role="INDEPENDENT_REVIEWER",
-        read_set=("app", "scripts", "tests"),
-        write_set=(),
-    )
-    persist_lease(lease)
-    update_lease_status(
-        delegation_id,
-        status="COMPLETED",
-        result_ref=f"artifact://security-review/{delegation_id}",
-        result_hash="e" * 64,
-    )
-    event_id = append_task_event(
-        mission_id="mission-review",
-        task_id="task-review",
-        delegation_id=delegation_id,
-        event_type="REVIEW_INDEPENDENCE_EVIDENCE",
-        payload={
-            "schema_version": "ReviewIndependenceEvidence/v1",
-            "decision": decision,
-            "candidate_sha": candidate,
-            "candidate_tree_sha": tree,
-            "reviewed_diff_sha256": diff,
-            "reviewer_session_ref": reviewer_session_ref,
-            "final_disposition": disposition,
-        },
+        lease_authorization_id=lease_authorization_id,
+        reviewer_session_ref=reviewer_session_ref,
     )
     return issue_trusted_security_review_receipt(
+        repository_root=repository_root,
         reviewer_authorization_id=review_auth.authorization_id,
         reviewer_delegation_id=delegation_id,
         review_independence_event_id=event_id,
     )
-
 
 def _issue_review_auth(*, candidate: str, tree: str, diff: str, consumed: bool = True):
     review_auth = issue_harness_authorization(
@@ -174,6 +136,7 @@ def review_fixture(monkeypatch, tmp_path: Path, *, disposition: str = "PASS"):
     monkeypatch.setattr(promotion_authority, "_trusted_control_identity", lambda: (base, True))
     review_auth = _issue_review_auth(candidate=candidate, tree=tree, diff=diff)
     receipt = _persist_review_execution(
+        repository_root=repo,
         review_auth=review_auth,
         candidate=candidate,
         tree=tree,
@@ -429,6 +392,7 @@ def test_active_nonconsumed_review_authorization_cannot_issue_trusted_receipt(mo
     )
     with pytest.raises(PermissionError):
         issue_trusted_security_review_receipt(
+            repository_root=_repo,
             reviewer_authorization_id=review_auth.authorization_id,
             reviewer_delegation_id=lease.delegation_id,
             review_independence_event_id=event_id,
@@ -442,6 +406,7 @@ def test_independence_fail_is_rejected_before_receipt_issuance(monkeypatch, tmp_
     review_auth = _issue_review_auth(candidate=candidate, tree=tree, diff=diff)
     with pytest.raises(PermissionError, match="INDEPENDENCE_NOT_PASS"):
         _persist_review_execution(
+            repository_root=_repo,
             review_auth=review_auth,
             candidate=candidate,
             tree=tree,
@@ -458,6 +423,7 @@ def test_review_execution_authorization_mismatch_is_rejected(monkeypatch, tmp_pa
     review_auth = _issue_review_auth(candidate=candidate, tree=tree, diff=diff)
     with pytest.raises(PermissionError, match="EXECUTION_AUTH_MISMATCH"):
         _persist_review_execution(
+            repository_root=_repo,
             review_auth=review_auth,
             candidate=candidate,
             tree=tree,
@@ -510,7 +476,203 @@ def test_fabricated_reviewer_principal_invalidates_trusted_receipt(monkeypatch, 
 
 def test_persisted_exact_real_trusted_receipt_is_resolvable(monkeypatch, tmp_path: Path):
     repo, base, candidate, tree, diff, review_auth, receipt = review_fixture(monkeypatch, tmp_path)
-    resolved = resolve_trusted_security_review_receipt(receipt.receipt_ref, receipt.receipt_sha256)
+    resolved = resolve_trusted_security_review_receipt(
+        receipt.receipt_ref,
+        receipt.receipt_sha256,
+        repository_root=repo,
+    )
     assert resolved == receipt
     auth = issue(repo, base, candidate, review_auth, receipt)
     assert auth.lineage["security_review_receipt_ref"] == receipt.receipt_ref
+
+
+def _persist_review_execution_with_real_artifact(
+    *,
+    repository_root: Path,
+    review_auth,
+    candidate: str,
+    tree: str,
+    diff: str,
+    task_disposition: str,
+    event_disposition: str = "PASS",
+    event_result_ref: str | None = None,
+    decision: str = "PASS",
+    delegation_id: str = "delegation:review-artifact",
+    lease_authorization_id: str | None = None,
+    reviewer_session_ref: str = "codex-session-artifact-review",
+):
+    import hashlib
+    import json
+
+    lease = DelegatedTaskLease(
+        mission_id="mission-review",
+        task_id="task-review",
+        goal_id="goal-review",
+        harness_decision_id="route-review-123",
+        authorization_id=lease_authorization_id or review_auth.authorization_id,
+        delegation_id=delegation_id,
+        agent_id="codex-independent-reviewer",
+        capability_ids=("security.review.repository",),
+        base_sha=candidate,
+        allowed_paths=("app", "scripts", "tests"),
+        allowed_tools=("git", "python"),
+        allowed_actions=("read", "review"),
+        forbidden_actions=tuple(sorted(MANDATORY_FORBIDDEN_ACTIONS)),
+        input_artifact_refs=(),
+        expected_outputs=("SecurityReviewTaskResult/v1",),
+        acceptance_criteria=("exact-bound independent review",),
+        evidence_requirements=("ReviewIndependenceEvidence/v1",),
+        time_budget_seconds=600,
+        cost_budget=0.0,
+        tool_call_budget=100,
+        retry_budget=0,
+        max_parallelism=1,
+        expires_at=(datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat(),
+        escalation_conditions=("finding",),
+        owned_task_class="security-review",
+        role="INDEPENDENT_REVIEWER",
+        read_set=("app", "scripts", "tests"),
+        write_set=(),
+    )
+    persist_lease(lease)
+
+    result = {
+        "status": "SUCCEEDED",
+        "task_id": "task-review",
+        "agent": "codex-independent-reviewer",
+        "capability": "security.review.repository",
+        "delegation_id": delegation_id,
+        "domain_evidence": {
+            "schema": "SecurityReviewTaskResult/v1",
+            "candidate_sha": candidate,
+            "candidate_tree_sha": tree,
+            "reviewed_diff_sha256": diff,
+            "reviewer_session_ref": reviewer_session_ref,
+            "critical_findings": 0,
+            "high_findings": 0,
+            "medium_findings": 0 if task_disposition == "PASS" else 1,
+            "low_findings": 0,
+            "findings": [] if task_disposition == "PASS" else ["medium-test-finding"],
+            "final_disposition": task_disposition,
+            "evidence_refs": [f"diff:{diff}"],
+        },
+    }
+    artifact = repository_root / "runtime" / "agent-office" / "mission-review" / "task-review.json"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    raw = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True, default=str) + "\n"
+    artifact.write_text(raw, encoding="utf-8")
+    result_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    result_ref = str(artifact.relative_to(repository_root))
+    update_lease_status(
+        delegation_id,
+        status="COMPLETED",
+        result_ref=result_ref,
+        result_hash=result_hash,
+    )
+    principal_payload = {
+        "delegation_id": delegation_id,
+        "mission_id": "mission-review",
+        "task_id": "task-review",
+        "authorization_id": lease_authorization_id or review_auth.authorization_id,
+        "agent_id": "codex-independent-reviewer",
+        "base_sha": candidate,
+        "status": "COMPLETED",
+    }
+    principal_sha = hashlib.sha256(
+        json.dumps(
+            principal_payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    event_id = append_task_event(
+        mission_id="mission-review",
+        task_id="task-review",
+        delegation_id=delegation_id,
+        event_type="REVIEW_INDEPENDENCE_EVIDENCE",
+        payload={
+            "schema_version": "ReviewIndependenceEvidence/v1",
+            "decision": decision,
+            "candidate_sha": candidate,
+            "candidate_tree_sha": tree,
+            "reviewed_diff_sha256": diff,
+            "reviewed_task_result_ref": event_result_ref or result_ref,
+            "reviewed_task_result_sha256": result_hash,
+            "reviewer_execution_principal_ref": delegation_id,
+            "reviewer_execution_principal_sha256": principal_sha,
+            "reviewer_session_ref": reviewer_session_ref,
+            "reviewer_authorization_id": review_auth.authorization_id,
+            "final_disposition": event_disposition,
+        },
+    )
+    return result_ref, result_hash, event_id, artifact
+
+
+def test_trusted_receipt_disposition_is_not_controlled_by_independence_event(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("BR_TEST_DATABASE", str(tmp_path / "auth.sqlite3"))
+    initialize_schema()
+    repo, _base, candidate, tree, diff = init_repo(tmp_path)
+    review_auth = _issue_review_auth(candidate=candidate, tree=tree, diff=diff)
+    _ref, _digest, event_id, _artifact = _persist_review_execution_with_real_artifact(
+        repository_root=repo,
+        review_auth=review_auth,
+        candidate=candidate,
+        tree=tree,
+        diff=diff,
+        task_disposition="BLOCK",
+        event_disposition="PASS",
+    )
+    receipt = issue_trusted_security_review_receipt(
+        repository_root=repo,
+        reviewer_authorization_id=review_auth.authorization_id,
+        reviewer_delegation_id="delegation:review-artifact",
+        review_independence_event_id=event_id,
+    )
+    assert receipt.final_disposition == "BLOCK"
+
+
+def test_trusted_receipt_rejects_tampered_review_task_artifact(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("BR_TEST_DATABASE", str(tmp_path / "auth.sqlite3"))
+    initialize_schema()
+    repo, _base, candidate, tree, diff = init_repo(tmp_path)
+    review_auth = _issue_review_auth(candidate=candidate, tree=tree, diff=diff)
+    _ref, _digest, event_id, artifact = _persist_review_execution_with_real_artifact(
+        repository_root=repo,
+        review_auth=review_auth,
+        candidate=candidate,
+        tree=tree,
+        diff=diff,
+        task_disposition="PASS",
+    )
+    artifact.write_text(artifact.read_text(encoding="utf-8") + " ", encoding="utf-8")
+    with pytest.raises(PermissionError, match="TASK_RESULT_DIGEST_MISMATCH"):
+        issue_trusted_security_review_receipt(
+            repository_root=repo,
+            reviewer_authorization_id=review_auth.authorization_id,
+            reviewer_delegation_id="delegation:review-artifact",
+            review_independence_event_id=event_id,
+        )
+
+
+def test_trusted_receipt_rejects_independence_binding_to_other_task_result(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("BR_TEST_DATABASE", str(tmp_path / "auth.sqlite3"))
+    initialize_schema()
+    repo, _base, candidate, tree, diff = init_repo(tmp_path)
+    review_auth = _issue_review_auth(candidate=candidate, tree=tree, diff=diff)
+    _ref, _digest, event_id, _artifact = _persist_review_execution_with_real_artifact(
+        repository_root=repo,
+        review_auth=review_auth,
+        candidate=candidate,
+        tree=tree,
+        diff=diff,
+        task_disposition="PASS",
+        event_result_ref="runtime/agent-office/mission-review/other-task.json",
+    )
+    with pytest.raises(PermissionError, match="INDEPENDENCE_TASK_RESULT_REF_MISMATCH"):
+        issue_trusted_security_review_receipt(
+            repository_root=repo,
+            reviewer_authorization_id=review_auth.authorization_id,
+            reviewer_delegation_id="delegation:review-artifact",
+            review_independence_event_id=event_id,
+        )

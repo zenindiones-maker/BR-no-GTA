@@ -341,7 +341,7 @@ def _stub_trusted_receipt(monkeypatch):
     monkeypatch.setattr(
         identity,
         "resolve_trusted_security_review_receipt",
-        lambda ref, digest: receipt
+        lambda ref, digest, *, repository_root: receipt
         if (ref, digest) == (receipt.receipt_ref, receipt.receipt_sha256)
         else (_ for _ in ()).throw(PermissionError("TRUSTED_SECURITY_REVIEW_RECEIPT_NOT_FOUND")),
     )
@@ -353,6 +353,7 @@ def test_trusted_promotion_evidence_bundle_binds_real_semantic_evidence(monkeypa
     from app.services.canonical_promotion_identity_service import validate_trusted_promotion_evidence_bundle
     result = validate_trusted_promotion_evidence_bundle(
         _trusted_evidence_bundle(),
+        repository_root=ROOT,
         target_ref=WORK_REF,
         expected_old_oid=SHA_A,
         candidate_sha=SHA_B,
@@ -372,6 +373,7 @@ def test_trusted_promotion_evidence_bundle_rejects_caller_fabrication_and_bindin
     with pytest.raises(PermissionError, match="TRUSTED_SOURCE"):
         validate_trusted_promotion_evidence_bundle(
             forged,
+            repository_root=ROOT,
             target_ref=WORK_REF,
             expected_old_oid=SHA_A,
             candidate_sha=SHA_B,
@@ -383,6 +385,7 @@ def test_trusted_promotion_evidence_bundle_rejects_caller_fabrication_and_bindin
     with pytest.raises(PermissionError, match="LINEAGE"):
         validate_trusted_promotion_evidence_bundle(
             drift,
+            repository_root=ROOT,
             target_ref=WORK_REF,
             expected_old_oid=SHA_A,
             candidate_sha=SHA_B,
@@ -465,6 +468,7 @@ def test_trusted_promotion_evidence_bundle_rejects_embedded_caller_created_revie
     with pytest.raises(PermissionError, match="RECEIPT_REF_MISSING"):
         validate_trusted_promotion_evidence_bundle(
             forged,
+            repository_root=ROOT,
             target_ref=WORK_REF,
             expected_old_oid=SHA_A,
             candidate_sha=SHA_B,

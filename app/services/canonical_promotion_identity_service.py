@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 import json
+from pathlib import Path
 import re
 from typing import Any, Mapping
 
@@ -258,6 +259,7 @@ def _validate_authorization_record(
 def validate_trusted_promotion_evidence_bundle(
     bundle: Mapping[str, Any],
     *,
+    repository_root: str | Path,
     target_ref: str,
     expected_old_oid: str,
     candidate_sha: str,
@@ -288,6 +290,7 @@ def validate_trusted_promotion_evidence_bundle(
     receipt = resolve_trusted_security_review_receipt(
         receipt_ref,
         supplied_receipt_digest,
+        repository_root=Path(repository_root).resolve(),
     )
     if receipt.candidate_sha != candidate:
         raise PermissionError("CANONICAL_PROMOTION_SECURITY_REVIEW_CANDIDATE_MISMATCH")

@@ -557,7 +557,7 @@ SECURITY_REPOSITORY_REVIEW_RECORD = CapabilityRecord(
         "Harness-authorized security review task + exact candidate SHA/tree/diff digest + "
         "sanitized deterministic scanner evidence"
     ),
-    output_contract="SecurityFinding/v1 + SecurityReviewReceipt/v1",
+    output_contract="SecurityReviewTaskResult/v1",
     requirements=(
         "DeepSeek Harness REVIEW/DEVELOPMENT authorization",
         "Agent Office delegated independent-review lease",
