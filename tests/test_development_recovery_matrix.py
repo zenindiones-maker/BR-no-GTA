@@ -7,6 +7,7 @@ import subprocess
 import pytest
 
 from app.services.development_recovery_checkpoint_service import (
+    CheckpointBlocked,
     DevelopmentRecoveryCheckpointService,
 )
 from tests.test_development_recovery_checkpoint_service import init_repo, ledger, run
@@ -36,14 +37,13 @@ def test_ignored_unclassified_file_is_excluded(tmp_path: Path):
     assert "scratch.bin" not in tree.splitlines()
 
 
-def test_large_evidence_is_digest_metadata_not_git_bytes(tmp_path: Path):
+def test_large_evidence_without_external_bytes_blocks_durable_checkpoint(tmp_path: Path):
     repo,_=init_repo(tmp_path); base=run(repo,"git","rev-parse","HEAD")
     (repo/"logs").mkdir(); (repo/"logs"/"root.log").write_bytes(b"x"*4096)
-    cp=persist(DevelopmentRecoveryCheckpointService(repo),repo,base,included_paths=["app","tests","logs"])
-    assert cp["large_evidence"][0]["path"]=="logs/root.log"
-    assert len(cp["large_evidence"][0]["sha256"])==64
-    tree=run(repo,"git","ls-tree","-r","--name-only",cp["recovery_commit_sha"])
-    assert "logs/root.log" not in tree.splitlines()
+    with pytest.raises(CheckpointBlocked) as exc:
+        persist(DevelopmentRecoveryCheckpointService(repo),repo,base,included_paths=["app","tests","logs"])
+    assert exc.value.state=="BLOCKED_UNDURABLE_MATERIAL"
+    assert exc.value.blocked_path=="logs/root.log"
 
 
 def test_checkpoint_sequence_is_monotonic(tmp_path: Path):
@@ -125,14 +125,11 @@ def test_resume_wrong_canonical_branch_identity_is_stale(tmp_path: Path):
     assert result["outcome"]=="CHECKPOINT_STALE"
 
 
-def test_large_evidence_has_full_durable_locator_provenance(tmp_path: Path):
+def test_workspace_locator_and_digest_are_not_treated_as_durable_external_storage(tmp_path: Path):
     repo,_=init_repo(tmp_path); base=run(repo,"git","rev-parse","HEAD")
     (repo/"logs").mkdir(); (repo/"logs"/"trace.log").write_text("trace\n")
-    cp=persist(DevelopmentRecoveryCheckpointService(repo),repo,base,included_paths=["app","logs"])
-    item=cp["large_evidence"][0]
-    assert item["locator"]=="workspace:logs/trace.log"
-    assert item["producer"]=="development.checkpoint.persist"
-    assert item["session_identity"]=="rt"
-    assert item["retention"]=="external-evidence-policy"
-    assert item["rematerialization_policy"]=="locator+sha256+provenance"
-    assert item["created_at"]==cp["created_at"]
+    with pytest.raises(CheckpointBlocked) as exc:
+        persist(DevelopmentRecoveryCheckpointService(repo),repo,base,included_paths=["app","logs"])
+    assert exc.value.state=="BLOCKED_UNDURABLE_MATERIAL"
+    assert exc.value.blocked_path=="logs/trace.log"
+    assert "verified durable external storage" in exc.value.reason
