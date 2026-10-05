@@ -538,3 +538,37 @@ def test_index_refresh_failure_is_fail_closed_in_runtime_and_release_attestation
     assert 'update-index --refresh >/dev/null 2>&1 || true' not in release
     assert "INDEX_REFRESH_FAILED" in runtime
     assert "INDEX_REFRESH_FAILED" in release
+
+
+def test_assume_unchanged_tracked_source_cannot_bypass_release_attestation(tmp_path: Path):
+    cp = _verify_release_filesystem_case(
+        tmp_path,
+        r"""
+git -C "${RELEASE}" update-index --assume-unchanged app/base.py
+printf 'VALUE = 77\n' > "${RELEASE}/app/base.py"
+""",
+    )
+    assert "VERIFY_RC=1" in cp.stdout
+    assert "reason=INDEX_ASSUME_UNCHANGED" in cp.stderr
+
+
+def test_skip_worktree_tracked_source_cannot_bypass_release_attestation(tmp_path: Path):
+    cp = _verify_release_filesystem_case(
+        tmp_path,
+        r"""
+git -C "${RELEASE}" update-index --skip-worktree app/base.py
+printf 'VALUE = 88\n' > "${RELEASE}/app/base.py"
+""",
+    )
+    assert "VERIFY_RC=1" in cp.stdout
+    assert "reason=INDEX_SKIP_WORKTREE" in cp.stderr
+
+
+def test_runtime_and_deploy_attestation_reject_hidden_index_flags_contract():
+    deploy = SCRIPT.read_text(encoding="utf-8")
+    control = (ROOT / "scripts" / "telegram_termux_control.sh").read_text(encoding="utf-8")
+    for source in (deploy, control):
+        assert "ls-files -v" in source
+        assert "ls-files -t" in source
+        assert "INDEX_ASSUME_UNCHANGED" in source
+        assert "INDEX_SKIP_WORKTREE" in source

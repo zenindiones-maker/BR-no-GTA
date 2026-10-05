@@ -31,15 +31,11 @@ def _hex(value: Any, pattern: re.Pattern[str], field: str) -> str:
 
 
 def _count(value: Any, field: str) -> int:
-    if isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"invalid {field}")
-    try:
-        number = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"invalid {field}") from exc
-    if number < 0:
+    if value < 0:
         raise ValueError(f"invalid {field}")
-    return number
+    return value
 
 
 @dataclass(frozen=True)

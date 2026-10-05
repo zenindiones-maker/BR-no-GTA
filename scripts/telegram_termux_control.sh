@@ -395,6 +395,15 @@ runtime_identity_attest() {
     }
   fi
 
+  if git -C "${ROOT}" ls-files -v -- | grep -Eq '^[a-z] '; then
+    echo "TELEGRAM_RUNTIME_EXACT_ATTESTATION=FAIL reason=INDEX_ASSUME_UNCHANGED" >&2
+    return 2
+  fi
+  if git -C "${ROOT}" ls-files -t -- | grep -Eq '^S '; then
+    echo "TELEGRAM_RUNTIME_EXACT_ATTESTATION=FAIL reason=INDEX_SKIP_WORKTREE" >&2
+    return 2
+  fi
+
   local index_refresh_rc=0
   git -C "${ROOT}" update-index --refresh >/dev/null 2>&1 || index_refresh_rc="$?"
   if ! git -C "${ROOT}" diff --cached --quiet --ignore-submodules=none HEAD --; then
@@ -408,6 +417,10 @@ runtime_identity_attest() {
   fi
   if printf '%s\n' "${submodule_state}" | grep -Eq '^[+-U]'; then
     echo "TELEGRAM_RUNTIME_EXACT_ATTESTATION=FAIL reason=SUBMODULE_DIRTY" >&2
+    return 2
+  fi
+  if [[ -n "${submodule_state}" ]] && ! git -C "${ROOT}" submodule foreach --quiet --recursive 'if git ls-files -v -- | grep -Eq "^[a-z] "; then exit 1; fi; if git ls-files -t -- | grep -Eq "^S "; then exit 1; fi' >/dev/null 2>&1; then
+    echo "TELEGRAM_RUNTIME_EXACT_ATTESTATION=FAIL reason=SUBMODULE_INDEX_FLAGS" >&2
     return 2
   fi
   if [[ -n "${submodule_state}" ]] && ! git -C "${ROOT}" submodule foreach --quiet --recursive 'git diff --quiet HEAD -- && git diff --cached --quiet HEAD --' >/dev/null 2>&1; then

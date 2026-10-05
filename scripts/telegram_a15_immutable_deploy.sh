@@ -73,6 +73,15 @@ verify_release_filesystem() {
     echo "A15_RELEASE=FAIL reason=TREE_MISMATCH" >&2
     return 1
   }
+  if git -C "${release}" ls-files -v -- | grep -Eq '^[a-z] '; then
+    echo "A15_RELEASE=FAIL reason=INDEX_ASSUME_UNCHANGED" >&2
+    return 1
+  fi
+  if git -C "${release}" ls-files -t -- | grep -Eq '^S '; then
+    echo "A15_RELEASE=FAIL reason=INDEX_SKIP_WORKTREE" >&2
+    return 1
+  fi
+
   local index_refresh_rc=0
   git -C "${release}" update-index --refresh >/dev/null 2>&1 || index_refresh_rc="$?"
   if ! git -C "${release}" diff --cached --quiet --ignore-submodules=none HEAD --; then
@@ -85,6 +94,10 @@ verify_release_filesystem() {
   fi
   if printf '%s\n' "${submodule_state}" | grep -Eq '^[+-U]'; then
     echo "A15_RELEASE=FAIL reason=SUBMODULE_DIRTY" >&2
+    return 1
+  fi
+  if [[ -n "${submodule_state}" ]] && ! git -C "${release}" submodule foreach --quiet --recursive 'if git ls-files -v -- | grep -Eq "^[a-z] "; then exit 1; fi; if git ls-files -t -- | grep -Eq "^S "; then exit 1; fi' >/dev/null 2>&1; then
+    echo "A15_RELEASE=FAIL reason=SUBMODULE_INDEX_FLAGS" >&2
     return 1
   fi
   if [[ -n "${submodule_state}" ]] && ! git -C "${release}" submodule foreach --quiet --recursive 'git diff --quiet HEAD -- && git diff --cached --quiet HEAD --' >/dev/null 2>&1; then

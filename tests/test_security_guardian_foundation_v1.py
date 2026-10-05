@@ -979,3 +979,25 @@ def test_security_reviewer_rejects_untyped_free_text_result(tmp_path, monkeypatc
     )
     assert result["status"] == "FAILED"
     assert result["stderr_class"] == "INVALID_SECURITY_REVIEW_TASK_RESULT"
+
+
+@pytest.mark.parametrize("bad_count", [0.5, -0.5, "0"])
+def test_security_review_task_result_rejects_noninteger_finding_counts(bad_count):
+    from app.services.security_review_task_result_service import SecurityReviewTaskResult
+
+    payload = {
+        "schema": "SecurityReviewTaskResult/v1",
+        "candidate_sha": "a" * 40,
+        "candidate_tree_sha": "b" * 40,
+        "reviewed_diff_sha256": "c" * 64,
+        "reviewer_session_ref": "review-session",
+        "critical_findings": 0,
+        "high_findings": bad_count,
+        "medium_findings": 0,
+        "low_findings": 0,
+        "findings": [],
+        "final_disposition": "PASS",
+        "evidence_refs": ["bound:fixture"],
+    }
+    with pytest.raises(ValueError, match="invalid high_findings"):
+        SecurityReviewTaskResult.from_mapping(payload)
