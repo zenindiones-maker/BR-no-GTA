@@ -300,7 +300,7 @@ def test_attest_release_propagates_status_failure_even_if_doctor_succeeds(tmp_pa
 control_for() { echo /fake/control.sh; }
 bash() {
   case "$*" in
-    *" status") return 7 ;;
+    *" runtime-attest") return 7 ;;
     *" doctor") return 0 ;;
   esac
   return 0
