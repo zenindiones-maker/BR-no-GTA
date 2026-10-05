@@ -151,6 +151,9 @@ class DevelopmentRecoveryCheckpointService:
                 data = candidate.read_bytes()
                 if any(pattern.search(data) for pattern in _SECRET_PATTERNS):
                     raise CheckpointBlocked("BLOCKED_SECRET_RISK", rel, "SECRET_LIKE_CONTENT", "secret scanner matched candidate")
+                if classification == "RECOVERABLE_SOURCE":
+                    selected.add(rel)
+                    continue
                 low = rel.lower()
                 suffix_non_source = any(low.endswith(suffix) for suffix in _KNOWN_NON_SOURCE_SUFFIXES)
                 contains_nul = b"\x00" in data[:8192]
@@ -279,6 +282,14 @@ class DevelopmentRecoveryCheckpointService:
                 )
 
         paths, large = self._candidate_files(included_paths, excluded_paths)
+        if large:
+            first = large[0]
+            raise CheckpointBlocked(
+                "BLOCKED_UNDURABLE_MATERIAL",
+                str(first["path"]),
+                "LARGE_EVIDENCE",
+                "excluded material bytes lack verified durable external storage",
+            )
         content_digest = self._content_digest(paths)
         progress_digest = ledger_digest(ledger)
         if remote_available:
