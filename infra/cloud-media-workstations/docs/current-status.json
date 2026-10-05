@@ -1,0 +1,16 @@
+{
+  "schema": "CloudMediaWorkstationsBuildStatus/v1",
+  "region": "sa-east-1",
+  "refreshed_br_head": "c8b9f2275e5288e5c4cefe9474075d21ca1023f0",
+  "refreshed_hazewave_head": "d27f68d7310922cbcfb04bf85d3803040511ae9d",
+  "active_unrelated_work_preserved": true,
+  "safe_build_gate": "PASS",
+  "aws_preflight": "BLOCKED_AWS_AUTH",
+  "monthly_budget_status": "MONTHLY_BUDGET_USD_UNSET",
+  "live_resources_created": false,
+  "hazewave_instance": "NOT_PROVISIONED",
+  "br_no_gta_instance": "NOT_PROVISIONED",
+  "live_runtime_acceptance": "UNPROVEN",
+  "cross_project_isolation_runtime": "UNPROVEN_BLOCKED_AWS_AUTH",
+  "normal_target_state": "STOPPED"
+}

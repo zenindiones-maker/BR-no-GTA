@@ -1,0 +1,41 @@
+{
+  "schema": "CloudMediaWorkstationsSafeBuildReceipt/v1",
+  "observed_at": "2026-10-05T19:36:00-03:00",
+  "refreshed_br_head": "c8b9f2275e5288e5c4cefe9474075d21ca1023f0",
+  "refreshed_hazewave_head": "d27f68d7310922cbcfb04bf85d3803040511ae9d",
+  "region": "sa-east-1",
+  "aws_auth_status": "BLOCKED_AWS_AUTH",
+  "aws_auth_detail": "NoCredentialsError",
+  "monthly_budget_status": "MONTHLY_BUDGET_USD_UNSET",
+  "aws_price_evidence": "BLOCKED_AWS_AUTH",
+  "gpu_quota_evidence": "BLOCKED_AWS_AUTH",
+  "live_capacity_evidence": "BLOCKED_AWS_AUTH",
+  "hazewave": {
+    "target_instance_type": "g6f.2xlarge",
+    "root_ebs_gib": 80,
+    "data_ebs_gib": 250,
+    "mount": "/srv/hazewave",
+    "reaper_version": "7.82",
+    "reaper_sha256": "a4aa961534f22ae5ae910e4ec0c200dcb4476c9f7556806fe09a9743cd582563",
+    "runtime_status": "NOT_PROVISIONED",
+    "final_state": "NO_INSTANCE_CREATED"
+  },
+  "br_no_gta": {
+    "target_instance_type": "g6.2xlarge",
+    "root_ebs_gib": 100,
+    "data_ebs_gib": 500,
+    "mount": "/srv/br-no-gta",
+    "reaper_version": "7.82",
+    "reaper_sha256": "a4aa961534f22ae5ae910e4ec0c200dcb4476c9f7556806fe09a9743cd582563",
+    "runtime_status": "NOT_PROVISIONED",
+    "final_state": "NO_INSTANCE_CREATED"
+  },
+  "sunshine": {
+    "version": "2026.914.233613",
+    "sha256": "c38e9c705f650f8705f61702717e99bec34044c5028fcb8f23a08fe041292c21"
+  },
+  "safe_build_gate": "PASS",
+  "active_unrelated_work_preserved": "PASS",
+  "live_runtime_acceptance": "BLOCKED_AWS_AUTH",
+  "overall_status": "BLOCKED_AWS_AUTH"
+}

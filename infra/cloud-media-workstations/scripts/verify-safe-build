@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VENV="$HOME/.local/share/cloud-media-workstations-venv"
+TOFU="$HOME/.local/bin/tofu"
+cd "$ROOT"
+"$VENV/bin/pytest" -q
+PYTHONPATH=runtime:scripts "$VENV/bin/python" -m py_compile scripts/*.py runtime/workstation_runtime/*.py
+bash -n scripts/provision.sh scripts/configure.sh scripts/acceptance.sh scripts/bootstrap-aws-auth.sh scripts/verify-external-gates.sh scripts/workstation-gpu-proof scripts/workstation-connect-ready-proof scripts/workstation-backup
+"$VENV/bin/ansible-playbook" --syntax-check -i ansible/inventory.example.ini ansible/hazewave.yml >/dev/null
+"$VENV/bin/ansible-playbook" --syntax-check -i ansible/inventory.example.ini ansible/br-no-gta.yml >/dev/null
+"$TOFU" fmt -check -recursive
+for stack in hazewave br-no-gta; do
+  cd "$ROOT/stacks/$stack"
+  "$TOFU" init -backend=false -input=false >/dev/null
+  "$TOFU" validate >/dev/null
+done
+cd "$ROOT/bootstrap/state"
+"$TOFU" init -backend=false -input=false >/dev/null
+"$TOFU" validate >/dev/null
+cd "$ROOT"
+TSKEY_PATTERN='tskey''-auth-'
+SECRET_PATTERN="${TSKEY_PATTERN}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----"
+if grep -RInE "$SECRET_PATTERN" . --exclude-dir=.git --exclude-dir=.terraform --exclude-dir=.pytest_cache --exclude-dir=__pycache__ --exclude='test_security_operability.py' --exclude='verify-safe-build'; then
+  echo SECRET_SCAN=FAIL
+  exit 1
+fi
+echo SECRET_SCAN=PASS
+echo CLOUD_MEDIA_WORKSTATIONS_SAFE_BUILD_GATE=PASS

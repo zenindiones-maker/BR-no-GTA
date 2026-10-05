@@ -1,0 +1,5 @@
+bucket = "REPLACE_WITH_STATE_BUCKET"
+key = "hazewave/terraform.tfstate"
+region = "sa-east-1"
+encrypt = true
+use_lockfile = true

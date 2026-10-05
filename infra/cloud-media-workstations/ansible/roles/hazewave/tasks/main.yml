@@ -1,0 +1,8 @@
+---
+- name: Install Hazewave audio-first packages
+  ansible.builtin.apt:
+    name:
+      - sox
+      - libsox-fmt-all
+      - rubberband-cli
+    state: present

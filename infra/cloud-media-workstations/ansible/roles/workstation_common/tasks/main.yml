@@ -1,0 +1,399 @@
+---
+- name: Install common audio, desktop and media packages
+  ansible.builtin.apt:
+    name:
+      - awscli
+      - ffmpeg
+      - flock
+      - iproute2
+      - pipewire
+      - pipewire-pulse
+      - wireplumber
+      - xfce4
+      - lightdm
+      - xorg
+      - dbus-x11
+      - vulkan-tools
+      - mesa-utils
+      - xfsprogs
+      - jq
+      - python3
+      - python3-venv
+      - xz-utils
+      - ca-certificates
+      - gnupg
+      - curl
+    state: present
+    update_cache: true
+
+- name: Create media user
+  ansible.builtin.user:
+    name: "{{ media_user }}"
+    create_home: true
+    shell: /bin/bash
+
+- name: Create workstation and durable mount directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default('root') }}"
+    group: "{{ item.group | default('root') }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "/var/lib/cloud-media-workstation", mode: "0700" }
+    - { path: "/var/lib/cloud-media-workstation/leases", mode: "0700" }
+    - { path: "/var/lib/cloud-media-workstation/proofs", mode: "0700" }
+    - { path: "{{ media_mount }}", owner: "{{ media_user }}", group: "{{ media_user }}", mode: "0750" }
+
+- name: Require expected EBS data volume id
+  ansible.builtin.assert:
+    that:
+      - data_volume_id is defined
+      - data_volume_id is match('^vol-[0-9a-f]+$')
+    fail_msg: "BLOCKED_PERSISTENCE:DATA_VOLUME_ID_UNSET"
+
+- name: Resolve EBS data device by NVMe SERIAL
+  ansible.builtin.shell: |
+    set -euo pipefail
+    target="{{ data_volume_id | replace('-', '') }}"
+    lsblk -dn -o PATH,SERIAL | awk -v target="$target" '$2 == target {print $1; exit}'
+  args:
+    executable: /bin/bash
+  register: data_device
+  changed_when: false
+  failed_when: data_device.stdout | trim == ""
+
+- name: Detect project data filesystem
+  ansible.builtin.command:
+    argv:
+      - lsblk
+      - -ndo
+      - FSTYPE
+      - "{{ data_device.stdout | trim }}"
+  register: data_fstype
+  changed_when: false
+  failed_when: false
+
+- name: Refuse to overwrite an unexpected existing filesystem
+  ansible.builtin.assert:
+    that:
+      - data_fstype.stdout | trim in ["", "xfs"]
+    fail_msg: "BLOCKED_PERSISTENCE:UNEXPECTED_FILESYSTEM"
+
+- name: Format new project data volume as XFS
+  community.general.filesystem:
+    fstype: xfs
+    dev: "{{ data_device.stdout | trim }}"
+  when: data_fstype.stdout | trim == ""
+
+- name: Mount project data volume persistently
+  ansible.posix.mount:
+    path: "{{ media_mount }}"
+    src: "{{ data_device.stdout | trim }}"
+    fstype: xfs
+    opts: noatime,nofail
+    state: mounted
+
+- name: Create canonical persistent project directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ media_user }}"
+    group: "{{ media_user }}"
+    mode: "0750"
+  loop:
+    - "{{ media_mount }}/source"
+    - "{{ media_mount }}/masters"
+    - "{{ media_mount }}/projects"
+    - "{{ media_mount }}/renders"
+    - "{{ media_mount }}/.reaper-resources"
+
+- name: Create media user configuration roots
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ media_user }}"
+    group: "{{ media_user }}"
+    mode: "0700"
+  loop:
+    - "/home/{{ media_user }}/.config"
+    - "/home/{{ media_user }}/.config/pipewire/pipewire.conf.d"
+    - "/home/{{ media_user }}/.config/sunshine"
+    - "/home/{{ media_user }}/.config/autostart"
+    - "/home/{{ media_user }}/.config/systemd/user"
+
+- name: Link REAPER configuration to durable project volume
+  ansible.builtin.file:
+    src: "{{ media_mount }}/.reaper-resources"
+    dest: "/home/{{ media_user }}/.config/REAPER"
+    state: link
+    force: false
+    owner: "{{ media_user }}"
+    group: "{{ media_user }}"
+
+- name: Download pinned REAPER artifact
+  ansible.builtin.get_url:
+    url: "{{ reaper_url }}"
+    dest: "/var/cache/reaper-{{ reaper_version }}.tar.xz"
+    checksum: "sha256:{{ reaper_sha256 }}"
+    mode: "0644"
+
+- name: Install REAPER native Linux build
+  ansible.builtin.unarchive:
+    src: "/var/cache/reaper-{{ reaper_version }}.tar.xz"
+    dest: /opt
+    remote_src: true
+    creates: "/opt/reaper_linux_x86_64/REAPER/reaper"
+
+- name: Expose REAPER binary
+  ansible.builtin.file:
+    src: "/opt/reaper_linux_x86_64/REAPER/reaper"
+    dest: /usr/local/bin/reaper
+    state: link
+
+- name: Download pinned Sunshine package
+  ansible.builtin.get_url:
+    url: "{{ sunshine_url }}"
+    dest: "/var/cache/sunshine-{{ sunshine_version }}.deb"
+    checksum: "sha256:{{ sunshine_sha256 }}"
+    mode: "0644"
+
+- name: Install Sunshine
+  ansible.builtin.apt:
+    deb: "/var/cache/sunshine-{{ sunshine_version }}.deb"
+    state: present
+
+- name: Install Tailscale signing key without pipe-to-shell
+  ansible.builtin.get_url:
+    url: "{{ tailscale_apt_key_url }}"
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    mode: "0644"
+
+- name: Configure Tailscale repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/ubuntu noble main"
+    filename: tailscale
+    state: present
+
+- name: Install Tailscale
+  ansible.builtin.apt:
+    name: tailscale
+    state: present
+    update_cache: true
+
+- name: Read project-scoped Tailscale auth key from SSM
+  ansible.builtin.command: >-
+    aws ssm get-parameter
+    --name {{ tailscale_auth_key_ssm_parameter | quote }}
+    --with-decryption
+    --query Parameter.Value
+    --output text
+    --region {{ aws_region | quote }}
+  register: tailscale_auth_key_result
+  changed_when: false
+  no_log: true
+
+- name: Join project Tailscale network
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - up
+      - "--auth-key={{ tailscale_auth_key_result.stdout }}"
+      - "--hostname={{ project_slug }}-media-workstation"
+      - --accept-dns=true
+  changed_when: false
+  no_log: true
+
+- name: Read Sunshine username from project-scoped SSM
+  ansible.builtin.command: >-
+    aws ssm get-parameter
+    --name {{ sunshine_username_ssm_parameter | quote }}
+    --with-decryption
+    --query Parameter.Value
+    --output text
+    --region {{ aws_region | quote }}
+  register: sunshine_username_result
+  changed_when: false
+  no_log: true
+
+- name: Read Sunshine password from project-scoped SSM
+  ansible.builtin.command: >-
+    aws ssm get-parameter
+    --name {{ sunshine_password_ssm_parameter | quote }}
+    --with-decryption
+    --query Parameter.Value
+    --output text
+    --region {{ aws_region | quote }}
+  register: sunshine_password_result
+  changed_when: false
+  no_log: true
+
+- name: Configure Sunshine web credentials
+  ansible.builtin.command: >-
+    sunshine --creds
+    {{ sunshine_username_result.stdout | quote }}
+    {{ sunshine_password_result.stdout | quote }}
+  become_user: "{{ media_user }}"
+  environment:
+    HOME: "/home/{{ media_user }}"
+  changed_when: false
+  no_log: true
+
+- name: Install deterministic PipeWire Sunshine sink
+  ansible.builtin.template:
+    src: 10-sunshine-sink.conf.j2
+    dest: "/home/{{ media_user }}/.config/pipewire/pipewire.conf.d/10-sunshine-sink.conf"
+    owner: "{{ media_user }}"
+    group: "{{ media_user }}"
+    mode: "0644"
+
+- name: Install Sunshine configuration
+  ansible.builtin.template:
+    src: sunshine.conf.j2
+    dest: "/home/{{ media_user }}/.config/sunshine/sunshine.conf"
+    owner: "{{ media_user }}"
+    group: "{{ media_user }}"
+    mode: "0600"
+
+- name: Create Xorg configuration directory
+  ansible.builtin.file:
+    path: /etc/X11/xorg.conf.d
+    state: directory
+    mode: "0755"
+
+- name: Install headless NVIDIA Xorg configuration
+  ansible.builtin.template:
+    src: 10-nvidia-headless.conf.j2
+    dest: /etc/X11/xorg.conf.d/10-nvidia-headless.conf
+    mode: "0644"
+
+- name: Install governed REAPER render wrapper
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/reaper_render.py"
+    dest: /usr/local/bin/reaper-render
+    mode: "0755"
+
+- name: Install workstation auto-stop runtime
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/workstation_autostop.py"
+    dest: /usr/local/bin/workstation-autostop
+    mode: "0755"
+
+- name: Install real GPU and NVENC proof
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/workstation-gpu-proof"
+    dest: /usr/local/bin/workstation-gpu-proof
+    mode: "0755"
+
+- name: Install connect-ready runtime proof
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/workstation-connect-ready-proof"
+    dest: /usr/local/bin/workstation-connect-ready-proof
+    mode: "0755"
+
+- name: Install graphical media-session launcher
+  ansible.builtin.copy:
+    src: cloud-media-session-start
+    dest: /usr/local/bin/cloud-media-session-start
+    mode: "0755"
+
+- name: Configure LightDM media autologin
+  ansible.builtin.copy:
+    dest: /etc/lightdm/lightdm.conf.d/50-media-autologin.conf
+    mode: "0644"
+    content: |
+      [Seat:*]
+      autologin-user={{ media_user }}
+      autologin-user-timeout=0
+      user-session=xfce
+
+- name: Autostart Sunshine inside the graphical media session
+  ansible.builtin.copy:
+    dest: "/home/{{ media_user }}/.config/autostart/cloud-media-sunshine.desktop"
+    owner: "{{ media_user }}"
+    group: "{{ media_user }}"
+    mode: "0644"
+    content: |
+      [Desktop Entry]
+      Type=Application
+      Name=Cloud Media Sunshine
+      Exec=/usr/local/bin/cloud-media-session-start
+      X-GNOME-Autostart-enabled=true
+
+- name: Enable persistent user services for media account
+  ansible.builtin.command: "loginctl enable-linger {{ media_user }}"
+  changed_when: false
+
+- name: Install Sunshine user service definition for recovery/manual control
+  ansible.builtin.template:
+    src: sunshine.service.j2
+    dest: "/home/{{ media_user }}/.config/systemd/user/sunshine.service"
+    owner: "{{ media_user }}"
+    group: "{{ media_user }}"
+    mode: "0644"
+
+- name: Ensure LightDM is enabled
+  ansible.builtin.systemd_service:
+    name: lightdm
+    enabled: true
+
+- name: Configure workstation runtime and backup environment
+  ansible.builtin.copy:
+    dest: /etc/cloud-media-workstation.env
+    mode: "0600"
+    content: |
+      IDLE_TIMEOUT_MINUTES={{ idle_timeout_minutes }}
+      MAX_RUNTIME_HOURS={{ max_runtime_hours }}
+      MOUNT={{ media_mount }}
+      PROJECT_BUCKET={{ project_bucket_name }}
+
+- name: Initialize auto-stop activity marker
+  ansible.builtin.copy:
+    content: "{{ ansible_date_time.epoch }}\n"
+    dest: /var/lib/cloud-media-workstation/last-activity
+    force: false
+    mode: "0600"
+
+- name: Install auto-stop service
+  ansible.builtin.template:
+    src: workstation-autostop.service.j2
+    dest: /etc/systemd/system/workstation-autostop.service
+    mode: "0644"
+
+- name: Install auto-stop timer
+  ansible.builtin.template:
+    src: workstation-autostop.timer.j2
+    dest: /etc/systemd/system/workstation-autostop.timer
+    mode: "0644"
+
+- name: Enable auto-stop timer
+  ansible.builtin.systemd_service:
+    name: workstation-autostop.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Install canonical workstation backup runtime
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/workstation-backup"
+    dest: /usr/local/bin/workstation-backup
+    mode: "0755"
+
+- name: Install workstation backup service
+  ansible.builtin.template:
+    src: workstation-backup.service.j2
+    dest: /etc/systemd/system/workstation-backup.service
+    mode: "0644"
+
+- name: Install workstation backup timer
+  ansible.builtin.template:
+    src: workstation-backup.timer.j2
+    dest: /etc/systemd/system/workstation-backup.timer
+    mode: "0644"
+
+- name: Enable workstation backup timer
+  ansible.builtin.systemd_service:
+    name: workstation-backup.timer
+    enabled: true
+    state: started
+    daemon_reload: true

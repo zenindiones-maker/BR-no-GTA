@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y --no-install-recommends awscli python3-venv ca-certificates
+
+install -d -m 0755 ${mount_path}
+install -d -m 0700 /var/lib/cloud-media-workstation
+install -d -m 0700 /var/lib/cloud-media-workstation/leases
+date +%s > /var/lib/cloud-media-workstation/boot-epoch
+cp /var/lib/cloud-media-workstation/boot-epoch /var/lib/cloud-media-workstation/last-activity-epoch
+
+cat >/etc/cloud-media-workstation.env <<EOF
+PROJECT_SLUG=${project_slug}
+MOUNT_PATH=${mount_path}
+IDLE_TIMEOUT_MINUTES=${idle_timeout_minutes}
+MAX_RUNTIME_HOURS=${max_runtime_hours}
+EOF
+chmod 0600 /etc/cloud-media-workstation.env

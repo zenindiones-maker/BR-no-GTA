@@ -1,0 +1,8 @@
+---
+- name: Install BR-no-GTA video/media packages
+  ansible.builtin.apt:
+    name:
+      - kdenlive
+      - blender
+      - imagemagick
+    state: present

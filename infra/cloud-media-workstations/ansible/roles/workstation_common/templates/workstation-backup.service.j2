@@ -1,0 +1,8 @@
+[Unit]
+Description=Back up canonical cloud media source and masters
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/workstation-backup

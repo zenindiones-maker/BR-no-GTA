@@ -1,0 +1,35 @@
+{
+  "schema": "CloudMediaWorkstationsContinuationReceipt/v1",
+  "generated_at": "2026-10-05T22:55:00Z",
+  "source_head": "689382e9d6ffc833ef87a7657885b1f6de7ed917",
+  "refreshed_br_head": "c8b9f2275e5288e5c4cefe9474075d21ca1023f0",
+  "refreshed_hazewave_head": "d27f68d7310922cbcfb04bf85d3803040511ae9d",
+  "active_queued_runs": {
+    "br_no_gta": 0,
+    "hazewave": 0
+  },
+  "focused_backup_state_tests": "PASS_6_OF_6",
+  "full_pytest": "PASS",
+  "tofu_validate": {
+    "hazewave": "PASS",
+    "br_no_gta": "PASS"
+  },
+  "ansible_syntax": {
+    "hazewave": "PASS_WITH_EMPTY_INVENTORY_WARNING",
+    "br_no_gta": "PASS_WITH_EMPTY_INVENTORY_WARNING"
+  },
+  "aws_preflight": {
+    "status": "BLOCKED_AWS_AUTH",
+    "detail": "NoCredentialsError",
+    "region": "sa-east-1"
+  },
+  "aws_resources_created": false,
+  "monthly_budget_status": "MONTHLY_BUDGET_USD_UNSET",
+  "live_provisioning": "NOT_ATTEMPTED",
+  "final_instance_state": {
+    "hazewave": "NOT_PROVISIONED",
+    "br_no_gta": "NOT_PROVISIONED"
+  },
+  "active_unrelated_work_preserved": "PASS",
+  "overall_status": "BLOCKED_AWS_AUTH"
+}

@@ -1,0 +1,14 @@
+[Unit]
+Description=Sunshine media streaming host
+After=graphical-session.target pipewire.service
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+Environment=DISPLAY=:0
+ExecStart=/usr/bin/sunshine /home/{{ media_user }}/.config/sunshine/sunshine.conf
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

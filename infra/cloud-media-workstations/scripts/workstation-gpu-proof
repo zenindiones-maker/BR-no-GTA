@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+OUT_DIR="${1:-/var/lib/cloud-media-workstation/proofs}"
+mkdir -p "$OUT_DIR"
+
+nvidia-smi -q >"$OUT_DIR/nvidia-smi.txt"
+vulkaninfo --summary >"$OUT_DIR/vulkan.txt"
+glxinfo -B >"$OUT_DIR/opengl.txt"
+
+ffmpeg -hide_banner -y \
+  -f lavfi -i testsrc2=size=1920x1080:rate=30 \
+  -f lavfi -i sine=frequency=1000:sample_rate=48000 \
+  -t 3 -c:v h264_nvenc -pix_fmt yuv420p -c:a aac "$OUT_DIR/nvenc-proof.mp4"
+
+ffprobe -v error -show_streams -show_format -of json "$OUT_DIR/nvenc-proof.mp4" >"$OUT_DIR/nvenc-proof.json"
+
+python3 - "$OUT_DIR/nvenc-proof.json" <<'PY'
+import json,sys
+p=json.load(open(sys.argv[1]))
+v=next(s for s in p["streams"] if s["codec_type"]=="video")
+a=next(s for s in p["streams"] if s["codec_type"]=="audio")
+assert v["codec_name"]=="h264"
+assert int(v["width"])==1920 and int(v["height"])==1080
+assert v["pix_fmt"]=="yuv420p"
+assert v["avg_frame_rate"] in {"30/1","60/2"}
+assert a["codec_name"]=="aac"
+print("NVENC_REAL_ENCODE=PASS")
+PY

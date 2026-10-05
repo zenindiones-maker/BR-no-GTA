@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+for _ in $(seq 1 30); do
+  if pactl info >/dev/null 2>&1 && pactl list short sinks | grep -q 'sunshine_sink'; then
+    pactl set-default-sink sunshine_sink
+    break
+  fi
+  sleep 1
+done
+
+exec sunshine

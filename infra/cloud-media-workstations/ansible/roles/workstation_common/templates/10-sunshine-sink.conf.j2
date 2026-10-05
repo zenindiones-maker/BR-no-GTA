@@ -1,0 +1,14 @@
+context.modules = [
+  { name = libpipewire-module-loopback
+    args = {
+      node.description = "Sunshine deterministic virtual sink"
+      capture.props = {
+        media.class = "Audio/Sink"
+        node.name = "sunshine_sink"
+      }
+      playback.props = {
+        node.name = "sunshine_sink.monitor"
+      }
+    }
+  }
+]

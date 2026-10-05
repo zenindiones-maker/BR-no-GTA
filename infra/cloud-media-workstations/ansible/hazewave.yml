@@ -1,0 +1,13 @@
+---
+- name: Configure Hazewave media workstation
+  hosts: hazewave
+  become: true
+  vars_files:
+    - group_vars/all.yml
+    - group_vars/hazewave.yml
+  vars:
+    tailscale_auth_key_ssm_parameter: "/cloud-media-workstations/hazewave/tailscale-auth-key"
+  roles:
+    - workstation_common
+    - nvidia_driver
+    - hazewave

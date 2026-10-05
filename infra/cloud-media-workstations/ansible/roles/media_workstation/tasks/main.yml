@@ -1,0 +1,231 @@
+---
+- name: Require pinned AWS GRID driver artifact
+  ansible.builtin.assert:
+    that:
+      - grid_driver_object_key | length > 0
+      - grid_driver_sha256 | length == 64
+    fail_msg: "BLOCKED_DRIVER: GRID_DRIVER_ARTIFACT_UNPINNED"
+
+- name: Install base and project packages
+  ansible.builtin.apt:
+    name: "{{ common_packages + project_packages }}"
+    state: present
+    update_cache: true
+
+- name: Create media user
+  ansible.builtin.user:
+    name: "{{ media_user }}"
+    create_home: true
+    shell: /bin/bash
+
+- name: Create durable mount
+  ansible.builtin.file:
+    path: "{{ media_mount }}"
+    state: directory
+    owner: "{{ media_user }}"
+    group: "{{ media_user }}"
+    mode: "0750"
+
+- name: Detect data filesystem
+  ansible.builtin.command: lsblk -ndo FSTYPE /dev/nvme1n1
+  register: data_fstype
+  changed_when: false
+  failed_when: false
+
+- name: Format empty data volume
+  community.general.filesystem:
+    fstype: xfs
+    dev: /dev/nvme1n1
+  when: data_fstype.stdout | trim == ""
+
+- name: Mount durable media volume
+  ansible.posix.mount:
+    path: "{{ media_mount }}"
+    src: /dev/nvme1n1
+    fstype: xfs
+    opts: noatime,nofail
+    state: mounted
+
+- name: Create persistent REAPER resources
+  ansible.builtin.file:
+    path: "{{ media_mount }}/.reaper-resources"
+    state: directory
+    owner: "{{ media_user }}"
+    group: "{{ media_user }}"
+    mode: "0700"
+
+- name: Create media user config root
+  ansible.builtin.file:
+    path: "/home/{{ media_user }}/.config"
+    state: directory
+    owner: "{{ media_user }}"
+    group: "{{ media_user }}"
+    mode: "0700"
+
+- name: Link REAPER config to persistent volume
+  ansible.builtin.file:
+    src: "{{ media_mount }}/.reaper-resources"
+    dest: "/home/{{ media_user }}/.config/REAPER"
+    state: link
+    force: false
+
+- name: Download REAPER with pinned checksum
+  ansible.builtin.get_url:
+    url: "{{ reaper_url }}"
+    dest: "/var/cache/reaper-{{ reaper_version }}.tar.xz"
+    checksum: "sha256:{{ reaper_sha256 }}"
+    mode: "0644"
+
+- name: Unpack REAPER
+  ansible.builtin.unarchive:
+    src: "/var/cache/reaper-{{ reaper_version }}.tar.xz"
+    dest: /opt
+    remote_src: true
+    creates: "/opt/reaper_linux_x86_64/REAPER/reaper"
+
+- name: Link REAPER binary
+  ansible.builtin.file:
+    src: "/opt/reaper_linux_x86_64/REAPER/reaper"
+    dest: /usr/local/bin/reaper
+    state: link
+
+- name: Download Sunshine with pinned checksum
+  ansible.builtin.get_url:
+    url: "{{ sunshine_url }}"
+    dest: "/var/cache/sunshine-{{ sunshine_version }}.deb"
+    checksum: "sha256:{{ sunshine_sha256 }}"
+    mode: "0644"
+
+- name: Install Sunshine package
+  ansible.builtin.apt:
+    deb: "/var/cache/sunshine-{{ sunshine_version }}.deb"
+    state: present
+
+- name: Install Tailscale signing key without pipe-to-shell
+  ansible.builtin.get_url:
+    url: "{{ tailscale_apt_key_url }}"
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    mode: "0644"
+
+- name: Configure Tailscale apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/ubuntu noble main"
+    filename: tailscale
+    state: present
+
+- name: Install Tailscale
+  ansible.builtin.apt:
+    name: tailscale
+    state: present
+    update_cache: true
+
+- name: Enroll Tailscale using ephemeral project-scoped key
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - up
+      - "--auth-key={{ tailscale_auth_key }}"
+      - "--hostname={{ project_slug }}-media-workstation"
+      - --accept-dns=true
+  no_log: true
+  changed_when: false
+
+- name: Create PipeWire configuration directory
+  ansible.builtin.file:
+    path: "/home/{{ media_user }}/.config/pipewire/pipewire.conf.d"
+    state: directory
+    owner: "{{ media_user }}"
+    group: "{{ media_user }}"
+    mode: "0700"
+
+- name: Install PipeWire virtual sink configuration
+  ansible.builtin.template:
+    src: pipewire-media-sink.conf.j2
+    dest: "/home/{{ media_user }}/.config/pipewire/pipewire.conf.d/60-media-workstation-sink.conf"
+    owner: "{{ media_user }}"
+    group: "{{ media_user }}"
+    mode: "0644"
+
+- name: Create Sunshine configuration directory
+  ansible.builtin.file:
+    path: "/home/{{ media_user }}/.config/sunshine"
+    state: directory
+    owner: "{{ media_user }}"
+    group: "{{ media_user }}"
+    mode: "0700"
+
+- name: Install Sunshine configuration
+  ansible.builtin.template:
+    src: sunshine.conf.j2
+    dest: "/home/{{ media_user }}/.config/sunshine/sunshine.conf"
+    owner: "{{ media_user }}"
+    group: "{{ media_user }}"
+    mode: "0600"
+
+- name: Create Xorg configuration directory
+  ansible.builtin.file:
+    path: /etc/X11/xorg.conf.d
+    state: directory
+    mode: "0755"
+
+- name: Install headless NVIDIA Xorg configuration
+  ansible.builtin.template:
+    src: xorg-headless.conf.j2
+    dest: /etc/X11/xorg.conf.d/20-nvidia-headless.conf
+    mode: "0644"
+
+- name: Create GRID driver staging directory
+  ansible.builtin.file:
+    path: /var/cache/aws-grid-driver
+    state: directory
+    mode: "0700"
+
+- name: Download pinned GRID driver from AWS customer bucket
+  ansible.builtin.command:
+    argv:
+      - aws
+      - s3
+      - cp
+      - "s3://ec2-linux-nvidia-drivers/{{ grid_driver_object_key }}"
+      - /var/cache/aws-grid-driver/NVIDIA-GRID.run
+  args:
+    creates: /var/cache/aws-grid-driver/NVIDIA-GRID.run
+
+- name: Verify pinned GRID driver digest
+  ansible.builtin.shell: |
+    set -euo pipefail
+    echo "{{ grid_driver_sha256 }}  /var/cache/aws-grid-driver/NVIDIA-GRID.run" | sha256sum -c -
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Disable nouveau
+  ansible.builtin.copy:
+    dest: /etc/modprobe.d/blacklist-nouveau.conf
+    mode: "0644"
+    content: |
+      blacklist vga16fb
+      blacklist nouveau
+      blacklist rivafb
+      blacklist nvidiafb
+      blacklist rivatv
+
+- name: Install GRID driver non-interactively when absent
+  ansible.builtin.command:
+    argv:
+      - /bin/sh
+      - /var/cache/aws-grid-driver/NVIDIA-GRID.run
+      - --silent
+      - --accept-license
+  args:
+    creates: /usr/bin/nvidia-smi
+
+- name: Install workstation helper scripts
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: "0755"
+  loop:
+    - workstation-auto-stop
+    - workstation-gpu-proof
+    - reaper-render

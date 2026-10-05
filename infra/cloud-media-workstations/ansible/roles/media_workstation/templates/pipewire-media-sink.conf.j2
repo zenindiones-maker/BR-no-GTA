@@ -1,0 +1,14 @@
+context.modules = [
+  { name = libpipewire-module-loopback
+    args = {
+      node.description = "Media Workstation Virtual Sink"
+      capture.props = {
+        media.class = "Audio/Sink"
+        node.name = "media-workstation-sink"
+      }
+      playback.props = {
+        node.name = "media-workstation-sink-monitor"
+      }
+    }
+  }
+]

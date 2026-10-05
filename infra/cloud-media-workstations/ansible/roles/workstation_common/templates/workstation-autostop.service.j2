@@ -1,0 +1,7 @@
+[Unit]
+Description=Evaluate cloud media workstation auto-stop guards
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/workstation-autostop

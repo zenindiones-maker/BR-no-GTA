@@ -1,0 +1,16 @@
+---
+project_slug: "hazewave"
+media_mount: "/srv/hazewave"
+aws_region: "sa-east-1"
+tailscale_auth_key_ssm_parameter: "/cloud-media-workstations/hazewave/tailscale-auth-key"
+sunshine_username_ssm_parameter: "/cloud-media-workstations/hazewave/sunshine-username"
+sunshine_password_ssm_parameter: "/cloud-media-workstations/hazewave/sunshine-password"
+idle_timeout_minutes: 30
+max_runtime_hours: 8
+nvidia_driver_s3_uri: ""
+nvidia_driver_sha256: ""
+gpu_driver_family: "grid"
+grid_min_major: 18
+grid_min_minor: 4
+grid_max_major: 19
+grid_max_minor: 5

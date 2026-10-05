@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() {
+  echo "CONNECT_READY=FAIL"
+  echo "REASON=$1"
+  exit 1
+}
+
+command -v nvidia-smi >/dev/null 2>&1 || fail BLOCKED_DRIVER
+nvidia-smi >/dev/null 2>&1 || fail BLOCKED_DRIVER
+
+systemctl is-active --quiet lightdm || fail BLOCKED_STREAMING_DISPLAY
+
+tailscale status --json >/tmp/tailscale-status.json 2>/dev/null || fail BLOCKED_STREAMING_TAILSCALE
+python3 - /tmp/tailscale-status.json <<'PY' || exit 1
+import json,sys
+p=json.load(open(sys.argv[1]))
+if p.get("BackendState") != "Running":
+    raise SystemExit("TAILSCALE_NOT_RUNNING")
+PY
+
+pgrep -x sunshine >/dev/null 2>&1 || fail BLOCKED_STREAMING_SUNSHINE
+
+media_uid="$(id -u media)"
+if ! runuser -u media -- env XDG_RUNTIME_DIR="/run/user/$media_uid"   pactl list short sinks 2>/dev/null | grep -q 'sunshine_sink'; then
+  fail BLOCKED_AUDIO
+fi
+
+ss -ltnup 2>/dev/null | grep -qi sunshine || fail BLOCKED_STREAMING_LISTENER
+
+echo "GPU_READY=PASS"
+echo "DISPLAY_READY=PASS"
+echo "TAILSCALE_READY=PASS"
+echo "SUNSHINE_READY=PASS"
+echo "AUDIO_SINK_READY=PASS"
+echo "CONNECT_READY=PASS"

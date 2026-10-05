@@ -1,0 +1,25 @@
+---
+reaper_version: "7.82"
+reaper_url: "https://www.reaper.fm/files/7.x/reaper782_linux_x86_64.tar.xz"
+reaper_sha256: "a4aa961534f22ae5ae910e4ec0c200dcb4476c9f7556806fe09a9743cd582563"
+
+sunshine_version: "2026.914.233613"
+sunshine_url: "https://github.com/LizardByte/Sunshine/releases/download/v2026.914.233613/sunshine_2026.914.233613-1%2Bubuntu24.04_amd64.deb"
+sunshine_sha256: "c38e9c705f650f8705f61702717e99bec34044c5028fcb8f23a08fe041292c21"
+
+media_user: "media"
+media_group: "media"
+idle_timeout_minutes: 30
+max_runtime_hours: 8
+
+# Must be supplied by the deployment preflight from current AWS evidence.
+nvidia_driver_s3_uri: ""
+nvidia_driver_sha256: ""
+nvidia_driver_expected_version: ""
+
+tailscale_apt_key_url: "https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg"
+
+# Must be supplied by the operator. Secret value itself remains in SSM Parameter Store.
+tailscale_deb_url: ""
+tailscale_deb_sha256: ""
+tailscale_auth_key_ssm_parameter: ""

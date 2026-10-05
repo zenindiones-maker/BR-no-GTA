@@ -1,0 +1,13 @@
+---
+- name: Configure BR-no-GTA media workstation
+  hosts: br_no_gta
+  become: true
+  vars_files:
+    - group_vars/all.yml
+    - group_vars/br_no_gta.yml
+  vars:
+    tailscale_auth_key_ssm_parameter: "/cloud-media-workstations/br-no-gta/tailscale-auth-key"
+  roles:
+    - workstation_common
+    - nvidia_driver
+    - br_no_gta

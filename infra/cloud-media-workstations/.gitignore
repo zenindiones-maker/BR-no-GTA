@@ -1,0 +1,14 @@
+.terraform/
+.pytest_cache/
+__pycache__/
+*.pyc
+.runtime/
+*.tfplan
+*.tfstate
+*.tfstate.*
+backend.hcl
+inventory.ini
+.env
+*.pem
+*.key
+.DS_Store

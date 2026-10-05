@@ -1,0 +1,63 @@
+---
+- name: Fail closed when NVIDIA driver URI is unset
+  ansible.builtin.assert:
+    that:
+      - nvidia_driver_s3_uri | default('') | length > 0
+      - nvidia_driver_sha256 | default('') | length == 64
+    fail_msg: "BLOCKED_DRIVER_URI_UNSET"
+
+- name: Create NVIDIA driver staging directory
+  ansible.builtin.file:
+    path: /var/cache/aws-grid-driver
+    state: directory
+    mode: "0700"
+
+- name: Download pinned NVIDIA GRID driver from AWS S3
+  ansible.builtin.command:
+    argv:
+      - aws
+      - s3
+      - cp
+      - "{{ nvidia_driver_s3_uri }}"
+      - /var/cache/aws-grid-driver/NVIDIA-GRID.run
+  args:
+    creates: /var/cache/aws-grid-driver/NVIDIA-GRID.run
+
+- name: Verify NVIDIA driver SHA256
+  ansible.builtin.shell: |
+    set -euo pipefail
+    echo "{{ nvidia_driver_sha256 }}  /var/cache/aws-grid-driver/NVIDIA-GRID.run" | sha256sum -c -
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Disable nouveau
+  ansible.builtin.copy:
+    dest: /etc/modprobe.d/blacklist-nouveau.conf
+    mode: "0644"
+    content: |
+      blacklist nouveau
+      options nouveau modeset=0
+
+- name: Install pinned NVIDIA GRID driver
+  ansible.builtin.command:
+    argv:
+      - /bin/sh
+      - /var/cache/aws-grid-driver/NVIDIA-GRID.run
+      - --silent
+      - --accept-license
+  args:
+    creates: /usr/bin/nvidia-smi
+  register: nvidia_grid_install
+
+- name: Reboot after NVIDIA GRID driver installation
+  ansible.builtin.reboot:
+    reboot_timeout: 900
+  when: nvidia_grid_install.changed
+
+- name: Verify NVIDIA driver after reboot
+  ansible.builtin.command:
+    argv:
+      - nvidia-smi
+  register: nvidia_smi_result
+  changed_when: false

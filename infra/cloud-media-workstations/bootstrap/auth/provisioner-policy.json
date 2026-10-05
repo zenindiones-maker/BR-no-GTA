@@ -1,0 +1,135 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "IdentityRead",
+      "Effect": "Allow",
+      "Action": ["sts:GetCallerIdentity"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "RegionalEc2Control",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "ec2:RunInstances",
+        "ec2:StartInstances",
+        "ec2:StopInstances",
+        "ec2:TerminateInstances",
+        "ec2:CreateTags",
+        "ec2:CreateVolume",
+        "ec2:AttachVolume",
+        "ec2:DetachVolume",
+        "ec2:DeleteVolume",
+        "ec2:CreateSnapshot",
+        "ec2:DeleteSnapshot"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "sa-east-1"
+        }
+      }
+    },
+    {
+      "Sid": "RequireManagedByTagOnCreates",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:RunInstances",
+        "ec2:CreateVolume",
+        "ec2:CreateTags"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/ManagedBy": "OpenTofu"
+        }
+      }
+    },
+    {
+      "Sid": "ProjectParameterStore",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:PutParameter",
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:DescribeParameters"
+      ],
+      "Resource": "arn:aws:ssm:sa-east-1:${ACCOUNT_ID}:parameter/cloud-media-workstations/*"
+    },
+    {
+      "Sid": "ProvisionerIamRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole",
+        "iam:CreateRole",
+        "iam:DeleteRole",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:PutRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:CreateInstanceProfile",
+        "iam:DeleteInstanceProfile",
+        "iam:AddRoleToInstanceProfile",
+        "iam:RemoveRoleFromInstanceProfile",
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::${ACCOUNT_ID}:role/hazewave-*",
+        "arn:aws:iam::${ACCOUNT_ID}:role/br-no-gta-*",
+        "arn:aws:iam::${ACCOUNT_ID}:instance-profile/hazewave-*",
+        "arn:aws:iam::${ACCOUNT_ID}:instance-profile/br-no-gta-*"
+      ]
+    },
+    {
+      "Sid": "BudgetControl",
+      "Effect": "Allow",
+      "Action": [
+        "budgets:CreateBudget",
+        "budgets:ModifyBudget",
+        "budgets:UpdateBudget",
+        "budgets:DeleteBudget",
+        "budgets:DescribeBudget",
+        "budgets:DescribeBudgets",
+        "budgets:CreateBudgetAction",
+        "budgets:UpdateBudgetAction",
+        "budgets:DeleteBudgetAction",
+        "budgets:DescribeBudgetAction",
+        "budgets:DescribeBudgetActionsForBudget"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "QuotaReadAndRequest",
+      "Effect": "Allow",
+      "Action": [
+        "servicequotas:GetServiceQuota",
+        "servicequotas:ListServiceQuotas",
+        "servicequotas:RequestServiceQuotaIncrease"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "PricingRead",
+      "Effect": "Allow",
+      "Action": ["pricing:GetProducts", "pricing:DescribeServices"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StateBucketAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:GetBucketVersioning",
+        "s3:GetEncryptionConfiguration"
+      ],
+      "Resource": "arn:aws:s3:::${STATE_BUCKET}"
+    },
+    {
+      "Sid": "StateObjectAccess",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::${STATE_BUCKET}/*"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ENV=/etc/cloud-media-workstation.env
+source "$ENV"
+: "${MOUNT:?MOUNT_UNSET}"
+: "${PROJECT_BUCKET:?PROJECT_BUCKET_UNSET}"
+
+mkdir -p "$MOUNT/source" "$MOUNT/masters"
+exec 9>/var/lock/cloud-media-workstation-backup.lock
+flock -n 9 || exit 0
+
+aws s3 sync "$MOUNT/source" "s3://$PROJECT_BUCKET/source/" --only-show-errors
+aws s3 sync "$MOUNT/masters" "s3://$PROJECT_BUCKET/masters/" --only-show-errors
+
+echo "WORKSTATION_BACKUP=PASS"

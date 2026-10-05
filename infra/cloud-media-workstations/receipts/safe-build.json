@@ -1,0 +1,21 @@
+{
+  "schema": "CloudMediaWorkstationsSafeBuild/v1",
+  "region": "sa-east-1",
+  "refreshed_br_head": "c8b9f2275e5288e5c4cefe9474075d21ca1023f0",
+  "refreshed_hazewave_head": "d27f68d7310922cbcfb04bf85d3803040511ae9d",
+  "unrelated_workflows_at_audit": {"br_in_progress": 0, "br_queued": 0, "hazewave_in_progress": 0, "hazewave_queued": 0},
+  "safe_build_gate": "PASS",
+  "tofu_validate": {"state_bootstrap": "PASS", "hazewave": "PASS", "br_no_gta": "PASS"},
+  "ansible_syntax": {"hazewave": "PASS", "br_no_gta": "PASS"},
+  "secret_scan": "PASS",
+  "reaper_version": "7.82",
+  "reaper_sha256": "a4aa961534f22ae5ae910e4ec0c200dcb4476c9f7556806fe09a9743cd582563",
+  "sunshine_version": "2026.914.233613",
+  "sunshine_sha256": "c38e9c705f650f8705f61702717e99bec34044c5028fcb8f23a08fe041292c21",
+  "aws_live_preflight": "BLOCKED_AWS_AUTH",
+  "aws_auth_detail": "NoCredentialsError",
+  "monthly_budget_status": "MONTHLY_BUDGET_USD_UNSET",
+  "aws_resources_created": false,
+  "live_runtime_acceptance": "NOT_RUN",
+  "overall_status": "BLOCKED_AWS_AUTH"
+}
