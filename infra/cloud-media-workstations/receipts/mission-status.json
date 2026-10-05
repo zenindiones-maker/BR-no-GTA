@@ -43,8 +43,8 @@
     "reaper_version": "7.82_PINNED_SHA256_a4aa961534f22ae5ae910e4ec0c200dcb4476c9f7556806fe09a9743cd582563",
     "sunshine": "PINNED_2026.914.233613_RUNTIME_NOT_PROVEN"
   },
-  "infra_local_git_head": "1660691fc2cc90d8804af213e4c3e6a2a46cf2cb",
-  "infra_repository": "LOCAL_ISOLATED_REPOSITORY_REMOTE_PENDING",
+  "infra_local_git_head": "159b6b9dd82557d72e73525b8450b77dd8454146",
+  "infra_repository": "PENDING_ISOLATED_GITHUB_BRANCH_MIRROR",
   "infra_workspace": "sprite:cloud-media-workstations-iac",
   "monthly_budget_status": "MONTHLY_BUDGET_USD_UNSET",
   "overall_status": "BLOCKED_AWS_AUTH",
@@ -54,6 +54,7 @@
   "safe_build_gate": "PASS",
   "schema": "CloudMediaWorkstationsMissionReceipt/v1",
   "source_sprite_checkpoint": "v20",
+  "sprite_checkpoint": "v23",
   "state_bootstrap_validate": "PASS",
   "state_locking": "S3_NATIVE_LOCKFILE",
   "sts": "BLOCKED_NO_CREDENTIALS"

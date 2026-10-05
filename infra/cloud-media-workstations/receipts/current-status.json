@@ -30,7 +30,7 @@
   "cross_project_storage_isolation": "IAC_ENFORCED_AND_PROBE_IMPLEMENTED_RUNTIME_UNPROVEN",
   "external_gate_verifier": "IMPLEMENTED",
   "generated_at": "2026-10-05T23:12:00Z",
-  "github_remote_status": "LOCAL_REPOSITORY_NO_REMOTE",
+  "github_remote_status": "PENDING_ISOLATED_BRANCH_MIRROR",
   "hazewave": {
     "audio_stream": "PIPEWIRE_SUNSHINE_SINK_DEFINED_RUNTIME_UNPROVEN",
     "cli_render": "WRAPPER_TESTED_RUNTIME_UNPROVEN",
@@ -45,10 +45,10 @@
     "reaper_version": "7.82_PINNED_RUNTIME_UNPROVEN",
     "sunshine": "v2026.914.233613_PINNED_RUNTIME_UNPROVEN"
   },
-  "infra_local_git_head": "1660691fc2cc90d8804af213e4c3e6a2a46cf2cb",
-  "infra_repository": "LOCAL_ISOLATED_REPOSITORY_REMOTE_PENDING",
+  "infra_local_git_head": "159b6b9dd82557d72e73525b8450b77dd8454146",
+  "infra_repository": "ISOLATED_BRANCH_MIRROR_PENDING",
   "infra_sprite": "cloud-media-workstations-iac",
-  "infra_sprite_checkpoint": "v20_SOURCE_STATE",
+  "infra_sprite_checkpoint": "v23",
   "monthly_budget_status": "MONTHLY_BUDGET_USD_UNSET",
   "opentofu_validate": "PASS",
   "overall_status": "BLOCKED_AWS_AUTH",
