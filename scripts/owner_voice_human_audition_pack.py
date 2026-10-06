@@ -257,6 +257,54 @@ class TelegramAuditionApi:
         return int(result["message_id"])
 
 
+def _write_perf_env(values: Mapping[str,Any]) -> None:
+    target=str(os.environ.get("GITHUB_ENV") or "").strip()
+    if not target:
+        return
+    with open(target,"a",encoding="utf-8") as stream:
+        for key,value in values.items():
+            stream.write(f"{key}={value}\n")
+
+
+def _marginal_asr_zone(qa: Mapping[str,Any]) -> bool:
+    wer=float(qa.get("word_error_rate") or 0.0)
+    cer=float(qa.get("character_error_rate") or 0.0)
+    probability=float(qa.get("language_probability") or 0.0)
+    return (
+        0.20 <= wer <= 0.30
+        or 0.15 <= cer <= 0.23
+        or 0.88 <= probability <= 0.93
+    )
+
+
+def _candidate_asr(stt, normalized: Path, metrics: Mapping[str,Any], expected: str, *, beam_size: int) -> dict[str,Any]:
+    segments_iter,info=stt.transcribe(
+        str(normalized),
+        language="pt",
+        beam_size=int(beam_size),
+        vad_filter=True,
+        word_timestamps=False,
+        condition_on_previous_text=False,
+    )
+    segments=list(segments_iter)
+    vad_speech_ratio=_vad_speech_occupancy(
+        segments,
+        float(metrics.get("duration_seconds") or 0.0),
+    )
+    observed=" ".join(
+        str(getattr(seg,"text","") or "").strip()
+        for seg in segments if str(getattr(seg,"text","") or "").strip()
+    )
+    return {
+        "detected_language":str(getattr(info,"language","pt") or "pt"),
+        "language_probability":float(getattr(info,"language_probability",0.0) or 0.0),
+        "vad_speech_ratio":vad_speech_ratio,
+        "expected_text":expected,
+        "observed_text":observed,
+        "transcription_confidence":_transcription_confidence(segments),
+    }
+
+
 def main() -> int:
     global CURRENT_STEP
     CURRENT_STEP="input_contract"
@@ -309,38 +357,36 @@ def main() -> int:
     source_message_id=int(source_row["telegram_message_id"])
 
     CURRENT_STEP="machine_prescreen"
+    import time
+    prescreen_t0=time.monotonic()
     workspace=Path(str(manifest["workspace"])).resolve()
     machine_qa_path=Path(
         str(os.environ.get("BR_OWNER_AUDITION_MACHINE_QA_PATH") or workspace/"machine-audition-qa.json")
     ).resolve()
     from faster_whisper import WhisperModel
-    from faster_whisper.utils import download_model
-    stt_id=str(os.environ.get("BR_OWNER_STT_MODEL") or "large-v3-turbo").strip()
-    stt_path=download_model(stt_id,output_dir=str(workspace/"stt-model-consumer"))
-    stt=WhisperModel(str(stt_path),device="cpu",compute_type="int8",local_files_only=True)
+    stt_path=Path(str(os.environ.get("BR_OWNER_STT_MODEL_PATH") or "")).resolve()
+    if not stt_path.is_dir() or not (stt_path/"model.bin").is_file():
+        raise RuntimeError("BR_OWNER_STT_MODEL_PATH_NOT_REUSED")
+    stt=WhisperModel(
+        str(stt_path),
+        device="cpu",
+        compute_type="int8",
+        cpu_threads=4,
+        num_workers=1,
+        local_files_only=True,
+    )
 
     expected=str(metadata.get("audition_text") or "").strip()
     if not expected:
         raise RuntimeError("OWNER_AUDITION_EXPECTED_TEXT_MISSING")
 
     machine_qa=[]
+    marginal_escalations=0
     for row in manifest["candidates"]:
         source=Path(str(row["runtime_path"])).resolve()
         normalized=_normalize_for_qa(source,workspace/"qa"/f"{row['candidate_id']}.wav")
         metrics=pcm16_quality_metrics(normalized)
-        segments_iter,info=stt.transcribe(
-            str(normalized),language="pt",beam_size=5,vad_filter=True,
-            word_timestamps=True,condition_on_previous_text=True,
-        )
-        segments=list(segments_iter)
-        vad_speech_ratio=_vad_speech_occupancy(
-            segments,
-            float(metrics.get("duration_seconds") or 0.0),
-        )
-        observed=" ".join(
-            str(getattr(seg,"text","") or "").strip()
-            for seg in segments if str(getattr(seg,"text","") or "").strip()
-        )
+        fast=_candidate_asr(stt,normalized,metrics,expected,beam_size=1)
         pre={
             "candidate_id":str(row["candidate_id"]),
             "audio_sha256":str(row["sha256"]),
@@ -348,24 +394,34 @@ def main() -> int:
             "provider_default_voice_used":False,
             "provider_preset_voice_used":False,
             "generic_voice_fallback":False,
-            "detected_language":str(getattr(info,"language","pt") or "pt"),
-            "language_probability":float(getattr(info,"language_probability",0.0) or 0.0),
-            "vad_speech_ratio":vad_speech_ratio,
-            "expected_text":expected,
-            "observed_text":observed,
             "audio_metrics":metrics,
             "speaker_similarity":{
                 "status":"PENDING_INDEPENDENT_VERIFIER",
                 "score":None,
                 "certifies_identity":False,
             },
-            "transcription_confidence":_transcription_confidence(segments),
+            **fast,
         }
         qa=evaluate_short_candidate(pre)
+        if _marginal_asr_zone(qa):
+            marginal_escalations+=1
+            strong=_candidate_asr(stt,normalized,metrics,expected,beam_size=5)
+            pre={**pre,**strong}
+            qa=evaluate_short_candidate(pre)
         machine_qa.append({**pre,**qa})
     sanitized_qa=_write_machine_qa(machine_qa_path,machine_qa)
     for row in machine_qa:
         _emit_sanitized_candidate_qa(row)
+    prescreen_seconds=time.monotonic()-prescreen_t0
+    _write_perf_env({
+        "MACHINE_PRESCREEN_SECONDS":round(prescreen_seconds,6),
+        "MARGINAL_ASR_ESCALATIONS":marginal_escalations,
+        "STT_MODEL_PATH_REUSED":"true",
+    })
+    print("FAST_ASR_FIRST_PASS=PASS")
+    print("MARGINAL_ASR_ESCALATION=BOUNDED")
+    print(f"MARGINAL_ASR_ESCALATIONS={marginal_escalations}")
+    print("STT_MODEL_PATH_REUSED=PASS")
     if len(machine_qa)!=3 or any(row["eligible"] is not True for row in machine_qa):
         _write_machine_prescreen_failure_receipt(
             Path(receipt_env).resolve(),
@@ -376,6 +432,7 @@ def main() -> int:
     print("MACHINE_PRESCREEN=PASS")
 
     CURRENT_STEP="telegram_delivery"
+    telegram_t0=time.monotonic()
     store=store_from_environment(repo_root=ROOT,workspace=workspace)
     ledger=GitBackedAuditionDeliveryLedger(store=store,pack_id=pack_id)
     ledger.create(
@@ -400,6 +457,8 @@ def main() -> int:
     if result.get("state")!="CONFIRMED":
         raise RuntimeError("OWNER_AUDITION_DELIVERY_NOT_CONFIRMED")
 
+    telegram_seconds=time.monotonic()-telegram_t0
+    _write_perf_env({"TELEGRAM_DELIVERY_SECONDS":round(telegram_seconds,6)})
     ids=dict(result.get("confirmed_message_ids") or {})
     print("OWNER_VOICE_AUDITION_PACK="+pack_id)
     print("REAL_REFERENCE_SENT=PASS")
