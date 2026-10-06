@@ -9,7 +9,12 @@ cd "$REPO_ROOT"
 bash "$SCRIPT_DIR/install-xpra-stable.sh"
 
 sudo apt-get update
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends   iproute2   mediainfo   sox   libsox-fmt-all   rubberband-cli
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+  iproute2 \
+  mediainfo \
+  sox \
+  libsox-fmt-all \
+  rubberband-cli
 
 sudo apt-get clean
 
@@ -19,7 +24,9 @@ chmod 700 /tmp/br-media-scratch /tmp/br-media-cache
 bash "$SCRIPT_DIR/br-start-professional-desktop.sh"
 bash "$SCRIPT_DIR/br-professional-doctor.sh"
 
-echo "BR_PRO_V2_UPGRADE=PASS"
+echo "BR_PRO_V3_UPGRADE=PASS"
+echo "WORKSTATION_ROLE=MEDIA_VIDEO_QA"
+echo "MASTER_FINAL_TARGET=1920x1080_30_H264_AAC"
 echo "PAID_FALLBACK=FALSE"
 echo "UNKNOWN_COST_FALLBACK=FALSE"
 echo "REAPER_REQUIRED=FALSE"
