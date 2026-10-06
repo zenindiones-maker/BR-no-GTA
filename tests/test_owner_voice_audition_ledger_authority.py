@@ -30,7 +30,8 @@ def test_dedicated_ledger_key_is_step_scoped_not_job_scoped():
     job_env=text[text.index("    env:"):text.index("    steps:")]
     assert "BR_OWNER_AUDITION_LEDGER_SSH_KEY" not in job_env
     expected="BR_OWNER_AUDITION_LEDGER_SSH_KEY: $" + "{{ secrets.BR_OWNER_AUDITION_LEDGER_SSH_KEY }}"
-    assert text.count(expected) == 2
+    assert text.count(expected) == 3
+    assert "Preflight required audition secrets" in text
 
 
 def test_ledger_store_has_exact_ref_allowlist():
