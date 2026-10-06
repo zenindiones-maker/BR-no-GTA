@@ -25,12 +25,20 @@ RETRY_SEGMENT_WORDS = 38
 INTER_SEGMENT_SILENCE_SECONDS = 0.12
 PINNED_MAX_NEW_TOKENS_PER_CALL = 1000
 TRUNCATION_CEILING_SECONDS = 37.0
+OWNER_AUDITION_TEXT_MAX_CHARS = 300
+OWNER_IDENTITY_AUDITION_TEXT = (
+    "Teste rápido de voz em português do Brasil. Booooa meu povo, aqui é BR no GTA 6! "
+    "A gente vai falar de Vice City, Leonida, Rockstar, Lucia e Jason. "
+    "Quero ouvir ritmo natural, sem correr e sem forçar. Você reconhece a minha voz? "
+    "E BR não dorme em Vice City"
+)
 
 
 def build_ptbr_audition_text() -> str:
-    from app.services.owner_voice_human_audition_pack_service import build_audition_script
-
-    return build_audition_script(theme="as novidades de GTA 6")
+    text=OWNER_IDENTITY_AUDITION_TEXT
+    if len(text)>OWNER_AUDITION_TEXT_MAX_CHARS:
+        raise RuntimeError("OWNER_IDENTITY_AUDITION_TEXT_TOO_LONG")
+    return text
 
 
 def prescreen_retry_plan_for_label(
@@ -38,25 +46,34 @@ def prescreen_retry_plan_for_label(
     label: str,
     requested_cfg_weight: float,
     base_seed: int,
+    failure_reason: str | None = None,
+    prior_attempt: int = 0,
 ) -> dict[str, Any]:
     normalized=str(label or "").strip().upper()
+    if normalized not in {"A","B","C"}:
+        raise ValueError("OWNER_PTBR_AUDITION_LABEL_INVALID")
     requested=round(float(requested_cfg_weight),3)
-    if normalized=="A" and requested==0.3:
+    prior=max(0,int(prior_attempt))
+    reason=str(failure_reason or "").strip().upper() or None
+    if reason is None:
         return {
-            "attempt":2,
-            "cfg_weight":0.5,
-            "seed":int(base_seed)+1000,
-            "reason":"HIGH_WORD_ERROR_RATE",
-            "source_run_id":"37513058943",
+            "attempt":1,
+            "cfg_weight":requested,
+            "seed":int(base_seed),
+            "reason":None,
+            "source_run_id":None,
         }
+    if prior>=MAX_GENERATION_ATTEMPTS_PER_LABEL:
+        raise RuntimeError("OWNER_PTBR_AUDITION_RETRY_BUDGET_EXHAUSTED")
+    next_attempt=prior+1
+    retry_weight=0.5 if reason in {"HIGH_WORD_ERROR_RATE","HIGH_CHARACTER_ERROR_RATE","TRUNCATED_TEXT"} else requested
     return {
-        "attempt":1,
-        "cfg_weight":requested,
-        "seed":int(base_seed),
-        "reason":None,
+        "attempt":next_attempt,
+        "cfg_weight":retry_weight,
+        "seed":int(base_seed)+1000*next_attempt,
+        "reason":reason,
         "source_run_id":None,
     }
-
 
 def split_ptbr_audition_text(text: str, *, max_words: int = MAX_SEGMENT_WORDS) -> list[str]:
     import re
@@ -103,10 +120,11 @@ def _generate_segmented_candidate(
     model,
     *,
     text: str,
-    audio_prompt_path: str | Path,
+    audio_prompt_path: str | Path | None,
     cfg_weight: float,
     base_seed: int,
     starting_attempt: int = 1,
+    prepared_conditionals: bool = False,
 ):
     import torch
 
@@ -128,6 +146,7 @@ def _generate_segmented_candidate(
             kwargs=build_generation_kwargs(
                 audio_prompt_path=audio_prompt_path,
                 cfg_weight=attempt_weight,
+                prepared_conditionals=prepared_conditionals,
             )
             part=model.generate(chunk,**kwargs).cpu()
             if getattr(part,"ndim",0)!=2 or int(part.shape[-1])<=0:
@@ -159,6 +178,7 @@ def _generate_segmented_candidate(
             "cfg_weight":attempt_weight,
             "inter_segment_silence_seconds":INTER_SEGMENT_SILENCE_SECONDS,
             "pinned_max_new_tokens_per_call":PINNED_MAX_NEW_TOKENS_PER_CALL,
+            "generate_call_count":len(chunks),
         }
     raise RuntimeError(
         "OWNER_PTBR_AUDITION_SEGMENT_TRUNCATION_LIMIT:"
@@ -168,18 +188,19 @@ def _generate_segmented_candidate(
 
 def build_generation_kwargs(
     *,
-    audio_prompt_path: str | Path,
+    audio_prompt_path: str | Path | None,
     cfg_weight: float,
+    prepared_conditionals: bool = False,
 ) -> dict[str, Any]:
     source = str(audio_prompt_path or "").strip()
-    if not source:
-        raise ValueError("OWNER_TELEGRAM_REFERENCE_REQUIRED")
+    if not source and not prepared_conditionals:
+        raise ValueError("OWNER_PREPARED_CONDITIONALS_REQUIRED")
     weight = round(float(cfg_weight), 3)
     if weight not in ALLOWED_CFG_WEIGHTS:
         raise ValueError("PTBR_AUDITION_CFG_NOT_ALLOWED")
     return {
         "language_id": "pt",
-        "audio_prompt_path": source,
+        "audio_prompt_path": source or None,
         "exaggeration": 0.5,
         "cfg_weight": weight,
         "temperature": 0.8,
@@ -227,48 +248,60 @@ def _require_sha256(path: str | Path, expected: str, label: str) -> Path:
     return source
 
 
-def download_ptbr_model_assets(root: str | Path) -> dict[str, Path]:
+def download_ptbr_model_assets(root: str | Path) -> tuple[dict[str, Path],int]:
+    import os
+    import shutil
     from huggingface_hub import hf_hub_download
 
     root = Path(root).resolve()
-    root.mkdir(parents=True, exist_ok=True)
     ptbr_root = root / "ptbr"
     base_root = root / "base"
+    cached={
+        "t3":ptbr_root/"t3_pt_br.safetensors",
+        "s3gen":ptbr_root/"s3gen_v3.safetensors",
+        "tokenizer":ptbr_root/"grapheme_mtl_merged_expanded_v1.json",
+        "ve":base_root/"ve.safetensors",
+    }
+    try:
+        if (
+            cached["tokenizer"].is_file()
+            and _require_sha256(cached["t3"],T3_SHA256,"CHATTERBOX_PTBR_T3")
+            and _require_sha256(cached["s3gen"],S3GEN_SHA256,"CHATTERBOX_PTBR_S3GEN")
+            and _require_sha256(cached["ve"],VE_SHA256,"CHATTERBOX_VOICE_ENCODER")
+        ):
+            return {key:path.resolve() for key,path in cached.items()},0
+    except RuntimeError:
+        pass
+
+    if root.exists():
+        shutil.rmtree(root)
     ptbr_root.mkdir(parents=True, exist_ok=True)
     base_root.mkdir(parents=True, exist_ok=True)
+    os.environ["HF_HUB_OFFLINE"]="0"
 
     t3 = Path(hf_hub_download(
-        repo_id=MODEL_ID,
-        filename="t3_pt_br.safetensors",
-        revision=MODEL_REVISION,
-        local_dir=str(ptbr_root),
+        repo_id=MODEL_ID,filename="t3_pt_br.safetensors",
+        revision=MODEL_REVISION,local_dir=str(ptbr_root),
     ))
     s3gen = Path(hf_hub_download(
-        repo_id=MODEL_ID,
-        filename="s3gen_v3.safetensors",
-        revision=MODEL_REVISION,
-        local_dir=str(ptbr_root),
+        repo_id=MODEL_ID,filename="s3gen_v3.safetensors",
+        revision=MODEL_REVISION,local_dir=str(ptbr_root),
     ))
     tokenizer = Path(hf_hub_download(
-        repo_id=MODEL_ID,
-        filename="grapheme_mtl_merged_expanded_v1.json",
-        revision=MODEL_REVISION,
-        local_dir=str(ptbr_root),
+        repo_id=MODEL_ID,filename="grapheme_mtl_merged_expanded_v1.json",
+        revision=MODEL_REVISION,local_dir=str(ptbr_root),
     ))
     ve = Path(hf_hub_download(
-        repo_id=BASE_MODEL_ID,
-        filename="ve.safetensors",
-        revision=BASE_MODEL_REVISION,
-        local_dir=str(base_root),
+        repo_id=BASE_MODEL_ID,filename="ve.safetensors",
+        revision=BASE_MODEL_REVISION,local_dir=str(base_root),
     ))
-
-    return {
-        "t3": _require_sha256(t3, T3_SHA256, "CHATTERBOX_PTBR_T3"),
-        "s3gen": _require_sha256(s3gen, S3GEN_SHA256, "CHATTERBOX_PTBR_S3GEN"),
-        "ve": _require_sha256(ve, VE_SHA256, "CHATTERBOX_VOICE_ENCODER"),
-        "tokenizer": tokenizer.resolve(),
+    assets={
+        "t3":_require_sha256(t3,T3_SHA256,"CHATTERBOX_PTBR_T3"),
+        "s3gen":_require_sha256(s3gen,S3GEN_SHA256,"CHATTERBOX_PTBR_S3GEN"),
+        "ve":_require_sha256(ve,VE_SHA256,"CHATTERBOX_VOICE_ENCODER"),
+        "tokenizer":tokenizer.resolve(),
     }
-
+    return assets,4
 
 def load_ptbr_chatterbox_model(
     assets: dict[str, Path],
@@ -401,7 +434,7 @@ def main() -> int:
 
     from app.services.owner_voice_clone_service import build_ptbr_audition_variants
     from app.services.owner_voice_private_materialization_service import (
-        materialize_telegram_owner_references,
+        materialize_selected_telegram_owner_reference,
     )
 
     token = str(os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
@@ -414,25 +447,21 @@ def main() -> int:
         or runner_temp / "br-owner-voice" / "reference-qa-context.json"
     )
     index = _load_reference_index_from_environment()
-    materialized = materialize_telegram_owner_references(
+    selected_id = int(qa_context["selected_telegram_input_id"])
+    selected_sha = str(qa_context["selected_audio_sha256"]).lower()
+    selected = materialize_selected_telegram_owner_reference(
         index,
-        private_root=run_scoped_workspace(runner_temp, github_run_id=str(os.environ.get("GITHUB_RUN_ID") or "local"), github_run_attempt=str(os.environ.get("GITHUB_RUN_ATTEMPT") or "1")) / "clone-references",
+        selected_telegram_input_id=selected_id,
+        private_root=run_scoped_workspace(
+            runner_temp,
+            github_run_id=str(os.environ.get("GITHUB_RUN_ID") or "local"),
+            github_run_attempt=str(os.environ.get("GITHUB_RUN_ATTEMPT") or "1"),
+        ) / "clone-reference",
         repository_root=Path.cwd().resolve(),
         telegram_bot_token=token,
     )
-
-    selected_id = int(qa_context["selected_telegram_input_id"])
-    selected_sha = str(qa_context["selected_audio_sha256"]).lower()
-    selected = next(
-        (
-            row for row in materialized["references"]
-            if int(row["telegram_input_id"]) == selected_id
-            and str(row["sha256"]).lower() == selected_sha
-        ),
-        None,
-    )
-    if not isinstance(selected, dict):
-        raise RuntimeError("OWNER_REFERENCE_QA_PROVENANCE_MISMATCH")
+    if str(selected.get("sha256") or "").lower()!=selected_sha:
+        raise RuntimeError("OWNER_REFERENCE_SELECTION_CACHE_HASH_MISMATCH")
 
     normalized = _normalize_owner_reference(
         selected["runtime_path"],
@@ -451,11 +480,23 @@ def main() -> int:
         "speech_ratio": float(qa_context["speech_ratio"]),
     }
 
+    import time
+    torch.set_num_threads(4)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    assets = download_ptbr_model_assets(
-        run_scoped_workspace(runner_temp, github_run_id=str(os.environ.get("GITHUB_RUN_ID") or "local"), github_run_attempt=str(os.environ.get("GITHUB_RUN_ATTEMPT") or "1")) / "chatterbox-model"
-    )
+    cache_root=Path(
+        os.environ.get("BR_OWNER_PUBLIC_MODEL_CACHE")
+        or Path.home()/".cache"/"br-owner-voice"/"hf-public"
+    ).resolve()
+    asset_t0=time.monotonic()
+    assets,network_downloads = download_ptbr_model_assets(cache_root/"chatterbox")
+    asset_seconds=time.monotonic()-asset_t0
     model = load_ptbr_chatterbox_model(assets, device=device)
+    cond_t0=time.monotonic()
+    model.prepare_conditionals(str(normalized),exaggeration=0.5)
+    if model.conds is None:
+        raise RuntimeError("OWNER_PREPARED_CONDITIONALS_REQUIRED")
+    conditionals_seconds=time.monotonic()-cond_t0
+    bound_reference_sha=selected_sha
     text = build_ptbr_audition_text()
     requests = build_ptbr_audition_variants(
         reference=selected_for_generation,
@@ -472,20 +513,28 @@ def main() -> int:
     pack_id=f"BR_OWNER_V1_AUDITION_{github_run_id}_{github_run_attempt}"
     outputs: list[dict[str, Any]] = []
     labels=("A","B","C")
+    generate_call_count=0
+    candidate_seconds={}
     for label, request in zip(labels,requests):
         retry_plan=prescreen_retry_plan_for_label(
             label=label,
             requested_cfg_weight=float(request["cfg_weight"]),
             base_seed=int(request["seed"]),
         )
+        if bound_reference_sha!=selected_sha or model.conds is None:
+            raise RuntimeError("OWNER_CONDITIONALS_REFERENCE_BINDING_INVALID")
+        generation_t0=time.monotonic()
         wav,segmentation = _generate_segmented_candidate(
             model,
             text=text,
-            audio_prompt_path=request["audio_prompt_path"],
+            audio_prompt_path=None,
             cfg_weight=float(retry_plan["cfg_weight"]),
             base_seed=int(retry_plan["seed"]),
             starting_attempt=int(retry_plan["attempt"]),
+            prepared_conditionals=True,
         )
+        candidate_seconds[label]=time.monotonic()-generation_t0
+        generate_call_count+=int(segmentation["generate_call_count"])
         output = output_dir / f"{label}.wav"
         ta.save(str(output), wav.cpu(), model.sr)
         if not output.is_file() or output.stat().st_size <= 0:
@@ -532,6 +581,9 @@ def main() -> int:
             "provider_default_voice_used":False,
             "provider_preset_voice_used":False,
             "generic_voice_fallback":False,
+            "qualification_stage":"HUMAN_IDENTITY_AUDITION",
+            "owner_audition_text_chars":len(text),
+            "conditionals_reference_sha256":selected_sha,
         },
     )
     github_output=str(os.environ.get("GITHUB_OUTPUT") or "").strip()
@@ -543,10 +595,34 @@ def main() -> int:
     print("OWNER_PTBR_MODEL=CHATTERBOX_SINGLE_LANGUAGE_PT_BR")
     print("OWNER_PTBR_EXTERNAL_LOCALE=pt-BR")
     print("OWNER_PTBR_INTERNAL_LANGUAGE_ID=pt")
+    env_file=str(os.environ.get("GITHUB_ENV") or "").strip()
+    perf_values={
+        "MODEL_ASSET_RESTORE_SECONDS":asset_seconds,
+        "REFERENCE_CONDITIONALS_SECONDS":conditionals_seconds,
+        "CANDIDATE_A_GENERATION_SECONDS":candidate_seconds.get("A",0.0),
+        "CANDIDATE_B_GENERATION_SECONDS":candidate_seconds.get("B",0.0),
+        "CANDIDATE_C_GENERATION_SECONDS":candidate_seconds.get("C",0.0),
+        "CHATTERBOX_NETWORK_DOWNLOAD_COUNT":network_downloads,
+        "CHATTERBOX_GENERATE_CALL_COUNT":generate_call_count,
+        "OWNER_AUDITION_TEXT_CHARS":len(text),
+        "CONDITIONALS_PREPARE_COUNT":1,
+        "CONDITIONALS_REUSED":"true",
+    }
+    if env_file:
+        with open(env_file,"a",encoding="utf-8") as stream:
+            for key,value in perf_values.items():
+                stream.write(f"{key}={value}\n")
     print("OWNER_REFERENCE_SOURCE=TELEGRAM")
     print("PROVIDER_DEFAULT_VOICE_USED=0")
     print("PROVIDER_PRESET_VOICE_USED=0")
     print("GENERIC_VOICE_FALLBACK=0")
+    print(f"OWNER_AUDITION_TEXT_CHARS={len(text)}")
+    print(f"CHATTERBOX_GENERATE_CALL_COUNT={generate_call_count}")
+    print("CONDITIONALS_PREPARE_COUNT=1")
+    print("CONDITIONALS_REUSED=true")
+    print(f"CONDITIONALS_REFERENCE_SHA256={selected_sha}")
+    print("CONDITIONALS_VOICE_IDENTITY=BR_OWNER_V1")
+    print("CONDITIONALS_REFERENCE_SOURCE=TELEGRAM")
     print(f"OWNER_PTBR_AUDITION_VARIANTS={len(outputs)}")
     print(f"MAX_GENERATION_ATTEMPTS_PER_LABEL={MAX_GENERATION_ATTEMPTS_PER_LABEL}")
     print(f"CHATTERBOX_PINNED_MAX_NEW_TOKENS_PER_CALL={PINNED_MAX_NEW_TOKENS_PER_CALL}")
