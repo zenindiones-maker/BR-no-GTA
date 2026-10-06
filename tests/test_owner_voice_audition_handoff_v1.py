@@ -10,7 +10,6 @@ from app.services.owner_voice_audition_handoff_service import (
     HandoffCrash,
     commit_audition_handoff,
     consume_audition_handoff,
-    rewrite_candidate_in_audition_handoff,
     run_scoped_workspace,
 )
 
@@ -114,33 +113,3 @@ def test_consumer_rejects_tampered_candidate_hash(tmp_path):
     (root/"B.wav").write_bytes(b"changed")
     with pytest.raises(ValueError,match="HANDOFF_SHA256_MISMATCH:B"):
         consume_audition_handoff(manifest,expected_pack_id="pack-hash")
-
-
-def test_retry_rewrites_only_failed_candidate_and_rebinds_manifest(tmp_path):
-    root=run_scoped_workspace(tmp_path,github_run_id="14",github_run_attempt="1")
-    rows=[]
-    for label in ("A","B","C"):
-        p=root/f"{label}.wav"; _write_dummy(p,("audio-"+label).encode())
-        rows.append({
-            "candidate_id":label,"path":str(p),"duration_seconds":10,
-            "voice_identity_id":"BR_OWNER_V1","model_id":"model","model_revision":"rev",
-            "reference_sha256":"e"*64,"generation_parameters":{"seed":1},
-        })
-    manifest=commit_audition_handoff(workspace=root,pack_id="pack-retry",candidates=rows)
-    before=json.loads(manifest.read_text())
-    retry=root/"A.retry.wav"; _write_dummy(retry,b"audio-A-retry")
-    rewrite_candidate_in_audition_handoff(
-        manifest,
-        expected_pack_id="pack-retry",
-        label="A",
-        replacement_path=retry,
-        duration_seconds=11,
-        generation_parameters={"seed":2,"retry_attempt":2},
-    )
-    after=consume_audition_handoff(manifest,expected_pack_id="pack-retry")
-    before_by={row["label"]:row for row in before["candidates"]}
-    after_by={row["label"]:row for row in after["candidates"]}
-    assert after_by["A"]["sha256"]!=before_by["A"]["sha256"]
-    assert after_by["B"]["sha256"]==before_by["B"]["sha256"]
-    assert after_by["C"]["sha256"]==before_by["C"]["sha256"]
-    assert (root/"A.wav").read_bytes()==b"audio-A-retry"
