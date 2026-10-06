@@ -1,0 +1,92 @@
+name: Zero-Cost BR Media
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Free BR media operation
+        required: true
+        default: ffmpeg-smoke
+        type: choice
+        options:
+          - ffmpeg-smoke
+          - video-qc
+          - python-compile
+      media_root:
+        description: Relative directory for video QC
+        required: false
+        default: output
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zero-cost-br-media-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  free-standard-runner:
+    if: ${{ github.event.repository.private == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact requested ref
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Enforce zero-cost/public repository boundary
+        run: |
+          set -euo pipefail
+          test "${{ github.event.repository.private }}" = "false"
+          echo "PROJECT=BR_NO_GTA"
+          echo "RUNNER_CLASS=GITHUB_HOSTED_STANDARD"
+          echo "REPOSITORY_VISIBILITY=PUBLIC"
+          echo "PAID_FALLBACK=FALSE"
+          echo "UNKNOWN_COST_FALLBACK=FALSE"
+          echo "REAPER_REQUIRED=FALSE"
+
+      - name: Install media dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: FFmpeg smoke proof
+        if: ${{ inputs.mode == 'ffmpeg-smoke' }}
+        run: |
+          set -euo pipefail
+          mkdir -p .zero-cost-proof
+          ffmpeg -hide_banner -loglevel error             -f lavfi -i color=c=black:s=1920x1080:r=30:d=1             -f lavfi -i anullsrc=r=48000:cl=stereo             -shortest             -c:v libx264 -pix_fmt yuv420p -profile:v high             -c:a aac             .zero-cost-proof/proof.mp4
+          ffprobe -v error             -show_entries stream=codec_name,width,height,r_frame_rate,pix_fmt             -show_entries format=duration             -of json             .zero-cost-proof/proof.mp4
+          echo "BR_ZERO_COST_FFMPEG=PASS"
+
+      - name: Video QC
+        if: ${{ inputs.mode == 'video-qc' }}
+        env:
+          MEDIA_ROOT: ${{ inputs.media_root }}
+        run: |
+          set -euo pipefail
+          case "${MEDIA_ROOT}" in
+            /*|*..*) echo "MEDIA_ROOT=BLOCKED_INVALID_PATH"; exit 20 ;;
+          esac
+          test -d "${MEDIA_ROOT}" || {
+            echo "VIDEO_QC=WAIT_NO_MEDIA_ROOT"
+            exit 0
+          }
+          count=0
+          while IFS= read -r -d '' file; do
+            echo "VIDEO_FILE=${file}"
+            ffprobe -v error               -show_entries stream=codec_name,width,height,r_frame_rate,pix_fmt               -show_entries format=duration               -of json               "${file}"
+            count=$((count+1))
+          done < <(find "${MEDIA_ROOT}" -type f \( -iname '*.mp4' -o -iname '*.mkv' -o -iname '*.mov' \) -print0)
+          echo "VIDEO_QC_FILES=${count}"
+          echo "VIDEO_QC=PASS"
+
+      - name: Python compile proof
+        if: ${{ inputs.mode == 'python-compile' }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q app scripts
+          echo "BR_PYTHON_COMPILE=PASS"
