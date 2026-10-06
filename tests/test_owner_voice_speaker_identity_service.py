@@ -5,7 +5,9 @@ from app.services.owner_voice_speaker_identity_service import (
     SPEAKER_MODEL_ID,
     SPEAKER_MODEL_REVISION,
     calibrate_owner_identity_profile,
+    calibrate_owner_window_consistency,
     evaluate_clone_identity_gate,
+    evaluate_reference_window_consistency,
     select_canonical_reference,
 )
 
@@ -75,3 +77,33 @@ def test_canonical_reference_must_be_identity_inlier_and_prefers_10_to_20_second
 def test_speaker_verifier_is_exactly_pinned():
     assert SPEAKER_MODEL_ID=="speechbrain/spkrec-ecapa-voxceleb"
     assert SPEAKER_MODEL_REVISION=="d82a13ef4f90e62dc5e152e312a6891247f23fb8"
+
+
+def test_window_consistency_threshold_is_calibrated_from_owner_inliers_not_clone_threshold():
+    calibration=calibrate_owner_window_consistency({
+        "11":[0.82,0.86,0.88],
+        "12":[0.80,0.84,0.87],
+        "13":[0.79,0.83,0.86],
+        "14":[0.81,0.85,0.89],
+    })
+    assert calibration["calibration_source"]=="OWNER_REFERENCE_WINDOW_DISTRIBUTION"
+    assert 0.79 <= calibration["min_similarity"] <= 0.82
+    assert calibration["reference_count"]==4
+
+    good=evaluate_reference_window_consistency(
+        [0.81,0.84,0.88],
+        calibration,
+    )
+    bad=evaluate_reference_window_consistency(
+        [0.20,0.25,0.30],
+        calibration,
+    )
+    assert good["passed"] is True
+    assert bad["passed"] is False
+    assert good["reference_p10"] >= calibration["min_similarity"]
+
+
+def test_window_consistency_calibration_excludes_nonfinite_and_requires_owner_distribution():
+    import pytest
+    with pytest.raises(ValueError,match="OWNER_WINDOW_CONSISTENCY_REQUIRES_REFERENCES"):
+        calibrate_owner_window_consistency({})
