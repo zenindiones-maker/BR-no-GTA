@@ -6,7 +6,12 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from app.services.owner_voice_audio_quality_service import score_owner_reference_quality
-from app.services.owner_voice_clone_service import select_owner_reference
+from app.services.owner_voice_clone_service import (
+    CLIPPING_RATIO_MAX,
+    SNR_DB_MIN,
+    SPEECH_RATIO_MIN,
+    select_owner_reference,
+)
 
 
 VOICE_IDENTITY_ID = "BR_OWNER_V1"
@@ -16,6 +21,43 @@ EXTERNAL_LOCALE = "pt-BR"
 
 def _language(value: Any) -> str:
     return str(value or "").strip().lower().replace("_", "-")
+
+
+def reference_quality_upper_bound(metrics: Mapping[str, Any]) -> float:
+    return score_owner_reference_quality(
+        metrics,
+        ptbr_probability=1.0,
+        transcription_confidence=1.0,
+    )
+
+
+def should_stop_reference_asr(
+    best_quality: float,
+    remaining_upper_bounds: Iterable[float],
+) -> bool:
+    remaining=[float(value) for value in remaining_upper_bounds]
+    if not remaining:
+        return True
+    return float(best_quality) > max(remaining)
+
+
+def _cheap_reference_can_be_identity_grade(
+    reference: Mapping[str, Any],
+    metrics: Mapping[str, Any],
+) -> bool:
+    private_ref=str(reference.get("private_audio_ref") or "").strip()
+    digest=str(reference.get("sha256") or "").strip().lower()
+    return bool(
+        int(reference.get("telegram_input_id") or 0)>0
+        and private_ref.startswith(f"private://voice/{VOICE_IDENTITY_ID}/")
+        and len(digest)==64
+        and all(ch in "0123456789abcdef" for ch in digest)
+        and reference.get("single_speaker") is not False
+        and float(metrics.get("clipping_ratio") or 0.0)<=CLIPPING_RATIO_MAX
+        and float(metrics.get("snr_db") or 0.0)>=SNR_DB_MIN
+        and float(metrics.get("speech_ratio") or 0.0)>=SPEECH_RATIO_MIN
+        and float(metrics.get("duration_seconds") or 0.0)>0.0
+    )
 
 
 def build_reference_candidate(
@@ -209,7 +251,7 @@ def main() -> int:
         local_files_only=True,
     )
 
-    candidates: list[dict[str, Any]] = []
+    prepared: list[dict[str, Any]] = []
     for reference in materialized["references"]:
         input_id = int(reference["telegram_input_id"])
         normalized = _normalize_reference(
@@ -217,8 +259,24 @@ def main() -> int:
             audition_workspace / "qa-normalized" / f"reference-{input_id}.wav",
         )
         metrics = pcm16_quality_metrics(normalized)
+        if not _cheap_reference_can_be_identity_grade(reference,metrics):
+            continue
+        prepared.append({
+            "reference":dict(reference),
+            "normalized_path":str(normalized),
+            "metrics":dict(metrics),
+            "upper_bound":reference_quality_upper_bound(metrics),
+        })
+
+    prepared.sort(key=lambda row:(
+        -float(row["upper_bound"]),
+        str(row["reference"].get("sha256") or ""),
+        int(row["reference"].get("telegram_input_id") or 0),
+    ))
+    candidates: list[dict[str, Any]] = []
+    for index,item in enumerate(prepared):
         segments_iter, info = stt.transcribe(
-            str(normalized),
+            str(item["normalized_path"]),
             language=None,
             beam_size=5,
             vad_filter=True,
@@ -232,9 +290,9 @@ def main() -> int:
             if str(getattr(segment, "text", "") or "").strip()
         )
         candidate = build_reference_candidate(
-            reference=reference,
-            normalized_path=str(normalized),
-            metrics=metrics,
+            reference=item["reference"],
+            normalized_path=str(item["normalized_path"]),
+            metrics=item["metrics"],
             detected_language=str(getattr(info, "language", "") or ""),
             language_probability=float(
                 getattr(info, "language_probability", 0.0) or 0.0
@@ -243,12 +301,32 @@ def main() -> int:
             transcript=transcript,
         )
         candidates.append(candidate)
+        try:
+            provisional=build_reference_qa_context(candidates)
+        except ValueError:
+            provisional=None
+        remaining_bounds=[
+            float(row["upper_bound"])
+            for row in prepared[index+1:]
+        ]
+        if (
+            provisional is not None
+            and should_stop_reference_asr(
+                float(provisional["quality_score"]),
+                remaining_bounds,
+            )
+        ):
+            break
 
+    selected_context=build_reference_qa_context(candidates)
     context = {
-        **build_reference_qa_context(candidates),
+        **selected_context,
         "stt_model_path": str(stt_model_path),
         "stt_model_id": model_id,
-        "stt_reuse_mode": "LOCAL_FILES_ONLY",
+        "stt_reuse_mode": "LOCAL_FILES_ONLY_BRANCH_AND_BOUND",
+        "reference_total_count":len(materialized["references"]),
+        "reference_audio_eligible_count":len(prepared),
+        "reference_asr_count":len(candidates),
     }
     output = Path(
         os.environ.get("BR_OWNER_REFERENCE_QA_CONTEXT")
@@ -266,6 +344,9 @@ def main() -> int:
 
     print("OWNER_AUDITION_WORKSPACE_SCOPE=PASS")
     print(f"OWNER_REFERENCE_QA_COUNT={len(candidates)}")
+    print(f"OWNER_REFERENCE_TOTAL_COUNT={len(materialized['references'])}")
+    print(f"OWNER_REFERENCE_ASR_COUNT={len(candidates)}")
+    print("OWNER_REFERENCE_QA_EXACT_BRANCH_AND_BOUND=PASS")
     print("OWNER_REFERENCE_SELECTION_POLICY=QUALITY_FIRST_DETERMINISTIC")
     print("OWNER_REFERENCE_LATEST_INPUT_WINS=false")
     print("OWNER_REFERENCE_SOURCE=TELEGRAM")
