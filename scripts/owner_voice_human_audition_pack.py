@@ -72,6 +72,115 @@ def _transcription_confidence(segments) -> float:
     return (sum(values)/len(values)) if values else 0.0
 
 
+
+def _vad_speech_occupancy(segments, duration_seconds: float) -> float:
+    duration=max(0.0,float(duration_seconds or 0.0))
+    if duration<=0.0:
+        return 0.0
+    intervals=[]
+    for segment in segments:
+        start=max(0.0,min(duration,float(getattr(segment,"start",0.0) or 0.0)))
+        end=max(start,min(duration,float(getattr(segment,"end",start) or start)))
+        if end>start:
+            intervals.append((start,end))
+    if not intervals:
+        return 0.0
+    intervals.sort()
+    merged=[]
+    for start,end in intervals:
+        if not merged or start>merged[-1][1]:
+            merged.append([start,end])
+        else:
+            merged[-1][1]=max(merged[-1][1],end)
+    speech=sum(end-start for start,end in merged)
+    return max(0.0,min(1.0,speech/duration))
+
+
+def _sanitized_machine_qa(row: Mapping[str,Any]) -> dict[str,Any]:
+    return {
+        "schema_version":"MachineAuditionCandidateQA/v1",
+        "candidate_id":str(row.get("candidate_id") or ""),
+        "audio_sha256":str(row.get("audio_sha256") or ""),
+        "eligible":bool(row.get("eligible") is True),
+        "issues":[str(x) for x in (row.get("issues") or [])],
+        "detected_language":str(row.get("detected_language") or ""),
+        "language_probability":float(row.get("language_probability") or 0.0),
+        "word_error_rate":float(row.get("word_error_rate") or 0.0),
+        "character_error_rate":float(row.get("character_error_rate") or 0.0),
+        "duration_seconds":float(row.get("duration_seconds") or 0.0),
+        "clipping_ratio":float(row.get("clipping_ratio") or 0.0),
+        "speech_ratio":float(row.get("speech_ratio_for_gate") or 0.0),
+        "amplitude_speech_ratio":float(row.get("amplitude_speech_ratio") or 0.0),
+        "vad_speech_ratio":(
+            None if row.get("vad_speech_ratio") is None
+            else float(row.get("vad_speech_ratio") or 0.0)
+        ),
+        "speech_ratio_source":str(row.get("speech_ratio_source") or ""),
+        "missing_word_estimate":int(row.get("missing_word_estimate") or 0),
+        "inserted_word_estimate":int(row.get("inserted_word_estimate") or 0),
+        "repetition_count":int(row.get("adjacent_repetition_count") or 0),
+    }
+
+
+def _emit_sanitized_candidate_qa(row: Mapping[str,Any]) -> None:
+    label=str(row.get("candidate_id") or "").upper()
+    issues=",".join(str(x) for x in (row.get("issues") or [])) or "NONE"
+    def emit(name: str,value: Any) -> None:
+        print(f"CANDIDATE_{label}_{name}={value}")
+    emit("QA_ELIGIBLE","true" if row.get("eligible") is True else "false")
+    emit("QA_ISSUES",issues)
+    emit("LANGUAGE",row.get("detected_language") or "")
+    emit("LANGUAGE_PROBABILITY",row.get("language_probability") or 0.0)
+    emit("WER",row.get("word_error_rate") or 0.0)
+    emit("CER",row.get("character_error_rate") or 0.0)
+    emit("DURATION_SECONDS",row.get("duration_seconds") or 0.0)
+    emit("CLIPPING_RATIO",row.get("clipping_ratio") or 0.0)
+    emit("SPEECH_RATIO",row.get("speech_ratio_for_gate") or 0.0)
+    emit("AMPLITUDE_SPEECH_RATIO",row.get("amplitude_speech_ratio") or 0.0)
+    emit("VAD_SPEECH_RATIO","NONE" if row.get("vad_speech_ratio") is None else row.get("vad_speech_ratio"))
+    emit("SPEECH_RATIO_SOURCE",row.get("speech_ratio_source") or "")
+    emit("MISSING_WORD_ESTIMATE",row.get("missing_word_estimate") or 0)
+    emit("INSERTED_WORD_ESTIMATE",row.get("inserted_word_estimate") or 0)
+    emit("REPETITION_COUNT",row.get("adjacent_repetition_count") or 0)
+
+
+def _write_machine_qa(path: Path, rows: list[Mapping[str,Any]]) -> list[dict[str,Any]]:
+    sanitized=[_sanitized_machine_qa(row) for row in rows]
+    payload={
+        "schema_version":"MachineAuditionQASet/v1",
+        "candidates":sanitized,
+    }
+    path.parent.mkdir(parents=True,exist_ok=True)
+    tmp=path.with_name("."+path.name+".tmp")
+    tmp.write_text(json.dumps(payload,ensure_ascii=False,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+    os.replace(tmp,path)
+    return sanitized
+
+
+def _write_machine_prescreen_failure_receipt(
+    path: Path,
+    *,
+    pack_id: str,
+    sanitized_qa: list[Mapping[str,Any]],
+) -> None:
+    payload={
+        "schema_version":"OwnerVoiceAuditionFailureReceipt/v1",
+        "run_id":str(os.environ.get("GITHUB_RUN_ID") or ""),
+        "pack_id":str(pack_id),
+        "candidate_hashes":{
+            str(row.get("candidate_id") or ""):str(row.get("audio_sha256") or "")
+            for row in sanitized_qa
+        },
+        "candidate_qa":[dict(row) for row in sanitized_qa],
+        "failure_step":"machine_prescreen",
+        "failure_class":"RuntimeError:OWNER_AUDITION_MACHINE_PRESCREEN_FAILED",
+        "side_effect_state":"NOT_STARTED",
+    }
+    path.parent.mkdir(parents=True,exist_ok=True)
+    tmp=path.with_name("."+path.name+".tmp")
+    tmp.write_text(json.dumps(payload,ensure_ascii=False,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+    os.replace(tmp,path)
+
 def _telegram_post(token: str,method: str,*,data: Mapping[str,Any],files=None) -> Any:
     import requests
     response=requests.post(
@@ -201,6 +310,9 @@ def main() -> int:
 
     CURRENT_STEP="machine_prescreen"
     workspace=Path(str(manifest["workspace"])).resolve()
+    machine_qa_path=Path(
+        str(os.environ.get("BR_OWNER_AUDITION_MACHINE_QA_PATH") or workspace/"machine-audition-qa.json")
+    ).resolve()
     from faster_whisper import WhisperModel
     from faster_whisper.utils import download_model
     stt_id=str(os.environ.get("BR_OWNER_STT_MODEL") or "large-v3-turbo").strip()
@@ -221,6 +333,10 @@ def main() -> int:
             word_timestamps=True,condition_on_previous_text=True,
         )
         segments=list(segments_iter)
+        vad_speech_ratio=_vad_speech_occupancy(
+            segments,
+            float(metrics.get("duration_seconds") or 0.0),
+        )
         observed=" ".join(
             str(getattr(seg,"text","") or "").strip()
             for seg in segments if str(getattr(seg,"text","") or "").strip()
@@ -234,6 +350,7 @@ def main() -> int:
             "generic_voice_fallback":False,
             "detected_language":str(getattr(info,"language","pt") or "pt"),
             "language_probability":float(getattr(info,"language_probability",0.0) or 0.0),
+            "vad_speech_ratio":vad_speech_ratio,
             "expected_text":expected,
             "observed_text":observed,
             "audio_metrics":metrics,
@@ -246,7 +363,15 @@ def main() -> int:
         }
         qa=evaluate_short_candidate(pre)
         machine_qa.append({**pre,**qa})
+    sanitized_qa=_write_machine_qa(machine_qa_path,machine_qa)
+    for row in machine_qa:
+        _emit_sanitized_candidate_qa(row)
     if len(machine_qa)!=3 or any(row["eligible"] is not True for row in machine_qa):
+        _write_machine_prescreen_failure_receipt(
+            Path(receipt_env).resolve(),
+            pack_id=pack_id,
+            sanitized_qa=sanitized_qa,
+        )
         raise RuntimeError("OWNER_AUDITION_MACHINE_PRESCREEN_FAILED")
     print("MACHINE_PRESCREEN=PASS")
 

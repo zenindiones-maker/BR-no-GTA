@@ -126,14 +126,22 @@ def test_request_validation_is_noop_for_implementation_push_without_marker():
 def test_prescreen_observability_is_sanitized_and_per_candidate():
     text=CONSUMER.read_text(encoding="utf-8")
     assert "MachineAuditionCandidateQA/v1" in text
-    for label in ("A","B","C"):
-        for suffix in (
-            "QA_ELIGIBLE=","QA_ISSUES=","LANGUAGE=","LANGUAGE_PROBABILITY=",
-            "WER=","CER=","DURATION_SECONDS=","CLIPPING_RATIO=","SPEECH_RATIO=",
-            "MISSING_WORD_ESTIMATE=","INSERTED_WORD_ESTIMATE=","REPETITION_COUNT=",
-        ):
-            assert f"CANDIDATE_{label}_{suffix}" in text
-    assert "observed_text" not in text[text.index("MachineAuditionCandidateQA/v1"):]
+    assert 'print(f"CANDIDATE_{label}_{name}={value}")' in text
+    for suffix in (
+        "QA_ELIGIBLE","QA_ISSUES","LANGUAGE","LANGUAGE_PROBABILITY",
+        "WER","CER","DURATION_SECONDS","CLIPPING_RATIO","SPEECH_RATIO",
+        "MISSING_WORD_ESTIMATE","INSERTED_WORD_ESTIMATE","REPETITION_COUNT",
+    ):
+        assert f'emit("{suffix}"' in text
+    sanitized=text[
+        text.index("def _sanitized_machine_qa"):
+        text.index("def _emit_sanitized_candidate_qa")
+    ]
+    assert "observed_text" not in sanitized
+    assert "runtime_path" not in sanitized
+    assert "OwnerVoiceAuditionFailureReceipt/v1" in text
+    assert '"failure_step":"machine_prescreen"' in text
+    assert '"side_effect_state":"NOT_STARTED"' in text
 
 
 def test_receipt_upload_uses_run_scoped_env_path_not_tmp_hardcode():

@@ -84,7 +84,16 @@ def evaluate_short_candidate(candidate: Mapping[str, Any]) -> dict[str, Any]:
     wer=word_error_rate(expected,observed)
     cer=character_error_rate(expected,observed)
     clipping=float(metrics.get("clipping_ratio") or 0.0)
-    speech_ratio=float(metrics.get("speech_ratio") or 0.0)
+    amplitude_speech_ratio=max(0.0,min(1.0,float(metrics.get("speech_ratio") or 0.0)))
+    raw_vad_speech_ratio=candidate.get("vad_speech_ratio")
+    if raw_vad_speech_ratio is None:
+        vad_speech_ratio=None
+        speech_ratio_for_gate=amplitude_speech_ratio
+        speech_ratio_source="AMPLITUDE_PROXY"
+    else:
+        vad_speech_ratio=max(0.0,min(1.0,float(raw_vad_speech_ratio)))
+        speech_ratio_for_gate=vad_speech_ratio
+        speech_ratio_source="VAD"
     duration=float(metrics.get("duration_seconds") or 0.0)
     expected_tokens=len(_normalize_words(expected))
     observed_tokens=len(_normalize_words(observed))
@@ -114,7 +123,7 @@ def evaluate_short_candidate(candidate: Mapping[str, Any]) -> dict[str, Any]:
         issues.append("EXCESSIVE_ADJACENT_REPETITION")
     if clipping > 0.01:
         issues.append("SEVERE_CLIPPING")
-    if speech_ratio < 0.55:
+    if speech_ratio_for_gate < 0.55:
         issues.append("LOW_SPEECH_RATIO")
     if duration <= 0:
         issues.append("CORRUPTED_OR_EMPTY_AUDIO")
@@ -126,7 +135,11 @@ def evaluate_short_candidate(candidate: Mapping[str, Any]) -> dict[str, Any]:
         "language_probability":probability,
         "detected_language":language,
         "clipping_ratio":clipping,
-        "speech_ratio":speech_ratio,
+        "speech_ratio":speech_ratio_for_gate,
+        "amplitude_speech_ratio":amplitude_speech_ratio,
+        "vad_speech_ratio":vad_speech_ratio,
+        "speech_ratio_for_gate":speech_ratio_for_gate,
+        "speech_ratio_source":speech_ratio_source,
         "duration_seconds":duration,
         "missing_word_estimate":missing_est,
         "inserted_word_estimate":inserted_est,

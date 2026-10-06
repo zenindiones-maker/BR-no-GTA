@@ -23,31 +23,46 @@ def main() -> int:
     else:
         manifest={"schema_version":"OwnerVoiceAuditionHandoff/v1","pack_id":pack_id,"manifest_digest":"","candidates":[]}
 
-    receipt={
-        "schema_version":"OwnerVoiceAuditionDelivery/v1",
-        "pack_id":pack_id,
-        "state":"NOT_STARTED",
-        "side_effect_status":"PENDING",
-        "manifest_digest":str(manifest.get("manifest_digest") or ""),
-        "candidate_hashes":{
-            str(x.get("label") or x.get("candidate_id") or ""):str(x.get("sha256") or "")
-            for x in manifest.get("candidates") or []
-        },
-        "failure_class":None if job_status in {"","SUCCESS"} else f"WORKFLOW_JOB_STATUS_{job_status}",
-        "confirmed_message_ids":{},
-        "blind_retry_count":0,
-    }
-    try:
-        workspace=Path(str(os.environ.get("BR_OWNER_AUDITION_WORKSPACE") or "/tmp")).resolve()
-        store=store_from_environment(repo_root=ROOT,workspace=workspace)
-        ledger=GitBackedAuditionDeliveryLedger(store=store,pack_id=pack_id)
+    existing_failure=None
+    if receipt_path.is_file():
         try:
-            ledger.require_reconciliation_for_sending_operation()
-            receipt=ledger.sanitized_receipt(manifest=manifest)
-        except ValueError:
-            pass
-    except Exception as exc:
-        receipt["failure_class"]=receipt.get("failure_class") or f"TERMINAL_LEDGER_READ:{type(exc).__name__}"
+            existing=json.loads(receipt_path.read_text(encoding="utf-8"))
+        except (OSError,json.JSONDecodeError):
+            existing={}
+        if (
+            isinstance(existing,dict)
+            and existing.get("schema_version")=="OwnerVoiceAuditionFailureReceipt/v1"
+        ):
+            existing_failure=existing
+
+    if existing_failure is not None:
+        receipt=existing_failure
+    else:
+        receipt={
+            "schema_version":"OwnerVoiceAuditionDelivery/v1",
+            "pack_id":pack_id,
+            "state":"NOT_STARTED",
+            "side_effect_status":"PENDING",
+            "manifest_digest":str(manifest.get("manifest_digest") or ""),
+            "candidate_hashes":{
+                str(x.get("label") or x.get("candidate_id") or ""):str(x.get("sha256") or "")
+                for x in manifest.get("candidates") or []
+            },
+            "failure_class":None if job_status in {"","SUCCESS"} else f"WORKFLOW_JOB_STATUS_{job_status}",
+            "confirmed_message_ids":{},
+            "blind_retry_count":0,
+        }
+        try:
+            workspace=Path(str(os.environ.get("BR_OWNER_AUDITION_WORKSPACE") or "/tmp")).resolve()
+            store=store_from_environment(repo_root=ROOT,workspace=workspace)
+            ledger=GitBackedAuditionDeliveryLedger(store=store,pack_id=pack_id)
+            try:
+                ledger.require_reconciliation_for_sending_operation()
+                receipt=ledger.sanitized_receipt(manifest=manifest)
+            except ValueError:
+                pass
+        except Exception as exc:
+            receipt["failure_class"]=receipt.get("failure_class") or f"TERMINAL_LEDGER_READ:{type(exc).__name__}"
 
     receipt_path.parent.mkdir(parents=True,exist_ok=True)
     tmp=receipt_path.with_name("."+receipt_path.name+".tmp")
