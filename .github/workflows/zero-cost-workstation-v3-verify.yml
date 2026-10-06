@@ -33,7 +33,14 @@ jobs:
           bash -n scripts/codespaces/br-termux-control.sh
           bash -n scripts/codespaces/br-media-smoke.sh
           bash -n scripts/codespaces/br-runtime-proof.sh
+          bash -n scripts/codespaces/test-install-xpra-fast-path.sh
           python -m json.tool .devcontainer/devcontainer.json >/dev/null
+
+      - name: Prove Xpra reuse avoids apt and network
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          bash scripts/codespaces/test-install-xpra-fast-path.sh
 
       - name: Validate workstation role and zero-cost lifecycle
         working-directory: repo
