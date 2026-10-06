@@ -1,16 +1,17 @@
-name: Zero-Cost BR Media
+name: Professional Zero-Cost BR Media
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Free BR media operation
+        description: Zero-cost BR media operation
         required: true
         default: ffmpeg-smoke
         type: choice
         options:
           - ffmpeg-smoke
           - video-qc
+          - master-final-qc
           - python-compile
       media_root:
         description: Relative directory for video QC
@@ -22,67 +23,216 @@ permissions:
   contents: read
 
 concurrency:
-  group: zero-cost-br-media-${{ github.run_id }}
-  cancel-in-progress: false
+  group: br-zero-cost-${{ github.ref }}-${{ inputs.mode }}
+  cancel-in-progress: true
 
 jobs:
-  free-standard-runner:
+  standard-public-runner:
     if: ${{ github.event.repository.private == false }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
     steps:
       - name: Checkout exact requested ref
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
 
-      - name: Enforce zero-cost/public repository boundary
+      - name: Enforce zero-cost boundary
         run: |
           set -euo pipefail
           test "${{ github.event.repository.private }}" = "false"
           echo "PROJECT=BR_NO_GTA"
-          echo "RUNNER_CLASS=GITHUB_HOSTED_STANDARD"
           echo "REPOSITORY_VISIBILITY=PUBLIC"
+          echo "RUNNER_CLASS=GITHUB_HOSTED_STANDARD"
+          echo "RUNNER_LABEL=ubuntu-24.04"
+          echo "LARGER_RUNNER=FALSE"
           echo "PAID_FALLBACK=FALSE"
           echo "UNKNOWN_COST_FALLBACK=FALSE"
           echo "REAPER_REQUIRED=FALSE"
+          echo "LARGE_MEDIA_ARTIFACT_UPLOAD=DISABLED"
 
       - name: Install media dependencies
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y --no-install-recommends ffmpeg
 
-      - name: FFmpeg smoke proof
+      - name: FFmpeg encode smoke proof
         if: ${{ inputs.mode == 'ffmpeg-smoke' }}
         run: |
           set -euo pipefail
-          mkdir -p .zero-cost-proof
-          ffmpeg -hide_banner -loglevel error             -f lavfi -i color=c=black:s=1920x1080:r=30:d=1             -f lavfi -i anullsrc=r=48000:cl=stereo             -shortest             -c:v libx264 -pix_fmt yuv420p -profile:v high             -c:a aac             .zero-cost-proof/proof.mp4
-          ffprobe -v error             -show_entries stream=codec_name,width,height,r_frame_rate,pix_fmt             -show_entries format=duration             -of json             .zero-cost-proof/proof.mp4
+          mkdir -p /tmp/br-zero-cost-proof
+
+          ffmpeg -hide_banner -loglevel error             -f lavfi -i color=c=black:s=1920x1080:r=30:d=1             -f lavfi -i anullsrc=r=48000:cl=stereo             -shortest             -c:v libx264             -profile:v high             -pix_fmt yuv420p             -c:a aac             /tmp/br-zero-cost-proof/proof.mp4
+
+          ffprobe -v error             -show_entries stream=index,codec_name,codec_type,profile,width,height,r_frame_rate,pix_fmt             -show_entries format=duration             -of json             /tmp/br-zero-cost-proof/proof.mp4
+
           echo "BR_ZERO_COST_FFMPEG=PASS"
 
-      - name: Video QC
+      - name: Deep video QC
         if: ${{ inputs.mode == 'video-qc' }}
         env:
           MEDIA_ROOT: ${{ inputs.media_root }}
         run: |
           set -euo pipefail
+
           case "${MEDIA_ROOT}" in
-            /*|*..*) echo "MEDIA_ROOT=BLOCKED_INVALID_PATH"; exit 20 ;;
+            /*|*..*)
+              echo "MEDIA_ROOT=BLOCKED_INVALID_PATH"
+              exit 20
+              ;;
           esac
-          test -d "${MEDIA_ROOT}" || {
+
+          if [ ! -d "${MEDIA_ROOT}" ]; then
             echo "VIDEO_QC=WAIT_NO_MEDIA_ROOT"
             exit 0
-          }
+          fi
+
           count=0
           while IFS= read -r -d '' file; do
+            echo "============================================================"
             echo "VIDEO_FILE=${file}"
-            ffprobe -v error               -show_entries stream=codec_name,width,height,r_frame_rate,pix_fmt               -show_entries format=duration               -of json               "${file}"
+            sha256sum "${file}"
+
+            echo "--- STRUCTURE ---"
+            ffprobe -v error               -show_entries stream=index,codec_name,codec_type,profile,width,height,r_frame_rate,avg_frame_rate,pix_fmt,sample_rate,channels               -show_entries format=duration,format_name,bit_rate               -of json               "${file}"
+
+            echo "--- BLACK DETECTION ---"
+            ffmpeg -hide_banner -nostats -i "${file}"               -vf "blackdetect=d=2:pic_th=0.98"               -an -f null - 2>&1
+
+            echo "--- FREEZE DETECTION ---"
+            ffmpeg -hide_banner -nostats -i "${file}"               -vf "freezedetect=n=-60dB:d=2"               -an -f null - 2>&1
+
+            echo "--- SILENCE DETECTION ---"
+            ffmpeg -hide_banner -nostats -i "${file}"               -vn -af "silencedetect=n=-50dB:d=2"               -f null - 2>&1
+
             count=$((count+1))
-          done < <(find "${MEDIA_ROOT}" -type f \( -iname '*.mp4' -o -iname '*.mkv' -o -iname '*.mov' \) -print0)
+          done < <(
+            find "${MEDIA_ROOT}" -type f               \( -iname '*.mp4' -o -iname '*.mkv' -o -iname '*.mov' \)               -print0
+          )
+
           echo "VIDEO_QC_FILES=${count}"
           echo "VIDEO_QC=PASS"
+          echo "OVERLAY_ABSENCE=NOT_CLAIMED_REQUIRES_VISUAL_GATE"
+          echo "OPEN_CAPTION_ABSENCE=NOT_CLAIMED_REQUIRES_VISUAL_GATE"
+
+      - name: MASTER_FINAL structural gate
+        if: ${{ inputs.mode == 'master-final-qc' }}
+        env:
+          MEDIA_ROOT: ${{ inputs.media_root }}
+        run: |
+          set -euo pipefail
+
+          case "${MEDIA_ROOT}" in
+            /*|*..*)
+              echo "MEDIA_ROOT=BLOCKED_INVALID_PATH"
+              exit 20
+              ;;
+          esac
+
+          if [ ! -d "${MEDIA_ROOT}" ]; then
+            echo "MASTER_FINAL_QC=WAIT_NO_MEDIA_ROOT"
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import subprocess
+          import sys
+
+          root = pathlib.Path(__import__("os").environ["MEDIA_ROOT"])
+          files = sorted(
+              p for p in root.rglob("*")
+              if p.is_file() and p.suffix.lower() in {".mp4", ".mov", ".mkv"}
+          )
+
+          if not files:
+              print("MASTER_FINAL_QC=WAIT_NO_MEDIA_FILES")
+              raise SystemExit(0)
+
+          def ratio(value: str) -> float:
+              a, b = value.split("/", 1)
+              return float(a) / float(b)
+
+          failures = []
+
+          for path in files:
+              data = json.loads(subprocess.check_output([
+                  "ffprobe", "-v", "error",
+                  "-show_streams", "-show_format",
+                  "-of", "json", str(path),
+              ], text=True))
+
+              streams = data.get("streams", [])
+              videos = [s for s in streams if s.get("codec_type") == "video"]
+              audios = [s for s in streams if s.get("codec_type") == "audio"]
+              subtitles = [s for s in streams if s.get("codec_type") == "subtitle"]
+
+              item = []
+
+              if len(videos) != 1:
+                  item.append(f"video_stream_count={len(videos)}")
+              else:
+                  v = videos[0]
+                  if v.get("codec_name") != "h264":
+                      item.append(f"video_codec={v.get('codec_name')}")
+                  if v.get("profile") != "High":
+                      item.append(f"profile={v.get('profile')}")
+                  if v.get("width") != 1920 or v.get("height") != 1080:
+                      item.append(f"geometry={v.get('width')}x{v.get('height')}")
+                  if v.get("pix_fmt") != "yuv420p":
+                      item.append(f"pix_fmt={v.get('pix_fmt')}")
+                  fps_text = v.get("avg_frame_rate") or v.get("r_frame_rate") or "0/1"
+                  try:
+                      fps = ratio(fps_text)
+                  except Exception:
+                      fps = 0.0
+                  if abs(fps - 30.0) > 0.001:
+                      item.append(f"fps={fps_text}")
+
+              if not audios:
+                  item.append("audio_stream=missing")
+              elif any(a.get("codec_name") != "aac" for a in audios):
+                  item.append(
+                      "audio_codec=" + ",".join(str(a.get("codec_name")) for a in audios)
+                  )
+
+              if subtitles:
+                  item.append(f"subtitle_stream_count={len(subtitles)}")
+
+              try:
+                  duration = float(data.get("format", {}).get("duration", "0"))
+              except ValueError:
+                  duration = 0.0
+
+              if duration < 1200.0:
+                  item.append(f"duration_seconds={duration:.3f}")
+
+              if item:
+                  failures.append((str(path), item))
+                  print(f"MASTER_FILE={path}")
+                  print("MASTER_FILE_QC=FAIL")
+                  for reason in item:
+                      print(f"REASON={reason}")
+              else:
+                  print(f"MASTER_FILE={path}")
+                  print("MASTER_FILE_QC=PASS")
+
+          print("STRUCTURAL_LABEL_OVERLAY=NOT_CLAIMED_REQUIRES_VISUAL_GATE")
+          print("DEBUG_OVERLAY=NOT_CLAIMED_REQUIRES_VISUAL_GATE")
+          print("SRT_BURN_IN=NOT_CLAIMED_REQUIRES_VISUAL_GATE")
+          print("OPEN_CAPTIONS=NOT_CLAIMED_REQUIRES_VISUAL_GATE")
+
+          if failures:
+              print(f"MASTER_FINAL_QC_FAILURES={len(failures)}")
+              print("MASTER_FINAL_QC=FAIL")
+              raise SystemExit(21)
+
+          print(f"MASTER_FINAL_QC_FILES={len(files)}")
+          print("MASTER_FINAL_QC=PASS")
+          PY
 
       - name: Python compile proof
         if: ${{ inputs.mode == 'python-compile' }}
