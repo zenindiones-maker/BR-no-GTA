@@ -50,6 +50,57 @@ def _quantile(values: Sequence[float], q: float) -> float:
     return ordered[lo]*(1.0-fraction)+ordered[hi]*fraction
 
 
+def calibrate_owner_window_consistency(
+    scores_by_reference: Mapping[str,Sequence[float]],
+) -> dict[str,Any]:
+    rows={}
+    for key,values in dict(scores_by_reference or {}).items():
+        finite=[
+            max(-1.0,min(1.0,float(value)))
+            for value in values
+            if math.isfinite(float(value))
+        ]
+        if finite:
+            rows[str(key)]=finite
+    if len(rows)<3:
+        raise ValueError("OWNER_WINDOW_CONSISTENCY_REQUIRES_REFERENCES")
+    reference_p10={
+        key:_quantile(values,0.10)
+        for key,values in rows.items()
+    }
+    threshold=_quantile(list(reference_p10.values()),0.10)
+    return {
+        "schema_version":"OwnerReferenceWindowConsistencyCalibration/v1",
+        "calibration_source":"OWNER_REFERENCE_WINDOW_DISTRIBUTION",
+        "reference_count":len(rows),
+        "window_count":sum(len(values) for values in rows.values()),
+        "min_similarity":round(float(threshold),6),
+        "reference_p10_median":round(float(median(reference_p10.values())),6),
+    }
+
+
+def evaluate_reference_window_consistency(
+    scores: Sequence[float],
+    calibration: Mapping[str,Any],
+) -> dict[str,Any]:
+    finite=[
+        max(-1.0,min(1.0,float(value)))
+        for value in scores
+        if math.isfinite(float(value))
+    ]
+    if not finite:
+        raise ValueError("OWNER_REFERENCE_WINDOW_SCORES_REQUIRED")
+    threshold=float(calibration["min_similarity"])
+    reference_p10=float(_quantile(finite,0.10))
+    return {
+        "passed":reference_p10>=threshold,
+        "reference_p10":round(reference_p10,6),
+        "reference_median":round(float(median(finite)),6),
+        "min_similarity":threshold,
+        "calibration_source":str(calibration.get("calibration_source") or ""),
+    }
+
+
 def calibrate_owner_identity_profile(
     embeddings: Mapping[str,Sequence[float]],
 ) -> dict[str,Any]:
