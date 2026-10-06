@@ -19,12 +19,120 @@ T3_SHA256 = "074aaf65255eb9cb960288f7cc72e09d3b5008f6e0b14868c0d4e5b0bd7cbb6c"
 S3GEN_SHA256 = "4a46190f3dccc2230fbb3488a930bccc925862ee68f2662433dfcfe93ce6c2cb"
 VE_SHA256 = "f0921cab452fa278bc25cd23ffd59d36f816d7dc5181dd1bef9751a7fb61f63c"
 ALLOWED_CFG_WEIGHTS = (0.3, 0.5, 0.7)
+MAX_GENERATION_ATTEMPTS_PER_LABEL = 2
+MAX_SEGMENT_WORDS = 55
+RETRY_SEGMENT_WORDS = 38
+INTER_SEGMENT_SILENCE_SECONDS = 0.12
+PINNED_MAX_NEW_TOKENS_PER_CALL = 1000
+TRUNCATION_CEILING_SECONDS = 37.0
 
 
 def build_ptbr_audition_text() -> str:
     from app.services.owner_voice_human_audition_pack_service import build_audition_script
 
     return build_audition_script(theme="as novidades de GTA 6")
+
+
+def split_ptbr_audition_text(text: str, *, max_words: int = MAX_SEGMENT_WORDS) -> list[str]:
+    import re
+
+    normalized=" ".join(str(text or "").split()).strip()
+    if not normalized:
+        raise ValueError("OWNER_AUDITION_TEXT_REQUIRED")
+    if int(max_words)<=0:
+        raise ValueError("OWNER_AUDITION_SEGMENT_WORD_LIMIT_INVALID")
+
+    sentences=[
+        part.strip()
+        for part in re.split(r"(?<=[.!?])\s+",normalized)
+        if part.strip()
+    ]
+    chunks=[]
+    current=[]
+    current_words=0
+    for sentence in sentences:
+        words=sentence.split()
+        while len(words)>max_words:
+            if current:
+                chunks.append(" ".join(current))
+                current=[]
+                current_words=0
+            chunks.append(" ".join(words[:max_words]))
+            words=words[max_words:]
+        if not words:
+            continue
+        if current and current_words+len(words)>max_words:
+            chunks.append(" ".join(current))
+            current=[]
+            current_words=0
+        current.extend(words)
+        current_words+=len(words)
+    if current:
+        chunks.append(" ".join(current))
+    if not chunks or " ".join(chunks)!=" ".join(normalized.split()):
+        raise RuntimeError("OWNER_AUDITION_SEGMENTATION_CHANGED_TEXT")
+    return chunks
+
+
+def _generate_segmented_candidate(
+    model,
+    *,
+    text: str,
+    audio_prompt_path: str | Path,
+    cfg_weight: float,
+    base_seed: int,
+):
+    import torch
+
+    requested_weight=round(float(cfg_weight),3)
+    last_ceiling=[]
+    for attempt in range(1,MAX_GENERATION_ATTEMPTS_PER_LABEL+1):
+        max_words=MAX_SEGMENT_WORDS if attempt==1 else RETRY_SEGMENT_WORDS
+        attempt_weight=requested_weight if attempt==1 else min(requested_weight,0.3)
+        chunks=split_ptbr_audition_text(text,max_words=max_words)
+        parts=[]
+        ceiling_hits=[]
+        for chunk_index,chunk in enumerate(chunks):
+            _seed_everything(int(base_seed)+(attempt-1)*1000+chunk_index)
+            kwargs=build_generation_kwargs(
+                audio_prompt_path=audio_prompt_path,
+                cfg_weight=attempt_weight,
+            )
+            part=model.generate(chunk,**kwargs).cpu()
+            if getattr(part,"ndim",0)!=2 or int(part.shape[-1])<=0:
+                raise RuntimeError("OWNER_PTBR_AUDITION_EMPTY_SEGMENT")
+            duration=float(part.shape[-1])/float(model.sr)
+            if duration>=TRUNCATION_CEILING_SECONDS:
+                ceiling_hits.append(chunk_index)
+            parts.append(part)
+        last_ceiling=ceiling_hits
+        if ceiling_hits and attempt<MAX_GENERATION_ATTEMPTS_PER_LABEL:
+            continue
+        if ceiling_hits:
+            raise RuntimeError(
+                "OWNER_PTBR_AUDITION_SEGMENT_TRUNCATION_LIMIT:"
+                +",".join(str(x) for x in ceiling_hits)
+            )
+        silence_frames=max(1,int(round(float(model.sr)*INTER_SEGMENT_SILENCE_SECONDS)))
+        silence=torch.zeros((1,silence_frames),dtype=parts[0].dtype)
+        joined=[]
+        for index,part in enumerate(parts):
+            if index:
+                joined.append(silence)
+            joined.append(part)
+        wav=torch.cat(joined,dim=-1)
+        return wav,{
+            "attempts":attempt,
+            "chunk_count":len(chunks),
+            "max_segment_words":max_words,
+            "cfg_weight":attempt_weight,
+            "inter_segment_silence_seconds":INTER_SEGMENT_SILENCE_SECONDS,
+            "pinned_max_new_tokens_per_call":PINNED_MAX_NEW_TOKENS_PER_CALL,
+        }
+    raise RuntimeError(
+        "OWNER_PTBR_AUDITION_SEGMENT_TRUNCATION_LIMIT:"
+        +",".join(str(x) for x in last_ceiling)
+    )
 
 
 def build_generation_kwargs(
@@ -334,12 +442,13 @@ def main() -> int:
     outputs: list[dict[str, Any]] = []
     labels=("A","B","C")
     for label, request in zip(labels,requests):
-        _seed_everything(int(request["seed"]))
-        kwargs = build_generation_kwargs(
+        wav,segmentation = _generate_segmented_candidate(
+            model,
+            text=text,
             audio_prompt_path=request["audio_prompt_path"],
             cfg_weight=float(request["cfg_weight"]),
+            base_seed=int(request["seed"]),
         )
-        wav = model.generate(text, **kwargs)
         output = output_dir / f"{label}.wav"
         ta.save(str(output), wav.cpu(), model.sr)
         if not output.is_file() or output.stat().st_size <= 0:
@@ -354,15 +463,19 @@ def main() -> int:
             "model_revision":MODEL_REVISION,
             "reference_sha256":selected_sha,
             "generation_parameters":{
-                "cfg_weight":float(request["cfg_weight"]),
+                "cfg_weight":float(segmentation["cfg_weight"]),
+                "requested_cfg_weight":float(request["cfg_weight"]),
                 "seed":int(request["seed"]),
                 "exaggeration":0.5,
                 "temperature":0.8,
                 "repetition_penalty":1.2,
                 "min_p":0.05,
                 "top_p":1.0,
+                "segmentation":segmentation,
             },
         })
+        print(f"CANDIDATE_{label}_GENERATION_ATTEMPTS={segmentation['attempts']}")
+        print(f"CANDIDATE_{label}_GENERATION_SEGMENTS={segmentation['chunk_count']}")
 
     manifest_path=commit_audition_handoff(
         workspace=output_dir,
@@ -394,6 +507,9 @@ def main() -> int:
     print("PROVIDER_PRESET_VOICE_USED=0")
     print("GENERIC_VOICE_FALLBACK=0")
     print(f"OWNER_PTBR_AUDITION_VARIANTS={len(outputs)}")
+    print(f"MAX_GENERATION_ATTEMPTS_PER_LABEL={MAX_GENERATION_ATTEMPTS_PER_LABEL}")
+    print(f"CHATTERBOX_PINNED_MAX_NEW_TOKENS_PER_CALL={PINNED_MAX_NEW_TOKENS_PER_CALL}")
+    print("OWNER_PTBR_LONG_TEXT_SEGMENTATION=PASS")
     print("OWNER_PTBR_AUDITION_GENERATION=PASS")
     return 0
 
