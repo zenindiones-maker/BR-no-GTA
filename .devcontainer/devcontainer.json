@@ -1,5 +1,5 @@
 {
-  "name": "BR-no-GTA Zero-Cost Media Workstation",
+  "name": "BR-no-GTA Professional Zero-Cost Workstation",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
   "hostRequirements": {
     "cpus": 2,
@@ -12,17 +12,23 @@
     }
   },
   "containerEnv": {
-    "BR_NO_GTA_ZERO_COST": "1"
+    "BR_NO_GTA_ZERO_COST": "1",
+    "BR_REMOTE_TRANSPORT": "XPRA_HTML5"
   },
-  "forwardPorts": [6081],
+  "forwardPorts": [14501, 6081],
   "portsAttributes": {
+    "14501": {
+      "label": "BR-no-GTA Professional Desktop",
+      "onAutoForward": "silent",
+      "protocol": "http"
+    },
     "6081": {
-      "label": "BR-no-GTA Desktop",
+      "label": "BR-no-GTA noVNC Fallback",
       "onAutoForward": "silent",
       "protocol": "http"
     }
   },
-  "postCreateCommand": "bash scripts/codespaces/br-bootstrap-zero-cost.sh",
-  "postStartCommand": "bash scripts/codespaces/br-start-desktop.sh",
+  "postCreateCommand": "bash scripts/codespaces/br-bootstrap-zero-cost.sh && bash scripts/codespaces/br-upgrade-professional-v2.sh",
+  "postStartCommand": "bash scripts/codespaces/br-start-professional-desktop.sh || { echo 'XPRA_START=FAIL_FALLBACK_NOVNC'; bash scripts/codespaces/br-start-desktop.sh; }",
   "remoteUser": "vscode"
 }
