@@ -17,8 +17,10 @@ from app.services.owner_voice_speaker_identity_service import (
     SPEAKER_MODEL_ID,
     SPEAKER_MODEL_REVISION,
     calibrate_owner_identity_profile,
+    calibrate_owner_window_consistency,
     cosine_similarity,
     evaluate_clone_identity_gate,
+    evaluate_reference_window_consistency,
     sanitized_profile,
     select_canonical_reference,
 )
@@ -107,7 +109,7 @@ def _embedding(classifier,path:Path)->list[float]:
     return [float(x) for x in emb.tolist()]
 
 
-def _window_identity_consistency(classifier,path:Path,full_embedding:list[float],floor:float)->bool:
+def _window_identity_scores(classifier,path:Path,full_embedding:list[float])->list[float]:
     import torchaudio
     signal,sr=torchaudio.load(str(path))
     if signal.shape[0]!=1:
@@ -115,14 +117,14 @@ def _window_identity_consistency(classifier,path:Path,full_embedding:list[float]
     total=int(signal.shape[-1])
     window=min(total,4*sr)
     if window<2*sr:
-        return False
+        return []
     starts=[0,max(0,(total-window)//2),max(0,total-window)]
     scores=[]
     for start in sorted(set(starts)):
         piece=signal[:,start:start+window]
         emb=classifier.encode_batch(piece,normalize=True).detach().cpu().reshape(-1).tolist()
         scores.append(cosine_similarity(full_embedding,emb))
-    return bool(scores) and min(scores)>=floor
+    return scores
 
 
 def _load_stt(cache_root:Path):
@@ -202,10 +204,16 @@ def main()->int:
 
     profile=calibrate_owner_identity_profile(embeddings)
     centroid_floor=float(profile["clone_centroid_min_similarity"])
+    inlier_ids=set(str(x) for x in profile["inlier_ids"])
+    window_scores_by_id={
+        rid:_window_identity_scores(classifier,normalized[rid],embeddings[rid])
+        for rid in sorted(inlier_ids)
+    }
+    window_calibration=calibrate_owner_window_consistency(window_scores_by_id)
     candidate_rows=[]
     for row in refs:
         rid=str(int(row["telegram_input_id"]))
-        if rid not in set(profile["inlier_ids"]):
+        if rid not in inlier_ids:
             continue
         m=metrics[rid]
         amplitude_speech_ratio=float(m.get("speech_ratio") or 0.0)
@@ -213,10 +221,11 @@ def main()->int:
             float(m.get("snr_db") or 0.0)>=15.0
             and float(m.get("clipping_ratio") or 0.0)<=0.01
         )
-        consistent=_window_identity_consistency(
-            classifier,normalized[rid],embeddings[rid],
-            float(profile["clone_reference_min_similarity"]),
+        window_eval=evaluate_reference_window_consistency(
+            window_scores_by_id[rid],
+            window_calibration,
         )
+        consistent=bool(window_eval["passed"])
         candidate_rows.append({
             "reference_id":rid,
             "telegram_input_id":int(row["telegram_input_id"]),
@@ -227,13 +236,14 @@ def main()->int:
             "amplitude_speech_ratio":amplitude_speech_ratio,
             "speech_ratio":0.0,
             "single_speaker":consistent,
+            "window_identity_p10":float(window_eval["reference_p10"]),
+            "window_identity_threshold":float(window_eval["min_similarity"]),
             "clear_speech":clear,
             "no_overlap":consistent,
             "no_music":consistent,
             "ptbr_probability":0.0,
         })
 
-    inlier_ids=set(str(x) for x in profile["inlier_ids"])
     pre_asr=[
         row for row in candidate_rows
         if str(row["reference_id"]) in inlier_ids
@@ -253,6 +263,9 @@ def main()->int:
         str(row["sha256"]),
     ))
     print(f"OWNER_CANONICAL_INLIER_COUNT={len(inlier_ids)}")
+    print(f"OWNER_WINDOW_CONSISTENCY_REFERENCE_COUNT={window_calibration['reference_count']}")
+    print(f"OWNER_WINDOW_CONSISTENCY_MIN_SIMILARITY={window_calibration['min_similarity']}")
+    print("OWNER_WINDOW_CONSISTENCY_CALIBRATION=OWNER_REFERENCE_WINDOW_DISTRIBUTION")
     print(f"OWNER_CANONICAL_SINGLE_SPEAKER_COUNT={sum(1 for row in candidate_rows if row['single_speaker'] is True)}")
     print(f"OWNER_CANONICAL_CLEAR_SPEECH_COUNT={sum(1 for row in candidate_rows if row['clear_speech'] is True)}")
     print(f"OWNER_CANONICAL_PRE_ASR_ELIGIBLE_COUNT={len(pre_asr)}")
@@ -288,6 +301,7 @@ def main()->int:
         raise RuntimeError("CANONICAL_REFERENCE_DIGEST_MISSING")
 
     sanitized=sanitized_profile(profile)
+    sanitized["window_consistency_calibration"]=dict(window_calibration)
     sanitized.update({
         "canonical_reference_telegram_input_id":int(canonical["telegram_input_id"]),
         "canonical_reference_sha256":str(canonical["sha256"]),
