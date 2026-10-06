@@ -34,6 +34,8 @@ jobs:
           bash -n scripts/codespaces/br-media-smoke.sh
           bash -n scripts/codespaces/br-runtime-proof.sh
           bash -n scripts/codespaces/test-install-xpra-fast-path.sh
+          bash -n scripts/codespaces/test-ensure-apt-packages-fast-path.sh
+          bash -n scripts/codespaces/ensure-apt-packages.sh
           python -m json.tool .devcontainer/devcontainer.json >/dev/null
 
       - name: Prove Xpra reuse avoids apt and network
@@ -41,6 +43,13 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/codespaces/test-install-xpra-fast-path.sh
+
+      - name: Prove package reuse avoids apt and network
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          bash scripts/codespaces/test-ensure-apt-packages-fast-path.sh
+          grep -q 'ensure-apt-packages.sh' scripts/codespaces/br-upgrade-professional-v2.sh
 
       - name: Validate workstation role and zero-cost lifecycle
         working-directory: repo
