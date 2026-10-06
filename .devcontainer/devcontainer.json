@@ -1,5 +1,5 @@
 {
-  "name": "BR-no-GTA Professional Zero-Cost Workstation",
+  "name": "BR-no-GTA Professional Zero-Cost Workstation V3",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
   "hostRequirements": {
     "cpus": 2,
@@ -8,12 +8,21 @@
   },
   "features": {
     "ghcr.io/devcontainers/features/sshd:1": {
-      "version": "latest"
+      "version": "1"
     }
   },
   "containerEnv": {
     "BR_NO_GTA_ZERO_COST": "1",
-    "BR_REMOTE_TRANSPORT": "XPRA_HTML5"
+    "BR_REMOTE_TRANSPORT": "XPRA_HTML5",
+    "MAKEFLAGS": "-j2",
+    "CMAKE_BUILD_PARALLEL_LEVEL": "2",
+    "CARGO_BUILD_JOBS": "2",
+    "OMP_NUM_THREADS": "2",
+    "OPENBLAS_NUM_THREADS": "2",
+    "MKL_NUM_THREADS": "2",
+    "NUMEXPR_MAX_THREADS": "2",
+    "RAYON_NUM_THREADS": "2",
+    "PIP_DISABLE_PIP_VERSION_CHECK": "1"
   },
   "forwardPorts": [14501, 6081],
   "portsAttributes": {
@@ -26,6 +35,24 @@
       "label": "BR-no-GTA noVNC Fallback",
       "onAutoForward": "silent",
       "protocol": "http"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "files.watcherExclude": {
+          "**/.git/objects/**": true,
+          "**/.git/subtree-cache/**": true,
+          "**/.venv/**": true,
+          "**/node_modules/**": true,
+          "**/__pycache__/**": true
+        },
+        "search.exclude": {
+          "**/.venv/**": true,
+          "**/node_modules/**": true,
+          "**/__pycache__/**": true
+        }
+      }
     }
   },
   "postCreateCommand": "bash scripts/codespaces/br-bootstrap-zero-cost.sh && bash scripts/codespaces/br-upgrade-professional-v2.sh",
