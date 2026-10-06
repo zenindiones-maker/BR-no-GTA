@@ -60,3 +60,10 @@ def test_single_clone_workflow_uses_qwen_runtime_not_chatterbox():
     assert "integrations/qwen3-tts/constraints.txt" in text
     assert "chatterbox.git" not in text
     assert "integrations/chatterbox-ptbr/constraints.txt" not in text
+
+
+def test_single_clone_audio_decode_does_not_depend_on_torchcodec():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert "soundfile as sf" in source
+    assert "torchaudio.load" not in source
+    assert "load_with_torchcodec" not in source

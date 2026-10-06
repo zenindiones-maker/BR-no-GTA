@@ -96,22 +96,29 @@ def _load_speaker_model(cache_root: Path):
     return classifier
 
 
-def _embedding(classifier,path:Path)->list[float]:
-    import torchaudio
-    signal,sr=torchaudio.load(str(path))
-    if sr!=16000:
+def _load_pcm16_tensor(path:Path):
+    import soundfile as sf
+    import torch
+
+    audio,sr=sf.read(str(path),dtype="float32",always_2d=True)
+    if int(sr)!=16000:
         raise RuntimeError("SPEAKER_REFERENCE_RATE_INVALID")
+    if audio.size==0:
+        raise RuntimeError("SPEAKER_REFERENCE_AUDIO_EMPTY")
+    signal=torch.from_numpy(audio.T.copy())
     if signal.ndim!=2 or signal.shape[0]!=1:
         signal=signal.mean(dim=0,keepdim=True)
+    return signal,int(sr)
+
+
+def _embedding(classifier,path:Path)->list[float]:
+    signal,_sr=_load_pcm16_tensor(path)
     emb=classifier.encode_batch(signal,normalize=True).detach().cpu().reshape(-1)
     return [float(x) for x in emb.tolist()]
 
 
 def _window_identity_scores(classifier,path:Path,full_embedding:list[float])->list[float]:
-    import torchaudio
-    signal,sr=torchaudio.load(str(path))
-    if signal.shape[0]!=1:
-        signal=signal.mean(dim=0,keepdim=True)
+    signal,sr=_load_pcm16_tensor(path)
     total=int(signal.shape[-1])
     window=min(total,4*sr)
     if window<2*sr:
