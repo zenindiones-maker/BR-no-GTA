@@ -1,0 +1,7 @@
+# BR_OWNER_V1 Qwen3-TTS single-clone runtime
+qwen-tts==0.1.1
+transformers==4.57.3
+accelerate==1.12.0
+faster-whisper==1.2.0
+av==18.0.0
+speechbrain==1.1.1

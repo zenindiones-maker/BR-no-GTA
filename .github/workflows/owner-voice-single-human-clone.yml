@@ -82,7 +82,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
-          cache-dependency-path: integrations/chatterbox-ptbr/constraints.txt
+          cache-dependency-path: integrations/qwen3-tts/constraints.txt
 
       - name: Preflight required secrets
         env:
@@ -116,7 +116,7 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ~/.cache/br-owner-voice/hf-public
-          key: br-owner-single-clone-${{ runner.os }}-${{ runner.arch }}-py312-fw1.2.0-av18-sb1.1.1-ecapa-d82a13ef4f90e62dc5e152e312a6891247f23fb8-cb-5de7a54aa4e5e2baadb0182dde554908b48b85c2-ptbr-b3952f18bc2eaa72b9bd7c17d2c4653bcad4770d-${{ hashFiles('integrations/chatterbox-ptbr/constraints.txt') }}
+          key: br-owner-single-clone-${{ runner.os }}-${{ runner.arch }}-py312-fw1.2.0-av18-sb1.1.1-ecapa-d82a13ef4f90e62dc5e152e312a6891247f23fb8-qwen3tts-1.7b-fd4b254389122332181a7c3db7f27e918eec64e3-${{ hashFiles('integrations/qwen3-tts/constraints.txt') }}
 
       - name: Install pinned audio identity runtime
         run: |
@@ -124,22 +124,20 @@ jobs:
           if ! command -v ffmpeg >/dev/null 2>&1; then sudo apt-get install -y -qq ffmpeg; fi
           python -m venv /tmp/br-owner-single-clone-venv
           PY=/tmp/br-owner-single-clone-venv/bin/python
-          CONSTRAINTS=integrations/chatterbox-ptbr/constraints.txt
+          CONSTRAINTS=integrations/qwen3-tts/constraints.txt
           "$PY" -m pip install --disable-pip-version-check --prefer-binary --progress-bar off \
             --constraint "$CONSTRAINTS" \
-            numpy librosa s3tokenizer torch torchaudio transformers diffusers conformer safetensors \
-            spacy-pkuseg pykakasi gradio pyloudnorm omegaconf requests huggingface_hub \
-            "faster-whisper==1.2.0" "av==18.0.0" "speechbrain==1.1.1" soundfile
-          "$PY" -m pip install --disable-pip-version-check -q \
-            "resemble-perth @ git+https://github.com/resemble-ai/Perth.git@ff1c8ac55a976971245cdd53c18d6131ca00d993"
-          "$PY" -m pip install --disable-pip-version-check -q --no-deps \
-            "git+https://github.com/resemble-ai/chatterbox.git@5de7a54aa4e5e2baadb0182dde554908b48b85c2"
+            "qwen-tts==0.1.1" \
+            "faster-whisper==1.2.0" "av==18.0.0" "speechbrain==1.1.1" \
+            soundfile requests huggingface_hub
           "$PY" -m pip check
           "$PY" - <<'PY'
           from importlib.metadata import version
+          assert version("qwen-tts")=="0.1.1"
           assert version("speechbrain")=="1.1.1"
           assert version("faster-whisper")=="1.2.0"
           assert version("av")=="18.0.0"
+          print("QWEN3_TTS_RUNTIME=PINNED")
           print("SPEAKER_VERIFIER_RUNTIME=PINNED")
           PY
 

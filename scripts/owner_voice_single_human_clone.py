@@ -25,14 +25,12 @@ from app.services.owner_voice_speaker_identity_service import (
     select_canonical_reference,
 )
 from app.services.owner_voice_telegram_handoff_service import parse_reference_envelope_b64
-from scripts.owner_voice_chatterbox_ptbr_audition import (
-    MODEL_ID,
-    MODEL_REVISION,
-    download_ptbr_model_assets,
-    load_ptbr_chatterbox_model,
-)
-
 VOICE_IDENTITY_ID="BR_OWNER_V1"
+QWEN_MODEL_ID="Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+QWEN_MODEL_REVISION="fd4b254389122332181a7c3db7f27e918eec64e3"
+QWEN_MODEL_SHA256="38fc7fc51c5e776e840414b6fd443962e9411b9654888fd7913e4da643cb857c"
+QWEN_SPEECH_TOKENIZER_SHA256="836b7b357f5ea43e889936a3709af68dfe3751881acefe4ecf0dbd30ba571258"
+QWEN_TTS_VERSION="0.1.1"
 REFERENCE_SOURCE="TELEGRAM_HUMAN_OWNER"
 IDENTITY_PROFILE_SCHEMA="OwnerSpeakerIdentityProfile/v1"
 PINNED_SPEAKER_MODEL_ID="speechbrain/spkrec-ecapa-voxceleb"
@@ -137,9 +135,9 @@ def _load_stt(cache_root:Path):
     return WhisperModel(str(path),device="cpu",compute_type="int8",cpu_threads=4,num_workers=1,local_files_only=True)
 
 
-def _reference_asr_metrics(stt,path:Path,duration_seconds:float)->tuple[float,float,str]:
+def _reference_asr_metrics(stt,path:Path,duration_seconds:float,*,beam_size:int=1)->tuple[float,float,str,str]:
     segments_iter,info=stt.transcribe(
-        str(path),language=None,beam_size=1,vad_filter=True,
+        str(path),language=None,beam_size=int(beam_size),vad_filter=True,
         word_timestamps=False,condition_on_previous_text=False,
     )
     segments=list(segments_iter)
@@ -147,7 +145,32 @@ def _reference_asr_metrics(stt,path:Path,duration_seconds:float)->tuple[float,fl
     probability=float(getattr(info,"language_probability",0.0) or 0.0)
     ptbr_probability=probability if language in {"pt","pt-br"} else 0.0
     vad_speech_ratio=_vad_ratio(segments,float(duration_seconds))
-    return ptbr_probability,vad_speech_ratio,language
+    transcript=" ".join(
+        str(getattr(segment,"text","") or "").strip()
+        for segment in segments
+        if str(getattr(segment,"text","") or "").strip()
+    ).strip()
+    return ptbr_probability,vad_speech_ratio,language,transcript
+
+
+def _prepare_qwen_model(cache_root:Path)->Path:
+    from huggingface_hub import snapshot_download
+
+    snapshot=Path(snapshot_download(
+        repo_id=QWEN_MODEL_ID,
+        revision=QWEN_MODEL_REVISION,
+        cache_dir=str(cache_root/"huggingface"),
+    )).resolve()
+    model_weights=snapshot/"model.safetensors"
+    speech_tokenizer_weights=snapshot/"speech_tokenizer"/"model.safetensors"
+    if not model_weights.is_file() or _sha256(model_weights)!=QWEN_MODEL_SHA256:
+        raise RuntimeError("QWEN3_TTS_MODEL_SHA256_MISMATCH")
+    if (
+        not speech_tokenizer_weights.is_file()
+        or _sha256(speech_tokenizer_weights)!=QWEN_SPEECH_TOKENIZER_SHA256
+    ):
+        raise RuntimeError("QWEN3_TTS_SPEECH_TOKENIZER_SHA256_MISMATCH")
+    return snapshot
 
 
 def _vad_ratio(segments,duration:float)->float:
@@ -275,21 +298,44 @@ def main()->int:
     stt=_load_stt(cache_root)
     asr_count=0
     evaluated=[]
+    canonical=None
+    canonical_ref_text=""
     for row in pre_asr:
-        ptbr_probability,vad_speech_ratio,language=_reference_asr_metrics(
+        ptbr_probability,vad_speech_ratio,language,transcript=_reference_asr_metrics(
             stt,
             normalized[str(row["reference_id"])],
             float(row["duration_seconds"]),
+            beam_size=1,
         )
         row["ptbr_probability"]=ptbr_probability
         row["speech_ratio"]=vad_speech_ratio
         row["detected_language"]=language
         evaluated.append(row)
         asr_count+=1
+        if (
+            float(ptbr_probability)>=0.90
+            and float(vad_speech_ratio)>=0.55
+            and transcript
+        ):
+            strong_ptbr,strong_vad,strong_language,strong_text=_reference_asr_metrics(
+                stt,
+                normalized[str(row["reference_id"])],
+                float(row["duration_seconds"]),
+                beam_size=5,
+            )
+            asr_count+=1
+            row["ptbr_probability"]=strong_ptbr
+            row["speech_ratio"]=strong_vad
+            row["detected_language"]=strong_language
+            if float(strong_ptbr)>=0.90 and float(strong_vad)>=0.55 and strong_text:
+                canonical=select_canonical_reference([row],profile)
+                canonical_ref_text=strong_text
+                break
     print(f"OWNER_CANONICAL_REFERENCE_ASR_COUNT={asr_count}")
     print(f"OWNER_CANONICAL_PTBR_COUNT={sum(1 for row in evaluated if float(row['ptbr_probability'])>=0.90)}")
     print(f"OWNER_CANONICAL_VAD_SPEECH_COUNT={sum(1 for row in evaluated if float(row['speech_ratio'])>=0.55)}")
-    canonical=select_canonical_reference(evaluated,profile)
+    if canonical is None or not canonical_ref_text:
+        raise RuntimeError("NO_CANONICAL_OWNER_REFERENCE_WITH_VERIFIED_TRANSCRIPT")
     cid=str(canonical["reference_id"])
     canonical16=normalized[cid]
     canonical_embedding=embeddings[cid]
@@ -318,22 +364,38 @@ def main()->int:
     np.save(workspace/"canonical-speaker-embedding.npy",np.asarray(canonical_embedding,dtype="float32"))
 
     import torch
-    import torchaudio
+    import soundfile as sf
+    from qwen_tts import Qwen3TTSModel
+
     torch.set_num_threads(4)
-    assets,_=download_ptbr_model_assets(cache_root/"chatterbox")
-    model=load_ptbr_chatterbox_model(assets,device="cuda" if torch.cuda.is_available() else "cpu")
-    model.prepare_conditionals(str(canonical24),exaggeration=0.7)
-    if model.conds is None:
-        raise RuntimeError("OWNER_PREPARED_CONDITIONALS_REQUIRED")
+    qwen_snapshot=_prepare_qwen_model(cache_root/"qwen3-tts")
+    model=Qwen3TTSModel.from_pretrained(
+        str(qwen_snapshot),
+        device_map="cpu",
+        dtype=torch.float32,
+        attn_implementation="sdpa",
+    )
+    prompt=model.create_voice_clone_prompt(
+        ref_audio=str(canonical24),
+        ref_text=canonical_ref_text,
+        x_vector_only_mode=False,
+    )
+    if not prompt:
+        raise RuntimeError("QWEN3_TTS_OWNER_PROMPT_REQUIRED")
     generation_t0=time.monotonic()
-    wav=model.generate(
-        SHORT_TEXT,language_id="pt",audio_prompt_path=None,
-        exaggeration=0.7,cfg_weight=0.4,temperature=0.8,
-        repetition_penalty=1.2,min_p=0.05,top_p=1.0,
-    ).cpu()
+    wavs,sample_rate=model.generate_voice_clone(
+        text=SHORT_TEXT,
+        language="Portuguese",
+        voice_clone_prompt=prompt,
+        non_streaming_mode=True,
+    )
     generation_seconds=time.monotonic()-generation_t0
+    if len(wavs)!=1 or int(sample_rate)<=0:
+        raise RuntimeError("QWEN3_TTS_SINGLE_CLONE_OUTPUT_INVALID")
     clone_path=workspace/"CLONE.wav"
-    torchaudio.save(str(clone_path),wav,model.sr)
+    sf.write(str(clone_path),wavs[0],int(sample_rate),subtype="PCM_16")
+    if not clone_path.is_file() or clone_path.stat().st_size<=0:
+        raise RuntimeError("QWEN3_TTS_SINGLE_CLONE_EMPTY")
     clone_sha=_sha256(clone_path)
 
     clone16=_ffmpeg(clone_path,workspace/"clone-16k.wav",16000)
@@ -345,7 +407,7 @@ def main()->int:
     print(f"OWNER_CLONE_SIMILARITY_TO_REFERENCE={identity['similarity_to_reference']}")
     if identity["passed"] is not True:
         print("CLONE_IDENTITY_GATE=FAIL")
-        print("CHATTERBOX_IDENTITY_MATCH=FAIL")
+        print("QWEN3_TTS_IDENTITY_MATCH=FAIL")
         raise RuntimeError("OWNER_CLONE_IDENTITY_MISMATCH")
     print("CLONE_IDENTITY_GATE=PASS")
 
@@ -396,9 +458,16 @@ def main()->int:
         "clone_reference_threshold":identity["reference_min_similarity"],
         "text":SHORT_TEXT,
         "generation":{
-            "model_id":MODEL_ID,"model_revision":MODEL_REVISION,
-            "exaggeration":0.7,"cfg_weight":0.4,"language_id":"pt",
-            "audio_prompt_path":None,"generate_call_count":1,
+            "engine":"QWEN3_TTS",
+            "model_id":QWEN_MODEL_ID,
+            "model_revision":QWEN_MODEL_REVISION,
+            "qwen_tts_version":QWEN_TTS_VERSION,
+            "language":"Portuguese",
+            "clone_mode":"TRANSCRIPT_CONDITIONED_ICL",
+            "x_vector_only_mode":False,
+            "ref_audio_source":"TELEGRAM_HUMAN_OWNER",
+            "ref_text_private_only":True,
+            "generate_call_count":1,
         },
     }
     manifest_path=workspace/"single-clone-manifest.json"
@@ -420,8 +489,13 @@ def main()->int:
     print("CONDITIONALS_VOICE_IDENTITY=BR_OWNER_V1")
     print("CONDITIONALS_REFERENCE_SOURCE=TELEGRAM_HUMAN_OWNER")
     print("ONE_CANDIDATE_ONLY=TRUE")
-    print("CHATTERBOX_GENERATE_CALL_TARGET=1")
-    print("CHATTERBOX_GENERATE_CALL_COUNT=1")
+    print("QWEN3_TTS_MODEL="+QWEN_MODEL_ID)
+    print("QWEN3_TTS_MODEL_REVISION="+QWEN_MODEL_REVISION)
+    print("QWEN3_TTS_CLONE_MODE=TRANSCRIPT_CONDITIONED_ICL")
+    print("QWEN3_TTS_X_VECTOR_ONLY_MODE=FALSE")
+    print("QWEN3_TTS_GENERATE_CALL_TARGET=1")
+    print("QWEN3_TTS_GENERATE_CALL_COUNT=1")
+    print("QWEN3_TTS_IDENTITY_MATCH=PASS")
     print(f"CANDIDATE_GENERATION_SECONDS={generation_seconds:.6f}")
     return 0
 

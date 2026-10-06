@@ -21,11 +21,16 @@ def test_single_clone_runtime_has_real_identity_profile_and_no_placeholder_simil
     assert "OwnerSpeakerIdentityProfile/v1" in source
     assert "speechbrain/spkrec-ecapa-voxceleb" in source
     assert "PENDING_INDEPENDENT_VERIFIER" not in source
-    assert "prepare_conditionals" in source
-    assert "audio_prompt_path=None" in source
-    assert "exaggeration=0.7" in source
-    assert "cfg_weight=0.4" in source
+    assert "Qwen/Qwen3-TTS-12Hz-1.7B-Base" in source
+    assert "fd4b254389122332181a7c3db7f27e918eec64e3" in source
+    assert "create_voice_clone_prompt" in source
+    assert "generate_voice_clone" in source
+    assert "x_vector_only_mode=False" in source
+    assert 'language="Portuguese"' in source
+    assert "TRANSCRIPT_CONDITIONED_ICL" in source
     assert "CLONE_IDENTITY_GATE=PASS" in source
+    assert "QWEN3_TTS_IDENTITY_MATCH=PASS" in source
+    assert "Chatterbox" not in source
 
 
 def test_single_clone_delivery_sends_reference_clone_and_control_only():
@@ -47,3 +52,11 @@ def test_canonical_reference_uses_vad_occupancy_not_pcm_amplitude_proxy():
     assert "OWNER_CANONICAL_PRE_ASR_ELIGIBLE_COUNT=" in source
     assert "OWNER_CANONICAL_REFERENCE_ASR_COUNT=" in source
     assert "ranked[:12]" not in source
+
+
+def test_single_clone_workflow_uses_qwen_runtime_not_chatterbox():
+    text=WORKFLOW.read_text(encoding="utf-8")
+    assert "qwen-tts==0.1.1" in text
+    assert "integrations/qwen3-tts/constraints.txt" in text
+    assert "chatterbox.git" not in text
+    assert "integrations/chatterbox-ptbr/constraints.txt" not in text
