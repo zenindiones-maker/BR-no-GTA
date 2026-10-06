@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.owner_voice_reference_qa import build_reference_candidate, build_reference_qa_context
+from scripts.owner_voice_reference_qa import (
+    _audition_workspace,
+    build_reference_candidate,
+    build_reference_qa_context,
+)
 
 
 def _materialized(input_id: int) -> dict:
@@ -90,3 +94,11 @@ def test_quality_context_selects_best_not_latest_and_keeps_transcript_private():
     assert context["latest_input_wins"] is False
     assert "transcript" not in context
     assert context["private_transcript_available"] is True
+
+
+def test_audition_workspace_uses_explicit_environment_without_nameerror(monkeypatch, tmp_path):
+    expected=tmp_path/"explicit-audition-workspace"
+    monkeypatch.setenv("BR_OWNER_AUDITION_WORKSPACE",str(expected))
+    resolved=_audition_workspace(tmp_path/"runner-temp")
+    assert resolved==expected.resolve()
+    assert resolved.is_dir()
