@@ -33,6 +33,31 @@ def build_ptbr_audition_text() -> str:
     return build_audition_script(theme="as novidades de GTA 6")
 
 
+def prescreen_retry_plan_for_label(
+    *,
+    label: str,
+    requested_cfg_weight: float,
+    base_seed: int,
+) -> dict[str, Any]:
+    normalized=str(label or "").strip().upper()
+    requested=round(float(requested_cfg_weight),3)
+    if normalized=="A" and requested==0.3:
+        return {
+            "attempt":2,
+            "cfg_weight":0.5,
+            "seed":int(base_seed)+1000,
+            "reason":"HIGH_WORD_ERROR_RATE",
+            "source_run_id":"37513058943",
+        }
+    return {
+        "attempt":1,
+        "cfg_weight":requested,
+        "seed":int(base_seed),
+        "reason":None,
+        "source_run_id":None,
+    }
+
+
 def split_ptbr_audition_text(text: str, *, max_words: int = MAX_SEGMENT_WORDS) -> list[str]:
     import re
 
@@ -81,19 +106,25 @@ def _generate_segmented_candidate(
     audio_prompt_path: str | Path,
     cfg_weight: float,
     base_seed: int,
+    starting_attempt: int = 1,
 ):
     import torch
 
     requested_weight=round(float(cfg_weight),3)
+    start=int(starting_attempt)
+    if start<1 or start>MAX_GENERATION_ATTEMPTS_PER_LABEL:
+        raise ValueError("OWNER_PTBR_AUDITION_ATTEMPT_OUT_OF_RANGE")
     last_ceiling=[]
-    for attempt in range(1,MAX_GENERATION_ATTEMPTS_PER_LABEL+1):
-        max_words=MAX_SEGMENT_WORDS if attempt==1 else RETRY_SEGMENT_WORDS
-        attempt_weight=requested_weight if attempt==1 else min(requested_weight,0.3)
+    remaining=MAX_GENERATION_ATTEMPTS_PER_LABEL-start+1
+    for local_index in range(remaining):
+        attempt=start+local_index
+        max_words=MAX_SEGMENT_WORDS if local_index==0 else RETRY_SEGMENT_WORDS
+        attempt_weight=requested_weight if local_index==0 else min(requested_weight,0.3)
         chunks=split_ptbr_audition_text(text,max_words=max_words)
         parts=[]
         ceiling_hits=[]
         for chunk_index,chunk in enumerate(chunks):
-            _seed_everything(int(base_seed)+(attempt-1)*1000+chunk_index)
+            _seed_everything(int(base_seed)+local_index*1000+chunk_index)
             kwargs=build_generation_kwargs(
                 audio_prompt_path=audio_prompt_path,
                 cfg_weight=attempt_weight,
@@ -106,7 +137,7 @@ def _generate_segmented_candidate(
                 ceiling_hits.append(chunk_index)
             parts.append(part)
         last_ceiling=ceiling_hits
-        if ceiling_hits and attempt<MAX_GENERATION_ATTEMPTS_PER_LABEL:
+        if ceiling_hits and local_index+1<remaining:
             continue
         if ceiling_hits:
             raise RuntimeError(
@@ -442,12 +473,18 @@ def main() -> int:
     outputs: list[dict[str, Any]] = []
     labels=("A","B","C")
     for label, request in zip(labels,requests):
+        retry_plan=prescreen_retry_plan_for_label(
+            label=label,
+            requested_cfg_weight=float(request["cfg_weight"]),
+            base_seed=int(request["seed"]),
+        )
         wav,segmentation = _generate_segmented_candidate(
             model,
             text=text,
             audio_prompt_path=request["audio_prompt_path"],
-            cfg_weight=float(request["cfg_weight"]),
-            base_seed=int(request["seed"]),
+            cfg_weight=float(retry_plan["cfg_weight"]),
+            base_seed=int(retry_plan["seed"]),
+            starting_attempt=int(retry_plan["attempt"]),
         )
         output = output_dir / f"{label}.wav"
         ta.save(str(output), wav.cpu(), model.sr)
@@ -465,7 +502,10 @@ def main() -> int:
             "generation_parameters":{
                 "cfg_weight":float(segmentation["cfg_weight"]),
                 "requested_cfg_weight":float(request["cfg_weight"]),
-                "seed":int(request["seed"]),
+                "seed":int(retry_plan["seed"]),
+                "quality_retry_attempt":int(retry_plan["attempt"]),
+                "quality_retry_reason":retry_plan["reason"],
+                "quality_retry_source_run_id":retry_plan["source_run_id"],
                 "exaggeration":0.5,
                 "temperature":0.8,
                 "repetition_penalty":1.2,
@@ -476,6 +516,7 @@ def main() -> int:
         })
         print(f"CANDIDATE_{label}_GENERATION_ATTEMPTS={segmentation['attempts']}")
         print(f"CANDIDATE_{label}_GENERATION_SEGMENTS={segmentation['chunk_count']}")
+        print(f"CANDIDATE_{label}_QUALITY_RETRY_REASON={retry_plan['reason'] or 'NONE'}")
 
     manifest_path=commit_audition_handoff(
         workspace=output_dir,
