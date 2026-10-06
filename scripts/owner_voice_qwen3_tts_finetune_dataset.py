@@ -48,11 +48,14 @@ def main()->int:
 
     verifier=_load_speaker_model(cache)
     normalized={}
+    original_sources={}
     embeddings={}
     metrics={}
     for row in refs:
         rid=str(int(row["telegram_input_id"]))
-        wav=_ffmpeg(Path(row["runtime_path"]),root/"identity-16k"/f"{rid}.wav",16000)
+        original=Path(row["runtime_path"]).resolve()
+        original_sources[rid]=original
+        wav=_ffmpeg(original,root/"identity-16k"/f"{rid}.wav",16000)
         normalized[rid]=wav
         embeddings[rid]=_embedding(verifier,wav)
         metrics[rid]=pcm16_quality_metrics(wav)
@@ -100,12 +103,16 @@ def main()->int:
         evaluated.append(candidate)
         if float(pt)<0.90 or float(vad)<0.55 or not text.strip():
             continue
-        wav24=_ffmpeg(normalized[rid],root/"dataset"/"audio"/f"{rid}.wav",24000)
+        wav24=_ffmpeg(original_sources[rid],root/"dataset"/"audio"/f"{rid}.wav",24000)
         training.append((candidate,text.strip(),wav24))
 
     canonical=select_canonical_reference(evaluated,profile)
     canonical_id=str(canonical["reference_id"])
-    canonical24=_ffmpeg(normalized[canonical_id],root/"dataset"/"canonical-owner-reference.wav",24000)
+    canonical24=_ffmpeg(
+        original_sources[canonical_id],
+        root/"dataset"/"canonical-owner-reference.wav",
+        24000,
+    )
 
     train_raw=root/"dataset"/"train_raw.jsonl"
     train_raw.parent.mkdir(parents=True,exist_ok=True)
@@ -135,6 +142,8 @@ def main()->int:
         "canonical_reference_telegram_input_id":int(canonical["telegram_input_id"]),
         "canonical_reference_sha256":str(canonical["sha256"]),
         "same_ref_audio_for_all_samples":True,
+        "reference_audio_lineage":"ORIGINAL_TELEGRAM_TO_24K_DIRECT",
+        "training_audio_lineage":"ORIGINAL_TELEGRAM_TO_24K_DIRECT",
         "raw_audio_public":False,
         "transcripts_public":False,
         "speaker_embedding_public":False,

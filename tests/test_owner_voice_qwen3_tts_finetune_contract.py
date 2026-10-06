@@ -48,3 +48,10 @@ def test_training_workflow_is_manual_private_gpu_only_and_never_auto_activates()
     assert "nvidia-smi" in source
     assert "runtime_activation=false" in source
     assert "actions/upload-artifact" not in source
+
+
+def test_finetune_audio_uses_original_telegram_source_not_16k_identity_copy():
+    source=DATASET.read_text(encoding="utf-8")
+    assert "original_sources[rid]" in source
+    assert "ORIGINAL_TELEGRAM_TO_24K_DIRECT" in source
+    assert "_ffmpeg(normalized[rid],root/\"dataset\"/\"audio\"" not in source

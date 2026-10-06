@@ -223,11 +223,14 @@ def main()->int:
 
     classifier=_load_speaker_model(cache_root)
     normalized={}
+    original_sources={}
     embeddings={}
     metrics={}
     for row in refs:
         rid=str(int(row["telegram_input_id"]))
-        wav=_ffmpeg(Path(row["runtime_path"]),workspace/"identity-16k"/f"{rid}.wav",16000)
+        original=Path(row["runtime_path"]).resolve()
+        original_sources[rid]=original
+        wav=_ffmpeg(original,workspace/"identity-16k"/f"{rid}.wav",16000)
         normalized[rid]=wav
         metrics[rid]=pcm16_quality_metrics(wav)
         embeddings[rid]=_embedding(classifier,wav)
@@ -349,7 +352,11 @@ def main()->int:
     canonical_similarity=cosine_similarity(canonical_embedding,profile["centroid"])
     if canonical_similarity<centroid_floor:
         raise RuntimeError("CANONICAL_REFERENCE_IDENTITY_MATCH_FAILED")
-    canonical24=_ffmpeg(canonical16,workspace/"canonical-owner-reference-24k.wav",24000)
+    canonical24=_ffmpeg(
+        original_sources[cid],
+        workspace/"canonical-owner-reference-24k.wav",
+        24000,
+    )
     if _sha256(canonical24)=="":
         raise RuntimeError("CANONICAL_REFERENCE_DIGEST_MISSING")
 
@@ -412,6 +419,9 @@ def main()->int:
     )
     print(f"OWNER_CLONE_SIMILARITY_TO_CENTROID={identity['similarity_to_centroid']}")
     print(f"OWNER_CLONE_SIMILARITY_TO_REFERENCE={identity['similarity_to_reference']}")
+    print(f"OWNER_CLONE_CENTROID_MIN_SIMILARITY={identity['centroid_min_similarity']}")
+    print(f"OWNER_CLONE_REFERENCE_MIN_SIMILARITY={identity['reference_min_similarity']}")
+    print("QWEN_REFERENCE_AUDIO_LINEAGE=ORIGINAL_TELEGRAM_TO_24K_DIRECT")
     if identity["passed"] is not True:
         print("CLONE_IDENTITY_GATE=FAIL")
         print("QWEN3_TTS_IDENTITY_MATCH=FAIL")
@@ -473,6 +483,7 @@ def main()->int:
             "clone_mode":"TRANSCRIPT_CONDITIONED_ICL",
             "x_vector_only_mode":False,
             "ref_audio_source":"TELEGRAM_HUMAN_OWNER",
+            "ref_audio_lineage":"ORIGINAL_TELEGRAM_TO_24K_DIRECT",
             "ref_text_private_only":True,
             "generate_call_count":1,
         },
