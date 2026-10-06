@@ -1,0 +1,70 @@
+name: Zero-Cost Workstation V3 Verify
+
+on:
+  push:
+    branches:
+      - work/zero-cost-workstation-v3
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact candidate
+        run: |
+          set -euo pipefail
+          git init repo
+          cd repo
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "${GITHUB_SHA}"
+          git checkout --detach FETCH_HEAD
+
+      - name: Validate shell and devcontainer syntax
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          bash -n scripts/codespaces/br-upgrade-professional-v2.sh
+          bash -n scripts/codespaces/br-start-professional-desktop.sh
+          bash -n scripts/codespaces/br-professional-doctor.sh
+          bash -n scripts/codespaces/br-termux-control.sh
+          python -m json.tool .devcontainer/devcontainer.json >/dev/null
+
+      - name: Validate workstation role and zero-cost lifecycle
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          grep -q 'work/zero-cost-workstation-v3' scripts/codespaces/br-termux-control.sh
+          grep -q -- '--idle-timeout 20m' scripts/codespaces/br-termux-control.sh
+          grep -q -- '--retention-period 24h' scripts/codespaces/br-termux-control.sh
+          grep -q 'MACHINE="basicLinux32gb"' scripts/codespaces/br-termux-control.sh
+          grep -q 'MEDIA_VIDEO_QA' .devcontainer/devcontainer.json
+          grep -q -- '--resize-display=1920x1080' scripts/codespaces/br-start-professional-desktop.sh
+          ! grep -R 'work/zero-cost-codespaces-v1'             .devcontainer scripts/codespaces/br-termux-control.sh
+
+      - name: Prove MASTER_FINAL codec capability
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends             ffmpeg mediainfo sox rubberband-cli
+          ffmpeg -hide_banner -encoders 2>/dev/null | grep -qE '[[:space:]]libx264[[:space:]]'
+          ffmpeg -hide_banner -encoders 2>/dev/null | grep -qE '[[:space:]]aac[[:space:]]'
+          ffmpeg -hide_banner -loglevel error             -f lavfi -i testsrc2=size=1920x1080:rate=30             -f lavfi -i sine=frequency=1000:sample_rate=48000             -t 1             -c:v libx264 -preset ultrafast -profile:v high -pix_fmt yuv420p             -c:a aac -b:a 128k             -y /tmp/master-final-smoke.mp4
+          ffprobe -v error -show_entries             stream=codec_type,codec_name,width,height,pix_fmt,r_frame_rate,profile             -of json /tmp/master-final-smoke.mp4 > /tmp/probe.json
+          python - <<'PY'
+          import json
+          data=json.load(open("/tmp/probe.json"))
+          video=next(s for s in data["streams"] if s["codec_type"]=="video")
+          audio=next(s for s in data["streams"] if s["codec_type"]=="audio")
+          assert video["codec_name"]=="h264"
+          assert video["width"]==1920 and video["height"]==1080
+          assert video["pix_fmt"]=="yuv420p"
+          assert video["r_frame_rate"]=="30/1"
+          assert audio["codec_name"]=="aac"
+          print("MASTER_FINAL_CODEC_SMOKE=PASS")
+          PY
+          echo "BR_WORKSTATION_V3_STATIC=PASS"
+          echo "PAID_FALLBACK=FALSE"
