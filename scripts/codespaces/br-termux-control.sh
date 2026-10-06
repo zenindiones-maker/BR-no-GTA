@@ -47,24 +47,26 @@ state_of() {
   gh codespace view -c "$1" --json state --jq '.state'
 }
 
-verify_identity() {
-  local cs="$1" json ref machine
-  json="$(gh codespace view -c "$cs" --json gitStatus,machineName)"
-  ref="$(printf '%s' "$json" | jq -r '.gitStatus.ref')"
-  machine="$(printf '%s' "$json" | jq -r '.machineName')"
-
-  [ "$ref" = "$BRANCH" ] || {
-    echo "BR_CODESPACE=BLOCKED_WRONG_BRANCH"
-    echo "EXPECTED=$BRANCH"
-    echo "ACTUAL=$ref"
-    exit 21
-  }
-
+verify_machine_only() {
+  local cs="$1" machine
+  machine="$(gh codespace view -c "$cs" --json machineName --jq '.machineName')"
   [ "$machine" = "$MACHINE" ] || {
     echo "BR_CODESPACE=BLOCKED_WRONG_MACHINE"
     echo "EXPECTED=$MACHINE"
     echo "ACTUAL=$machine"
     exit 22
+  }
+}
+
+verify_identity() {
+  local cs="$1" ref
+  verify_machine_only "$cs"
+  ref="$(gh codespace view -c "$cs" --json gitStatus --jq '.gitStatus.ref')"
+  [ "$ref" = "$BRANCH" ] || {
+    echo "BR_CODESPACE=BLOCKED_WRONG_BRANCH"
+    echo "EXPECTED=$BRANCH"
+    echo "ACTUAL=$ref"
+    exit 21
   }
 }
 
@@ -89,8 +91,7 @@ start_cs() {
 port_record() {
   local cs="$1" port="$2"
   gh codespace ports -c "$cs" --json sourcePort,browseUrl,visibility,label 2>/dev/null |
-    jq -c --argjson p "$port" '.[]|select(.sourcePort==$p)' |
-    head -n1
+    jq -c --argjson p "$port" 'first(.[]|select(.sourcePort==$p)) // empty'
 }
 
 ensure_private_url() {
@@ -151,22 +152,16 @@ cmd_open() {
   echo "CODESPACE=$cs"
 
   transport="XPRA_HTML5"
-  if gh codespace ssh -c "$cs" --     'cd /workspaces/BR-no-GTA && bash scripts/codespaces/br-start-professional-desktop.sh'; then
-    url="$(ensure_private_url "$cs" "$PRIMARY_PORT" || true)"
-  else
-    url=""
-  fi
+  gh codespace ssh -c "$cs" -- 'cd /workspaces/BR-no-GTA && bash scripts/codespaces/br-start-professional-desktop.sh' ||
+    die "BR_XPRA=BLOCKED_START_FAILED" 28
 
-  if [ -z "$url" ]; then
-    echo "XPRA=WAIT_FALLBACK_NOVNC"
-    gh codespace ssh -c "$cs" --       'cd /workspaces/BR-no-GTA && bash scripts/codespaces/br-start-desktop.sh'
-    url="$(ensure_private_url "$cs" "$FALLBACK_PORT")" || die "BR_DESKTOP=BLOCKED_NO_PRIVATE_PORT" 28
-    transport="NOVNC_FALLBACK"
-  fi
+  url="$(ensure_private_url "$cs" "$PRIMARY_PORT" || true)"
+  [ -n "$url" ] || die "BR_XPRA=BLOCKED_NO_PRIVATE_PORT" 29
 
   echo "REMOTE_TRANSPORT=$transport"
   echo "DESKTOP_VISIBILITY=PRIVATE"
   echo "BR_WORKSTATION_READY=PASS"
+  echo "XPRA_REQUIRED=TRUE"
   echo "WORKSTATION_ROLE=MEDIA_VIDEO_QA"
   echo "MASTER_FINAL_TARGET=1920x1080_30_H264_AAC"
   echo "ZERO_COST_MODE=INCLUDED_USAGE_ONLY"
@@ -211,6 +206,79 @@ cmd_doctor() {
   gh codespace ports -c "$cs" --json sourcePort,label,visibility,browseUrl
 }
 
+cmd_sync() {
+  local cs
+  guard_singleton
+  cs="$(resolve_cs)"
+  [ -n "$cs" ] || die "BR_CODESPACE=NOT_CREATED" 27
+
+  verify_machine_only "$cs"
+  start_cs "$cs"
+
+  gh codespace ssh -c "$cs" -- bash -lc '
+    set -euo pipefail
+    cd /workspaces/BR-no-GTA
+
+    if [ -n "$(git status --porcelain)" ]; then
+      echo "WORKTREE=BLOCKED_DIRTY_PRESERVE_WIP"
+      git status --short --branch
+      exit 41
+    fi
+
+    git fetch origin work/zero-cost-workstation-v3
+
+    if git show-ref --verify --quiet refs/heads/work/zero-cost-workstation-v3; then
+      git switch work/zero-cost-workstation-v3
+    else
+      git switch --track -c work/zero-cost-workstation-v3 origin/work/zero-cost-workstation-v3
+    fi
+
+    git pull --ff-only origin work/zero-cost-workstation-v3
+
+    HEAD_NOW="$(git rev-parse HEAD)"
+    REMOTE_NOW="$(git rev-parse origin/work/zero-cost-workstation-v3)"
+    [ "$HEAD_NOW" = "$REMOTE_NOW" ] || {
+      echo "SYNC=BLOCKED_NOT_EXACT_REMOTE"
+      exit 42
+    }
+
+    echo "SYNC=PASS"
+    echo "BRANCH=$(git branch --show-current)"
+    echo "HEAD=$HEAD_NOW"
+
+    bash scripts/codespaces/br-upgrade-professional-v2.sh
+  '
+
+  verify_identity "$cs"
+  echo "BR_V3_SYNC=PASS"
+  echo "XPRA_REQUIRED=TRUE"
+  echo "PAID_FALLBACK=FALSE"
+}
+
+cmd_proof() {
+  local cs
+  cmd_sync
+  guard_singleton
+  cs="$(resolve_cs)"
+  [ -n "$cs" ] || die "BR_CODESPACE=NOT_CREATED" 27
+  verify_identity "$cs"
+
+  gh codespace ssh -c "$cs" -- bash -lc '
+    set -euo pipefail
+    cd /workspaces/BR-no-GTA
+    bash scripts/codespaces/br-runtime-proof.sh
+  '
+
+  ensure_private_url "$cs" "$PRIMARY_PORT" >/dev/null ||
+    die "BR_PROOF=BLOCKED_PRIVATE_PORT_UNPROVEN" 43
+
+  echo "BR_RUNTIME_PROOF=PASS_AUTOMATED_BOUNDARY"
+  echo "XPRA_REQUIRED=TRUE"
+  echo "PORT_VISIBILITY=PRIVATE"
+  echo "PAID_FALLBACK=FALSE"
+  echo "UNKNOWN_COST_FALLBACK=FALSE"
+}
+
 cmd_close() {
   local cs state
   guard_singleton
@@ -239,7 +307,10 @@ cmd_create() {
   cs="$(resolve_cs)"
 
   if [ -n "$cs" ]; then
+    verify_machine_only "$cs"
     echo "BR_CODESPACE_ALREADY_EXISTS=$cs"
+    echo "EXISTING_CODESPACE_REUSE=TRUE"
+    echo "RUN_NEXT=brctl sync"
     return 0
   fi
 
@@ -264,8 +335,10 @@ require_tools
 case "${1:-status}" in
   open) cmd_open ;;
   status) cmd_status ;;
+  sync) cmd_sync ;;
+  proof) cmd_proof ;;
   doctor) cmd_doctor ;;
   close|stop) cmd_close ;;
   create) cmd_create ;;
-  *) echo "usage: brctl {open|status|doctor|close|create}"; exit 2 ;;
+  *) echo "usage: brctl {open|status|sync|proof|doctor|close|create}"; exit 2 ;;
 esac
