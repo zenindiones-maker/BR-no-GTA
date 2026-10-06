@@ -8,6 +8,8 @@ from scripts.owner_voice_chatterbox_ptbr_audition import (
     MAX_GENERATION_ATTEMPTS_PER_LABEL,
     MODEL_ID,
     MODEL_REVISION,
+    OWNER_AUDITION_TEXT_MAX_CHARS,
+    OWNER_IDENTITY_AUDITION_TEXT,
     S3GEN_SHA256,
     T3_SHA256,
     VE_SHA256,
@@ -110,3 +112,26 @@ def test_only_failed_a_consumes_second_quality_attempt_with_nonidentical_seed():
         requested_cfg_weight=0.5,
         base_seed=424242,
     )["attempt"]==1
+
+
+def test_human_identity_audition_is_short_and_single_segment_normal_path():
+    text=build_ptbr_audition_text()
+    assert text==OWNER_IDENTITY_AUDITION_TEXT
+    assert len(text)<=OWNER_AUDITION_TEXT_MAX_CHARS==300
+    assert len(split_ptbr_audition_text(text))==1
+
+
+def test_generation_can_reuse_explicitly_prepared_owner_conditionals():
+    kwargs=build_generation_kwargs(
+        audio_prompt_path=None,
+        cfg_weight=0.5,
+        prepared_conditionals=True,
+    )
+    assert kwargs["audio_prompt_path"] is None
+    assert kwargs["language_id"]=="pt"
+    with pytest.raises(ValueError,match="OWNER_PREPARED_CONDITIONALS_REQUIRED"):
+        build_generation_kwargs(
+            audio_prompt_path=None,
+            cfg_weight=0.5,
+            prepared_conditionals=False,
+        )

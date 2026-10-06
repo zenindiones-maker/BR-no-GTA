@@ -150,3 +150,35 @@ def test_receipt_upload_uses_run_scoped_env_path_not_tmp_hardcode():
     upload=text[text.index("Upload sanitized receipt only"):text.index("Verify private audio never entered repository or public artifact")]
     assert "path: ${{ env.BR_OWNER_AUDITION_TERMINAL_RECEIPT }}" in upload
     assert "/tmp/br-owner-audition-public" not in upload
+
+
+def test_performance_v1_uses_exact_public_cache_and_single_stt_model_path():
+    text=WORKFLOW.read_text(encoding="utf-8")
+    assert "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830" in text
+    assert "BR_OWNER_PUBLIC_MODEL_CACHE" in text
+    assert "/tmp/br-owner-huggingface" not in text
+    assert "BR_OWNER_STT_MODEL_PATH" in text
+    assert "stt-model-consumer" not in CONSUMER.read_text(encoding="utf-8")
+    assert "STT_MODEL_DOWNLOAD_COUNT" in text
+    assert "HF_HUB_OFFLINE" in text
+
+
+def test_performance_v1_cpu_and_fast_asr_contract():
+    workflow=WORKFLOW.read_text(encoding="utf-8")
+    consumer=CONSUMER.read_text(encoding="utf-8")
+    for expected in ("OMP_NUM_THREADS: \"4\"","MKL_NUM_THREADS: \"4\""):
+        assert expected in workflow
+    for expected in (
+        "cpu_threads=4","num_workers=1","beam_size=1",
+        "word_timestamps=False","condition_on_previous_text=False",
+        "MARGINAL_ASR_ESCALATION","beam_size=5",
+    ):
+        assert expected in consumer
+
+
+def test_performance_receipt_is_sanitized_and_uploaded_without_audio():
+    text=WORKFLOW.read_text(encoding="utf-8")
+    assert "OwnerVoicePerformanceReceipt/v1" in Path("scripts/owner_voice_performance_receipt.py").read_text(encoding="utf-8")
+    assert "owner-voice-performance-receipt.json" in text
+    assert "TOTAL_AUDITION_SECONDS" in text
+    assert "CHATTERBOX_GENERATE_CALL_COUNT" in text
