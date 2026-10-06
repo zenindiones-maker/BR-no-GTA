@@ -33,6 +33,7 @@ from scripts.owner_voice_chatterbox_ptbr_audition import (
 VOICE_IDENTITY_ID="BR_OWNER_V1"
 REFERENCE_SOURCE="TELEGRAM_HUMAN_OWNER"
 IDENTITY_PROFILE_SCHEMA="OwnerSpeakerIdentityProfile/v1"
+PINNED_SPEAKER_MODEL_ID="speechbrain/spkrec-ecapa-voxceleb"
 SHORT_TEXT=(
     "Booooa meu povo, aqui é BR no GTA 6! Hoje a gente vai falar de Vice City, "
     "Leonida e Rockstar. Quero falar do meu jeito, com energia, clareza e ritmo "
@@ -167,6 +168,8 @@ def _vad_ratio(segments,duration:float)->float:
 def main()->int:
     if IDENTITY_PROFILE_SCHEMA!=PROFILE_SCHEMA:
         raise RuntimeError("OWNER_SPEAKER_PROFILE_SCHEMA_MISMATCH")
+    if PINNED_SPEAKER_MODEL_ID!=SPEAKER_MODEL_ID:
+        raise RuntimeError("OWNER_SPEAKER_MODEL_ID_MISMATCH")
     if len(SHORT_TEXT)>300:
         raise RuntimeError("OWNER_SINGLE_CLONE_TEXT_TOO_LONG")
     token=str(os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
