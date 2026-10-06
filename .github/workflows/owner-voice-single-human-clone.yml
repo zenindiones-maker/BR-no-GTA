@@ -1,0 +1,168 @@
+name: BR_OWNER_V1 Single Human Clone
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - recovery/dev/br-owner-v1-human-audition-v2
+
+concurrency:
+  group: br-owner-v1-single-human-clone-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Single human clone contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      clone_requested: ${{ steps.request.outputs.requested }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Install focused test dependencies
+        run: python -m pip install --disable-pip-version-check -q pytest packaging "python-dotenv==1.2.3"
+      - name: Prove single-clone contracts
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/test_owner_voice_speaker_identity_service.py \
+            tests/test_owner_voice_single_clone_delivery_v1.py \
+            tests/test_owner_voice_single_clone_workflow_v1.py
+      - name: Detect explicit single-clone request
+        id: request
+        run: |
+          if [ -f .run/br-owner-v1-single-human-clone.request.json ]; then
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path(".run/br-owner-v1-single-human-clone.request.json").read_text())
+          assert d["schema_version"]=="OwnerVoiceSingleHumanCloneRequest/v1"
+          assert d["voice_identity_id"]=="BR_OWNER_V1"
+          assert d["reference_source"]=="TELEGRAM_HUMAN_OWNER"
+          assert d["one_candidate_only"] is True
+          assert d["runtime_activation"] is False
+          PY
+            echo "requested=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "requested=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  clone:
+    name: Build and deliver one human-bound BR_OWNER_V1 clone
+    needs: contract
+    if: ${{ needs.contract.outputs.clone_requested == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
+    env:
+      BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64 }}
+      BR_OWNER_TELEGRAM_REFERENCE_INDEX: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_INDEX }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      BR_OWNER_AUDITION_LEDGER_REPOSITORY: zenindiones-maker/BR-no-GTA-audition-ledger
+      BR_OWNER_AUDITION_AUTHORITY_REF: owner-explicit:BR_OWNER_V1_SINGLE_CLONE
+      BR_OWNER_STT_MODEL: large-v3-turbo
+      OMP_NUM_THREADS: "4"
+      MKL_NUM_THREADS: "4"
+      TOKENIZERS_PARALLELISM: "false"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: integrations/chatterbox-ptbr/constraints.txt
+
+      - name: Preflight required secrets
+        env:
+          BR_OWNER_AUDITION_LEDGER_SSH_KEY: ${{ secrets.BR_OWNER_AUDITION_LEDGER_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${TELEGRAM_BOT_TOKEN:-}"
+          if [ -z "${BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64:-}" ] && [ -z "${BR_OWNER_TELEGRAM_REFERENCE_INDEX:-}" ]; then
+            echo "FAILED_STEP=secret_preflight"
+            echo "FAILURE_CLASS=OWNER_REFERENCE_MISSING"
+            exit 42
+          fi
+          test -n "${BR_OWNER_AUDITION_LEDGER_SSH_KEY:-}"
+          echo "SINGLE_CLONE_SECRET_PREFLIGHT=PASS"
+
+      - name: Establish private workspace and public cache
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/br-owner-single-clone/$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT"
+          CACHE="$HOME/.cache/br-owner-voice/hf-public"
+          mkdir -p "$WORK" "$CACHE"
+          chmod 700 "$WORK"
+          {
+            echo "BR_OWNER_AUDITION_WORKSPACE=$WORK"
+            echo "BR_OWNER_PUBLIC_MODEL_CACHE=$CACHE"
+            echo "HF_HOME=$CACHE/huggingface"
+          } >> "$GITHUB_ENV"
+          echo "ONE_CANDIDATE_ONLY=TRUE"
+
+      - name: Restore exact public model cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~/.cache/br-owner-voice/hf-public
+          key: br-owner-single-clone-${{ runner.os }}-${{ runner.arch }}-py312-fw1.2.0-av18-sb1.1.1-ecapa-d82a13ef4f90e62dc5e152e312a6891247f23fb8-cb-5de7a54aa4e5e2baadb0182dde554908b48b85c2-ptbr-b3952f18bc2eaa72b9bd7c17d2c4653bcad4770d-${{ hashFiles('integrations/chatterbox-ptbr/constraints.txt') }}
+
+      - name: Install pinned audio identity runtime
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1; then sudo apt-get install -y -qq ffmpeg; fi
+          python -m venv /tmp/br-owner-single-clone-venv
+          PY=/tmp/br-owner-single-clone-venv/bin/python
+          CONSTRAINTS=integrations/chatterbox-ptbr/constraints.txt
+          "$PY" -m pip install --disable-pip-version-check --prefer-binary --progress-bar off \
+            --constraint "$CONSTRAINTS" \
+            numpy librosa s3tokenizer torch torchaudio transformers diffusers conformer safetensors \
+            spacy-pkuseg pykakasi gradio pyloudnorm omegaconf requests huggingface_hub \
+            "faster-whisper==1.2.0" "av==18.0.0" "speechbrain==1.1.1" soundfile
+          "$PY" -m pip install --disable-pip-version-check -q \
+            "resemble-perth @ git+https://github.com/resemble-ai/Perth.git@ff1c8ac55a976971245cdd53c18d6131ca00d993"
+          "$PY" -m pip install --disable-pip-version-check -q --no-deps \
+            "git+https://github.com/resemble-ai/chatterbox.git@5de7a54aa4e5e2baadb0182dde554908b48b85c2"
+          "$PY" -m pip check
+          "$PY" - <<'PY'
+          from importlib.metadata import version
+          assert version("speechbrain")=="1.1.1"
+          assert version("faster-whisper")=="1.2.0"
+          assert version("av")=="18.0.0"
+          print("SPEAKER_VERIFIER_RUNTIME=PINNED")
+          PY
+
+      - name: Build one human-bound clone and prove identity
+        id: generate
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          /tmp/br-owner-single-clone-venv/bin/python scripts/owner_voice_single_human_clone.py
+
+      - name: Deliver reference clone and control
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          BR_OWNER_AUDITION_LEDGER_SSH_KEY: ${{ secrets.BR_OWNER_AUDITION_LEDGER_SSH_KEY }}
+          BR_OWNER_SINGLE_CLONE_MANIFEST_PATH: ${{ steps.generate.outputs.manifest_path }}
+        run: |
+          set -euo pipefail
+          /tmp/br-owner-single-clone-venv/bin/python scripts/owner_voice_single_clone_delivery.py
+
+      - name: Remove ephemeral owner biometric and clone material
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          rm -rf "$BR_OWNER_AUDITION_WORKSPACE" /tmp/br-owner-single-clone-venv
+          echo "OWNER_EPHEMERAL_PRIVATE_MATERIAL_CLEANED=PASS"
