@@ -113,3 +113,11 @@ def test_consumer_emits_exact_human_delivery_success_boundary():
         "BR_OWNER_V1_RUNTIME_ACTIVATION=BLOCKED_PENDING_HUMAN_REVIEW",
     ):
         assert expected in text
+
+
+def test_request_validation_is_noop_for_implementation_push_without_marker():
+    text=WORKFLOW.read_text(encoding="utf-8")
+    validate=text[text.index("Validate request"):text.index("Prove audition handoff and delivery contracts")]
+    assert 'if [ ! -f .run/br-owner-v1-human-audition.request.json ]' in validate
+    assert 'AUDITION_REQUEST_PRESENT=false' in validate
+    assert 'AUDITION_REQUEST_PRESENT=true' in validate

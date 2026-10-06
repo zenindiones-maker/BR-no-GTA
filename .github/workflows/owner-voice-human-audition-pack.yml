@@ -33,6 +33,11 @@ jobs:
         if: ${{ github.event_name == 'push' }}
         run: |
           set -euo pipefail
+          if [ ! -f .run/br-owner-v1-human-audition.request.json ]; then
+            echo "AUDITION_REQUEST_PRESENT=false"
+            exit 0
+          fi
+          echo "AUDITION_REQUEST_PRESENT=true"
           python - <<'PY'
           import json
           from pathlib import Path
