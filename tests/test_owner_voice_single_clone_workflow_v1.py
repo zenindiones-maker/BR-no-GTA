@@ -38,3 +38,12 @@ def test_single_clone_delivery_sends_reference_clone_and_control_only():
     assert "CONTROL_TELEGRAM_MESSAGE_ID=" in source
     assert "HUMAN_REVIEW=PENDING" in source
     assert "BLOCKED_PENDING_HUMAN_REVIEW" in source
+
+
+def test_canonical_reference_uses_vad_occupancy_not_pcm_amplitude_proxy():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert "amplitude_speech_ratio" in source
+    assert 'row["speech_ratio"]=vad_speech_ratio' in source
+    assert "OWNER_CANONICAL_PRE_ASR_ELIGIBLE_COUNT=" in source
+    assert "OWNER_CANONICAL_REFERENCE_ASR_COUNT=" in source
+    assert "ranked[:12]" not in source
