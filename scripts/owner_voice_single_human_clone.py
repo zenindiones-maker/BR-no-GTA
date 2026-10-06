@@ -135,15 +135,17 @@ def _load_stt(cache_root:Path):
     return WhisperModel(str(path),device="cpu",compute_type="int8",cpu_threads=4,num_workers=1,local_files_only=True)
 
 
-def _ptbr_probability(stt,path:Path)->float:
-    segments,info=stt.transcribe(
+def _reference_asr_metrics(stt,path:Path,duration_seconds:float)->tuple[float,float,str]:
+    segments_iter,info=stt.transcribe(
         str(path),language=None,beam_size=1,vad_filter=True,
         word_timestamps=False,condition_on_previous_text=False,
     )
-    list(segments)
+    segments=list(segments_iter)
     language=str(getattr(info,"language","") or "").lower().replace("_","-")
     probability=float(getattr(info,"language_probability",0.0) or 0.0)
-    return probability if language in {"pt","pt-br"} else 0.0
+    ptbr_probability=probability if language in {"pt","pt-br"} else 0.0
+    vad_speech_ratio=_vad_ratio(segments,float(duration_seconds))
+    return ptbr_probability,vad_speech_ratio,language
 
 
 def _vad_ratio(segments,duration:float)->float:
@@ -206,9 +208,9 @@ def main()->int:
         if rid not in set(profile["inlier_ids"]):
             continue
         m=metrics[rid]
+        amplitude_speech_ratio=float(m.get("speech_ratio") or 0.0)
         clear=(
             float(m.get("snr_db") or 0.0)>=15.0
-            and float(m.get("speech_ratio") or 0.0)>=0.55
             and float(m.get("clipping_ratio") or 0.0)<=0.01
         )
         consistent=_window_identity_consistency(
@@ -222,23 +224,59 @@ def main()->int:
             "duration_seconds":float(m.get("duration_seconds") or row.get("duration_seconds") or 0.0),
             "snr_db":float(m.get("snr_db") or 0.0),
             "clipping_ratio":float(m.get("clipping_ratio") or 0.0),
-            "speech_ratio":float(m.get("speech_ratio") or 0.0),
+            "amplitude_speech_ratio":amplitude_speech_ratio,
+            "speech_ratio":0.0,
             "single_speaker":consistent,
             "clear_speech":clear,
             "no_overlap":consistent,
-            "no_music":consistent and float(m.get("speech_ratio") or 0.0)>=0.55,
+            "no_music":consistent,
             "ptbr_probability":0.0,
         })
 
-    stt=_load_stt(cache_root)
-    ranked=sorted(candidate_rows,key=lambda row:(
+    inlier_ids=set(str(x) for x in profile["inlier_ids"])
+    pre_asr=[
+        row for row in candidate_rows
+        if str(row["reference_id"]) in inlier_ids
+        and row["single_speaker"] is True
+        and row["clear_speech"] is True
+        and row["no_overlap"] is True
+        and row["no_music"] is True
+        and float(row["duration_seconds"])>0.0
+        and float(profile["reference_similarity_to_centroid"].get(str(row["reference_id"]),-1.0))
+            >=float(profile["clone_centroid_min_similarity"])
+    ]
+    pre_asr.sort(key=lambda row:(
         0 if 10.0<=row["duration_seconds"]<=20.0 else 1,
         -float(profile["reference_similarity_to_centroid"].get(str(row["reference_id"]),-1)),
         -row["snr_db"],
+        abs(float(row["duration_seconds"])-15.0),
+        str(row["sha256"]),
     ))
-    for row in ranked[:12]:
-        row["ptbr_probability"]=_ptbr_probability(stt,normalized[str(row["reference_id"])])
-    canonical=select_canonical_reference(ranked,profile)
+    print(f"OWNER_CANONICAL_INLIER_COUNT={len(inlier_ids)}")
+    print(f"OWNER_CANONICAL_SINGLE_SPEAKER_COUNT={sum(1 for row in candidate_rows if row['single_speaker'] is True)}")
+    print(f"OWNER_CANONICAL_CLEAR_SPEECH_COUNT={sum(1 for row in candidate_rows if row['clear_speech'] is True)}")
+    print(f"OWNER_CANONICAL_PRE_ASR_ELIGIBLE_COUNT={len(pre_asr)}")
+    if not pre_asr:
+        raise RuntimeError("NO_CANONICAL_OWNER_REFERENCE_PRE_ASR_ELIGIBLE")
+
+    stt=_load_stt(cache_root)
+    asr_count=0
+    evaluated=[]
+    for row in pre_asr:
+        ptbr_probability,vad_speech_ratio,language=_reference_asr_metrics(
+            stt,
+            normalized[str(row["reference_id"])],
+            float(row["duration_seconds"]),
+        )
+        row["ptbr_probability"]=ptbr_probability
+        row["speech_ratio"]=vad_speech_ratio
+        row["detected_language"]=language
+        evaluated.append(row)
+        asr_count+=1
+    print(f"OWNER_CANONICAL_REFERENCE_ASR_COUNT={asr_count}")
+    print(f"OWNER_CANONICAL_PTBR_COUNT={sum(1 for row in evaluated if float(row['ptbr_probability'])>=0.90)}")
+    print(f"OWNER_CANONICAL_VAD_SPEECH_COUNT={sum(1 for row in evaluated if float(row['speech_ratio'])>=0.55)}")
+    canonical=select_canonical_reference(evaluated,profile)
     cid=str(canonical["reference_id"])
     canonical16=normalized[cid]
     canonical_embedding=embeddings[cid]
