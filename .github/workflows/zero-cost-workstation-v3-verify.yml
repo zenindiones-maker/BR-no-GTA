@@ -70,6 +70,9 @@ jobs:
           ! grep -q 'FALLBACK_NOVNC' .devcontainer/devcontainer.json
           ! grep -q 'XPRA=WAIT_FALLBACK_NOVNC' scripts/codespaces/br-termux-control.sh
           ! grep -R 'work/zero-cost-codespaces-v1'             .devcontainer scripts/codespaces/br-termux-control.sh
+          CLOSE_FN="$(awk '/^cmd_close\(\)/,/^}/' scripts/codespaces/br-termux-control.sh)"
+          grep -q 'verify_machine_only' <<<"$CLOSE_FN"
+          ! grep -q 'verify_identity' <<<"$CLOSE_FN"
 
       - name: Prove MASTER_FINAL codec capability
         working-directory: repo
