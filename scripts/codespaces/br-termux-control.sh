@@ -251,7 +251,7 @@ cmd_create() {
   echo "REPOSITORY_VISIBILITY=PUBLIC"
   echo "PAID_FALLBACK=FALSE"
 
-  gh codespace create     -R "$REPO"     -b "$BRANCH"     --devcontainer-path ".devcontainer/devcontainer.json"     -m "$MACHINE"     -d "$DISPLAY_NAME"     --idle-timeout 30m     --status
+  gh codespace create     -R "$REPO"     -b "$BRANCH"     --devcontainer-path ".devcontainer/devcontainer.json"     -m "$MACHINE"     -d "$DISPLAY_NAME"     --idle-timeout 30m     --retention-period 24h     --status
 }
 
 require_tools
