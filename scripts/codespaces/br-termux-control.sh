@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO="zenindiones-maker/BR-no-GTA"
-BRANCH="work/zero-cost-codespaces-v1"
+BRANCH="work/zero-cost-workstation-v3"
 DISPLAY_NAME="br-no-gta-zero-cost"
 MACHINE="basicLinux32gb"
 PRIMARY_PORT="14501"
@@ -251,7 +251,7 @@ cmd_create() {
   echo "REPOSITORY_VISIBILITY=PUBLIC"
   echo "PAID_FALLBACK=FALSE"
 
-  gh codespace create     -R "$REPO"     -b "$BRANCH"     --devcontainer-path ".devcontainer/devcontainer.json"     -m "$MACHINE"     -d "$DISPLAY_NAME"     --idle-timeout 30m     --retention-period 24h     --status
+  gh codespace create     -R "$REPO"     -b "$BRANCH"     --devcontainer-path ".devcontainer/devcontainer.json"     -m "$MACHINE"     -d "$DISPLAY_NAME"     --idle-timeout 20m     --retention-period 24h     --status
 }
 
 require_tools
