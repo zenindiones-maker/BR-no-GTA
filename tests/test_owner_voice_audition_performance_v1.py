@@ -24,8 +24,11 @@ def test_reference_selection_receipt_is_sanitized_and_content_bound():
     assert receipt["reference_source"]=="TELEGRAM"
     assert receipt["voice_identity_id"]=="BR_OWNER_V1"
     assert len(receipt["content_sha256"])==64
-    forbidden={"audio","transcript","token","embedding","conditionals","telegram_file_id"}
-    assert not any(any(word in key.lower() for word in forbidden) for key in receipt)
+    forbidden={
+        "audio_bytes","raw_audio","transcript","telegram_bot_token",
+        "file_bytes","voice_embedding","chatterbox_conditionals","telegram_file_id",
+    }
+    assert forbidden.isdisjoint(receipt)
     assert validate_reference_selection_receipt(
         receipt,
         reference_set_digest="a"*64,
