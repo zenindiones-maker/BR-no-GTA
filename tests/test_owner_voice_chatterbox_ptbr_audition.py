@@ -5,6 +5,7 @@ import pytest
 from scripts.owner_voice_chatterbox_ptbr_audition import (
     BASE_MODEL_REVISION,
     CHATTERBOX_CODE_REVISION,
+    MAX_GENERATION_ATTEMPTS_PER_LABEL,
     MODEL_ID,
     MODEL_REVISION,
     S3GEN_SHA256,
@@ -13,6 +14,7 @@ from scripts.owner_voice_chatterbox_ptbr_audition import (
     build_generation_kwargs,
     build_ptbr_audition_text,
     resolve_audition_manifest_path,
+    split_ptbr_audition_text,
 )
 
 
@@ -78,3 +80,15 @@ def test_manifest_path_falls_back_to_run_scoped_workspace_not_legacy(monkeypatch
     assert resolved==(tmp_path/"runner-temp"/"br-owner-voice"/"12345"/"2"/"audition-manifest.json").resolve()
     assert "ptbr-audition-set.json" not in str(resolved)
     assert resolved.parent.is_dir()
+
+
+def test_long_audition_text_is_segmented_without_changing_words():
+    text=build_ptbr_audition_text()
+    chunks=split_ptbr_audition_text(text)
+    assert len(chunks) >= 3
+    assert all(1 <= len(chunk.split()) <= 55 for chunk in chunks)
+    assert " ".join(" ".join(chunk.split()) for chunk in chunks) == " ".join(text.split())
+
+
+def test_generation_retry_budget_is_bounded_per_label():
+    assert MAX_GENERATION_ATTEMPTS_PER_LABEL == 2
