@@ -15,7 +15,7 @@ if [[ "${CODESPACES:-}" != "true" ]]; then
   exit 20
 fi
 
-for cmd in xpra curl ss xfce4-session; do
+for cmd in xpra curl ss xfce4-session ffmpeg ffprobe mpv mediainfo; do
   command -v "$cmd" >/dev/null 2>&1 || {
     echo "BR_PRO=BLOCKED_MISSING_$cmd"
     exit 21
@@ -49,7 +49,30 @@ if session_live && ! http_live; then
 fi
 
 if ! session_live; then
-  xpra start-desktop "$SESSION"     --socket-dir="$SOCKET_DIR"     --bind-tcp="127.0.0.1:${PORT},auth=none"     --html=on     --pulseaudio=yes     --speaker=on     --microphone=disabled     --webcam=no     --file-transfer=off     --open-files=off     --printing=no     --mdns=no     --sharing=no     --start-new-commands=no     --systemd-run=no     --resize-display=1600x900     --dpi=96     --session-name="BR-no-GTA Professional"     --env="TMPDIR=${SCRATCH}"     --env="XDG_CACHE_HOME=${CACHE}"     --start="xfce4-session"     --exit-with-children=no     --log-file="$LOG_FILE"     --daemon=yes
+  xpra start-desktop "$SESSION" \
+    --socket-dir="$SOCKET_DIR" \
+    --bind-tcp="127.0.0.1:${PORT},auth=none" \
+    --html=on \
+    --pulseaudio=yes \
+    --speaker=on \
+    --microphone=disabled \
+    --webcam=no \
+    --file-transfer=off \
+    --open-files=off \
+    --printing=no \
+    --mdns=no \
+    --sharing=no \
+    --start-new-commands=no \
+    --systemd-run=no \
+    --resize-display=1920x1080 \
+    --dpi=96 \
+    --session-name="BR-no-GTA Media / Video QA" \
+    --env="TMPDIR=${SCRATCH}" \
+    --env="XDG_CACHE_HOME=${CACHE}" \
+    --start="xfce4-session" \
+    --exit-with-children=no \
+    --log-file="$LOG_FILE" \
+    --daemon=yes
 fi
 
 for _ in $(seq 1 60); do
@@ -71,9 +94,12 @@ LISTEN_LINE="$(ss -ltn 2>/dev/null | awk -v p=":${PORT}" '$4 ~ p"$" {print $4; e
 }
 
 echo "BR_PRO_DESKTOP=PASS"
+echo "WORKSTATION_ROLE=MEDIA_VIDEO_QA"
+echo "MASTER_FINAL_TARGET=1920x1080_30_H264_AAC"
 echo "REMOTE_TRANSPORT=XPRA_HTML5"
 echo "XPRA_PORT=$PORT"
 echo "XPRA_BIND=LOOPBACK_ONLY"
+echo "DESKTOP_TARGET=1920x1080"
 echo "SPEAKER_FORWARDING=CONFIGURED"
 echo "MICROPHONE_FORWARDING=DISABLED"
 echo "FILE_TRANSFER=DISABLED"
