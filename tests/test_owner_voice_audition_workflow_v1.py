@@ -49,7 +49,8 @@ def test_workflow_persists_sanitized_receipt_before_cleanup_and_never_uploads_au
     assert receipt < cleanup
     assert "if: ${{ always() }}" in text[receipt:cleanup+200]
     upload=text[text.index("Upload sanitized receipt only"):text.index("Verify private audio never entered repository or public artifact")]
-    assert "owner-voice-audition-delivery-receipt.json" in upload
+    assert "path: ${{ env.BR_OWNER_AUDITION_TERMINAL_RECEIPT }}" in upload
+    assert "owner-voice-audition-delivery-receipt.json" in text
     assert ".wav" not in upload
 
 
