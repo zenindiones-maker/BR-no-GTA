@@ -90,3 +90,40 @@ def test_blind_selection_treats_zero_error_as_best_not_infinity():
     assert "perfect" in labels
     # Internal shortlist is sorted by QA before blind label randomization.
     assert private["shortlist_ranked_candidate_ids"][0]=="perfect"
+
+
+def test_vad_speech_occupancy_prevents_false_low_speech_ratio_failure():
+    candidate={
+      "voice_identity_id":"BR_OWNER_V1","provider_default_voice_used":False,
+      "provider_preset_voice_used":False,"generic_voice_fallback":False,
+      "detected_language":"pt","language_probability":0.99,
+      "expected_text":"Hoje a gente testa a voz do dono.",
+      "observed_text":"Hoje a gente testa a voz do dono.",
+      "audio_metrics":{"clipping_ratio":0.0,"speech_ratio":0.31,"duration_seconds":12.0},
+      "vad_speech_ratio":0.76,
+      "speaker_similarity":{"status":"PENDING_INDEPENDENT_VERIFIER","score":None},
+    }
+    result=evaluate_short_candidate(candidate)
+    assert result["eligible"] is True
+    assert "LOW_SPEECH_RATIO" not in result["issues"]
+    assert result["amplitude_speech_ratio"]==0.31
+    assert result["vad_speech_ratio"]==0.76
+    assert result["speech_ratio_for_gate"]==0.76
+    assert result["speech_ratio_source"]=="VAD"
+
+
+def test_low_vad_speech_still_fails_closed():
+    candidate={
+      "voice_identity_id":"BR_OWNER_V1","provider_default_voice_used":False,
+      "provider_preset_voice_used":False,"generic_voice_fallback":False,
+      "detected_language":"pt","language_probability":0.99,
+      "expected_text":"Hoje a gente testa a voz do dono.",
+      "observed_text":"Hoje a gente testa a voz do dono.",
+      "audio_metrics":{"clipping_ratio":0.0,"speech_ratio":0.20,"duration_seconds":12.0},
+      "vad_speech_ratio":0.18,
+      "speaker_similarity":{"status":"PENDING_INDEPENDENT_VERIFIER","score":None},
+    }
+    result=evaluate_short_candidate(candidate)
+    assert result["eligible"] is False
+    assert "LOW_SPEECH_RATIO" in result["issues"]
+    assert result["speech_ratio_source"]=="VAD"
