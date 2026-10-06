@@ -289,7 +289,7 @@ cmd_close() {
     return 0
   fi
 
-  verify_identity "$cs"
+  verify_machine_only "$cs"
   state="$(state_of "$cs")"
 
   if [ "$state" = "Available" ]; then
