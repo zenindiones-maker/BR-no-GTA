@@ -5,7 +5,8 @@ REPO="zenindiones-maker/BR-no-GTA"
 BRANCH="work/zero-cost-codespaces-v1"
 DISPLAY_NAME="br-no-gta-zero-cost"
 MACHINE="basicLinux32gb"
-PORT="6081"
+PRIMARY_PORT="14501"
+FALLBACK_PORT="6081"
 
 die() {
   echo "$1" >&2
@@ -18,16 +19,28 @@ require_tools() {
   gh auth status -h github.com >/dev/null 2>&1 || die "GITHUB_AUTH=BLOCKED"
 }
 
+matching_json() {
+  gh codespace list -R "$REPO" --json name,displayName,state,lastUsedAt
+}
+
+guard_singleton() {
+  local json count
+  json="$(matching_json)"
+  count="$(printf '%s' "$json" | jq -r --arg d "$DISPLAY_NAME" '[.[]|select(.displayName==$d)]|length')"
+  [ "$count" -le 1 ] || {
+    printf '%s
+' "$json" | jq --arg d "$DISPLAY_NAME" '[.[]|select(.displayName==$d)]'
+    die "BR_CODESPACE=BLOCKED_DUPLICATE_WORKSTATIONS" 30
+  }
+}
+
 resolve_cs() {
-  gh codespace list \
-    -R "$REPO" \
-    --json name,displayName,lastUsedAt \
-  | jq -r --arg d "$DISPLAY_NAME" '
-      [.[] | select(.displayName==$d)]
-      | sort_by(.lastUsedAt)
-      | reverse
-      | .[0].name // empty
-    '
+  matching_json | jq -r --arg d "$DISPLAY_NAME" '
+    [.[] | select(.displayName==$d)]
+    | sort_by(.lastUsedAt)
+    | reverse
+    | .[0].name // empty
+  '
 }
 
 state_of() {
@@ -60,12 +73,8 @@ start_cs() {
   state="$(state_of "$cs")"
 
   if [ "$state" != "Available" ]; then
-    echo "BR_CODESPACE_STARTING=$cs"
-
-    if ! gh api --method POST "/user/codespaces/$cs/start" >/dev/null; then
-      die "BR_CODESPACE_START=BLOCKED" 23
-    fi
-
+    echo "BR=STARTING"
+    gh api --method POST "/user/codespaces/$cs/start" >/dev/null || die "BR_START=BLOCKED" 23
     for _ in $(seq 1 120); do
       state="$(state_of "$cs")"
       echo "STATE=$state"
@@ -74,36 +83,44 @@ start_cs() {
     done
   fi
 
-  [ "$state" = "Available" ] || die "BR_CODESPACE=BLOCKED_STATE_$state" 24
+  [ "$state" = "Available" ] || die "BR=BLOCKED_STATE_$state" 24
 }
 
-ensure_private_port() {
-  local cs="$1" ports url vis
+port_record() {
+  local cs="$1" port="$2"
+  gh codespace ports -c "$cs" --json sourcePort,browseUrl,visibility,label 2>/dev/null |
+    jq -c --argjson p "$port" '.[]|select(.sourcePort==$p)' |
+    head -n1
+}
 
-  url=""
-  vis=""
-
-  for _ in $(seq 1 60); do
-    ports="$(gh codespace ports -c "$cs" --json sourcePort,browseUrl,visibility 2>/dev/null || echo '[]')"
-    url="$(printf '%s' "$ports" | jq -r --argjson p "$PORT" '.[] | select(.sourcePort==$p) | .browseUrl // empty' | head -n1)"
-    vis="$(printf '%s' "$ports" | jq -r --argjson p "$PORT" '.[] | select(.sourcePort==$p) | .visibility // empty' | head -n1)"
-    [ -n "$url" ] && break
+ensure_private_url() {
+  local cs="$1" port="$2" record url vis
+  for _ in $(seq 1 45); do
+    record="$(port_record "$cs" "$port" || true)"
+    [ -n "$record" ] && break
     sleep 2
   done
 
-  [ -n "$url" ] || die "PORT_6081=BLOCKED_NOT_FORWARDED" 25
+  [ -n "$record" ] || return 1
+
+  url="$(printf '%s' "$record" | jq -r '.browseUrl // empty')"
+  vis="$(printf '%s' "$record" | jq -r '.visibility // empty')"
 
   if [ "$vis" != "private" ]; then
-    gh codespace ports visibility "$PORT:private" -c "$cs" >/dev/null
-    vis="$(gh codespace ports -c "$cs" --json sourcePort,visibility --jq ".[] | select(.sourcePort==$PORT) | .visibility")"
+    gh codespace ports visibility "$port:private" -c "$cs" >/dev/null
+    record="$(port_record "$cs" "$port")"
+    vis="$(printf '%s' "$record" | jq -r '.visibility')"
   fi
 
-  [ "$vis" = "private" ] || die "PORT_6081_VISIBILITY=BLOCKED_NOT_PRIVATE" 26
-  printf '%s\n' "$url"
+  [ "$vis" = "private" ] || die "PORT_${port}_VISIBILITY=BLOCKED_NOT_PRIVATE" 25
+  [ -n "$url" ] || return 1
+  printf '%s
+' "$url"
 }
 
 cmd_status() {
-  local cs state
+  local cs
+  guard_singleton
   cs="$(resolve_cs)"
 
   if [ -z "$cs" ]; then
@@ -113,18 +130,17 @@ cmd_status() {
 
   verify_identity "$cs"
 
-  gh codespace view -c "$cs" \
-    --json name,displayName,state,machineName,machineDisplayName,gitStatus,idleTimeoutMinutes,retentionExpiresAt
+  gh codespace view -c "$cs"     --json name,displayName,state,machineName,machineDisplayName,gitStatus,idleTimeoutMinutes,retentionExpiresAt
 
-  state="$(state_of "$cs")"
-  if [ "$state" = "Available" ]; then
+  if [ "$(state_of "$cs")" = "Available" ]; then
     echo
     gh codespace ports -c "$cs" --json sourcePort,label,visibility,browseUrl || true
   fi
 }
 
 cmd_open() {
-  local cs url
+  local cs url transport
+  guard_singleton
   cs="$(resolve_cs)"
   [ -n "$cs" ] || die "BR_CODESPACE=NOT_CREATED; RUN=brcreate" 27
 
@@ -134,13 +150,22 @@ cmd_open() {
   echo "BR_CODESPACE=AVAILABLE"
   echo "CODESPACE=$cs"
 
-  gh codespace ssh -c "$cs" -- \
-    'cd /workspaces/BR-no-GTA && bash scripts/codespaces/br-start-desktop.sh'
+  transport="XPRA_HTML5"
+  if gh codespace ssh -c "$cs" --     'cd /workspaces/BR-no-GTA && bash scripts/codespaces/br-start-professional-desktop.sh'; then
+    url="$(ensure_private_url "$cs" "$PRIMARY_PORT" || true)"
+  else
+    url=""
+  fi
 
-  url="$(ensure_private_port "$cs")"
+  if [ -z "$url" ]; then
+    echo "XPRA=WAIT_FALLBACK_NOVNC"
+    gh codespace ssh -c "$cs" --       'cd /workspaces/BR-no-GTA && bash scripts/codespaces/br-start-desktop.sh'
+    url="$(ensure_private_url "$cs" "$FALLBACK_PORT")" || die "BR_DESKTOP=BLOCKED_NO_PRIVATE_PORT" 28
+    transport="NOVNC_FALLBACK"
+  fi
 
-  echo "PORT_6081=PASS"
-  echo "PORT_6081_VISIBILITY=PRIVATE"
+  echo "REMOTE_TRANSPORT=$transport"
+  echo "DESKTOP_VISIBILITY=PRIVATE"
   echo "BR_WORKSTATION_READY=PASS"
   echo "PAID_FALLBACK=FALSE"
   echo "REAPER_REQUIRED=FALSE"
@@ -154,6 +179,7 @@ cmd_open() {
 
 cmd_doctor() {
   local cs state
+  guard_singleton
   cs="$(resolve_cs)"
   [ -n "$cs" ] || die "BR_CODESPACE=NOT_CREATED" 27
 
@@ -166,11 +192,17 @@ cmd_doctor() {
     return 0
   fi
 
-  gh codespace ssh -c "$cs" -- \
-    'cd /workspaces/BR-no-GTA &&
-     echo "BRANCH=$(git branch --show-current)" &&
-     echo "HEAD=$(git rev-parse HEAD)" &&
-     bash scripts/codespaces/br-doctor.sh'
+  gh codespace ssh -c "$cs" -- bash -lc '
+    set -euo pipefail
+    cd /workspaces/BR-no-GTA
+    echo "BRANCH=$(git branch --show-current)"
+    echo "HEAD=$(git rev-parse HEAD)"
+    if [ -f scripts/codespaces/br-professional-doctor.sh ]; then
+      bash scripts/codespaces/br-professional-doctor.sh
+    else
+      bash scripts/codespaces/br-doctor.sh
+    fi
+  '
 
   echo
   gh codespace ports -c "$cs" --json sourcePort,label,visibility,browseUrl
@@ -178,6 +210,7 @@ cmd_doctor() {
 
 cmd_close() {
   local cs state
+  guard_singleton
   cs="$(resolve_cs)"
 
   if [ -z "$cs" ]; then
@@ -198,31 +231,27 @@ cmd_close() {
 }
 
 cmd_create() {
-  local cs machine_json cpus
-
+  local cs machine_json cpus private
+  guard_singleton
   cs="$(resolve_cs)"
+
   if [ -n "$cs" ]; then
     echo "BR_CODESPACE_ALREADY_EXISTS=$cs"
     return 0
   fi
 
-  machine_json="$(gh api --method GET "repos/$REPO/codespaces/machines" -f ref="$BRANCH")"
-  cpus="$(printf '%s' "$machine_json" | jq -r --arg m "$MACHINE" '.machines[] | select(.name==$m) | .cpus')"
+  private="$(gh api "repos/$REPO" --jq '.private')"
+  [ "$private" = "false" ] || die "BR_CREATE=BLOCKED_REPOSITORY_NOT_PUBLIC" 28
 
-  [ "$cpus" = "2" ] || die "BR_CREATE=BLOCKED_MACHINE_NOT_2_CORE" 28
+  machine_json="$(gh api --method GET "repos/$REPO/codespaces/machines" -f ref="$BRANCH")"
+  cpus="$(printf '%s' "$machine_json" | jq -r --arg m "$MACHINE" '.machines[]|select(.name==$m)|.cpus')"
+  [ "$cpus" = "2" ] || die "BR_CREATE=BLOCKED_MACHINE_NOT_2_CORE" 29
 
   echo "MACHINE_SIZE=PASS_2_CORE"
+  echo "REPOSITORY_VISIBILITY=PUBLIC"
   echo "PAID_FALLBACK=FALSE"
 
-  gh codespace create \
-    -R "$REPO" \
-    -b "$BRANCH" \
-    --devcontainer-path ".devcontainer/devcontainer.json" \
-    -m "$MACHINE" \
-    -d "$DISPLAY_NAME" \
-    --idle-timeout 30m \
-    --retention-period 24h \
-    --status
+  gh codespace create     -R "$REPO"     -b "$BRANCH"     --devcontainer-path ".devcontainer/devcontainer.json"     -m "$MACHINE"     -d "$DISPLAY_NAME"     --idle-timeout 30m     --status
 }
 
 require_tools
@@ -233,8 +262,5 @@ case "${1:-status}" in
   doctor) cmd_doctor ;;
   close|stop) cmd_close ;;
   create) cmd_create ;;
-  *)
-    echo "usage: brctl {open|status|doctor|close|create}"
-    exit 2
-    ;;
+  *) echo "usage: brctl {open|status|doctor|close|create}"; exit 2 ;;
 esac
