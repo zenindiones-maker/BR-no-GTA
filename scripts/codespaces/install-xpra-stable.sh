@@ -14,7 +14,12 @@ if [[ "${CODESPACES:-}" != "true" ]]; then
 fi
 
 sudo apt-get update
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends   ca-certificates   curl   gnupg
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+  apt-transport-https \
+  ca-certificates \
+  curl \
+  gnupg \
+  software-properties-common
 
 curl -fsSL "$KEY_URL" -o "$TMP_KEY"
 
@@ -52,10 +57,16 @@ XPRA_PACKAGES=(
   xpra-html5
   xpra-audio-server
   pulseaudio
+  pulseaudio-utils
   xserver-xorg-video-dummy
+  gstreamer1.0-tools
+  gstreamer1.0-plugins-base
+  gstreamer1.0-plugins-good
+  gstreamer1.0-pulseaudio
 )
 
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends   "${XPRA_PACKAGES[@]}"
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+  "${XPRA_PACKAGES[@]}"
 
 for pkg in "${XPRA_PACKAGES[@]}"; do
   dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed' || {
@@ -64,7 +75,22 @@ for pkg in "${XPRA_PACKAGES[@]}"; do
   }
 done
 
-command -v xpra >/dev/null
+for cmd in xpra gst-inspect-1.0 pactl; do
+  command -v "$cmd" >/dev/null 2>&1 || {
+    echo "XPRA_RUNTIME_COMMAND_MISSING=$cmd"
+    exit 23
+  }
+done
+
+gst-inspect-1.0 pulsesrc >/dev/null 2>&1 || {
+  echo "XPRA_AUDIO_CAPTURE_PLUGIN=FAIL_PULSESRC"
+  exit 24
+}
+
+gst-inspect-1.0 opusenc >/dev/null 2>&1 || {
+  echo "XPRA_AUDIO_CODEC=FAIL_OPUS"
+  exit 25
+}
 
 XPRA_VERSION="$(xpra --version 2>&1 | head -n1)"
 XPRA_X11_VERSION="$(dpkg-query -W -f='${Version}' xpra-x11)"
@@ -80,5 +106,7 @@ echo "XPRA_VERSION=$XPRA_VERSION"
 echo "XPRA_X11_VERSION=$XPRA_X11_VERSION"
 echo "XPRA_HTML5_VERSION=$XPRA_HTML5_VERSION"
 echo "XPRA_AUDIO_SERVER_VERSION=$XPRA_AUDIO_VERSION"
+echo "XPRA_AUDIO_CAPTURE_PLUGIN=PASS"
+echo "XPRA_AUDIO_CODEC_OPUS=PASS"
 echo "XPRA_CHANNEL=STABLE"
 echo "XPRA_DESKTOP_BACKEND=PASS"
