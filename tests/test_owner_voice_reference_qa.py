@@ -6,6 +6,8 @@ from scripts.owner_voice_reference_qa import (
     _audition_workspace,
     build_reference_candidate,
     build_reference_qa_context,
+    reference_quality_upper_bound,
+    should_stop_reference_asr,
 )
 
 
@@ -102,3 +104,25 @@ def test_audition_workspace_uses_explicit_environment_without_nameerror(monkeypa
     resolved=_audition_workspace(tmp_path/"runner-temp")
     assert resolved==expected.resolve()
     assert resolved.is_dir()
+
+
+def test_reference_quality_upper_bound_is_safe_for_exact_branch_and_bound():
+    metrics=_metrics()
+    realized=build_reference_candidate(
+        reference=_materialized(1),
+        normalized_path="/tmp/ref-1.wav",
+        metrics=metrics,
+        detected_language="pt",
+        language_probability=0.97,
+        transcription_confidence=0.93,
+        transcript="Teste limpo.",
+    )
+    upper=reference_quality_upper_bound(metrics)
+    assert upper >= realized["quality_score"]
+    assert upper <= 1.0
+
+
+def test_reference_asr_stops_only_when_best_strictly_beats_all_remaining_bounds():
+    assert should_stop_reference_asr(0.91,[0.90,0.89]) is True
+    assert should_stop_reference_asr(0.90,[0.90,0.89]) is False
+    assert should_stop_reference_asr(0.0,[]) is True
