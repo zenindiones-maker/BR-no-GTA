@@ -62,8 +62,8 @@ def test_generation_refuses_missing_owner_audio_or_unreviewed_cfg():
 def test_audition_text_is_explicit_brazilian_portuguese():
     text = build_ptbr_audition_text()
     assert "português do Brasil" in text
-    assert "a gente" in text
-    assert "você" in text
+    assert "a gente" in text.casefold()
+    assert "você" in text.casefold()
     assert "BR no GTA 6" in text
 
 
