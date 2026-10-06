@@ -207,17 +207,55 @@ def _audition_workspace(runner_temp: Path) -> Path:
         github_run_attempt=str(os.environ.get("GITHUB_RUN_ATTEMPT") or "1"),
     )
 
+def _write_env(values: Mapping[str,Any]) -> None:
+    target=str(os.environ.get("GITHUB_ENV") or "").strip()
+    if not target:
+        return
+    with open(target,"a",encoding="utf-8") as stream:
+        for key,value in values.items():
+            stream.write(f"{key}={value}\n")
+
+
+def _ensure_stt_model(cache_root: Path, model_id: str) -> tuple[Path,int]:
+    import shutil
+    from faster_whisper.utils import download_model
+
+    safe=model_id.replace("/","--")
+    target=(cache_root/"stt"/safe).resolve()
+    if (target/"model.bin").is_file() and (target/"config.json").is_file():
+        return target,0
+    if target.exists():
+        shutil.rmtree(target)
+    target.parent.mkdir(parents=True,exist_ok=True)
+    os.environ["HF_HUB_OFFLINE"]="0"
+    path=Path(download_model(model_id,output_dir=str(target))).resolve()
+    if not (path/"model.bin").is_file() or not (path/"config.json").is_file():
+        raise RuntimeError("STT_PUBLIC_MODEL_CACHE_INVALID")
+    return path,1
+
+
 def main() -> int:
     import json
-    import os
+    import time
     from pathlib import Path
 
     from app.services.owner_voice_audio_quality_service import pcm16_quality_metrics
+    from app.services.owner_voice_audition_ledger_store import store_from_environment
+    from app.services.owner_voice_audition_performance_service import (
+        GitBackedReferenceSelectionReceiptLedger,
+        build_reference_selection_receipt,
+        build_selection_policy_hash,
+        build_stt_contract_hash,
+        validate_reference_selection_receipt,
+    )
     from app.services.owner_voice_private_materialization_service import (
         OwnerVoicePrivateMaterializationError,
+        materialize_selected_telegram_owner_reference,
         materialize_telegram_owner_references,
     )
+    from faster_whisper import WhisperModel
 
+    started=time.monotonic()
     token = str(os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
     if not token:
         raise OwnerVoicePrivateMaterializationError(
@@ -228,105 +266,186 @@ def main() -> int:
     audition_workspace=_audition_workspace(runner_temp)
     repository_root = Path.cwd().resolve()
     index = _load_reference_index()
-    materialized = materialize_telegram_owner_references(
-        index,
-        private_root=audition_workspace / "qa-references",
-        repository_root=repository_root,
-        telegram_bot_token=token,
+    reference_set_digest=str(index.get("index_sha256") or "").lower()
+    selection_policy_hash=build_selection_policy_hash()
+    model_id = str(os.environ.get("BR_OWNER_STT_MODEL") or "large-v3-turbo").strip()
+    stt_contract_hash=build_stt_contract_hash(model_id)
+
+    cache_root=Path(
+        os.environ.get("BR_OWNER_PUBLIC_MODEL_CACHE")
+        or Path.home()/".cache"/"br-owner-voice"/"hf-public"
+    ).resolve()
+    stt_model_path,stt_network_download_count=_ensure_stt_model(cache_root,model_id)
+    _write_env({
+        "BR_OWNER_STT_MODEL_PATH":str(stt_model_path),
+        "STT_MODEL_DOWNLOAD_COUNT":stt_network_download_count,
+        "STT_NETWORK_DOWNLOAD_COUNT":stt_network_download_count,
+    })
+
+    store=store_from_environment(
+        repo_root=repository_root,
+        workspace=audition_workspace/"reference-selection-ledger",
     )
+    selection_ledger=GitBackedReferenceSelectionReceiptLedger(store)
+    cached=selection_ledger.load()
+    cache_state="MISS"
+    context=None
+    asr_count=0
+    total_count=len(index.get("references") or [])
 
-    from faster_whisper import WhisperModel
-    from faster_whisper.utils import download_model
-
-    model_id = str(os.environ.get("BR_OWNER_STT_MODEL") or "small").strip()
-    stt_model_root = audition_workspace / "stt-model"
-    stt_model_path = download_model(
-        model_id,
-        output_dir=str(stt_model_root),
-    )
-    stt = WhisperModel(
-        str(stt_model_path),
-        device="cpu",
-        compute_type="int8",
-        local_files_only=True,
-    )
-
-    prepared: list[dict[str, Any]] = []
-    for reference in materialized["references"]:
-        input_id = int(reference["telegram_input_id"])
-        normalized = _normalize_reference(
-            reference["runtime_path"],
-            audition_workspace / "qa-normalized" / f"reference-{input_id}.wav",
+    if isinstance(cached,dict) and validate_reference_selection_receipt(
+        cached,
+        reference_set_digest=reference_set_digest,
+        selection_policy_hash=selection_policy_hash,
+        stt_contract_hash=stt_contract_hash,
+    ):
+        selected=materialize_selected_telegram_owner_reference(
+            index,
+            selected_telegram_input_id=int(cached["selected_telegram_input_id"]),
+            private_root=audition_workspace/"qa-selected-reference",
+            repository_root=repository_root,
+            telegram_bot_token=token,
         )
-        metrics = pcm16_quality_metrics(normalized)
-        if not _cheap_reference_can_be_identity_grade(reference,metrics):
-            continue
-        prepared.append({
-            "reference":dict(reference),
-            "normalized_path":str(normalized),
-            "metrics":dict(metrics),
-            "upper_bound":reference_quality_upper_bound(metrics),
-        })
-
-    prepared.sort(key=lambda row:(
-        -float(row["upper_bound"]),
-        str(row["reference"].get("sha256") or ""),
-        int(row["reference"].get("telegram_input_id") or 0),
-    ))
-    candidates: list[dict[str, Any]] = []
-    for index,item in enumerate(prepared):
-        segments_iter, info = stt.transcribe(
-            str(item["normalized_path"]),
-            language=None,
-            beam_size=5,
-            vad_filter=True,
-            word_timestamps=True,
-            condition_on_previous_text=True,
-        )
-        segments = list(segments_iter)
-        transcript = " ".join(
-            str(getattr(segment, "text", "") or "").strip()
-            for segment in segments
-            if str(getattr(segment, "text", "") or "").strip()
-        )
-        candidate = build_reference_candidate(
-            reference=item["reference"],
-            normalized_path=str(item["normalized_path"]),
-            metrics=item["metrics"],
-            detected_language=str(getattr(info, "language", "") or ""),
-            language_probability=float(
-                getattr(info, "language_probability", 0.0) or 0.0
-            ),
-            transcription_confidence=_transcription_confidence(segments),
-            transcript=transcript,
-        )
-        candidates.append(candidate)
-        try:
-            provisional=build_reference_qa_context(candidates)
-        except ValueError:
-            provisional=None
-        remaining_bounds=[
-            float(row["upper_bound"])
-            for row in prepared[index+1:]
-        ]
-        if (
-            provisional is not None
-            and should_stop_reference_asr(
-                float(provisional["quality_score"]),
-                remaining_bounds,
+        if str(selected.get("sha256") or "").lower()==str(cached["selected_audio_sha256"]).lower():
+            normalized=_normalize_reference(
+                selected["runtime_path"],
+                audition_workspace/"qa-normalized"/"selected-reference.wav",
             )
-        ):
-            break
+            metrics=pcm16_quality_metrics(normalized)
+            if _cheap_reference_can_be_identity_grade(selected,metrics):
+                context={
+                    "schema":"OwnerVoiceReferenceQAContext/v1",
+                    "voice_identity_id":VOICE_IDENTITY_ID,
+                    "reference_source":REFERENCE_SOURCE,
+                    "locale":EXTERNAL_LOCALE,
+                    "selected_telegram_input_id":int(cached["selected_telegram_input_id"]),
+                    "selected_audio_sha256":str(cached["selected_audio_sha256"]),
+                    "selected_private_audio_ref":str(selected["private_audio_ref"]),
+                    "selection_policy":"QUALITY_FIRST_DETERMINISTIC",
+                    "latest_input_wins":False,
+                    "quality_score":float(cached["quality_score"]),
+                    "ptbr_probability":float(cached["ptbr_probability"]),
+                    "transcription_confidence":float(cached["transcription_confidence"]),
+                    "snr_db":float(metrics.get("snr_db") or 0.0),
+                    "clipping_ratio":float(metrics.get("clipping_ratio") or 0.0),
+                    "speech_ratio":float(metrics.get("speech_ratio") or 0.0),
+                    "private_transcript_available":False,
+                }
+                cache_state="HIT"
+        else:
+            cache_state="INVALID"
 
-    selected_context=build_reference_qa_context(candidates)
-    context = {
-        **selected_context,
-        "stt_model_path": str(stt_model_path),
-        "stt_model_id": model_id,
-        "stt_reuse_mode": "LOCAL_FILES_ONLY_BRANCH_AND_BOUND",
-        "reference_total_count":len(materialized["references"]),
-        "reference_audio_eligible_count":len(prepared),
-        "reference_asr_count":len(candidates),
+    if context is None:
+        if isinstance(cached,dict):
+            cache_state="INVALID"
+        materialized = materialize_telegram_owner_references(
+            index,
+            private_root=audition_workspace / "qa-references",
+            repository_root=repository_root,
+            telegram_bot_token=token,
+        )
+        stt = WhisperModel(
+            str(stt_model_path),
+            device="cpu",
+            compute_type="int8",
+            cpu_threads=4,
+            num_workers=1,
+            local_files_only=True,
+        )
+
+        prepared: list[dict[str, Any]] = []
+        for reference in materialized["references"]:
+            input_id = int(reference["telegram_input_id"])
+            normalized = _normalize_reference(
+                reference["runtime_path"],
+                audition_workspace / "qa-normalized" / f"reference-{input_id}.wav",
+            )
+            metrics = pcm16_quality_metrics(normalized)
+            if not _cheap_reference_can_be_identity_grade(reference,metrics):
+                continue
+            prepared.append({
+                "reference":dict(reference),
+                "normalized_path":str(normalized),
+                "metrics":dict(metrics),
+                "upper_bound":reference_quality_upper_bound(metrics),
+            })
+
+        prepared.sort(key=lambda row:(
+            -float(row["upper_bound"]),
+            str(row["reference"].get("sha256") or ""),
+            int(row["reference"].get("telegram_input_id") or 0),
+        ))
+        candidates: list[dict[str, Any]] = []
+        for position,item in enumerate(prepared):
+            segments_iter, info = stt.transcribe(
+                str(item["normalized_path"]),
+                language=None,
+                beam_size=5,
+                vad_filter=True,
+                word_timestamps=True,
+                condition_on_previous_text=True,
+            )
+            segments = list(segments_iter)
+            asr_count+=1
+            transcript = " ".join(
+                str(getattr(segment, "text", "") or "").strip()
+                for segment in segments
+                if str(getattr(segment, "text", "") or "").strip()
+            )
+            candidate = build_reference_candidate(
+                reference=item["reference"],
+                normalized_path=str(item["normalized_path"]),
+                metrics=item["metrics"],
+                detected_language=str(getattr(info, "language", "") or ""),
+                language_probability=float(
+                    getattr(info, "language_probability", 0.0) or 0.0
+                ),
+                transcription_confidence=_transcription_confidence(segments),
+                transcript=transcript,
+            )
+            candidates.append(candidate)
+            try:
+                provisional=build_reference_qa_context(candidates)
+            except ValueError:
+                provisional=None
+            remaining_bounds=[
+                float(row["upper_bound"])
+                for row in prepared[position+1:]
+            ]
+            if (
+                provisional is not None
+                and should_stop_reference_asr(
+                    float(provisional["quality_score"]),
+                    remaining_bounds,
+                )
+            ):
+                break
+
+        selected_context=build_reference_qa_context(candidates)
+        context={
+            **selected_context,
+            "private_transcript_available":True,
+        }
+        receipt=build_reference_selection_receipt(
+            reference_set_digest=reference_set_digest,
+            selection_policy_hash=selection_policy_hash,
+            stt_contract_hash=stt_contract_hash,
+            selected_telegram_input_id=int(context["selected_telegram_input_id"]),
+            selected_audio_sha256=str(context["selected_audio_sha256"]),
+            quality_score=float(context["quality_score"]),
+            ptbr_probability=float(context["ptbr_probability"]),
+            transcription_confidence=float(context["transcription_confidence"]),
+        )
+        selection_ledger.persist(receipt)
+
+    context={
+        **dict(context),
+        "stt_model_path":str(stt_model_path),
+        "stt_model_id":model_id,
+        "stt_reuse_mode":"EXACT_SHARED_MODEL_PATH",
+        "reference_total_count":total_count,
+        "reference_asr_count":asr_count,
+        "reference_selection_cache":cache_state,
     }
     output = Path(
         os.environ.get("BR_OWNER_REFERENCE_QA_CONTEXT")
@@ -342,10 +461,21 @@ def main() -> int:
     except OSError:
         pass
 
+    elapsed=time.monotonic()-started
+    _write_env({
+        "REFERENCE_SELECTION_CACHE_HIT":"true" if cache_state=="HIT" else "false",
+        "REFERENCE_ASR_COUNT":asr_count,
+        "REFERENCE_QA_SECONDS":round(elapsed,6),
+    })
+
     print("OWNER_AUDITION_WORKSPACE_SCOPE=PASS")
-    print(f"OWNER_REFERENCE_QA_COUNT={len(candidates)}")
-    print(f"OWNER_REFERENCE_TOTAL_COUNT={len(materialized['references'])}")
-    print(f"OWNER_REFERENCE_ASR_COUNT={len(candidates)}")
+    print(f"OWNER_REFERENCE_QA_COUNT={asr_count}")
+    print(f"OWNER_REFERENCE_TOTAL_COUNT={total_count}")
+    print(f"OWNER_REFERENCE_ASR_COUNT={asr_count}")
+    print(f"REFERENCE_SELECTION_CACHE={cache_state}")
+    print(f"STT_MODEL_DOWNLOAD_COUNT={stt_network_download_count}")
+    print(f"STT_NETWORK_DOWNLOAD_COUNT={stt_network_download_count}")
+    print(f"BR_OWNER_STT_MODEL_PATH={stt_model_path}")
     print("OWNER_REFERENCE_QA_EXACT_BRANCH_AND_BOUND=PASS")
     print("OWNER_REFERENCE_SELECTION_POLICY=QUALITY_FIRST_DETERMINISTIC")
     print("OWNER_REFERENCE_LATEST_INPUT_WINS=false")
