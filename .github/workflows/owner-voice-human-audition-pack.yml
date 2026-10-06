@@ -337,9 +337,16 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: br-owner-v1-human-audition-delivery-receipt
-          path: |
-            ${{ env.BR_OWNER_AUDITION_TERMINAL_RECEIPT }}
-            ${{ env.BR_OWNER_AUDITION_PERFORMANCE_RECEIPT }}
+          path: ${{ env.BR_OWNER_AUDITION_TERMINAL_RECEIPT }}
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload sanitized performance receipt only
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: br-owner-v1-human-audition-performance-receipt
+          path: ${{ env.BR_OWNER_AUDITION_PERFORMANCE_RECEIPT }}
           if-no-files-found: error
           retention-days: 3
 
