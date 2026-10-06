@@ -148,7 +148,7 @@ def select_canonical_reference(
             and row.get("no_overlap") is True
             and row.get("no_music") is True
             and float(row.get("ptbr_probability") or 0.0)>=0.90
-            and float(row.get("clipping_ratio") or 1.0)<=0.01
+            and float(1.0 if row.get("clipping_ratio") is None else row.get("clipping_ratio"))<=0.01
             and float(row.get("speech_ratio") or 0.0)>=0.55
             and float(row.get("duration_seconds") or 0.0)>0.0
             and sim>=threshold
