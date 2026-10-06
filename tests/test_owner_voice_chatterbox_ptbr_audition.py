@@ -85,8 +85,8 @@ def test_manifest_path_falls_back_to_run_scoped_workspace_not_legacy(monkeypatch
     assert resolved.parent.is_dir()
 
 
-def test_long_audition_text_is_segmented_without_changing_words():
-    text=build_ptbr_audition_text()
+def test_segmentation_remains_safety_fallback_for_long_text():
+    text=" ".join(f"palavra{i}" for i in range(130))
     chunks=split_ptbr_audition_text(text)
     assert len(chunks) >= 3
     assert all(1 <= len(chunk.split()) <= 55 for chunk in chunks)
@@ -97,21 +97,19 @@ def test_generation_retry_budget_is_bounded_per_label():
     assert MAX_GENERATION_ATTEMPTS_PER_LABEL == 2
 
 
-def test_only_failed_a_consumes_second_quality_attempt_with_nonidentical_seed():
-    plan=prescreen_retry_plan_for_label(
-        label="A",
-        requested_cfg_weight=0.3,
-        base_seed=424242,
+def test_bounded_retry_is_explicit_and_normal_path_starts_at_attempt_one():
+    normal=prescreen_retry_plan_for_label(
+        label="A",requested_cfg_weight=0.3,base_seed=424242,
     )
-    assert plan["attempt"]==2
-    assert plan["cfg_weight"]==0.5
-    assert plan["seed"]==425242
-    assert plan["reason"]=="HIGH_WORD_ERROR_RATE"
-    assert prescreen_retry_plan_for_label(
-        label="B",
-        requested_cfg_weight=0.5,
-        base_seed=424242,
-    )["attempt"]==1
+    assert normal["attempt"]==1
+    retry=prescreen_retry_plan_for_label(
+        label="A",requested_cfg_weight=0.3,base_seed=424242,
+        failure_reason="HIGH_WORD_ERROR_RATE",prior_attempt=1,
+    )
+    assert retry["attempt"]==2
+    assert retry["cfg_weight"]==0.5
+    assert retry["seed"]!=normal["seed"]
+    assert retry["reason"]=="HIGH_WORD_ERROR_RATE"
 
 
 def test_human_identity_audition_is_short_and_single_segment_normal_path():
