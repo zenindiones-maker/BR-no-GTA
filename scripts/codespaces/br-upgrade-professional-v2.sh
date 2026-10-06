@@ -8,15 +8,12 @@ cd "$REPO_ROOT"
 
 bash "$SCRIPT_DIR/install-xpra-stable.sh"
 
-sudo apt-get update
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+bash "$SCRIPT_DIR/ensure-apt-packages.sh" \
   iproute2 \
   mediainfo \
   sox \
   libsox-fmt-all \
   rubberband-cli
-
-sudo apt-get clean
 
 mkdir -p /tmp/br-media-scratch /tmp/br-media-cache
 chmod 700 /tmp/br-media-scratch /tmp/br-media-cache
