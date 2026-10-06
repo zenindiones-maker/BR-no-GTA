@@ -1,0 +1,28 @@
+{
+  "name": "BR-no-GTA Zero-Cost Media Workstation",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "8gb",
+    "storage": "32gb"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/sshd:1": {
+      "version": "latest"
+    }
+  },
+  "containerEnv": {
+    "BR_NO_GTA_ZERO_COST": "1"
+  },
+  "forwardPorts": [6081],
+  "portsAttributes": {
+    "6081": {
+      "label": "BR-no-GTA Desktop",
+      "onAutoForward": "silent",
+      "protocol": "http"
+    }
+  },
+  "postCreateCommand": "bash scripts/codespaces/br-bootstrap-zero-cost.sh",
+  "postStartCommand": "bash scripts/codespaces/br-start-desktop.sh",
+  "remoteUser": "vscode"
+}
