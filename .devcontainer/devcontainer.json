@@ -1,5 +1,5 @@
 {
-  "name": "BR-no-GTA Professional Zero-Cost Workstation V3",
+  "name": "BR-no-GTA Media / Video QA Zero-Cost Workstation V3",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
   "hostRequirements": {
     "cpus": 2,
@@ -22,17 +22,22 @@
     "MKL_NUM_THREADS": "2",
     "NUMEXPR_MAX_THREADS": "2",
     "RAYON_NUM_THREADS": "2",
-    "PIP_DISABLE_PIP_VERSION_CHECK": "1"
+    "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+    "BR_WORKSTATION_ROLE": "MEDIA_VIDEO_QA",
+    "MASTER_FINAL_TARGET": "1920x1080_30_H264_AAC"
   },
-  "forwardPorts": [14501, 6081],
+  "forwardPorts": [
+    14501,
+    6081
+  ],
   "portsAttributes": {
-    "14501": {
-      "label": "BR-no-GTA Professional Desktop",
+    "6081": {
+      "label": "BR-no-GTA noVNC Fallback",
       "onAutoForward": "silent",
       "protocol": "http"
     },
-    "6081": {
-      "label": "BR-no-GTA noVNC Fallback",
+    "14501": {
+      "label": "BR-no-GTA Professional Desktop",
       "onAutoForward": "silent",
       "protocol": "http"
     }
@@ -45,12 +50,20 @@
           "**/.git/subtree-cache/**": true,
           "**/.venv/**": true,
           "**/node_modules/**": true,
-          "**/__pycache__/**": true
+          "**/__pycache__/**": true,
+          "**/output/**": true,
+          "**/data/raw/**": true,
+          "**/content/videos/**": true,
+          "**/workspace/**": true
         },
         "search.exclude": {
           "**/.venv/**": true,
           "**/node_modules/**": true,
-          "**/__pycache__/**": true
+          "**/__pycache__/**": true,
+          "**/output/**": true,
+          "**/data/raw/**": true,
+          "**/content/videos/**": true,
+          "**/workspace/**": true
         }
       }
     }
