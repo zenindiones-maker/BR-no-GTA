@@ -243,3 +243,47 @@ def materialize_telegram_owner_references(
             "media_bytes_on_a15": False,
         },
     }
+
+
+def materialize_selected_telegram_owner_reference(
+    index: Mapping[str, Any],
+    *,
+    selected_telegram_input_id: int,
+    private_root: str | Path,
+    repository_root: str | Path,
+    telegram_bot_token: str,
+    api_call: Callable[[str, str, dict[str, Any]], Any] | None = None,
+    downloader: Callable[[str, str, Path], None] | None = None,
+) -> dict[str, Any]:
+    parsed=parse_owner_reference_index_secret(
+        json.dumps(dict(index),ensure_ascii=False,sort_keys=True)
+    )
+    selected_id=int(selected_telegram_input_id)
+    row=next(
+        (dict(item) for item in parsed["references"] if int(item["telegram_input_id"])==selected_id),
+        None,
+    )
+    if not isinstance(row,dict):
+        raise OwnerVoicePrivateMaterializationError("OWNER_REFERENCE_SELECTION_NOT_FOUND")
+    subset={
+        "schema":parsed["schema"],
+        "voice_identity_id":parsed["voice_identity_id"],
+        "source":parsed.get("source"),
+        "reference_count":1,
+        "references":[row],
+    }
+    subset["index_sha256"]=hashlib.sha256(_canonical_json(subset)).hexdigest()
+    result=materialize_telegram_owner_references(
+        subset,
+        private_root=private_root,
+        repository_root=repository_root,
+        telegram_bot_token=telegram_bot_token,
+        api_call=api_call,
+        downloader=downloader,
+    )
+    references=list(result.get("references") or [])
+    if len(references)!=1 or int(references[0].get("telegram_input_id") or 0)!=selected_id:
+        raise OwnerVoicePrivateMaterializationError("OWNER_REFERENCE_SELECTION_MATERIALIZATION_FAILED")
+    selected=dict(references[0])
+    selected["source_index_sha256"]=str(parsed["index_sha256"])
+    return selected
