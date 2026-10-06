@@ -31,6 +31,8 @@ jobs:
           bash -n scripts/codespaces/br-start-professional-desktop.sh
           bash -n scripts/codespaces/br-professional-doctor.sh
           bash -n scripts/codespaces/br-termux-control.sh
+          bash -n scripts/codespaces/br-media-smoke.sh
+          bash -n scripts/codespaces/br-runtime-proof.sh
           python -m json.tool .devcontainer/devcontainer.json >/dev/null
 
       - name: Validate workstation role and zero-cost lifecycle
@@ -45,6 +47,10 @@ jobs:
           grep -q 'ZERO_COST_MODE=INCLUDED_USAGE_ONLY' scripts/codespaces/br-termux-control.sh
           grep -q 'MEDIA_VIDEO_QA' .devcontainer/devcontainer.json
           grep -q -- '--resize-display=1920x1080' scripts/codespaces/br-start-professional-desktop.sh
+          grep -q 'XPRA_REQUIRED=TRUE' scripts/codespaces/br-termux-control.sh
+          grep -q 'proof)' scripts/codespaces/br-termux-control.sh
+          ! grep -q 'FALLBACK_NOVNC' .devcontainer/devcontainer.json
+          ! grep -q 'XPRA=WAIT_FALLBACK_NOVNC' scripts/codespaces/br-termux-control.sh
           ! grep -R 'work/zero-cost-codespaces-v1'             .devcontainer scripts/codespaces/br-termux-control.sh
 
       - name: Prove MASTER_FINAL codec capability
@@ -68,5 +74,6 @@ jobs:
           assert audio["codec_name"]=="aac"
           print("MASTER_FINAL_CODEC_SMOKE=PASS")
           PY
+          bash scripts/codespaces/br-media-smoke.sh
           echo "BR_WORKSTATION_V3_STATIC=PASS"
           echo "PAID_FALLBACK=FALSE"
