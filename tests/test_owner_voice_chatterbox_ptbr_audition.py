@@ -13,6 +13,7 @@ from scripts.owner_voice_chatterbox_ptbr_audition import (
     VE_SHA256,
     build_generation_kwargs,
     build_ptbr_audition_text,
+    prescreen_retry_plan_for_label,
     resolve_audition_manifest_path,
     split_ptbr_audition_text,
 )
@@ -92,3 +93,20 @@ def test_long_audition_text_is_segmented_without_changing_words():
 
 def test_generation_retry_budget_is_bounded_per_label():
     assert MAX_GENERATION_ATTEMPTS_PER_LABEL == 2
+
+
+def test_only_failed_a_consumes_second_quality_attempt_with_nonidentical_seed():
+    plan=prescreen_retry_plan_for_label(
+        label="A",
+        requested_cfg_weight=0.3,
+        base_seed=424242,
+    )
+    assert plan["attempt"]==2
+    assert plan["cfg_weight"]==0.5
+    assert plan["seed"]==425242
+    assert plan["reason"]=="HIGH_WORD_ERROR_RATE"
+    assert prescreen_retry_plan_for_label(
+        label="B",
+        requested_cfg_weight=0.5,
+        base_seed=424242,
+    )["attempt"]==1
