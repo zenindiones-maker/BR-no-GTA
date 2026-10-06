@@ -154,12 +154,14 @@ def test_receipt_upload_uses_run_scoped_env_path_not_tmp_hardcode():
 
 def test_performance_v1_uses_exact_public_cache_and_single_stt_model_path():
     text=WORKFLOW.read_text(encoding="utf-8")
+    reference_qa=Path("scripts/owner_voice_reference_qa.py").read_text(encoding="utf-8")
+    consumer=CONSUMER.read_text(encoding="utf-8")
     assert "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830" in text
     assert "BR_OWNER_PUBLIC_MODEL_CACHE" in text
     assert "/tmp/br-owner-huggingface" not in text
-    assert "BR_OWNER_STT_MODEL_PATH" in text
-    assert "stt-model-consumer" not in CONSUMER.read_text(encoding="utf-8")
-    assert "STT_MODEL_DOWNLOAD_COUNT" in text
+    assert "BR_OWNER_STT_MODEL_PATH" in reference_qa
+    assert "stt-model-consumer" not in consumer
+    assert "STT_MODEL_DOWNLOAD_COUNT" in reference_qa
     assert "HF_HUB_OFFLINE" in text
 
 
@@ -177,8 +179,10 @@ def test_performance_v1_cpu_and_fast_asr_contract():
 
 
 def test_performance_receipt_is_sanitized_and_uploaded_without_audio():
-    text=WORKFLOW.read_text(encoding="utf-8")
-    assert "OwnerVoicePerformanceReceipt/v1" in Path("scripts/owner_voice_performance_receipt.py").read_text(encoding="utf-8")
-    assert "owner-voice-performance-receipt.json" in text
-    assert "TOTAL_AUDITION_SECONDS" in text
-    assert "CHATTERBOX_GENERATE_CALL_COUNT" in text
+    workflow=WORKFLOW.read_text(encoding="utf-8")
+    service=Path("app/services/owner_voice_audition_performance_service.py").read_text(encoding="utf-8")
+    generator=GENERATOR.read_text(encoding="utf-8")
+    assert "OwnerVoicePerformanceReceipt/v1" in service
+    assert "owner-voice-performance-receipt.json" in workflow
+    assert "TOTAL_AUDITION_SECONDS" in service
+    assert "CHATTERBOX_GENERATE_CALL_COUNT" in generator
