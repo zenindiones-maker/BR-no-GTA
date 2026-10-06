@@ -49,7 +49,7 @@ if session_live && ! http_live; then
 fi
 
 if ! session_live; then
-  xpra start-desktop "$SESSION"     --socket-dir="$SOCKET_DIR"     --bind-tcp="127.0.0.1:${PORT},auth=none"     --html=on     --pulseaudio=yes     --speaker=on     --microphone=disabled     --webcam=no     --file-transfer=off     --open-files=off     --printing=no     --mdns=no     --sharing=no     --start-new-commands=no     --systemd-run=no     --resize-display=1600x900     --dpi=96     --session-name="BR-no-GTA Professional"     --env="TMPDIR=${SCRATCH}"     --env="XDG_CACHE_HOME=${CACHE}"     --start-child="xfce4-session"     --exit-with-children=no     --log-file="$LOG_FILE"     --daemon=yes
+  xpra start-desktop "$SESSION"     --socket-dir="$SOCKET_DIR"     --bind-tcp="127.0.0.1:${PORT},auth=none"     --html=on     --pulseaudio=yes     --speaker=on     --microphone=disabled     --webcam=no     --file-transfer=off     --open-files=off     --printing=no     --mdns=no     --sharing=no     --start-new-commands=no     --systemd-run=no     --resize-display=1600x900     --dpi=96     --session-name="BR-no-GTA Professional"     --env="TMPDIR=${SCRATCH}"     --env="XDG_CACHE_HOME=${CACHE}"     --start="xfce4-session"     --exit-with-children=no     --log-file="$LOG_FILE"     --daemon=yes
 fi
 
 for _ in $(seq 1 60); do
