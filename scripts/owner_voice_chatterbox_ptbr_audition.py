@@ -192,9 +192,14 @@ def build_generation_kwargs(
     cfg_weight: float,
     prepared_conditionals: bool = False,
 ) -> dict[str, Any]:
-    source = str(audio_prompt_path or "").strip()
-    if not source and not prepared_conditionals:
-        raise ValueError("OWNER_PREPARED_CONDITIONALS_REQUIRED")
+    if audio_prompt_path is None:
+        source=""
+        if not prepared_conditionals:
+            raise ValueError("OWNER_PREPARED_CONDITIONALS_REQUIRED")
+    else:
+        source=str(audio_prompt_path).strip()
+        if not source:
+            raise ValueError("OWNER_TELEGRAM_REFERENCE_REQUIRED")
     weight = round(float(cfg_weight), 3)
     if weight not in ALLOWED_CFG_WEIGHTS:
         raise ValueError("PTBR_AUDITION_CFG_NOT_ALLOWED")
