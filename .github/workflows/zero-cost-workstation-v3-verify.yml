@@ -56,6 +56,7 @@ jobs:
           ! grep -R 'work/zero-cost-codespaces-v1'             .devcontainer scripts/codespaces/br-termux-control.sh
 
       - name: Prove MASTER_FINAL codec capability
+        working-directory: repo
         run: |
           set -euo pipefail
           sudo apt-get update
