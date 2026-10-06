@@ -49,6 +49,8 @@ jobs:
           grep -q -- '--resize-display=1920x1080' scripts/codespaces/br-start-professional-desktop.sh
           grep -q 'XPRA_REQUIRED=TRUE' scripts/codespaces/br-termux-control.sh
           grep -q 'proof)' scripts/codespaces/br-termux-control.sh
+          grep -q 'WORKTREE=BLOCKED_DIRTY_PRESERVE_WIP' scripts/codespaces/br-termux-control.sh
+          grep -q 'receipt.sha256' scripts/codespaces/br-runtime-proof.sh
           ! grep -q 'FALLBACK_NOVNC' .devcontainer/devcontainer.json
           ! grep -q 'XPRA=WAIT_FALLBACK_NOVNC' scripts/codespaces/br-termux-control.sh
           ! grep -R 'work/zero-cost-codespaces-v1'             .devcontainer scripts/codespaces/br-termux-control.sh
