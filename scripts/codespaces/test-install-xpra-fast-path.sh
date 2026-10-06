@@ -13,9 +13,9 @@ cat >"$BIN/dpkg-query" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 args="$*"
-if [[ "$args" == *"${Status}"* ]]; then
+if [[ "$args" == *'${Status}'* ]]; then
   printf '%s' 'install ok installed'
-elif [[ "$args" == *"${Version}"* ]]; then
+elif [[ "$args" == *'${Version}'* ]]; then
   printf '%s' '6.5.4-test'
 else
   exit 2
@@ -52,7 +52,9 @@ SH
 chmod +x "$BIN"/*
 
 OUTPUT="$(
-  PATH="$BIN:/usr/bin:/bin"   CODESPACES=true   bash "$INSTALLER"
+  PATH="$BIN:/usr/bin:/bin" \
+  CODESPACES=true \
+  bash "$INSTALLER"
 )"
 
 grep -Fxq "XPRA_INSTALL=PASS_ALREADY_PRESENT" <<<"$OUTPUT"
