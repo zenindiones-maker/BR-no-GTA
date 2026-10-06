@@ -41,6 +41,8 @@ jobs:
           grep -q -- '--idle-timeout 20m' scripts/codespaces/br-termux-control.sh
           grep -q -- '--retention-period 24h' scripts/codespaces/br-termux-control.sh
           grep -q 'MACHINE="basicLinux32gb"' scripts/codespaces/br-termux-control.sh
+          grep -q 'WORKSTATION_ROLE=MEDIA_VIDEO_QA' scripts/codespaces/br-termux-control.sh
+          grep -q 'ZERO_COST_MODE=INCLUDED_USAGE_ONLY' scripts/codespaces/br-termux-control.sh
           grep -q 'MEDIA_VIDEO_QA' .devcontainer/devcontainer.json
           grep -q -- '--resize-display=1920x1080' scripts/codespaces/br-start-professional-desktop.sh
           ! grep -R 'work/zero-cost-codespaces-v1'             .devcontainer scripts/codespaces/br-termux-control.sh
