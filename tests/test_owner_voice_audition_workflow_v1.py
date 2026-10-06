@@ -72,7 +72,7 @@ def test_audition_job_is_read_only_and_ledger_key_is_step_scoped():
     assert "GITHUB_TOKEN:" not in audition
     assert "BR_OWNER_AUDITION_AUTHORITY_REF:" in audition
     expected="BR_OWNER_AUDITION_LEDGER_SSH_KEY: $" + "{{ secrets.BR_OWNER_AUDITION_LEDGER_SSH_KEY }}"
-    assert audition.count(expected)==3
+    assert audition.count(expected)==4
 
 
 def test_workflow_preflights_secrets_before_model_download_and_pins_stt_decode_contract():
