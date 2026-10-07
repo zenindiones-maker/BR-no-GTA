@@ -187,6 +187,64 @@ def evaluate_clone_identity_gate(
     }
 
 
+def evaluate_language_matched_segment_identity_gate(
+    profile: Mapping[str,Any],
+    *,
+    segments: Sequence[Mapping[str,Any]],
+) -> dict[str,Any]:
+    if profile.get("schema_version")!=PROFILE_SCHEMA:
+        raise ValueError("OWNER_SPEAKER_PROFILE_INVALID")
+    centroid=profile.get("centroid")
+    if not isinstance(centroid,list):
+        raise ValueError("OWNER_SPEAKER_CENTROID_REQUIRED")
+    if not segments:
+        raise ValueError("OWNER_CLONE_SEGMENT_IDENTITY_REQUIRED")
+
+    centroid_min=float(profile["clone_centroid_min_similarity"])
+    reference_min=float(profile["clone_reference_min_similarity"])
+    evidence=[]
+    for raw in segments:
+        row=dict(raw)
+        language=str(row.get("language") or "").strip().lower().replace("_","-")
+        embedding=row.get("embedding")
+        reference_embedding=row.get("reference_embedding")
+        if not isinstance(embedding,(list,tuple)) or not isinstance(reference_embedding,(list,tuple)):
+            raise ValueError("OWNER_CLONE_SEGMENT_EMBEDDING_REQUIRED")
+
+        to_centroid=cosine_similarity(embedding,centroid)
+        to_reference=cosine_similarity(embedding,reference_embedding)
+        if language in {"pt","pt-br","portuguese"}:
+            passed=to_centroid>=centroid_min and to_reference>=reference_min
+            gate_mode="PT_OWNER_CENTROID_PLUS_REFERENCE"
+        elif language in {"en","en-us","english"}:
+            # Do not compare cross-lingual English speech against the PT-BR centroid
+            # as an activation criterion. Use the same calibrated owner-reference
+            # threshold against a fresh language-matched owner sample instead.
+            passed=to_reference>=reference_min
+            gate_mode="LANGUAGE_MATCHED_OWNER_REFERENCE"
+        else:
+            raise ValueError("OWNER_CLONE_SEGMENT_LANGUAGE_UNSUPPORTED")
+
+        evidence.append({
+            "position":int(row.get("position") or len(evidence)+1),
+            "language":language,
+            "gate_mode":gate_mode,
+            "passed":bool(passed),
+            "similarity_to_centroid":round(float(to_centroid),6),
+            "similarity_to_language_reference":round(float(to_reference),6),
+            "centroid_min_similarity":centroid_min,
+            "reference_min_similarity":reference_min,
+        })
+
+    return {
+        "passed":all(bool(row["passed"]) for row in evidence),
+        "segments":evidence,
+        "centroid_min_similarity":centroid_min,
+        "reference_min_similarity":reference_min,
+        "calibration":"LANGUAGE_MATCHED_OWNER_REFERENCE_P10",
+    }
+
+
 def select_canonical_reference(
     candidates: Sequence[Mapping[str,Any]],
     profile: Mapping[str,Any],
