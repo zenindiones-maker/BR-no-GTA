@@ -9,6 +9,10 @@ import time
 from pathlib import Path
 from typing import Any
 
+from app.services.gta6_pronunciation_lexicon_service import (
+    gta6_lexicon_hits,
+    gta6_pronunciation_hotwords,
+)
 from app.services.owner_voice_audio_quality_service import pcm16_quality_metrics
 from app.services.owner_voice_human_audition_pack_service import evaluate_short_candidate
 from app.services.owner_voice_human_review_delivery_policy_service import build_human_review_delivery_decision
@@ -43,15 +47,13 @@ IDENTITY_PROFILE_SCHEMA="OwnerSpeakerIdentityProfile/v1"
 PINNED_SPEAKER_MODEL_ID="speechbrain/spkrec-ecapa-voxceleb"
 REQUEST_PATH=Path(".run/br-owner-v1-single-human-clone.request.json")
 SHORT_TEXT=(
-    "Booooa meu povo, aqui é BR no GTA 6! Vice City. "
-    "Jason Duval, Lucia Caminos, Cal Hampton, Boobie Ike, Dre'Quan Priest, "
-    "Real Dimez, Raul Bautista e Brian Heder. Leonida e Rockstar. "
-    "E BR não dorme em Vice City."
+    "Booooa meu povo, aqui é BR no GTA 6! Vice City, no estado de Leonida. "
+    "Rockstar Games. Jason Duval, Lucia Caminos, Cal Hampton, Boobie Ike, "
+    "Dre'Quan Priest, Real Dimez, Raul Bautista e Brian Heder. "
+    "Leonida Keys. E BR não dorme em Vice City."
 )
-PRONUNCIATION_HOTWORDS=(
-    "Vice City Jason Duval Lucia Caminos Cal Hampton Boobie Ike "
-    "Dre'Quan Priest Real Dimez Raul Bautista Brian Heder Leonida Rockstar"
-)
+PRONUNCIATION_HOTWORDS=gta6_pronunciation_hotwords()
+MAX_PRONUNCIATION_PROMPT_REFERENCES=2
 SPEECHBRAIN_VERSION="1.1.1"
 SPEAKER_MODEL_EMBEDDING_SHA256="0575cb64845e6b9a10db9bcb74d5ac32b326b8dc90352671d345e2ee3d0126a2"
 
@@ -197,27 +199,35 @@ def _reference_asr_metrics(
     return ptbr_probability,vad_speech_ratio,language,transcript
 
 
-def _compose_reference_audio(anchor:Path,pronunciation:Path,target:Path)->Path:
+def _compose_reference_audio(
+    anchor:Path,
+    pronunciations:list[Path],
+    target:Path,
+)->Path:
     import numpy as np
     import soundfile as sf
 
     anchor_audio,anchor_rate=sf.read(str(anchor),dtype="float32",always_2d=True)
-    pronunciation_audio,pronunciation_rate=sf.read(
-        str(pronunciation),dtype="float32",always_2d=True
-    )
-    if int(anchor_rate)!=24000 or int(pronunciation_rate)!=24000:
+    if int(anchor_rate)!=24000 or anchor_audio.size==0:
         raise RuntimeError("OWNER_COMPOSITE_REFERENCE_RATE_INVALID")
-    if anchor_audio.size==0 or pronunciation_audio.size==0:
-        raise RuntimeError("OWNER_COMPOSITE_REFERENCE_AUDIO_EMPTY")
     if anchor_audio.shape[1]>1:
         anchor_audio=anchor_audio.mean(axis=1,keepdims=True)
-    if pronunciation_audio.shape[1]>1:
-        pronunciation_audio=pronunciation_audio.mean(axis=1,keepdims=True)
+
     silence=np.zeros((int(0.20*24000),1),dtype="float32")
-    combined=np.concatenate(
-        [anchor_audio,silence,pronunciation_audio],
-        axis=0,
-    )
+    chunks=[anchor_audio]
+    for pronunciation in pronunciations:
+        pronunciation_audio,pronunciation_rate=sf.read(
+            str(pronunciation),dtype="float32",always_2d=True
+        )
+        if int(pronunciation_rate)!=24000:
+            raise RuntimeError("OWNER_COMPOSITE_REFERENCE_RATE_INVALID")
+        if pronunciation_audio.size==0:
+            raise RuntimeError("OWNER_COMPOSITE_REFERENCE_AUDIO_EMPTY")
+        if pronunciation_audio.shape[1]>1:
+            pronunciation_audio=pronunciation_audio.mean(axis=1,keepdims=True)
+        chunks.extend([silence,pronunciation_audio])
+
+    combined=np.concatenate(chunks,axis=0)
     sf.write(str(target),combined,24000,subtype="PCM_16")
     if not target.is_file() or target.stat().st_size<=0:
         raise RuntimeError("OWNER_COMPOSITE_REFERENCE_WRITE_FAILED")
@@ -332,6 +342,7 @@ def main()->int:
         str(int(row["telegram_input_id"])) for row in pronunciation_refs
     }
     print("PRONUNCIATION_REFERENCE_SCOPE=FRESH_TELEGRAM_ONLY")
+    print("PRONUNCIATION_LANGUAGE_POLICY=CODE_SWITCH_ALLOWED")
     print("IDENTITY_REFERENCE_SCOPE=GLOBAL_OWNER_INLIERS")
 
     classifier=_load_speaker_model(cache_root)
@@ -466,19 +477,17 @@ def main()->int:
         raise RuntimeError("NO_CANONICAL_OWNER_REFERENCE_WITH_VERIFIED_TRANSCRIPT")
     cid=str(canonical["reference_id"])
     pronunciation_canonical=None
+    pronunciation_selected=[]
     pronunciation_ref_text=""
     if pronunciation_after_message_id>0:
         pronunciation_pre_asr=[
             row for row in candidate_rows
             if str(row["reference_id"]) in fresh_reference_ids
-            and str(row["reference_id"]) in inlier_ids
             and row["single_speaker"] is True
             and row["clear_speech"] is True
             and row["no_overlap"] is True
             and row["no_music"] is True
             and float(row["duration_seconds"])>0.0
-            and float(profile["reference_similarity_to_centroid"].get(str(row["reference_id"]),-1.0))
-                >=float(profile["clone_centroid_min_similarity"])
         ]
         pronunciation_pre_asr.sort(key=lambda row:(
             -float(profile["reference_similarity_to_centroid"].get(str(row["reference_id"]),-1.0)),
@@ -494,15 +503,36 @@ def main()->int:
                 beam_size=5,
                 pronunciation_hint=True,
             )
-            if float(strong_ptbr)>=0.90 and float(strong_vad)>=0.55 and strong_text:
+            pronunciation_hits=gta6_lexicon_hits(strong_text)
+            if float(strong_vad)>=0.55 and strong_text and pronunciation_hits:
                 row["ptbr_probability"]=strong_ptbr
                 row["speech_ratio"]=strong_vad
                 row["detected_language"]=strong_language
-                pronunciation_canonical=select_canonical_reference([row],profile)
-                pronunciation_ref_text=strong_text
-                break
-        if pronunciation_canonical is None or not pronunciation_ref_text:
+                row["pronunciation_hits"]=pronunciation_hits
+                pronunciation_selected.append((row,strong_text))
+        pronunciation_selected.sort(key=lambda item:(
+            -len(item[0]["pronunciation_hits"]),
+            -float(profile["reference_similarity_to_centroid"].get(str(item[0]["reference_id"]),-1.0)),
+            -float(item[0]["snr_db"]),
+            str(item[0]["sha256"]),
+        ))
+        pronunciation_selected=pronunciation_selected[:MAX_PRONUNCIATION_PROMPT_REFERENCES]
+        if not pronunciation_selected:
             raise RuntimeError("NO_FRESH_PRONUNCIATION_REFERENCE_WITH_VERIFIED_TRANSCRIPT")
+        pronunciation_canonical=pronunciation_selected[0][0]
+        pronunciation_ref_text=" ".join(text for _row,text in pronunciation_selected)
+        print(
+            "OWNER_PRONUNCIATION_PROMPT_REFERENCE_COUNT="
+            +str(len(pronunciation_selected))
+        )
+        print(
+            "OWNER_PRONUNCIATION_LEXICON_HIT_COUNT="
+            +str(len({
+                term
+                for row,_text in pronunciation_selected
+                for term in row["pronunciation_hits"]
+            }))
+        )
 
     canonical16=normalized[cid]
     canonical_embedding=embeddings[cid]
@@ -532,15 +562,17 @@ def main()->int:
     canonical_ref_text=anchor_ref_text
     human_review_reference=canonical
     if pronunciation_canonical is not None:
-        pid=str(pronunciation_canonical["reference_id"])
-        pronunciation24=_ffmpeg(
-            original_sources[pid],
-            workspace/"pronunciation-owner-reference-24k.wav",
-            24000,
-        )
+        pronunciation24s=[]
+        for position,(pronunciation_row,_text) in enumerate(pronunciation_selected,1):
+            pid=str(pronunciation_row["reference_id"])
+            pronunciation24s.append(_ffmpeg(
+                original_sources[pid],
+                workspace/f"pronunciation-owner-reference-{position}-24k.wav",
+                24000,
+            ))
         prompt_audio=_compose_reference_audio(
             canonical24,
-            pronunciation24,
+            pronunciation24s,
             workspace/"composite-owner-reference-24k.wav",
         )
         canonical_ref_text=anchor_ref_text+" "+pronunciation_ref_text
@@ -549,6 +581,10 @@ def main()->int:
         print(
             "OWNER_PRONUNCIATION_REFERENCE_TELEGRAM_INPUT_ID="
             +str(pronunciation_canonical["telegram_input_id"])
+        )
+        print(
+            "OWNER_PRONUNCIATION_REFERENCE_TELEGRAM_INPUT_IDS="
+            +",".join(str(row["telegram_input_id"]) for row,_text in pronunciation_selected)
         )
         print("QWEN_REFERENCE_AUDIO_LINEAGE=IDENTITY_ANCHOR_PLUS_FRESH_PRONUNCIATION")
 
@@ -670,6 +706,9 @@ def main()->int:
             int(pronunciation_canonical["telegram_input_id"])
             if pronunciation_canonical is not None else None
         ),
+        "pronunciation_reference_telegram_input_ids":[
+            int(row["telegram_input_id"]) for row,_text in pronunciation_selected
+        ],
         "pronunciation_after_message_id":pronunciation_after_message_id,
         "pronunciation_reference_count":len(pronunciation_refs),
         "identity_reference_scope":"GLOBAL_OWNER_INLIERS",
