@@ -48,11 +48,11 @@ class VoiceProviderProfile:
 QWEN_OWNER_INTERACTIVE = VoiceProviderProfile(
     profile_id="QWEN_OWNER_INTERACTIVE",
     provider_id="qwen3-tts",
-    model_id="Qwen/Qwen3-TTS-12Hz-0.6B-Base",
-    model_revision="5d83992436eae1d760afd27aff78a71d676296fc",
+    model_id="Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+    model_revision="fd4b254389122332181a7c3db7f27e918eec64e3",
     license="Apache-2.0",
     supports_voice_clone=True,
-    supports_ptbr=False,
+    supports_ptbr=True,
     supports_streaming=True,
     supports_long_form=False,
     supports_pronunciation_control=True,
@@ -71,10 +71,10 @@ QWEN_OWNER_LONG_FORM = VoiceProviderProfile(
     profile_id="QWEN_OWNER_LONG_FORM",
     provider_id="qwen3-tts",
     model_id="Qwen/Qwen3-TTS-12Hz-1.7B-Base",
-    model_revision="fd4b254",
+    model_revision="fd4b254389122332181a7c3db7f27e918eec64e3",
     license="Apache-2.0",
     supports_voice_clone=True,
-    supports_ptbr=False,
+    supports_ptbr=True,
     supports_streaming=True,
     supports_long_form=True,
     supports_pronunciation_control=True,
@@ -125,6 +125,8 @@ class VoiceProviderUnavailable(RuntimeError):
 
 
 OWNER_VOICE_IDENTITY_ID = "BR_OWNER_V1"
+OWNER_PRODUCTION_PROVIDER_ID = "qwen3-tts"
+OWNER_PRODUCTION_MODEL_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 
 
 @dataclass(frozen=True)
@@ -244,6 +246,8 @@ def _eligible(
 ) -> bool:
     return bool(
         profile.provider_id in set(certified_provider_ids)
+        and profile.provider_id == OWNER_PRODUCTION_PROVIDER_ID
+        and profile.model_id == OWNER_PRODUCTION_MODEL_ID
         and request.usage in profile.usage_kinds
         and profile.supports_voice_clone
         and request.voice_identity_id == OWNER_VOICE_IDENTITY_ID
