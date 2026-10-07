@@ -409,7 +409,10 @@ class _FakeQwenModel:
             "non_streaming_mode":non_streaming_mode,
             "kwargs":dict(kwargs),
         })
-        return [[0.10,0.11,0.12],[0.20,0.21,0.22],[0.30,0.31,0.32]],24000
+        return [
+            [0.10+(index*0.01),0.11+(index*0.01),0.12+(index*0.01)]
+            for index,_item in enumerate(text)
+        ],24000
 
 
 def _runtime_payload():
