@@ -510,7 +510,8 @@ def test_qwen_runtime_batches_ptbr_and_governed_english_with_owner_prompts():
     assert "Portuguese" in call["language"]
     assert "English" in call["language"]
     assert any("Gê Tê A seis" in text for text in call["text"])
-    vice_index=next(i for i,text in enumerate(call["text"]) if "Vice City" in text)
+    vice_index=next(i for i,text in enumerate(call["text"]) if "Vice Citi" in text)
+    assert call["language"][vice_index]=="Portuguese"
     vice_prompt=call["voice_clone_prompt"][vice_index]
     assert vice_prompt["ref_code"]=="code:/private/vice-city.wav"
     assert vice_prompt["ref_spk_embedding"]=="spk:/private/anchor.wav"
