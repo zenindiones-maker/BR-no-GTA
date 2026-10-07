@@ -145,3 +145,20 @@ def test_pronunciation_refs_do_not_replace_global_identity_anchor():
     assert "OWNER_PRONUNCIATION_REFERENCE_COUNT=" in source
     assert "pronunciation_after_message_id<=0 or int(row" not in source
     assert '"pronunciation_reference_count":len(pronunciation_refs)' in source
+
+
+def test_pronunciation_clone_uses_identity_anchor_plus_fresh_reference():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert "OWNER_IDENTITY_ANCHOR_TELEGRAM_INPUT_ID=" in source
+    assert "OWNER_PRONUNCIATION_REFERENCE_TELEGRAM_INPUT_ID=" in source
+    assert "composite-owner-reference-24k.wav" in source
+    assert "canonical_ref_text=anchor_ref_text+\" \"+pronunciation_ref_text" in source
+    assert "language=\"Auto\"" in source
+
+
+def test_pronunciation_asr_uses_official_name_hotwords():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert "PRONUNCIATION_HOTWORDS" in source
+    assert "hotwords=PRONUNCIATION_HOTWORDS" in source
+    for term in ("Vice City","Jason Duval","Lucia Caminos","Cal Hampton","Boobie Ike","Dre'Quan Priest","Real Dimez","Raul Bautista","Brian Heder"):
+        assert term in source
