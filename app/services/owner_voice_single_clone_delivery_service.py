@@ -24,7 +24,17 @@ class SingleCloneDeliveryLedger:
             raise ValueError("SINGLE_CLONE_LEDGER_NOT_FOUND")
         return dict(snap.mission_head)
 
-    def create(self,*,telegram_chat_id:int,reference_source_message_id:int,clone_sha256:str,authority_ref:str)->dict[str,Any]:
+    def create(
+        self,*,
+        telegram_chat_id:int,
+        reference_source_message_id:int,
+        clone_sha256:str,
+        authority_ref:str,
+        clone_identity_gate:str="UNKNOWN",
+        content_audio_prescreen:str="UNKNOWN",
+        human_review:str="PENDING",
+        runtime_activation:bool=False,
+    )->dict[str,Any]:
         snap=self._snapshot()
         if isinstance(snap.mission_head,dict):
             return dict(snap.mission_head)
@@ -40,6 +50,10 @@ class SingleCloneDeliveryLedger:
             "reference_source_message_id":int(reference_source_message_id),
             "clone_sha256":str(clone_sha256),
             "authority_ref":str(authority_ref),
+            "clone_identity_gate":str(clone_identity_gate),
+            "content_audio_prescreen":str(content_audio_prescreen),
+            "human_review":str(human_review),
+            "runtime_activation":bool(runtime_activation),
             "confirmed_message_ids":{},
             "active_operation":None,
             "failure_class":None,
