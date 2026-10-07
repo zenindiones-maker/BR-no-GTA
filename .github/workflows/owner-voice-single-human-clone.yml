@@ -36,7 +36,12 @@ jobs:
             tests/test_owner_voice_speaker_identity_service.py \
             tests/test_owner_voice_single_clone_delivery_v1.py \
             tests/test_owner_voice_single_clone_workflow_v1.py \
-            tests/test_owner_voice_human_review_delivery_policy.py
+            tests/test_owner_voice_human_review_delivery_policy.py \
+            tests/test_owner_voice_clone_service.py \
+            tests/test_pronunciation_service.py \
+            tests/test_voice_plane_foundation.py \
+            tests/test_voice_runtime_cleanliness.py \
+            tests/test_narration_pipeline.py
       - name: Detect explicit single-clone request
         id: request
         run: |
