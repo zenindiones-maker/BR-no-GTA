@@ -29,6 +29,7 @@ from app.services.voice_provider_service import (
     VoiceProviderUnavailable,
     VoiceRouteRequest,
     select_voice_provider,
+    _default_owner_identity_resolver,
 )
 from app.services.voice_identity_store import (
     PrivateVoiceAssetRef,
@@ -704,3 +705,70 @@ def test_private_promotion_rejects_review_token_or_lineage_mismatch(tmp_path):
             private_store_root=private_root,
             repository_root=repo_root,
         )
+
+
+def test_default_owner_resolver_uses_private_runtime_activation_not_mutable_public_ready_flags(tmp_path,monkeypatch):
+    repo_root=tmp_path/"repo"; repo_root.mkdir()
+    private=tmp_path/"private"
+    refs=tmp_path/"materialized"; refs.mkdir()
+    rows=[]
+    transcripts={}
+    for input_id,name,text_value in (
+        (125,"anchor","Booooa meu povo, aqui é BR no GTA 6."),
+        (126,"vice","Vice City."),
+        (127,"names","Rockstar Games, Jason Duval e Lucia Caminos."),
+    ):
+        path=refs/f"{name}.wav"
+        payload=(name+"-audio").encode()
+        path.write_bytes(payload)
+        rows.append({
+            "telegram_input_id":input_id,
+            "runtime_path":str(path),
+            "private_audio_ref":f"private://voice/BR_OWNER_V1/references/{input_id}",
+            "sha256":hashlib.sha256(payload).hexdigest(),
+        })
+        transcripts[input_id]=text_value
+    token=review_token_for_clone("BR_OWNER_V1_SINGLE_CLONE_FINAL_1")
+    review=_promotion_review(token)
+    review["telegram_chat_id"]=-1001
+    review["telegram_message_id"]=704
+    delivery=_promotion_delivery(token)
+    delivery["telegram_chat_id"]=-1001
+    delivery["confirmed_message_ids"]={"reference":702,"clone":703,"control":704}
+    result=promote_approved_single_clone(
+        review_receipt=review,
+        delivery_state=delivery,
+        materialized_references=rows,
+        reference_transcripts=transcripts,
+        private_store_root=private,
+        repository_root=repo_root,
+        promoted_at="2026-10-07T22:00:00Z",
+    )
+    assert result["status"]=="READY"
+
+    enrollment_path=tmp_path/"enrollment.json"
+    enrollment_path.write_text(json.dumps({
+        "schema":"OwnerVoiceEnrollmentState/v1",
+        "voice_identity_id":"BR_OWNER_V1",
+        "consent_status":"APPROVED",
+        "reference_source":"TELEGRAM",
+        "official_voice":"BR_OWNER_V1",
+        "active_voice_identities":["BR_OWNER_V1"],
+        "provider_preset_voice_allowed":False,
+        "generic_voice_fallback":False,
+        "runtime_activation_status":"BLOCKED_HUMAN_VOICE_REVIEW",
+        "owner_voice_status":"HISTORICAL_PUBLIC_STATUS_ONLY",
+    }),encoding="utf-8")
+    monkeypatch.setenv("BR_OWNER_ENROLLMENT_STATE_PATH",str(enrollment_path))
+    monkeypatch.setenv("BR_PRIVATE_VOICE_STORE",str(private))
+
+    profile=_default_owner_identity_resolver("BR_OWNER_V1")
+    assert profile is not None
+    assert profile["voice_identity_id"]=="BR_OWNER_V1"
+    assert profile["clone_provider"]=="qwen3-tts"
+
+    activation_path=private/"BR_OWNER_V1.runtime.json"
+    activation=json.loads(activation_path.read_text())
+    activation["profile_sha256"]="0"*64
+    activation_path.write_text(json.dumps(activation),encoding="utf-8")
+    assert _default_owner_identity_resolver("BR_OWNER_V1") is None
