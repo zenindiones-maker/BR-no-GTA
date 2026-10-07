@@ -289,6 +289,11 @@ def main()->int:
     print(f"OWNER_PRONUNCIATION_REFERENCE_COUNT={len(pronunciation_refs)}")
     if pronunciation_after_message_id>0 and not pronunciation_refs:
         raise RuntimeError("OWNER_PRONUNCIATION_REFERENCE_NOT_MATERIALIZED")
+    fresh_reference_ids={
+        str(int(row["telegram_input_id"])) for row in pronunciation_refs
+    }
+    print("PRONUNCIATION_REFERENCE_SCOPE=FRESH_TELEGRAM_ONLY")
+    print("IDENTITY_REFERENCE_SCOPE=GLOBAL_OWNER_INLIERS")
 
     classifier=_load_speaker_model(cache_root)
     normalized={}
@@ -355,7 +360,6 @@ def main()->int:
         and row["no_overlap"] is True
         and row["no_music"] is True
         and float(row["duration_seconds"])>0.0
-        and (pronunciation_after_message_id<=0 or int(row["telegram_message_id"])>pronunciation_after_message_id)
         and float(profile["reference_similarity_to_centroid"].get(str(row["reference_id"]),-1.0))
             >=float(profile["clone_centroid_min_similarity"])
     ]
@@ -470,7 +474,7 @@ def main()->int:
     generation_t0=time.monotonic()
     wavs,sample_rate=model.generate_voice_clone(
         text=SHORT_TEXT,
-        language="Portuguese",
+        language="Auto",
         voice_clone_prompt=prompt,
         non_streaming_mode=True,
     )
@@ -539,6 +543,9 @@ def main()->int:
         "canonical_reference_sha256":str(canonical["sha256"]),
         "canonical_reference_source_message_id":int(source_row["telegram_message_id"]),
         "pronunciation_after_message_id":pronunciation_after_message_id,
+        "pronunciation_reference_count":len(pronunciation_refs),
+        "identity_reference_scope":"GLOBAL_OWNER_INLIERS",
+        "pronunciation_reference_scope":"FRESH_TELEGRAM_ONLY",
         "telegram_chat_id":int(source_row["telegram_chat_id"]),
         "clone_path":str(clone_path),
         "clone_sha256":clone_sha,
@@ -559,7 +566,8 @@ def main()->int:
             "model_id":QWEN_MODEL_ID,
             "model_revision":QWEN_MODEL_REVISION,
             "qwen_tts_version":QWEN_TTS_VERSION,
-            "language":"Portuguese",
+            "language":"Auto",
+            "language_mode":"AUTO_CODE_SWITCH",
             "clone_mode":"TRANSCRIPT_CONDITIONED_ICL",
             "x_vector_only_mode":False,
             "ref_audio_source":"TELEGRAM_HUMAN_OWNER",
@@ -590,6 +598,7 @@ def main()->int:
     print("QWEN3_TTS_MODEL="+QWEN_MODEL_ID)
     print("QWEN3_TTS_MODEL_REVISION="+QWEN_MODEL_REVISION)
     print("QWEN3_TTS_CLONE_MODE=TRANSCRIPT_CONDITIONED_ICL")
+    print("QWEN3_TTS_LANGUAGE_MODE=AUTO_CODE_SWITCH")
     print("QWEN3_TTS_X_VECTOR_ONLY_MODE=FALSE")
     print("QWEN3_TTS_GENERATE_CALL_TARGET=1")
     print("QWEN3_TTS_GENERATE_CALL_COUNT=1")
