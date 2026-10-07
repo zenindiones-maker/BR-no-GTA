@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from app.services.gta6_pronunciation_lexicon_service import (
+    build_gta6_pronunciation_segments,
     gta6_lexicon_hits,
     gta6_pronunciation_hotwords,
 )
@@ -282,6 +283,23 @@ def _compose_pronunciation_reference_audio(
     if not target.is_file() or target.stat().st_size<=0:
         raise RuntimeError("OWNER_PRONUNCIATION_REFERENCE_WRITE_FAILED")
     return target
+
+
+def _stitch_generated_segments(wavs:list[Any],sample_rate:int):
+    import numpy as np
+
+    if int(sample_rate)<=0 or not wavs:
+        raise RuntimeError("QWEN3_TTS_SEGMENT_OUTPUT_INVALID")
+    gap=np.zeros(int(round(0.08*int(sample_rate))),dtype="float32")
+    chunks=[]
+    for position,wav in enumerate(wavs):
+        audio=np.asarray(wav,dtype="float32").reshape(-1)
+        if audio.size<=0:
+            raise RuntimeError("QWEN3_TTS_SEGMENT_EMPTY")
+        if position:
+            chunks.append(gap)
+        chunks.append(audio)
+    return np.concatenate(chunks,axis=0)
 
 
 def _prepare_qwen_model(cache_root:Path)->Path:
@@ -733,18 +751,28 @@ def main()->int:
         prompt=anchor_prompt_items
         print("QWEN_PROMPT_COMPONENT_AUTHORITY=ANCHOR_ONLY")
     print("QWEN_REFERENCE_AUDIO_LINEAGE="+qwen_reference_audio_lineage)
+    pronunciation_segments=build_gta6_pronunciation_segments(SHORT_TEXT)
+    if not pronunciation_segments:
+        raise RuntimeError("GTA6_PRONUNCIATION_SEGMENT_PLAN_EMPTY")
+    segment_texts=[str(row["spoken_text"]) for row in pronunciation_segments]
+    segment_languages=[str(row["language"]) for row in pronunciation_segments]
+    if "Auto" in segment_languages:
+        raise RuntimeError("GTA6_PRONUNCIATION_SEGMENT_LANGUAGE_AUTO_FORBIDDEN")
+    print("GTA6_PRONUNCIATION_SEGMENT_COUNT="+str(len(pronunciation_segments)))
+    print("GTA6_PRONUNCIATION_SEGMENT_LANGUAGES="+",".join(segment_languages))
     generation_t0=time.monotonic()
     wavs,sample_rate=model.generate_voice_clone(
-        text=SHORT_TEXT,
-        language="Auto",
+        text=segment_texts,
+        language=segment_languages,
         voice_clone_prompt=prompt,
         non_streaming_mode=True,
     )
     generation_seconds=time.monotonic()-generation_t0
-    if len(wavs)!=1 or int(sample_rate)<=0:
-        raise RuntimeError("QWEN3_TTS_SINGLE_CLONE_OUTPUT_INVALID")
+    if len(wavs)!=len(segment_texts) or int(sample_rate)<=0:
+        raise RuntimeError("QWEN3_TTS_SEGMENT_BATCH_OUTPUT_INVALID")
+    stitched=_stitch_generated_segments(wavs,int(sample_rate))
     clone_path=workspace/"CLONE.wav"
-    sf.write(str(clone_path),wavs[0],int(sample_rate),subtype="PCM_16")
+    sf.write(str(clone_path),stitched,int(sample_rate),subtype="PCM_16")
     if not clone_path.is_file() or clone_path.stat().st_size<=0:
         raise RuntimeError("QWEN3_TTS_SINGLE_CLONE_EMPTY")
     clone_sha=_sha256(clone_path)
@@ -878,7 +906,7 @@ def main()->int:
     print("QWEN3_TTS_MODEL="+QWEN_MODEL_ID)
     print("QWEN3_TTS_MODEL_REVISION="+QWEN_MODEL_REVISION)
     print("QWEN3_TTS_CLONE_MODE=TRANSCRIPT_CONDITIONED_ICL")
-    print("QWEN3_TTS_LANGUAGE_MODE=AUTO_CODE_SWITCH")
+    print("QWEN3_TTS_LANGUAGE_MODE=EXPLICIT_SEGMENTED_MULTILINGUAL")
     print("QWEN3_TTS_X_VECTOR_ONLY_MODE=FALSE")
     print("QWEN3_TTS_GENERATE_CALL_TARGET=1")
     print("QWEN3_TTS_GENERATE_CALL_COUNT=1")
