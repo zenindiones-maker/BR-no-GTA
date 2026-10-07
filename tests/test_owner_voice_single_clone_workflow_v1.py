@@ -26,7 +26,7 @@ def test_single_clone_runtime_has_real_identity_profile_and_no_placeholder_simil
     assert "create_voice_clone_prompt" in source
     assert "generate_voice_clone" in source
     assert "x_vector_only_mode=False" in source
-    assert 'language="Auto"' in source
+    assert "language=segment_languages" in source
     assert "TRANSCRIPT_CONDITIONED_ICL" in source
     assert 'identity_gate="PASS" if identity["passed"] is True else "FAIL"' in source
     assert 'print("CLONE_IDENTITY_GATE="+identity_gate)' in source
@@ -96,7 +96,7 @@ def test_pronunciation_calibration_requires_newer_telegram_reference_boundary():
     assert "OWNER_PRONUNCIATION_REFERENCE_NOT_MATERIALIZED" in source
     assert "PRONUNCIATION_REFERENCE_SCOPE=FRESH_TELEGRAM_ONLY" in source
     assert "IDENTITY_REFERENCE_SCOPE=GLOBAL_OWNER_INLIERS" in source
-    assert "QWEN3_TTS_LANGUAGE_MODE=AUTO_CODE_SWITCH" in source
+    assert "QWEN3_TTS_LANGUAGE_MODE=EXPLICIT_SEGMENTED_MULTILINGUAL" in source
 
 
 def test_pronunciation_audition_challenges_official_gta_vi_names():
@@ -157,7 +157,7 @@ def test_pronunciation_clone_uses_hybrid_qwen_prompt_components():
     assert "ref_text=pronunciation_ref_text" in source
     assert "QWEN_PROMPT_COMPONENT_AUTHORITY=ANCHOR_SPK_PLUS_PRONUNCIATION_CODE" in source
     assert "composite-owner-reference-24k.wav" not in source
-    assert "language=\"Auto\"" in source
+    assert "language=segment_languages" in source
 
 
 def test_pronunciation_asr_uses_official_name_hotwords():
