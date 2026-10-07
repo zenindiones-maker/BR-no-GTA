@@ -636,7 +636,11 @@ def main()->int:
     print("AUDITION_DELIVERY_ELIGIBLE=PASS")
     print("RUNTIME_ACTIVATION=BLOCKED_PENDING_HUMAN_REVIEW")
 
-    source_row=next(
+    anchor_source_row=next(
+        row for row in index["references"]
+        if int(row["telegram_input_id"])==int(canonical["telegram_input_id"])
+    )
+    review_source_row=next(
         row for row in index["references"]
         if int(row["telegram_input_id"])==int(human_review_reference["telegram_input_id"])
     )
@@ -648,7 +652,8 @@ def main()->int:
         "reference_source":REFERENCE_SOURCE,
         "canonical_reference_telegram_input_id":int(canonical["telegram_input_id"]),
         "canonical_reference_sha256":str(canonical["sha256"]),
-        "canonical_reference_source_message_id":int(source_row["telegram_message_id"]),
+        "canonical_reference_source_message_id":int(anchor_source_row["telegram_message_id"]),
+        "human_review_reference_source_message_id":int(review_source_row["telegram_message_id"]),
         "identity_anchor_telegram_input_id":int(canonical["telegram_input_id"]),
         "pronunciation_reference_telegram_input_id":(
             int(pronunciation_canonical["telegram_input_id"])
@@ -658,7 +663,7 @@ def main()->int:
         "pronunciation_reference_count":len(pronunciation_refs),
         "identity_reference_scope":"GLOBAL_OWNER_INLIERS",
         "pronunciation_reference_scope":"FRESH_TELEGRAM_ONLY",
-        "telegram_chat_id":int(source_row["telegram_chat_id"]),
+        "telegram_chat_id":int(review_source_row["telegram_chat_id"]),
         "clone_path":str(clone_path),
         "clone_sha256":clone_sha,
         "clone_identity_gate":identity_gate,
