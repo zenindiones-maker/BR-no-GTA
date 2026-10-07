@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from app.services.gta6_pronunciation_lexicon_service import (
     build_gta6_pronunciation_batches,
     build_gta6_pronunciation_segments,
@@ -7,6 +9,11 @@ from app.services.gta6_pronunciation_lexicon_service import (
     gta6_target_evidence_score,
 )
 from app.services.owner_voice_human_audition_pack_service import evaluate_short_candidate
+from app.services.voice_provider_service import (
+    QWEN_OWNER_LONG_FORM,
+    VoiceRouteRequest,
+    select_voice_provider,
+)
 
 from pathlib import Path
 
@@ -418,3 +425,42 @@ def test_owner_asserted_transcript_canonicalization_does_not_invent_target_witho
         minimum_score=0.45,
     )
     assert repaired=="agora vamos falar de rockstar games"
+
+
+def test_production_owner_clone_contract_is_qwen_17b_only_not_chatterbox():
+    source=Path("app/services/owner_voice_clone_service.py").read_text(encoding="utf-8")
+    assert 'QWEN_OWNER_MODEL_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"' in source
+    assert 'QWEN_OWNER_MODEL_REVISION = "fd4b254389122332181a7c3db7f27e918eec64e3"' in source
+    assert 'QWEN_TTS_VERSION = "0.1.1"' in source
+    assert '"x_vector_only_mode": False' in source
+    assert '"one_candidate_only": True' in source
+    assert "CHATTERBOX_PTBR_MODEL_ID" not in source
+    assert "cfg_weight" not in source
+    assert "exaggeration" not in source
+
+
+def test_qwen_long_form_is_portuguese_capable_but_owner_accent_stays_human_certified():
+    assert QWEN_OWNER_LONG_FORM.supports_ptbr is True
+    assert QWEN_OWNER_LONG_FORM.model_revision=="fd4b254389122332181a7c3db7f27e918eec64e3"
+    assert QWEN_OWNER_LONG_FORM.ptbr_accent_certified is False
+
+    approved=replace(QWEN_OWNER_LONG_FORM,ptbr_accent_certified=True)
+    selected=select_voice_provider(
+        VoiceRouteRequest(
+            usage="LONG_FORM",
+            language="pt-BR",
+            voice_identity_id="BR_OWNER_V1",
+            required_voice_identity_revision="owner-approved-v1",
+        ),
+        candidates=(approved,),
+        certified_provider_ids=("qwen3-tts",),
+        sticky_provider_id="qwen3-tts",
+        sticky_model_id=approved.model_id,
+    )
+    assert selected.model_id=="Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+
+
+def test_production_voice_capability_has_no_chatterbox_binding():
+    source=Path("app/services/voice_capability_bridge.py").read_text(encoding="utf-8")
+    assert '"chatterbox"' not in source
+    assert '"qwen3-tts"' in source
