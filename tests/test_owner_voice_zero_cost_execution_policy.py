@@ -17,6 +17,8 @@ def test_zero_cost_policy_is_explicit_and_fail_closed():
     row=json.loads(CONFIG.read_text(encoding="utf-8"))
     assert row["execution_scope"]=="LOCAL_OR_SELF_HOSTED_ONLY"
     assert row["paid_api_allowed"] is False
+    assert row["external_tts_api_allowed"] is False
+    assert row["commercial_voice_account_required"] is False
     assert row["voice_provider_auth_allowed"] is False
     assert row["credit_card_required_allowed"] is False
     assert row["paid_gpu_allowed"] is False
@@ -75,7 +77,6 @@ def test_qwen_workflows_disable_implicit_huggingface_auth_and_paid_routes():
         assert 'HF_HUB_DISABLE_TELEMETRY: "1"' in source
         assert "owner_voice_zero_cost_policy_service --mode" in source
         assert "ELEVENLABS_API_KEY" not in source
-        assert "ELEVENLABS_API_KEY" not in source
         assert "HF_TOKEN: ${{ secrets." not in source
         assert "HUGGING_FACE_HUB_TOKEN: ${{ secrets." not in source
 
@@ -86,6 +87,8 @@ def test_single_clone_contract_executes_zero_cost_test_in_same_pytest_command():
 
 
 def test_inference_runtime_enforces_zero_cost_policy_before_materialization():
+    workflow=SINGLE_CLONE_WORKFLOW.read_text(encoding="utf-8")
+    assert "runs-on: [self-hosted, linux, br-owner-voice-zero-cost]" in workflow
     source=SINGLE_CLONE.read_text(encoding="utf-8")
     assert "validate_owner_voice_execution" in source
     assert 'validate_owner_voice_execution(mode="inference")' in source
