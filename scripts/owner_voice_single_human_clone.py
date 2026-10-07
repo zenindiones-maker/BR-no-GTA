@@ -48,6 +48,10 @@ SHORT_TEXT=(
     "Real Dimez, Raul Bautista e Brian Heder. Leonida e Rockstar. "
     "E BR não dorme em Vice City."
 )
+PRONUNCIATION_HOTWORDS=(
+    "Vice City Jason Duval Lucia Caminos Cal Hampton Boobie Ike "
+    "Dre'Quan Priest Real Dimez Raul Bautista Brian Heder Leonida Rockstar"
+)
 SPEECHBRAIN_VERSION="1.1.1"
 SPEAKER_MODEL_EMBEDDING_SHA256="0575cb64845e6b9a10db9bcb74d5ac32b326b8dc90352671d345e2ee3d0126a2"
 
@@ -167,10 +171,18 @@ def _load_stt(cache_root:Path):
     return WhisperModel(str(path),device="cpu",compute_type="int8",cpu_threads=4,num_workers=1,local_files_only=True)
 
 
-def _reference_asr_metrics(stt,path:Path,duration_seconds:float,*,beam_size:int=1)->tuple[float,float,str,str]:
+def _reference_asr_metrics(
+    stt,
+    path:Path,
+    duration_seconds:float,
+    *,
+    beam_size:int=1,
+    pronunciation_hint:bool=False,
+)->tuple[float,float,str,str]:
     segments_iter,info=stt.transcribe(
         str(path),language=None,beam_size=int(beam_size),vad_filter=True,
         word_timestamps=False,condition_on_previous_text=False,
+        hotwords=PRONUNCIATION_HOTWORDS if pronunciation_hint else None,
     )
     segments=list(segments_iter)
     language=str(getattr(info,"language","") or "").lower().replace("_","-")
@@ -183,6 +195,33 @@ def _reference_asr_metrics(stt,path:Path,duration_seconds:float,*,beam_size:int=
         if str(getattr(segment,"text","") or "").strip()
     ).strip()
     return ptbr_probability,vad_speech_ratio,language,transcript
+
+
+def _compose_reference_audio(anchor:Path,pronunciation:Path,target:Path)->Path:
+    import numpy as np
+    import soundfile as sf
+
+    anchor_audio,anchor_rate=sf.read(str(anchor),dtype="float32",always_2d=True)
+    pronunciation_audio,pronunciation_rate=sf.read(
+        str(pronunciation),dtype="float32",always_2d=True
+    )
+    if int(anchor_rate)!=24000 or int(pronunciation_rate)!=24000:
+        raise RuntimeError("OWNER_COMPOSITE_REFERENCE_RATE_INVALID")
+    if anchor_audio.size==0 or pronunciation_audio.size==0:
+        raise RuntimeError("OWNER_COMPOSITE_REFERENCE_AUDIO_EMPTY")
+    if anchor_audio.shape[1]>1:
+        anchor_audio=anchor_audio.mean(axis=1,keepdims=True)
+    if pronunciation_audio.shape[1]>1:
+        pronunciation_audio=pronunciation_audio.mean(axis=1,keepdims=True)
+    silence=np.zeros((int(0.20*24000),1),dtype="float32")
+    combined=np.concatenate(
+        [anchor_audio,silence,pronunciation_audio],
+        axis=0,
+    )
+    sf.write(str(target),combined,24000,subtype="PCM_16")
+    if not target.is_file() or target.stat().st_size<=0:
+        raise RuntimeError("OWNER_COMPOSITE_REFERENCE_WRITE_FAILED")
+    return target
 
 
 def _prepare_qwen_model(cache_root:Path)->Path:
@@ -360,6 +399,10 @@ def main()->int:
         and row["no_overlap"] is True
         and row["no_music"] is True
         and float(row["duration_seconds"])>0.0
+        and (
+            pronunciation_after_message_id<=0
+            or str(row["reference_id"]) not in fresh_reference_ids
+        )
         and float(profile["reference_similarity_to_centroid"].get(str(row["reference_id"]),-1.0))
             >=float(profile["clone_centroid_min_similarity"])
     ]
@@ -384,7 +427,7 @@ def main()->int:
     asr_count=0
     evaluated=[]
     canonical=None
-    canonical_ref_text=""
+    anchor_ref_text=""
     for row in pre_asr:
         ptbr_probability,vad_speech_ratio,language,transcript=_reference_asr_metrics(
             stt,
@@ -414,14 +457,53 @@ def main()->int:
             row["detected_language"]=strong_language
             if float(strong_ptbr)>=0.90 and float(strong_vad)>=0.55 and strong_text:
                 canonical=select_canonical_reference([row],profile)
-                canonical_ref_text=strong_text
+                anchor_ref_text=strong_text
                 break
     print(f"OWNER_CANONICAL_REFERENCE_ASR_COUNT={asr_count}")
     print(f"OWNER_CANONICAL_PTBR_COUNT={sum(1 for row in evaluated if float(row['ptbr_probability'])>=0.90)}")
     print(f"OWNER_CANONICAL_VAD_SPEECH_COUNT={sum(1 for row in evaluated if float(row['speech_ratio'])>=0.55)}")
-    if canonical is None or not canonical_ref_text:
+    if canonical is None or not anchor_ref_text:
         raise RuntimeError("NO_CANONICAL_OWNER_REFERENCE_WITH_VERIFIED_TRANSCRIPT")
     cid=str(canonical["reference_id"])
+    pronunciation_canonical=None
+    pronunciation_ref_text=""
+    if pronunciation_after_message_id>0:
+        pronunciation_pre_asr=[
+            row for row in candidate_rows
+            if str(row["reference_id"]) in fresh_reference_ids
+            and str(row["reference_id"]) in inlier_ids
+            and row["single_speaker"] is True
+            and row["clear_speech"] is True
+            and row["no_overlap"] is True
+            and row["no_music"] is True
+            and float(row["duration_seconds"])>0.0
+            and float(profile["reference_similarity_to_centroid"].get(str(row["reference_id"]),-1.0))
+                >=float(profile["clone_centroid_min_similarity"])
+        ]
+        pronunciation_pre_asr.sort(key=lambda row:(
+            -float(profile["reference_similarity_to_centroid"].get(str(row["reference_id"]),-1.0)),
+            -row["snr_db"],
+            abs(float(row["duration_seconds"])-12.0),
+            str(row["sha256"]),
+        ))
+        for row in pronunciation_pre_asr:
+            strong_ptbr,strong_vad,strong_language,strong_text=_reference_asr_metrics(
+                stt,
+                normalized[str(row["reference_id"])],
+                float(row["duration_seconds"]),
+                beam_size=5,
+                pronunciation_hint=True,
+            )
+            if float(strong_ptbr)>=0.90 and float(strong_vad)>=0.55 and strong_text:
+                row["ptbr_probability"]=strong_ptbr
+                row["speech_ratio"]=strong_vad
+                row["detected_language"]=strong_language
+                pronunciation_canonical=select_canonical_reference([row],profile)
+                pronunciation_ref_text=strong_text
+                break
+        if pronunciation_canonical is None or not pronunciation_ref_text:
+            raise RuntimeError("NO_FRESH_PRONUNCIATION_REFERENCE_WITH_VERIFIED_TRANSCRIPT")
+
     canonical16=normalized[cid]
     canonical_embedding=embeddings[cid]
     canonical_similarity=cosine_similarity(canonical_embedding,profile["centroid"])
@@ -434,6 +516,30 @@ def main()->int:
     )
     if _sha256(canonical24)=="":
         raise RuntimeError("CANONICAL_REFERENCE_DIGEST_MISSING")
+
+    prompt_audio=canonical24
+    canonical_ref_text=anchor_ref_text
+    human_review_reference=canonical
+    if pronunciation_canonical is not None:
+        pid=str(pronunciation_canonical["reference_id"])
+        pronunciation24=_ffmpeg(
+            original_sources[pid],
+            workspace/"pronunciation-owner-reference-24k.wav",
+            24000,
+        )
+        prompt_audio=_compose_reference_audio(
+            canonical24,
+            pronunciation24,
+            workspace/"composite-owner-reference-24k.wav",
+        )
+        canonical_ref_text=anchor_ref_text+" "+pronunciation_ref_text
+        human_review_reference=pronunciation_canonical
+        print(f"OWNER_IDENTITY_ANCHOR_TELEGRAM_INPUT_ID={canonical['telegram_input_id']}")
+        print(
+            "OWNER_PRONUNCIATION_REFERENCE_TELEGRAM_INPUT_ID="
+            +str(pronunciation_canonical["telegram_input_id"])
+        )
+        print("QWEN_REFERENCE_AUDIO_LINEAGE=IDENTITY_ANCHOR_PLUS_FRESH_PRONUNCIATION")
 
     sanitized=sanitized_profile(profile)
     sanitized["window_consistency_calibration"]=dict(window_calibration)
@@ -465,7 +571,7 @@ def main()->int:
         attn_implementation="sdpa",
     )
     prompt=model.create_voice_clone_prompt(
-        ref_audio=str(canonical24),
+        ref_audio=str(prompt_audio),
         ref_text=canonical_ref_text,
         x_vector_only_mode=False,
     )
@@ -505,6 +611,7 @@ def main()->int:
     seg_iter,info=stt.transcribe(
         str(clone16),language="pt",beam_size=1,vad_filter=True,
         word_timestamps=False,condition_on_previous_text=False,
+        hotwords=PRONUNCIATION_HOTWORDS,
     )
     segments=list(seg_iter)
     observed=" ".join(str(getattr(s,"text","") or "").strip() for s in segments if str(getattr(s,"text","") or "").strip())
@@ -531,7 +638,7 @@ def main()->int:
 
     source_row=next(
         row for row in index["references"]
-        if int(row["telegram_input_id"])==int(canonical["telegram_input_id"])
+        if int(row["telegram_input_id"])==int(human_review_reference["telegram_input_id"])
     )
     clone_id=f"BR_OWNER_V1_SINGLE_CLONE_{os.environ.get('GITHUB_RUN_ID','local')}_{os.environ.get('GITHUB_RUN_ATTEMPT','1')}"
     manifest={
@@ -542,6 +649,11 @@ def main()->int:
         "canonical_reference_telegram_input_id":int(canonical["telegram_input_id"]),
         "canonical_reference_sha256":str(canonical["sha256"]),
         "canonical_reference_source_message_id":int(source_row["telegram_message_id"]),
+        "identity_anchor_telegram_input_id":int(canonical["telegram_input_id"]),
+        "pronunciation_reference_telegram_input_id":(
+            int(pronunciation_canonical["telegram_input_id"])
+            if pronunciation_canonical is not None else None
+        ),
         "pronunciation_after_message_id":pronunciation_after_message_id,
         "pronunciation_reference_count":len(pronunciation_refs),
         "identity_reference_scope":"GLOBAL_OWNER_INLIERS",
@@ -571,7 +683,11 @@ def main()->int:
             "clone_mode":"TRANSCRIPT_CONDITIONED_ICL",
             "x_vector_only_mode":False,
             "ref_audio_source":"TELEGRAM_HUMAN_OWNER",
-            "ref_audio_lineage":"ORIGINAL_TELEGRAM_TO_24K_DIRECT",
+            "ref_audio_lineage":(
+                "IDENTITY_ANCHOR_PLUS_FRESH_PRONUNCIATION"
+                if pronunciation_canonical is not None
+                else "ORIGINAL_TELEGRAM_TO_24K_DIRECT"
+            ),
             "ref_text_private_only":True,
             "generate_call_count":1,
         },
