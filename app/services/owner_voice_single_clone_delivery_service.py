@@ -21,6 +21,44 @@ def _valid_review_token(value:str)->bool:
     return len(token)==20 and all(ch in "0123456789abcdef" for ch in token)
 
 
+def review_callback_data(
+    action:str,
+    *,
+    token:str,
+    automatic_gates_passed:bool,
+    identity_anchor_telegram_input_id:int,
+    pronunciation_reference_telegram_input_ids:list[int],
+    vice_city_reference_telegram_input_id:int|None,
+)->str:
+    action_codes={
+        "approve":"a",
+        "reject_identity":"i",
+        "reject_pronunciation":"p",
+    }
+    code=action_codes.get(str(action))
+    token_value=str(token or "").strip().lower()
+    if code is None or not _valid_review_token(token_value):
+        raise ValueError("SINGLE_CLONE_REVIEW_CALLBACK_INVALID")
+    anchor=int(identity_anchor_telegram_input_id)
+    pronunciation=[
+        int(value)
+        for value in pronunciation_reference_telegram_input_ids
+        if int(value)>0
+    ]
+    vice=int(vice_city_reference_telegram_input_id or 0)
+    if anchor<=0 or len(pronunciation)>2 or (vice>0 and vice not in pronunciation):
+        raise ValueError("SINGLE_CLONE_REVIEW_CALLBACK_LINEAGE_INVALID")
+    pronunciation_field=",".join(str(value) for value in pronunciation) or "-"
+    gate="P" if automatic_gates_passed else "F"
+    data=(
+        f"ov2c:{code}:{token_value}:{gate}:"
+        f"{anchor}:{pronunciation_field}:{vice}"
+    )
+    if len(data.encode("utf-8"))>64:
+        raise ValueError("SINGLE_CLONE_REVIEW_CALLBACK_TOO_LARGE")
+    return data
+
+
 class SingleCloneDeliveryLedger:
     def __init__(self,*,store,clone_id:str)->None:
         self.store=store
