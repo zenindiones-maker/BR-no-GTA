@@ -117,3 +117,13 @@ def test_pronunciation_audition_challenges_official_gta_vi_names():
 def test_private_materializer_preserves_message_id_for_pronunciation_boundary():
     service=Path("app/services/owner_voice_private_materialization_service.py").read_text(encoding="utf-8")
     assert '"telegram_message_id": int(item["telegram_message_id"])' in service
+
+
+def test_pending_telegram_recovery_is_non_acknowledging_and_owner_scoped():
+    service=Path("app/services/owner_voice_telegram_pending_recovery_service.py").read_text(encoding="utf-8")
+    assert '"getUpdates"' in service
+    assert '"offset"' not in service
+    assert "after_message_id" in service
+    assert "telegram_user_id" in service
+    assert "telegram_chat_id" in service
+    assert "recovered_reference_count" in service
