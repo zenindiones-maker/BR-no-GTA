@@ -108,3 +108,48 @@ def build_gta6_pronunciation_segments(text: str) -> tuple[dict[str, str | bool],
         cursor=match.end()
     append_context(raw[cursor:])
     return tuple(segments)
+
+
+def build_gta6_pronunciation_batches(text: str) -> tuple[dict[str, str | bool], ...]:
+    atomic=list(build_gta6_pronunciation_segments(text))
+    batches: list[dict[str, str | bool]]=[]
+    index=0
+    while index<len(atomic):
+        row=atomic[index]
+        if row["language"]!="English":
+            batches.append(dict(row))
+            index+=1
+            continue
+
+        spoken=[str(row["spoken_text"])]
+        canonical=[str(row["canonical_text"])]
+        index+=1
+        while index<len(atomic):
+            next_row=atomic[index]
+            if next_row["language"]=="English":
+                spoken.append(str(next_row["spoken_text"]))
+                canonical.append(str(next_row["canonical_text"]))
+                index+=1
+                continue
+            connector=_normalized(str(next_row["spoken_text"]))
+            if (
+                next_row["language"]=="Portuguese"
+                and next_row["is_pronunciation_target"] is False
+                and connector in {"e","and"}
+                and index+1<len(atomic)
+                and atomic[index+1]["language"]=="English"
+            ):
+                index+=1
+                next_target=atomic[index]
+                spoken.append(str(next_target["spoken_text"]))
+                canonical.append(str(next_target["canonical_text"]))
+                index+=1
+                continue
+            break
+        batches.append({
+            "canonical_text":" | ".join(canonical),
+            "spoken_text":". ".join(spoken),
+            "language":"English",
+            "is_pronunciation_target":True,
+        })
+    return tuple(batches)
