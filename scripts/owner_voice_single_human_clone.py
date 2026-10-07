@@ -61,6 +61,9 @@ SHORT_TEXT=(
 PRONUNCIATION_HOTWORDS=gta6_pronunciation_hotwords()
 MAX_PRONUNCIATION_PROMPT_REFERENCES=2
 PRONUNCIATION_ASR_LANGUAGES=(None,"en","pt","es")
+VICE_CITY_TERM="Vice City"
+VOICE_SEGMENT_CROSSFADE_MS=30
+VOICE_SEGMENT_LEVEL_MATCH_DB_LIMIT=1.5
 SPEECHBRAIN_VERSION="1.1.1"
 SPEAKER_MODEL_EMBEDDING_SHA256="0575cb64845e6b9a10db9bcb74d5ac32b326b8dc90352671d345e2ee3d0126a2"
 
@@ -293,18 +296,51 @@ def _compose_pronunciation_reference_audio(
 def _stitch_generated_segments(wavs:list[Any],sample_rate:int):
     import numpy as np
 
-    if int(sample_rate)<=0 or not wavs:
+    rate=int(sample_rate)
+    if rate<=0 or not wavs:
         raise RuntimeError("QWEN3_TTS_SEGMENT_OUTPUT_INVALID")
-    gap=np.zeros(int(round(0.08*int(sample_rate))),dtype="float32")
-    chunks=[]
-    for position,wav in enumerate(wavs):
+
+    prepared=[]
+    for wav in wavs:
         audio=np.asarray(wav,dtype="float32").reshape(-1)
         if audio.size<=0:
             raise RuntimeError("QWEN3_TTS_SEGMENT_EMPTY")
-        if position:
-            chunks.append(gap)
-        chunks.append(audio)
-    return np.concatenate(chunks,axis=0)
+        prepared.append(audio.copy())
+
+    output=prepared[0]
+    max_gain=10.0**(VOICE_SEGMENT_LEVEL_MATCH_DB_LIMIT/20.0)
+    min_gain=1.0/max_gain
+    requested_crossfade=max(1,int(round(rate*VOICE_SEGMENT_CROSSFADE_MS/1000.0)))
+
+    for audio in prepared[1:]:
+        level_window=max(1,min(int(round(rate*0.35)),output.size,audio.size))
+        tail_rms=float(np.sqrt(np.mean(np.square(output[-level_window:]),dtype=np.float64)+1e-12))
+        head_rms=float(np.sqrt(np.mean(np.square(audio[:level_window]),dtype=np.float64)+1e-12))
+        if tail_rms>1e-6 and head_rms>1e-6:
+            gain=max(min_gain,min(max_gain,tail_rms/head_rms))
+            audio=audio*float(gain)
+
+        crossfade_samples=min(
+            requested_crossfade,
+            max(1,output.size//4),
+            max(1,audio.size//4),
+        )
+        if crossfade_samples<=1:
+            output=np.concatenate([output,audio],axis=0)
+            continue
+
+        phase=np.linspace(0.0,1.0,crossfade_samples,dtype="float32")
+        fade_out=np.cos(phase*np.pi/2.0)**2
+        fade_in=np.sin(phase*np.pi/2.0)**2
+        overlap=(
+            output[-crossfade_samples:]*fade_out
+            +audio[:crossfade_samples]*fade_in
+        )
+        output=np.concatenate(
+            [output[:-crossfade_samples],overlap,audio[crossfade_samples:]],
+            axis=0,
+        )
+    return output
 
 
 def _prepare_qwen_model(cache_root:Path)->Path:
@@ -589,6 +625,7 @@ def main()->int:
     pronunciation_canonical=None
     pronunciation_selected=[]
     pronunciation_ref_text=""
+    vice_city_selected=None
     if pronunciation_after_message_id>0:
         pronunciation_pre_asr=[
             row for row in pronunciation_source_rows
@@ -627,7 +664,25 @@ def main()->int:
             -float(item[0]["snr_db"]),
             str(item[0]["sha256"]),
         ))
-        pronunciation_selected=pronunciation_selected[:MAX_PRONUNCIATION_PROMPT_REFERENCES]
+        vice_city_selected=next(
+            (
+                item for item in pronunciation_selected
+                if VICE_CITY_TERM in item[0]["pronunciation_hits"]
+            ),
+            None,
+        )
+        if vice_city_selected is None:
+            raise RuntimeError("OWNER_VICE_CITY_PRONUNCIATION_REFERENCE_REQUIRED")
+        ranked_pronunciation=list(pronunciation_selected)
+        pronunciation_selected=ranked_pronunciation[:MAX_PRONUNCIATION_PROMPT_REFERENCES]
+        if vice_city_selected not in pronunciation_selected:
+            pronunciation_selected=[
+                vice_city_selected,
+                *[
+                    item for item in ranked_pronunciation
+                    if item is not vice_city_selected
+                ],
+            ][:MAX_PRONUNCIATION_PROMPT_REFERENCES]
         if not pronunciation_selected:
             raise RuntimeError("NO_FRESH_PRONUNCIATION_REFERENCE_WITH_VERIFIED_TRANSCRIPT")
         pronunciation_canonical=pronunciation_selected[0][0]
@@ -672,15 +727,18 @@ def main()->int:
     pronunciation_prompt_audio=None
     human_review_reference=canonical
     qwen_reference_audio_lineage="ORIGINAL_TELEGRAM_TO_24K_DIRECT"
+    pronunciation24_by_input_id={}
     if pronunciation_canonical is not None:
         pronunciation24s=[]
         for position,(pronunciation_row,_text) in enumerate(pronunciation_selected,1):
             pid=str(pronunciation_row["reference_id"])
-            pronunciation24s.append(_ffmpeg(
+            pronunciation24=_ffmpeg(
                 original_sources[pid],
                 workspace/f"pronunciation-owner-reference-{position}-24k.wav",
                 24000,
-            ))
+            )
+            pronunciation24s.append(pronunciation24)
+            pronunciation24_by_input_id[int(pronunciation_row["telegram_input_id"])]=pronunciation24
         pronunciation_prompt_audio=_compose_pronunciation_reference_audio(
             pronunciation24s,
             workspace/"pronunciation-reference-combined-24k.wav",
@@ -734,6 +792,9 @@ def main()->int:
     if not anchor_prompt_items:
         raise RuntimeError("QWEN3_TTS_OWNER_ANCHOR_PROMPT_REQUIRED")
 
+    anchor_prompt=anchor_prompt_items[0]
+    pronunciation_hybrid_prompt=None
+    vice_city_prompt=None
     if pronunciation_prompt_audio is not None:
         pronunciation_prompt_items=model.create_voice_clone_prompt(
             ref_audio=str(pronunciation_prompt_audio),
@@ -742,18 +803,45 @@ def main()->int:
         )
         if not pronunciation_prompt_items:
             raise RuntimeError("QWEN3_TTS_PRONUNCIATION_PROMPT_REQUIRED")
-        anchor_prompt=anchor_prompt_items[0]
         pronunciation_prompt=pronunciation_prompt_items[0]
-        prompt=[VoiceClonePromptItem(
+        pronunciation_hybrid_prompt=VoiceClonePromptItem(
             ref_code=pronunciation_prompt.ref_code,
             ref_spk_embedding=anchor_prompt.ref_spk_embedding,
             x_vector_only_mode=False,
             icl_mode=True,
             ref_text=pronunciation_ref_text,
-        )]
-        print("QWEN_PROMPT_COMPONENT_AUTHORITY=ANCHOR_SPK_PLUS_PRONUNCIATION_CODE")
+        )
+
+        if vice_city_selected is None:
+            raise RuntimeError("OWNER_VICE_CITY_PRONUNCIATION_REFERENCE_REQUIRED")
+        vice_row,vice_ref_text=vice_city_selected
+        vice_input_id=int(vice_row["telegram_input_id"])
+        vice_audio=pronunciation24_by_input_id.get(vice_input_id)
+        if vice_audio is None:
+            pid=str(vice_row["reference_id"])
+            vice_audio=_ffmpeg(
+                original_sources[pid],
+                workspace/"vice-city-owner-reference-24k.wav",
+                24000,
+            )
+        vice_prompt_items=model.create_voice_clone_prompt(
+            ref_audio=str(vice_audio),
+            ref_text=vice_ref_text,
+            x_vector_only_mode=False,
+        )
+        if not vice_prompt_items:
+            raise RuntimeError("QWEN3_TTS_VICE_CITY_PROMPT_REQUIRED")
+        vice_raw_prompt=vice_prompt_items[0]
+        vice_city_prompt=VoiceClonePromptItem(
+            ref_code=vice_raw_prompt.ref_code,
+            ref_spk_embedding=anchor_prompt.ref_spk_embedding,
+            x_vector_only_mode=False,
+            icl_mode=True,
+            ref_text=vice_ref_text,
+        )
+        print("OWNER_VICE_CITY_REFERENCE_TELEGRAM_INPUT_ID="+str(vice_input_id))
+        print("QWEN_PROMPT_COMPONENT_AUTHORITY=ANCHOR_SPK_PLUS_TARGETED_PRONUNCIATION_CODE")
     else:
-        prompt=anchor_prompt_items
         print("QWEN_PROMPT_COMPONENT_AUTHORITY=ANCHOR_ONLY")
     print("QWEN_REFERENCE_AUDIO_LINEAGE="+qwen_reference_audio_lineage)
     pronunciation_segments=build_gta6_pronunciation_batches(SHORT_TEXT)
@@ -765,11 +853,26 @@ def main()->int:
         raise RuntimeError("GTA6_PRONUNCIATION_SEGMENT_LANGUAGE_AUTO_FORBIDDEN")
     print("GTA6_PRONUNCIATION_SEGMENT_COUNT="+str(len(pronunciation_segments)))
     print("GTA6_PRONUNCIATION_SEGMENT_LANGUAGES="+",".join(segment_languages))
+    segment_prompts=[]
+    for row in pronunciation_segments:
+        canonical_text=str(row["canonical_text"])
+        language=str(row["language"])
+        if language=="Portuguese":
+            segment_prompts.append(anchor_prompt)
+        elif VICE_CITY_TERM in canonical_text:
+            if vice_city_prompt is None:
+                raise RuntimeError("OWNER_VICE_CITY_PRONUNCIATION_REFERENCE_REQUIRED")
+            segment_prompts.append(vice_city_prompt)
+        elif pronunciation_hybrid_prompt is not None:
+            segment_prompts.append(pronunciation_hybrid_prompt)
+        else:
+            segment_prompts.append(anchor_prompt)
+
     generation_t0=time.monotonic()
     wavs,sample_rate=model.generate_voice_clone(
         text=segment_texts,
         language=segment_languages,
-        voice_clone_prompt=prompt,
+        voice_clone_prompt=segment_prompts,
         non_streaming_mode=True,
     )
     generation_seconds=time.monotonic()-generation_t0
