@@ -35,10 +35,12 @@ QWEN_TTS_VERSION="0.1.1"
 REFERENCE_SOURCE="TELEGRAM_HUMAN_OWNER"
 IDENTITY_PROFILE_SCHEMA="OwnerSpeakerIdentityProfile/v1"
 PINNED_SPEAKER_MODEL_ID="speechbrain/spkrec-ecapa-voxceleb"
+REQUEST_PATH=Path(".run/br-owner-v1-single-human-clone.request.json")
 SHORT_TEXT=(
-    "Booooa meu povo, aqui é BR no GTA 6! Hoje a gente vai falar de Vice City, "
-    "Leonida e Rockstar. Quero falar do meu jeito, com energia, clareza e ritmo "
-    "natural. E BR não dorme em Vice City."
+    "Booooa meu povo, aqui é BR no GTA 6! Vice City. "
+    "Jason Duval, Lucia Caminos, Cal Hampton, Boobie Ike, Dre'Quan Priest, "
+    "Real Dimez, Raul Bautista e Brian Heder. Leonida e Rockstar. "
+    "E BR não dorme em Vice City."
 )
 SPEECHBRAIN_VERSION="1.1.1"
 SPEAKER_MODEL_EMBEDDING_SHA256="0575cb64845e6b9a10db9bcb74d5ac32b326b8dc90352671d345e2ee3d0126a2"
@@ -62,6 +64,16 @@ def _index() -> dict[str,Any]:
         if isinstance(value,dict):
             return value
     raise RuntimeError("OWNER_TELEGRAM_REFERENCE_INDEX_NOT_MATERIALIZED")
+
+
+def _pronunciation_after_message_id()->int:
+    if not REQUEST_PATH.is_file():
+        return 0
+    payload=json.loads(REQUEST_PATH.read_text(encoding="utf-8"))
+    value=int(payload.get("pronunciation_after_message_id") or 0)
+    if value<0:
+        raise RuntimeError("OWNER_PRONUNCIATION_REFERENCE_BOUNDARY_INVALID")
+    return value
 
 
 def _ffmpeg(source: Path,target: Path,rate:int)->Path:
@@ -221,6 +233,14 @@ def main()->int:
     refs=list(materialized.get("references") or [])
     if len(refs)<3:
         raise RuntimeError("OWNER_REFERENCE_COUNT_TOO_SMALL")
+    pronunciation_after_message_id=_pronunciation_after_message_id()
+    pronunciation_refs=[
+        row for row in refs
+        if int(row["telegram_message_id"])>pronunciation_after_message_id
+    ] if pronunciation_after_message_id>0 else list(refs)
+    print(f"OWNER_PRONUNCIATION_REFERENCE_COUNT={len(pronunciation_refs)}")
+    if pronunciation_after_message_id>0 and not pronunciation_refs:
+        raise RuntimeError("OWNER_PRONUNCIATION_REFERENCE_NOT_MATERIALIZED")
 
     classifier=_load_speaker_model(cache_root)
     normalized={}
@@ -263,6 +283,7 @@ def main()->int:
         candidate_rows.append({
             "reference_id":rid,
             "telegram_input_id":int(row["telegram_input_id"]),
+            "telegram_message_id":int(row["telegram_message_id"]),
             "sha256":str(row["sha256"]),
             "duration_seconds":float(m.get("duration_seconds") or row.get("duration_seconds") or 0.0),
             "snr_db":float(m.get("snr_db") or 0.0),
@@ -286,6 +307,7 @@ def main()->int:
         and row["no_overlap"] is True
         and row["no_music"] is True
         and float(row["duration_seconds"])>0.0
+        and (pronunciation_after_message_id<=0 or int(row["telegram_message_id"])>pronunciation_after_message_id)
         and float(profile["reference_similarity_to_centroid"].get(str(row["reference_id"]),-1.0))
             >=float(profile["clone_centroid_min_similarity"])
     ]
@@ -468,6 +490,7 @@ def main()->int:
         "canonical_reference_telegram_input_id":int(canonical["telegram_input_id"]),
         "canonical_reference_sha256":str(canonical["sha256"]),
         "canonical_reference_source_message_id":int(source_row["telegram_message_id"]),
+        "pronunciation_after_message_id":pronunciation_after_message_id,
         "telegram_chat_id":int(source_row["telegram_chat_id"]),
         "clone_path":str(clone_path),
         "clone_sha256":clone_sha,
