@@ -20,9 +20,8 @@ from app.services.gta6_pronunciation_lexicon_service import (
 )
 from app.services.owner_voice_audio_quality_service import pcm16_quality_metrics
 from app.services.owner_voice_human_audition_pack_service import (
-    character_error_rate,
+    evaluate_segment_transcript_qa,
     evaluate_short_candidate,
-    word_error_rate,
 )
 from app.services.owner_voice_human_review_delivery_policy_service import build_human_review_delivery_decision
 from app.services.owner_voice_private_materialization_service import (
@@ -1133,15 +1132,16 @@ def main()->int:
             if str(getattr(s,"text","") or "").strip()
         ).strip()
         expected_segment=str(row["spoken_text"])
-        seg_wer=word_error_rate(expected_segment,observed_segment)
-        seg_cer=character_error_rate(expected_segment,observed_segment)
+        segment_transcript_qa=evaluate_segment_transcript_qa(
+            expected=expected_segment,
+            observed=observed_segment,
+            language=forced_language,
+        )
+        seg_wer=float(segment_transcript_qa["word_error_rate"])
+        seg_cer=float(segment_transcript_qa["character_error_rate"])
         seg_probability=float(getattr(seg_info,"language_probability",0.0) or 0.0)
         segment_probabilities.append(seg_probability)
-        segment_pass=(
-            bool(observed_segment)
-            and seg_wer<=0.25
-            and seg_cer<=0.20
-        )
+        segment_pass=bool(segment_transcript_qa["passed"])
         segment_language_qas.append({
             "position":position,
             "language":forced_language,
@@ -1150,6 +1150,8 @@ def main()->int:
             "word_error_rate":seg_wer,
             "character_error_rate":seg_cer,
             "language_probability":seg_probability,
+            "token_coverage":segment_transcript_qa["token_coverage"],
+            "decision_basis":segment_transcript_qa["decision_basis"],
             "passed":segment_pass,
         })
         observed_chunks.append(observed_segment)
