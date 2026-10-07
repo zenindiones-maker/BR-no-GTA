@@ -1,6 +1,6 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.10.07.2-owner-br-vice-city",
+  "version": "2026.10.07.4-owner-vice-citi-ptbr",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "DeepSeek Harness + BR_OWNER_V1 human acoustic authority",
@@ -46,7 +46,8 @@
       "strategy": "owner-brazilian-acoustic",
       "synthesis_text": "Vice Citi",
       "critical": true,
-      "source": "owner-explicit Brazilian pronunciation: Vice Citi; acoustic authority is fresh BR_OWNER_V1 Telegram reference"
+      "source": "owner explicit Brazilian reading: Vice Citi; acoustic authority is fresh BR_OWNER_V1 Telegram reference",
+      "owner_reading_authority": "EXPLICIT_OWNER_PTBR"
     },
     {
       "identity": "leonida-keys",
