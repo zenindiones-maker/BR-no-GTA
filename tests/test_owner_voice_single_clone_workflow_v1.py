@@ -87,3 +87,11 @@ def test_auto_gate_failure_blocks_activation_but_not_human_audition_delivery():
     assert 'payload.get("clone_identity_gate") not in {"PASS","FAIL"}' in delivery
     assert 'payload.get("runtime_activation") is not False' in delivery
     assert "Runtime activation: BLOQUEADA até aprovação humana." in delivery
+
+
+def test_telegram_send_audio_transcodes_wav_candidate_to_m4a():
+    source=DELIVERY.read_text(encoding="utf-8")
+    assert "telegram-audition.m4a" in source
+    assert '"-c:a","aac","-b:a","192k"' in source
+    assert '"audio":(upload_path.name,handle,"audio/mp4")' in source
+    assert '"audio":(path.name,handle,"audio/wav")' not in source
