@@ -47,10 +47,10 @@ IDENTITY_PROFILE_SCHEMA="OwnerSpeakerIdentityProfile/v1"
 PINNED_SPEAKER_MODEL_ID="speechbrain/spkrec-ecapa-voxceleb"
 REQUEST_PATH=Path(".run/br-owner-v1-single-human-clone.request.json")
 SHORT_TEXT=(
-    "Booooa meu povo, aqui é BR no GTA 6! Vice City, no estado de Leonida. "
-    "Rockstar Games. Jason Duval, Lucia Caminos, Cal Hampton, Boobie Ike, "
-    "Dre'Quan Priest, Real Dimez, Raul Bautista e Brian Heder. "
-    "Leonida Keys. E BR não dorme em Vice City."
+    "Booooa meu povo, aqui é BR no GTA 6! Rockstar Games. Vice City, Leonida, "
+    "Leonida Keys, Port Gellhorn, Ambrosia, Grassrivers e Mount Kalaga. "
+    "Jason Duval, Lucia Caminos, Cal Hampton, Boobie Ike, Dre'Quan Priest, "
+    "Real Dimez, Raul Bautista e Brian Heder. E BR não dorme em Vice City."
 )
 PRONUNCIATION_HOTWORDS=gta6_pronunciation_hotwords()
 MAX_PRONUNCIATION_PROMPT_REFERENCES=2
