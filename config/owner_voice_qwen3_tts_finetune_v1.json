@@ -12,12 +12,22 @@
   "runtime_activation_after_training": false,
   "human_review_required": true,
   "minimum_training_samples": 12,
-  "minimum_training_seconds": 180.0,
+  "minimum_training_seconds": 180,
   "training_requires_gpu": true,
   "upstream_patch_contract": {
     "text_projection": true,
     "remove_future_codec_leak": true,
     "causal_label_alignment": true,
     "subtalker_shift_labels": true
-  }
+  },
+  "execution_scope": "LOCAL_OR_SELF_HOSTED_ONLY",
+  "paid_api_allowed": false,
+  "voice_provider_auth_allowed": false,
+  "credit_card_required_allowed": false,
+  "paid_gpu_allowed": false,
+  "huggingface_auth_required": false,
+  "public_model_download_only": true,
+  "inference_cpu_allowed": true,
+  "fine_tune_cpu_allowed": false,
+  "fine_tune_requires_zero_cost_gpu": true
 }
