@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from app.services.gta6_pronunciation_lexicon_service import (
+    build_gta6_pronunciation_batches,
     build_gta6_pronunciation_segments,
     gta6_lexicon_hits,
     gta6_pronunciation_hotwords,
@@ -751,7 +752,7 @@ def main()->int:
         prompt=anchor_prompt_items
         print("QWEN_PROMPT_COMPONENT_AUTHORITY=ANCHOR_ONLY")
     print("QWEN_REFERENCE_AUDIO_LINEAGE="+qwen_reference_audio_lineage)
-    pronunciation_segments=build_gta6_pronunciation_segments(SHORT_TEXT)
+    pronunciation_segments=build_gta6_pronunciation_batches(SHORT_TEXT)
     if not pronunciation_segments:
         raise RuntimeError("GTA6_PRONUNCIATION_SEGMENT_PLAN_EMPTY")
     segment_texts=[str(row["spoken_text"]) for row in pronunciation_segments]
