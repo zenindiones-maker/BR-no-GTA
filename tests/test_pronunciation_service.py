@@ -22,7 +22,7 @@ from app.services.pronunciation_service import (
 
 def test_lexicon_is_governed_owner_qwen_code_switch_without_respellings():
     lexicon=load_pronunciation_lexicon()
-    assert lexicon["version"]=="2026.10.07.3-owner-vaicy-siti"
+    assert lexicon["version"]=="2026.10.07.4-owner-vice-citi-ptbr"
     assert lexicon["default_locale"]=="pt-BR"
     assert lexicon["policy"]["governed_foreign_chunks_only"] is True
     assert lexicon["policy"]["foreign_language_chunks_forbidden"] is False
@@ -33,7 +33,7 @@ def test_lexicon_is_governed_owner_qwen_code_switch_without_respellings():
     assert entries["gta-6"]["locale"]=="pt-BR"
     assert entries["gta-6"]["synthesis_text"]=="Gê Tê A seis"
     assert entries["vice-city"]["locale"]=="pt-BR"
-    assert entries["vice-city"]["synthesis_text"]=="vaicy siti"
+    assert entries["vice-city"]["synthesis_text"]=="Vice Citi"
     assert entries["vice-city"]["owner_reading_authority"]=="EXPLICIT_OWNER_PTBR"
     assert entries["character-lucia"]["locale"]=="en-US"
     assert entries["character-lucia"]["synthesis_text"]=="Lucia"
@@ -79,7 +79,7 @@ def test_vice_city_uses_owner_approved_brazilian_reading_without_mutating_canoni
     vice=next(span for span in plan.spans if span.pronunciation_identity=="vice-city")
     assert vice.text=="Vice City"
     assert vice.locale=="pt-BR"
-    assert vice.synthesis_text=="vaicy siti"
+    assert vice.synthesis_text=="Vice Citi"
     assert plan.canonical_text_preserved is True
 
 
@@ -218,5 +218,5 @@ def test_explicit_metadata_cannot_override_governed_vice_city_lexicon():
     }])
     vice=next(span for span in plan.spans if span.pronunciation_identity=="vice-city")
     assert vice.locale=="pt-BR"
-    assert vice.synthesis_text=="vaicy siti"
-    assert plan.rendered_text=="vaicy siti"
+    assert vice.synthesis_text=="Vice Citi"
+    assert plan.rendered_text=="Vice Citi"
