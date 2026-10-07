@@ -506,7 +506,18 @@ def main()->int:
 
     canonical16=normalized[cid]
     canonical_embedding=embeddings[cid]
-    canonical_similarity=cosine_similarity(canonical_embedding,profile["centroid"])
+    canonical_similarity=float(profile["reference_similarity_to_centroid"][cid])
+    canonical_similarity_recomputed=cosine_similarity(
+        canonical_embedding,
+        profile["centroid"],
+    )
+    if not math.isclose(
+        canonical_similarity,
+        canonical_similarity_recomputed,
+        rel_tol=1e-6,
+        abs_tol=1e-6,
+    ):
+        raise RuntimeError("CANONICAL_REFERENCE_SIMILARITY_RECOMPUTE_DRIFT")
     if canonical_similarity<centroid_floor:
         raise RuntimeError("CANONICAL_REFERENCE_IDENTITY_MATCH_FAILED")
     canonical24=_ffmpeg(
