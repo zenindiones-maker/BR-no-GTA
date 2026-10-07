@@ -208,3 +208,26 @@ def test_fresh_pronunciation_evidence_is_not_blocked_by_identity_inlier_filter()
     pronunciation_block=source.split("pronunciation_pre_asr=[",1)[1].split("]",1)[0]
     assert "inlier_ids" not in pronunciation_block
     assert "clone_centroid_min_similarity" not in pronunciation_block
+
+
+def test_pronunciation_audition_covers_full_official_gta_vi_target_set():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    for term in (
+        "Rockstar Games",
+        "Vice City",
+        "Leonida",
+        "Leonida Keys",
+        "Port Gellhorn",
+        "Ambrosia",
+        "Grassrivers",
+        "Mount Kalaga",
+        "Jason Duval",
+        "Lucia Caminos",
+        "Cal Hampton",
+        "Boobie Ike",
+        "Dre'Quan Priest",
+        "Real Dimez",
+        "Raul Bautista",
+        "Brian Heder",
+    ):
+        assert term in source.split("PRONUNCIATION_HOTWORDS=",1)[0]
