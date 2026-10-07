@@ -36,6 +36,7 @@ jobs:
             tests/test_owner_voice_speaker_identity_service.py \
             tests/test_owner_voice_single_clone_delivery_v1.py \
             tests/test_owner_voice_single_clone_workflow_v1.py
+            tests/test_owner_voice_zero_cost_execution_policy.py
       - name: Detect explicit single-clone request
         id: request
         run: |
@@ -59,7 +60,7 @@ jobs:
     name: Build and deliver one human-bound BR_OWNER_V1 clone
     needs: contract
     if: ${{ needs.contract.outputs.clone_requested == 'true' }}
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, br-owner-voice-zero-cost]
     timeout-minutes: 90
     permissions:
       contents: read
@@ -74,6 +75,9 @@ jobs:
       OMP_NUM_THREADS: "4"
       MKL_NUM_THREADS: "4"
       TOKENIZERS_PARALLELISM: "false"
+      HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      BR_OWNER_EXECUTION_CLASS: SELF_HOSTED_ZERO_COST
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -89,6 +93,7 @@ jobs:
           BR_OWNER_AUDITION_LEDGER_SSH_KEY: ${{ secrets.BR_OWNER_AUDITION_LEDGER_SSH_KEY }}
         run: |
           set -euo pipefail
+          python -m app.services.owner_voice_zero_cost_policy_service --mode inference
           test -n "${TELEGRAM_BOT_TOKEN:-}"
           if [ -z "${BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64:-}" ] && [ -z "${BR_OWNER_TELEGRAM_REFERENCE_INDEX:-}" ]; then
             echo "FAILED_STEP=secret_preflight"
