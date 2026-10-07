@@ -127,6 +127,7 @@ class VoiceProviderUnavailable(RuntimeError):
 OWNER_VOICE_IDENTITY_ID = "BR_OWNER_V1"
 OWNER_PRODUCTION_PROVIDER_ID = "qwen3-tts"
 OWNER_PRODUCTION_MODEL_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+OWNER_PRODUCTION_MODEL_REVISION = "fd4b254389122332181a7c3db7f27e918eec64e3"
 
 
 @dataclass(frozen=True)
@@ -163,23 +164,69 @@ def _default_owner_identity_resolver(voice_identity_id: str) -> dict[str, Any] |
         return None
     if not isinstance(enrollment, dict):
         return None
-    if int(enrollment.get("materialized_reference_count") or 0) <= 0:
+    if (
+        enrollment.get("voice_identity_id") != OWNER_VOICE_IDENTITY_ID
+        or str(enrollment.get("consent_status") or "") != "APPROVED"
+        or str(enrollment.get("reference_source") or "") != "TELEGRAM"
+        or str(enrollment.get("official_voice") or "") != OWNER_VOICE_IDENTITY_ID
+        or OWNER_VOICE_IDENTITY_ID not in tuple(
+            str(value) for value in (enrollment.get("active_voice_identities") or ())
+        )
+        or enrollment.get("provider_preset_voice_allowed") is not False
+        or enrollment.get("generic_voice_fallback") is not False
+    ):
         return None
-    if enrollment.get("reference_materialization_status") != "PASS":
-        return None
-    if enrollment.get("runtime_activation_status") != "READY":
-        return None
-    if enrollment.get("owner_voice_status") != "READY":
-        return None
+
     store_root = str(os.environ.get("BR_PRIVATE_VOICE_STORE") or "").strip()
     if not store_root:
         return None
-    profile_path = Path(store_root).expanduser() / f"{voice_identity_id}.json"
+    root = Path(store_root).expanduser().resolve()
+    profile_path = root / f"{voice_identity_id}.json"
+    activation_path = root / f"{voice_identity_id}.runtime.json"
+    prompt_path = root / f"{voice_identity_id}.prompt.json"
     try:
         profile = json.loads(profile_path.read_text(encoding="utf-8"))
+        activation = json.loads(activation_path.read_text(encoding="utf-8"))
+        prompt_bytes = prompt_path.read_bytes()
     except (OSError, json.JSONDecodeError):
         return None
-    return profile if isinstance(profile, dict) else None
+    if not isinstance(profile, dict) or not isinstance(activation, dict):
+        return None
+    if (
+        activation.get("schema") != "OwnerVoiceRuntimeActivation/v1"
+        or activation.get("status") != "READY"
+        or activation.get("runtime_activation") is not True
+        or activation.get("voice_identity_id") != OWNER_VOICE_IDENTITY_ID
+        or activation.get("provider") != OWNER_PRODUCTION_PROVIDER_ID
+        or activation.get("model") != OWNER_PRODUCTION_MODEL_ID
+        or activation.get("model_revision") != OWNER_PRODUCTION_MODEL_REVISION
+        or activation.get("automatic_gates_passed") is not True
+    ):
+        return None
+
+    profile_sha = _sha256_json(profile)
+    prompt_sha = hashlib.sha256(prompt_bytes).hexdigest()
+    reference_set_sha = _sha256_json({
+        "source_audio_sha256s": list(profile.get("source_audio_sha256s") or ()),
+        "source_transcript_sha256s": list(profile.get("source_transcript_sha256s") or ()),
+    })
+    if (
+        profile_sha != str(activation.get("profile_sha256") or "")
+        or prompt_sha != str(activation.get("voice_prompt_sha256") or "")
+        or reference_set_sha != str(activation.get("reference_set_sha256") or "")
+        or str(profile.get("voice_prompt_sha256") or "") != prompt_sha
+        or str(profile.get("clone_provider") or "") != OWNER_PRODUCTION_PROVIDER_ID
+        or str(profile.get("clone_model") or "") != OWNER_PRODUCTION_MODEL_ID
+        or str(profile.get("clone_model_revision") or "") != OWNER_PRODUCTION_MODEL_REVISION
+        or str(profile.get("review_token") or "") != str(activation.get("review_token") or "")
+        or str(profile.get("approved_clone_id") or "") != str(activation.get("clone_id") or "")
+    ):
+        return None
+    try:
+        validate_owner_identity_profile(profile)
+    except ValueError:
+        return None
+    return profile
 
 
 def _materialized_owner_binding(
