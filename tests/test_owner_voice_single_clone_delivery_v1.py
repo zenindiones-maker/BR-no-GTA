@@ -161,11 +161,11 @@ def test_single_clone_control_message_carries_exact_v2_review_token(monkeypatch)
         "test-token",
         identity_gate="PASS",
         content_audio_prescreen="PASS",
+        review_token=token,
     )
     message_id=api.send_control(
         chat_id=-1001,
         protect_content=True,
-        review_token=token,
     )
     assert message_id==704
     assert captured["method"]=="sendMessage"
@@ -184,7 +184,9 @@ def test_single_clone_control_message_carries_exact_v2_review_token(monkeypatch)
 
 def test_single_clone_delivery_persists_exact_identity_and_pronunciation_lineage():
     source=Path("scripts/owner_voice_single_clone_delivery.py").read_text(encoding="utf-8")
-    assert 'identity_anchor_telegram_input_id=int(manifest["identity_anchor_telegram_input_id"])' in source
-    assert 'pronunciation_reference_telegram_input_ids=[' in source
-    assert 'vice_city_reference_telegram_input_id=(' in source
+    assert "identity_anchor_telegram_input_id=int(" in source
+    assert 'manifest["identity_anchor_telegram_input_id"]' in source
+    assert "pronunciation_reference_telegram_input_ids=[" in source
+    assert 'manifest.get("pronunciation_reference_telegram_input_ids",[])' in source
+    assert "vice_city_reference_telegram_input_id=(" in source
     assert 'manifest.get("vice_city_reference_telegram_input_id")' in source
