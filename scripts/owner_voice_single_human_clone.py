@@ -14,6 +14,7 @@ from app.services.gta6_pronunciation_lexicon_service import (
     build_gta6_pronunciation_segments,
     gta6_lexicon_hits,
     gta6_pronunciation_hotwords,
+    gta6_target_evidence_score,
 )
 from app.services.owner_voice_audio_quality_service import pcm16_quality_metrics
 from app.services.owner_voice_human_audition_pack_service import (
@@ -62,6 +63,7 @@ PRONUNCIATION_HOTWORDS=gta6_pronunciation_hotwords()
 MAX_PRONUNCIATION_PROMPT_REFERENCES=2
 PRONUNCIATION_ASR_LANGUAGES=(None,"en","pt","es")
 VICE_CITY_TERM="Vice City"
+VICE_CITY_REFERENCE_EVIDENCE_MIN=0.78
 VOICE_SEGMENT_CROSSFADE_MS=30
 VOICE_SEGMENT_LEVEL_MATCH_DB_LIMIT=1.5
 SPEECHBRAIN_VERSION="1.1.1"
@@ -245,10 +247,15 @@ def _best_pronunciation_asr_hypothesis(
             "vad_speech_ratio":vad_speech_ratio,
             "transcript":transcript,
             "lexicon_hits":gta6_lexicon_hits(transcript),
+            "vice_city_evidence_score":gta6_target_evidence_score(
+                transcript,
+                VICE_CITY_TERM,
+            ),
         })
     hypotheses.sort(
         key=lambda row:(
             -len(row["lexicon_hits"]),
+            -float(row["vice_city_evidence_score"]),
             -float(row["vad_speech_ratio"]),
             -float(row["language_probability"]),
             0 if row["forced_language"] is None else 1,
@@ -650,14 +657,25 @@ def main()->int:
             strong_language=str(hypothesis["language"])
             strong_text=str(hypothesis["transcript"])
             pronunciation_hits=tuple(hypothesis["lexicon_hits"])
+            vice_city_evidence_score=float(
+                hypothesis["vice_city_evidence_score"]
+            )
             print(
                 "OWNER_PRONUNCIATION_ASR_LANGUAGE="
                 +str(hypothesis["forced_language"] or "auto")
             )
-            if float(strong_vad)>=0.55 and strong_text and pronunciation_hits:
+            if (
+                float(strong_vad)>=0.55
+                and strong_text
+                and (
+                    pronunciation_hits
+                    or vice_city_evidence_score>=VICE_CITY_REFERENCE_EVIDENCE_MIN
+                )
+            ):
                 row["speech_ratio"]=strong_vad
                 row["detected_language"]=strong_language
                 row["pronunciation_hits"]=pronunciation_hits
+                row["vice_city_evidence_score"]=vice_city_evidence_score
                 pronunciation_selected.append((row,strong_text))
         pronunciation_selected.sort(key=lambda item:(
             -len(item[0]["pronunciation_hits"]),
@@ -667,7 +685,11 @@ def main()->int:
         vice_city_selected=next(
             (
                 (row,text) for row,text in pronunciation_selected
-                if VICE_CITY_TERM in row["pronunciation_hits"]
+                if (
+                    VICE_CITY_TERM in row["pronunciation_hits"]
+                    or float(row.get("vice_city_evidence_score",0.0))
+                    >=VICE_CITY_REFERENCE_EVIDENCE_MIN
+                )
             ),
             None,
         )
@@ -840,6 +862,10 @@ def main()->int:
             ref_text=vice_ref_text,
         )
         print("OWNER_VICE_CITY_REFERENCE_TELEGRAM_INPUT_ID="+str(vice_input_id))
+        print(
+            "OWNER_VICE_CITY_REFERENCE_EVIDENCE_SCORE="
+            +str(float(vice_row.get("vice_city_evidence_score",0.0)))
+        )
         print("QWEN_PROMPT_COMPONENT_AUTHORITY=ANCHOR_SPK_PLUS_PRONUNCIATION_CODE")
         print("QWEN_TARGETED_PROMPT_AUTHORITY=VICE_CITY_FRESH_OWNER_REFERENCE")
     else:
