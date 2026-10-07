@@ -74,3 +74,15 @@ def test_qwen_reference_preserves_original_telegram_bandwidth_before_24k_clone_p
     assert "original_sources[cid]" in source
     assert "ORIGINAL_TELEGRAM_TO_24K_DIRECT" in source
     assert '_ffmpeg(canonical16,workspace/"canonical-owner-reference-24k.wav",24000)' not in source
+
+
+def test_auto_gate_failure_blocks_activation_but_not_human_audition_delivery():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    delivery=DELIVERY.read_text(encoding="utf-8")
+    assert "build_human_review_delivery_decision" in source
+    assert 'raise RuntimeError("OWNER_CLONE_IDENTITY_MISMATCH")' not in source
+    assert 'raise RuntimeError("OWNER_SINGLE_CLONE_CONTENT_QA_FAILED")' not in source
+    assert '"audition_delivery_eligible":review_decision["audition_delivery_eligible"]' in source
+    assert 'payload.get("clone_identity_gate") not in {"PASS","FAIL"}' in delivery
+    assert 'payload.get("runtime_activation") is not False' in delivery
+    assert "Runtime activation: BLOQUEADA até aprovação humana." in delivery
