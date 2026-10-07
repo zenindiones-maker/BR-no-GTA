@@ -9,6 +9,18 @@ SENT="SENT"
 RECONCILIATION_REQUIRED="RECONCILIATION_REQUIRED"
 
 
+def review_token_for_clone(clone_id:str)->str:
+    value=str(clone_id or "").strip()
+    if not value:
+        raise ValueError("SINGLE_CLONE_ID_REQUIRED")
+    return sha256(("owner-voice-review/v2\n"+value).encode()).hexdigest()[:20]
+
+
+def _valid_review_token(value:str)->bool:
+    token=str(value or "").strip().lower()
+    return len(token)==20 and all(ch in "0123456789abcdef" for ch in token)
+
+
 class SingleCloneDeliveryLedger:
     def __init__(self,*,store,clone_id:str)->None:
         self.store=store
@@ -34,10 +46,22 @@ class SingleCloneDeliveryLedger:
         content_audio_prescreen:str="UNKNOWN",
         human_review:str="PENDING",
         runtime_activation:bool=False,
+        review_token:str|None=None,
+        identity_anchor_telegram_input_id:int|None=None,
+        pronunciation_reference_telegram_input_ids:list[int]|None=None,
+        vice_city_reference_telegram_input_id:int|None=None,
     )->dict[str,Any]:
         snap=self._snapshot()
         if isinstance(snap.mission_head,dict):
             return dict(snap.mission_head)
+        token=str(review_token or review_token_for_clone(self.clone_id)).strip().lower()
+        if not _valid_review_token(token):
+            raise ValueError("SINGLE_CLONE_REVIEW_TOKEN_INVALID")
+        pronunciation_ids=[
+            int(value)
+            for value in (pronunciation_reference_telegram_input_ids or [])
+            if int(value)>0
+        ]
         head={
             "schema_version":"OwnerVoiceSingleCloneDelivery/v1",
             "mission_id":self.mission_id,
@@ -54,6 +78,17 @@ class SingleCloneDeliveryLedger:
             "content_audio_prescreen":str(content_audio_prescreen),
             "human_review":str(human_review),
             "runtime_activation":bool(runtime_activation),
+            "review_token":token,
+            "candidate_mode":"SINGLE_CLONE",
+            "identity_anchor_telegram_input_id":(
+                int(identity_anchor_telegram_input_id)
+                if identity_anchor_telegram_input_id is not None else None
+            ),
+            "pronunciation_reference_telegram_input_ids":pronunciation_ids,
+            "vice_city_reference_telegram_input_id":(
+                int(vice_city_reference_telegram_input_id)
+                if vice_city_reference_telegram_input_id is not None else None
+            ),
             "confirmed_message_ids":{},
             "active_operation":None,
             "failure_class":None,
