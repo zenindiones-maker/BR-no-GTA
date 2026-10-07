@@ -139,28 +139,26 @@ def test_enrollment_policy_requires_30_seconds_clean_single_speaker_ptbr():
     assert "MULTIPLE_SPEAKERS" in noisy.issues
 
 
-def test_provider_profiles_are_pinned_ptbr_and_self_hosted_compute():
-    assert QWEN_OWNER_INTERACTIVE.model_id == "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
-    assert QWEN_OWNER_INTERACTIVE.model_revision == "5d83992436eae1d760afd27aff78a71d676296fc"
+def test_provider_profiles_pin_qwen_17b_for_owner_production_and_keep_human_accent_gate():
+    assert QWEN_OWNER_INTERACTIVE.model_id == "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+    assert QWEN_OWNER_INTERACTIVE.model_revision == "fd4b254389122332181a7c3db7f27e918eec64e3"
     assert QWEN_OWNER_LONG_FORM.model_id == "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
-    assert QWEN_OWNER_LONG_FORM.model_revision == "fd4b254"
-    assert CHATTERBOX_PTBR_PROFILE.model_id == "ResembleAI/Chatterbox-Multilingual-pt-br"
-    assert CHATTERBOX_PTBR_PROFILE.model_revision == "b3952f1"
-    assert {QWEN_OWNER_INTERACTIVE.cost_class, QWEN_OWNER_LONG_FORM.cost_class, CHATTERBOX_PTBR_PROFILE.cost_class} == {"SELF_HOSTED_COMPUTE"}
-    assert QWEN_OWNER_INTERACTIVE.supports_ptbr is False
-    assert QWEN_OWNER_LONG_FORM.supports_ptbr is False
-    assert CHATTERBOX_PTBR_PROFILE.supports_ptbr is True
-    assert all(
-        p.requires_owner_reference and not p.provider_preset_voice_allowed
-        for p in (QWEN_OWNER_INTERACTIVE, QWEN_OWNER_LONG_FORM, CHATTERBOX_PTBR_PROFILE)
-    )
-    assert all(
-        p.ptbr_accent_certified is False
-        for p in (QWEN_OWNER_INTERACTIVE, QWEN_OWNER_LONG_FORM, CHATTERBOX_PTBR_PROFILE)
-    )
+    assert QWEN_OWNER_LONG_FORM.model_revision == "fd4b254389122332181a7c3db7f27e918eec64e3"
+    assert QWEN_OWNER_INTERACTIVE.cost_class == "SELF_HOSTED_COMPUTE"
+    assert QWEN_OWNER_LONG_FORM.cost_class == "SELF_HOSTED_COMPUTE"
+    assert QWEN_OWNER_INTERACTIVE.supports_ptbr is True
+    assert QWEN_OWNER_LONG_FORM.supports_ptbr is True
+    assert QWEN_OWNER_INTERACTIVE.requires_owner_reference is True
+    assert QWEN_OWNER_LONG_FORM.requires_owner_reference is True
+    assert QWEN_OWNER_INTERACTIVE.provider_preset_voice_allowed is False
+    assert QWEN_OWNER_LONG_FORM.provider_preset_voice_allowed is False
+    assert QWEN_OWNER_INTERACTIVE.ptbr_accent_certified is False
+    assert QWEN_OWNER_LONG_FORM.ptbr_accent_certified is False
+    # Chatterbox may remain historical provenance, but is not a production route.
+    assert CHATTERBOX_PTBR_PROFILE.provider_id == "chatterbox"
 
 
-def test_long_form_routing_requires_owner_identity_and_human_certified_ptbr_accent():
+def test_long_form_routing_requires_owner_identity_human_certified_ptbr_and_qwen_only():
     request = VoiceRouteRequest(
         usage="LONG_FORM",
         language="pt-BR",
@@ -170,27 +168,27 @@ def test_long_form_routing_requires_owner_identity_and_human_certified_ptbr_acce
     with pytest.raises(VoiceProviderUnavailable, match="VOICE_PROVIDER_UNAVAILABLE"):
         select_voice_provider(
             request,
-            candidates=(QWEN_OWNER_LONG_FORM, CHATTERBOX_PTBR_PROFILE),
-            certified_provider_ids=("qwen3-tts", "chatterbox"),
+            candidates=(QWEN_OWNER_LONG_FORM,),
+            certified_provider_ids=("qwen3-tts",),
         )
 
-    approved_ptbr = replace(CHATTERBOX_PTBR_PROFILE, ptbr_accent_certified=True)
+    approved_qwen = replace(QWEN_OWNER_LONG_FORM, ptbr_accent_certified=True)
     selected = select_voice_provider(
         request,
-        candidates=(approved_ptbr,),
-        certified_provider_ids=("chatterbox",),
-        sticky_provider_id="chatterbox",
-        sticky_model_id=approved_ptbr.model_id,
+        candidates=(approved_qwen,),
+        certified_provider_ids=("qwen3-tts",),
+        sticky_provider_id="qwen3-tts",
+        sticky_model_id=approved_qwen.model_id,
     )
-    assert selected.provider_id == "chatterbox"
+    assert selected.provider_id == "qwen3-tts"
+    assert selected.model_id == "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 
-    with pytest.raises(RuntimeError, match="VOICE_IDENTITY_STICKY"):
+    approved_chatterbox = replace(CHATTERBOX_PTBR_PROFILE, ptbr_accent_certified=True)
+    with pytest.raises(VoiceProviderUnavailable, match="VOICE_PROVIDER_UNAVAILABLE"):
         select_voice_provider(
             request,
-            candidates=(approved_ptbr,),
+            candidates=(approved_chatterbox,),
             certified_provider_ids=("chatterbox",),
-            sticky_provider_id="qwen3-tts",
-            sticky_model_id=QWEN_OWNER_LONG_FORM.model_id,
         )
 
 
