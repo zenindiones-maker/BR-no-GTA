@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from app.services.gta6_pronunciation_lexicon_service import build_gta6_pronunciation_segments
+from app.services.gta6_pronunciation_lexicon_service import (
+    build_gta6_pronunciation_batches,
+    build_gta6_pronunciation_segments,
+)
 
 from pathlib import Path
 
@@ -251,3 +254,18 @@ def test_explicit_gta_segmenter_runtime_contract():
     assert any(row["spoken_text"]=="Vice City" and row["language"]=="English" for row in segments)
     assert any(row["spoken_text"]=="Rockstar Games" and row["language"]=="English" for row in segments)
     assert all(row["language"]!="Auto" for row in segments)
+
+
+def test_gta_pronunciation_batches_coalesce_adjacent_english_targets_for_cpu():
+    proof=(
+        "BR no GTA 6! Rockstar Games. Vice City, Leonida, Leonida Keys, "
+        "Port Gellhorn, Ambrosia, Grassrivers e Mount Kalaga. "
+        "Jason Duval, Lucia Caminos, Cal Hampton, Boobie Ike, Dre'Quan Priest, "
+        "Real Dimez, Raul Bautista e Brian Heder."
+    )
+    batches=build_gta6_pronunciation_batches(proof)
+    assert len(batches)<=5
+    assert any(row["spoken_text"]=="Gê Tê A seis" and row["language"]=="Portuguese" for row in batches)
+    english=" ".join(str(row["spoken_text"]) for row in batches if row["language"]=="English")
+    for term in ("Rockstar Games","Vice City","Leonida","Port Gellhorn","Jason Duval","Lucia Caminos","Brian Heder"):
+        assert term in english
