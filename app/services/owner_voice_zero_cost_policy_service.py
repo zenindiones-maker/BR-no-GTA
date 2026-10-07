@@ -63,6 +63,7 @@ def validate_owner_voice_execution(
         "mode":mode,
         "execution_class":execution_class,
         "voice_identity_id":"BR_OWNER_V1",
+        "elevenlabs":"FORBIDDEN",
         "paid_api":"FORBIDDEN",
         "provider_auth":"FORBIDDEN",
         "credit_card_required":"FORBIDDEN",
@@ -79,6 +80,7 @@ def main()->int:
     args=parser.parse_args()
     receipt=validate_owner_voice_execution(mode=args.mode)
     for key in (
+        "elevenlabs",
         "paid_api",
         "provider_auth",
         "credit_card_required",
