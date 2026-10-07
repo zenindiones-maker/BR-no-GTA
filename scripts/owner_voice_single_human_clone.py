@@ -16,7 +16,11 @@ from app.services.gta6_pronunciation_lexicon_service import (
     gta6_pronunciation_hotwords,
 )
 from app.services.owner_voice_audio_quality_service import pcm16_quality_metrics
-from app.services.owner_voice_human_audition_pack_service import evaluate_short_candidate
+from app.services.owner_voice_human_audition_pack_service import (
+    character_error_rate,
+    evaluate_short_candidate,
+    word_error_rate,
+)
 from app.services.owner_voice_human_review_delivery_policy_service import build_human_review_delivery_decision
 from app.services.owner_voice_private_materialization_service import (
     materialize_telegram_owner_references,
@@ -792,21 +796,87 @@ def main()->int:
     print("QWEN3_TTS_IDENTITY_MATCH="+identity_gate)
 
     clone_metrics=pcm16_quality_metrics(clone16)
-    seg_iter,info=stt.transcribe(
-        str(clone16),language="pt",beam_size=1,vad_filter=True,
-        word_timestamps=False,condition_on_previous_text=False,
+    segment_language_qas=[]
+    observed_chunks=[]
+    segment_probabilities=[]
+    for position,(wav,row) in enumerate(zip(wavs,pronunciation_segments),1):
+        language=str(row["language"])
+        forced_language="pt" if language=="Portuguese" else "en"
+        segment_path=workspace/f"qa-segment-{position:02d}.wav"
+        sf.write(str(segment_path),wav,int(sample_rate),subtype="PCM_16")
+        seg_iter,seg_info=stt.transcribe(
+            str(segment_path),
+            language=forced_language,
+            beam_size=5,
+            vad_filter=True,
+            word_timestamps=False,
+            condition_on_previous_text=False,
+            hotwords=PRONUNCIATION_HOTWORDS if forced_language=="en" else None,
+        )
+        seg_segments=list(seg_iter)
+        observed_segment=" ".join(
+            str(getattr(s,"text","") or "").strip()
+            for s in seg_segments
+            if str(getattr(s,"text","") or "").strip()
+        ).strip()
+        expected_segment=str(row["spoken_text"])
+        seg_wer=word_error_rate(expected_segment,observed_segment)
+        seg_cer=character_error_rate(expected_segment,observed_segment)
+        seg_probability=float(getattr(seg_info,"language_probability",0.0) or 0.0)
+        segment_probabilities.append(seg_probability)
+        segment_pass=(
+            bool(observed_segment)
+            and seg_wer<=0.25
+            and seg_cer<=0.20
+        )
+        segment_language_qas.append({
+            "position":position,
+            "language":forced_language,
+            "expected_text":expected_segment,
+            "observed_text":observed_segment,
+            "word_error_rate":seg_wer,
+            "character_error_rate":seg_cer,
+            "language_probability":seg_probability,
+            "passed":segment_pass,
+        })
+        observed_chunks.append(observed_segment)
+        print(
+            "GTA6_PRONUNCIATION_SEGMENT_QA="
+            +json.dumps(
+                {
+                    "position":position,
+                    "language":forced_language,
+                    "word_error_rate":seg_wer,
+                    "character_error_rate":seg_cer,
+                    "passed":segment_pass,
+                },
+                sort_keys=True,
+                separators=(",",":"),
+            )
+        )
+
+    global_iter,_global_info=stt.transcribe(
+        str(clone16),
+        language=None,
+        beam_size=1,
+        vad_filter=True,
+        word_timestamps=False,
+        condition_on_previous_text=False,
         hotwords=PRONUNCIATION_HOTWORDS,
     )
-    segments=list(seg_iter)
-    observed=" ".join(str(getattr(s,"text","") or "").strip() for s in segments if str(getattr(s,"text","") or "").strip())
+    global_segments=list(global_iter)
+    spoken_expected_text=" ".join(segment_texts)
+    observed=" ".join(chunk for chunk in observed_chunks if chunk).strip()
     qa=evaluate_short_candidate({
         "candidate_id":"CLONE","audio_sha256":clone_sha,
         "voice_identity_id":VOICE_IDENTITY_ID,
         "provider_default_voice_used":False,"provider_preset_voice_used":False,"generic_voice_fallback":False,
-        "detected_language":str(getattr(info,"language","pt") or "pt"),
-        "language_probability":float(getattr(info,"language_probability",0.0) or 0.0),
-        "vad_speech_ratio":_vad_ratio(segments,float(clone_metrics.get("duration_seconds") or 0.0)),
-        "expected_text":SHORT_TEXT,"observed_text":observed,"audio_metrics":clone_metrics,
+        "detected_language":"multilingual",
+        "language_probability":min(segment_probabilities) if segment_probabilities else 0.0,
+        "language_mode":"EXPLICIT_SEGMENTED_MULTILINGUAL",
+        "segment_language_qas":segment_language_qas,
+        "vad_speech_ratio":_vad_ratio(global_segments,float(clone_metrics.get("duration_seconds") or 0.0)),
+        "expected_text":spoken_expected_text,"observed_text":observed,"audio_metrics":clone_metrics,
         "speaker_similarity":{"status":identity_gate,"score":identity["similarity_to_centroid"],"certifies_identity":identity_gate=="PASS"},
     })
     content_audio_prescreen="PASS" if qa["eligible"] is True else "FAIL"
@@ -870,8 +940,8 @@ def main()->int:
             "model_id":QWEN_MODEL_ID,
             "model_revision":QWEN_MODEL_REVISION,
             "qwen_tts_version":QWEN_TTS_VERSION,
-            "language":"Auto",
-            "language_mode":"AUTO_CODE_SWITCH",
+            "language":"MULTILINGUAL",
+            "language_mode":"EXPLICIT_SEGMENTED_MULTILINGUAL",
             "clone_mode":"TRANSCRIPT_CONDITIONED_ICL",
             "x_vector_only_mode":False,
             "ref_audio_source":"TELEGRAM_HUMAN_OWNER",
