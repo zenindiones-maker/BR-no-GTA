@@ -9,6 +9,11 @@ from app.services.gta6_pronunciation_lexicon_service import (
     gta6_target_evidence_score,
 )
 from app.services.owner_voice_human_audition_pack_service import evaluate_short_candidate
+from app.services.pronunciation_service import (
+    provider_capabilities,
+    resolve_synthesis_plan,
+    validate_provider_plan,
+)
 from app.services.voice_provider_service import (
     QWEN_OWNER_LONG_FORM,
     VoiceRouteRequest,
@@ -464,3 +469,54 @@ def test_production_voice_capability_has_no_chatterbox_binding():
     source=Path("app/services/voice_capability_bridge.py").read_text(encoding="utf-8")
     assert '"chatterbox"' not in source
     assert '"qwen3-tts"' in source
+
+
+def test_production_pronunciation_uses_governed_qwen_code_switch_not_portuguese_respellings():
+    lexicon=Path("config/pronunciation_lexicon.json").read_text(encoding="utf-8")
+    assert "Váis Síti" not in lexicon
+    assert "Lucía" not in lexicon
+    assert "Leônida" not in lexicon
+    assert '"governed_foreign_chunks_only": true' in lexicon
+    assert '"foreign_language_chunks_forbidden": false' in lexicon
+
+    plan=resolve_synthesis_plan(
+        "BR no GTA 6 chega a Vice City com Lucia Caminos e Jason Duval."
+    )
+    by_id={
+        span.pronunciation_identity:span
+        for span in plan.spans
+        if span.pronunciation_identity
+    }
+    assert by_id["gta-6"].locale=="pt-BR"
+    assert by_id["gta-6"].synthesis_text=="Gê Tê A seis"
+    assert by_id["vice-city"].locale=="en-US"
+    assert by_id["vice-city"].synthesis_text=="Vice City"
+    assert by_id["lucia-caminos"].locale=="en-US"
+    assert by_id["lucia-caminos"].synthesis_text=="Lucia Caminos"
+    assert by_id["jason-duval"].locale=="en-US"
+    assert by_id["jason-duval"].synthesis_text=="Jason Duval"
+
+    caps=provider_capabilities("qwen3-tts",provider_version="0.1.1",voice="BR_OWNER_V1")
+    assert caps.supports_isolated_multilingual_chunks is True
+    assert caps.supports_same_voice_multilingual is True
+    validate_provider_plan(plan,caps)
+
+
+def test_production_pronunciation_keeps_arbitrary_foreign_chunks_fail_closed():
+    plan=resolve_synthesis_plan(
+        "teste",
+        explicit_spans=[{
+            "start":0,
+            "end":5,
+            "text":"teste",
+            "locale":"en-US",
+            "strategy":"explicit-locale",
+        }],
+    )
+    assert plan.foreign_span_count==0
+
+
+def test_narration_fluency_no_longer_special_cases_only_vice_city():
+    source=Path("app/services/narration_pipeline.py").read_text(encoding="utf-8")
+    assert "non_vice_foreign" not in source
+    assert "governed_foreign" in source
