@@ -231,3 +231,13 @@ def test_pronunciation_audition_covers_full_official_gta_vi_target_set():
         "Brian Heder",
     ):
         assert term in source.split("PRONUNCIATION_HOTWORDS=",1)[0]
+
+
+def test_final_gta_pronunciation_generation_uses_explicit_multilingual_segments():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert "build_gta6_pronunciation_segments" in source
+    assert "segment_texts=" in source
+    assert "segment_languages=" in source
+    assert "language=segment_languages" in source
+    assert 'language="Auto"' not in source.split("generation_t0=",1)[1]
+    assert "Gê Tê A seis" in Path("app/services/gta6_pronunciation_lexicon_service.py").read_text(encoding="utf-8")
