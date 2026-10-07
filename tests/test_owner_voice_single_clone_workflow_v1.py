@@ -187,7 +187,9 @@ def test_pronunciation_reference_policy_allows_authorized_code_switch():
     assert "PRONUNCIATION_LANGUAGE_POLICY=CODE_SWITCH_ALLOWED" in source
     assert '"lexicon_hits":gta6_lexicon_hits(transcript)' in source
     assert 'pronunciation_hits=tuple(hypothesis["lexicon_hits"])' in source
-    assert "float(strong_vad)>=0.55 and strong_text and pronunciation_hits" in source
+    assert "float(strong_vad)>=0.55" in source
+    assert "pronunciation_hits" in source
+    assert "vice_city_evidence_score>=VICE_CITY_REFERENCE_EVIDENCE_MIN" in source
 
 
 def test_pronunciation_prompt_can_use_all_fresh_verified_clips():
