@@ -28,8 +28,9 @@ def test_single_clone_runtime_has_real_identity_profile_and_no_placeholder_simil
     assert "x_vector_only_mode=False" in source
     assert 'language="Portuguese"' in source
     assert "TRANSCRIPT_CONDITIONED_ICL" in source
-    assert "CLONE_IDENTITY_GATE=PASS" in source
-    assert "QWEN3_TTS_IDENTITY_MATCH=PASS" in source
+    assert 'identity_gate="PASS" if identity["passed"] is True else "FAIL"' in source
+    assert 'print("CLONE_IDENTITY_GATE="+identity_gate)' in source
+    assert 'print("QWEN3_TTS_IDENTITY_MATCH="+identity_gate)' in source
     assert "Chatterbox" not in source
 
 
