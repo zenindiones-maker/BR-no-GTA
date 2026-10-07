@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+from pathlib import Path
 
 from app.services.owner_voice_single_clone_delivery_service import (
     SingleCloneDeliveryLedger,
@@ -10,6 +12,7 @@ from app.services.owner_voice_single_clone_delivery_service import (
 from app.services.owner_voice_human_review_service import (
     process_owner_voice_review_callback,
 )
+import scripts.owner_voice_single_clone_delivery as single_delivery_script
 
 
 @dataclass
@@ -143,3 +146,45 @@ def test_clone_bound_owner_review_rejects_invalid_token(tmp_path):
             allowed_chat_ids={-1001},
             state_path=tmp_path/"review.json",
         )
+
+
+def test_single_clone_control_message_carries_exact_v2_review_token(monkeypatch):
+    token=review_token_for_clone("BR_OWNER_V1_SINGLE_CLONE_123_1")
+    captured={}
+    def fake_post(_token,method,*,data,files=None):
+        captured["method"]=method
+        captured["data"]=dict(data)
+        return {"message_id":704}
+
+    monkeypatch.setattr(single_delivery_script,"_telegram_post",fake_post)
+    api=single_delivery_script.TelegramSingleCloneApi(
+        "test-token",
+        identity_gate="PASS",
+        content_audio_prescreen="PASS",
+    )
+    message_id=api.send_control(
+        chat_id=-1001,
+        protect_content=True,
+        review_token=token,
+    )
+    assert message_id==704
+    assert captured["method"]=="sendMessage"
+    markup=json.loads(captured["data"]["reply_markup"])
+    callbacks={
+        button["callback_data"]
+        for row in markup["inline_keyboard"]
+        for button in row
+    }
+    assert callbacks=={
+        f"ov2:approve:{token}",
+        f"ov2:reject_identity:{token}",
+        f"ov2:reject_pronunciation:{token}",
+    }
+
+
+def test_single_clone_delivery_persists_exact_identity_and_pronunciation_lineage():
+    source=Path("scripts/owner_voice_single_clone_delivery.py").read_text(encoding="utf-8")
+    assert 'identity_anchor_telegram_input_id=int(manifest["identity_anchor_telegram_input_id"])' in source
+    assert 'pronunciation_reference_telegram_input_ids=[' in source
+    assert 'vice_city_reference_telegram_input_id=(' in source
+    assert 'manifest.get("vice_city_reference_telegram_input_id")' in source
