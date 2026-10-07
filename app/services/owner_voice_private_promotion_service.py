@@ -32,16 +32,21 @@ def _valid_sha(value:Any)->bool:
     return len(text)==64 and all(ch in "0123456789abcdef" for ch in text)
 
 
-def _canonical_bytes(value:Mapping[str,Any])->bytes:
-    return (
-        json.dumps(
-            dict(value),
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",",":"),
-        )
-        +"\n"
+def _canonical_json_bytes(value:Mapping[str,Any])->bytes:
+    return json.dumps(
+        dict(value),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",",":"),
     ).encode("utf-8")
+
+
+def _canonical_bytes(value:Mapping[str,Any])->bytes:
+    return _canonical_json_bytes(value)+b"\n"
+
+
+def _sha256_json(value:Mapping[str,Any])->str:
+    return _sha256_bytes(_canonical_json_bytes(value))
 
 
 def _outside_repository(path:Path,repository_root:Path)->None:
@@ -296,7 +301,7 @@ def promote_approved_owner_voice(
     profile_path=private_root/f"{VOICE_IDENTITY_ID}.json"
     profile_bytes=_canonical_bytes(profile)
     _atomic_write(profile_path,profile_bytes,0o600)
-    profile_sha=_sha256_bytes(profile_path.read_bytes())
+    profile_sha=_sha256_json(profile)
 
     receipt={
         "schema":"OwnerVoicePrivatePromotionReceipt/v1",
@@ -309,12 +314,10 @@ def promote_approved_owner_voice(
         "model_revision":MODEL_REVISION,
         "voice_prompt_sha256":prompt_sha,
         "profile_sha256":profile_sha,
-        "reference_set_sha256":_sha256_bytes(
-            _canonical_bytes({
-                "source_audio_sha256s":profile["source_audio_sha256s"],
-                "source_transcript_sha256s":profile["source_transcript_sha256s"],
-            })
-        ),
+        "reference_set_sha256":_sha256_json({
+            "source_audio_sha256s":profile["source_audio_sha256s"],
+            "source_transcript_sha256s":profile["source_transcript_sha256s"],
+        }),
         "automatic_gates_passed":True,
         "human_review_status":"APPROVED_PENDING_PROMOTION",
         "runtime_activation":False,
