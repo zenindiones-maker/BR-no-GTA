@@ -169,3 +169,19 @@ def test_canonical_identity_decision_has_single_calibrated_authority():
     assert 'canonical_similarity=float(profile["reference_similarity_to_centroid"][cid])' in source
     assert "CANONICAL_REFERENCE_SIMILARITY_RECOMPUTE_DRIFT" in source
     assert "math.isclose(" in source
+
+
+def test_pronunciation_reference_policy_allows_authorized_code_switch():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert "PRONUNCIATION_LANGUAGE_POLICY=CODE_SWITCH_ALLOWED" in source
+    assert "gta6_lexicon_hits(strong_text)" in source
+    assert "pronunciation_hits" in source
+    assert "float(strong_vad)>=0.55 and strong_text and pronunciation_hits" in source
+
+
+def test_pronunciation_prompt_can_use_all_fresh_verified_clips():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert "MAX_PRONUNCIATION_PROMPT_REFERENCES=2" in source
+    assert "pronunciation_selected=[]" in source
+    assert "pronunciation_reference_telegram_input_ids" in source
+    assert "OWNER_PRONUNCIATION_PROMPT_REFERENCE_COUNT=" in source
