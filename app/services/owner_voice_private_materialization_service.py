@@ -203,6 +203,7 @@ def materialize_telegram_owner_references(
         hydrated.append(
             {
                 "telegram_input_id": int(item["telegram_input_id"]),
+                "telegram_message_id": int(item["telegram_message_id"]),
                 "runtime_path": str(destination),
                 "private_audio_ref": private_ref,
                 "sha256": digest,
