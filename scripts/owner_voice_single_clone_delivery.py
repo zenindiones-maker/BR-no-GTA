@@ -10,6 +10,7 @@ from app.services.owner_voice_single_clone_delivery_service import (
     RECONCILIATION_REQUIRED,
     SingleCloneDeliveryLedger,
     deliver_single_clone_durable,
+    review_callback_data,
     review_token_for_clone,
 )
 
@@ -49,11 +50,29 @@ class TelegramSingleCloneApi:
         identity_gate:str,
         content_audio_prescreen:str,
         review_token:str,
+        identity_anchor_telegram_input_id:int,
+        pronunciation_reference_telegram_input_ids:list[int],
+        vice_city_reference_telegram_input_id:int|None,
     )->None:
         self.token=str(token)
         self.identity_gate=str(identity_gate)
         self.content_audio_prescreen=str(content_audio_prescreen)
         self.review_token=str(review_token).strip().lower()
+        self.identity_anchor_telegram_input_id=int(
+            identity_anchor_telegram_input_id
+        )
+        self.pronunciation_reference_telegram_input_ids=[
+            int(value)
+            for value in pronunciation_reference_telegram_input_ids
+        ]
+        self.vice_city_reference_telegram_input_id=(
+            int(vice_city_reference_telegram_input_id)
+            if vice_city_reference_telegram_input_id is not None else None
+        )
+        self.automatic_gates_passed=(
+            self.identity_gate=="PASS"
+            and self.content_audio_prescreen=="PASS"
+        )
         self.caption=(
             "BR_OWNER_V1 — prova única | "
             f"identity={self.identity_gate} | "
@@ -99,17 +118,38 @@ class TelegramSingleCloneApi:
                 [
                     {
                         "text":"✅ Aprovar voz",
-                        "callback_data":f"ov2:approve:{self.review_token}",
+                        "callback_data":review_callback_data(
+                            "approve",
+                            token=self.review_token,
+                            automatic_gates_passed=self.automatic_gates_passed,
+                            identity_anchor_telegram_input_id=self.identity_anchor_telegram_input_id,
+                            pronunciation_reference_telegram_input_ids=self.pronunciation_reference_telegram_input_ids,
+                            vice_city_reference_telegram_input_id=self.vice_city_reference_telegram_input_id,
+                        ),
                     }
                 ],
                 [
                     {
                         "text":"❌ Reprovar identidade",
-                        "callback_data":f"ov2:reject_identity:{self.review_token}",
+                        "callback_data":review_callback_data(
+                            "reject_identity",
+                            token=self.review_token,
+                            automatic_gates_passed=self.automatic_gates_passed,
+                            identity_anchor_telegram_input_id=self.identity_anchor_telegram_input_id,
+                            pronunciation_reference_telegram_input_ids=self.pronunciation_reference_telegram_input_ids,
+                            vice_city_reference_telegram_input_id=self.vice_city_reference_telegram_input_id,
+                        ),
                     },
                     {
                         "text":"🗣️ Reprovar pronúncia",
-                        "callback_data":f"ov2:reject_pronunciation:{self.review_token}",
+                        "callback_data":review_callback_data(
+                            "reject_pronunciation",
+                            token=self.review_token,
+                            automatic_gates_passed=self.automatic_gates_passed,
+                            identity_anchor_telegram_input_id=self.identity_anchor_telegram_input_id,
+                            pronunciation_reference_telegram_input_ids=self.pronunciation_reference_telegram_input_ids,
+                            vice_city_reference_telegram_input_id=self.vice_city_reference_telegram_input_id,
+                        ),
                     },
                 ],
             ]
@@ -195,6 +235,20 @@ def main()->int:
         identity_gate=str(manifest["clone_identity_gate"]),
         content_audio_prescreen=str(manifest["content_audio_prescreen"]),
         review_token=review_token,
+        identity_anchor_telegram_input_id=int(
+            manifest["identity_anchor_telegram_input_id"]
+        ),
+        pronunciation_reference_telegram_input_ids=[
+            int(value)
+            for value in manifest.get(
+                "pronunciation_reference_telegram_input_ids",[]
+            )
+        ],
+        vice_city_reference_telegram_input_id=(
+            int(manifest["vice_city_reference_telegram_input_id"])
+            if manifest.get("vice_city_reference_telegram_input_id") is not None
+            else None
+        ),
     )
     result=deliver_single_clone_durable(
         api,ledger=ledger,clone_path=str(manifest["clone_path"])
