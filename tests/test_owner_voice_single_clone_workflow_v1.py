@@ -147,12 +147,16 @@ def test_pronunciation_refs_do_not_replace_global_identity_anchor():
     assert '"pronunciation_reference_count":len(pronunciation_refs)' in source
 
 
-def test_pronunciation_clone_uses_identity_anchor_plus_fresh_reference():
+def test_pronunciation_clone_uses_hybrid_qwen_prompt_components():
     source=ORCHESTRATOR.read_text(encoding="utf-8")
     assert "OWNER_IDENTITY_ANCHOR_TELEGRAM_INPUT_ID=" in source
     assert "OWNER_PRONUNCIATION_REFERENCE_TELEGRAM_INPUT_ID=" in source
-    assert "composite-owner-reference-24k.wav" in source
-    assert "canonical_ref_text=anchor_ref_text+\" \"+pronunciation_ref_text" in source
+    assert "VoiceClonePromptItem" in source
+    assert "ref_code=pronunciation_prompt.ref_code" in source
+    assert "ref_spk_embedding=anchor_prompt.ref_spk_embedding" in source
+    assert "ref_text=pronunciation_ref_text" in source
+    assert "QWEN_PROMPT_COMPONENT_AUTHORITY=ANCHOR_SPK_PLUS_PRONUNCIATION_CODE" in source
+    assert "composite-owner-reference-24k.wav" not in source
     assert "language=\"Auto\"" in source
 
 
