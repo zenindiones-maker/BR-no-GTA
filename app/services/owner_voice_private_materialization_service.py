@@ -81,6 +81,71 @@ def parse_owner_reference_index_secret(raw: str) -> dict[str, Any]:
     return payload
 
 
+def sanitize_owner_reference_index(
+    index: Mapping[str, Any],
+    *,
+    min_message_id_exclusive: int = 0,
+    require_fresh: bool = True,
+) -> tuple[dict[str, Any], dict[str, int]]:
+    parsed = parse_owner_reference_index_secret(
+        json.dumps(dict(index), ensure_ascii=False, sort_keys=True)
+    )
+    cutoff = int(min_message_id_exclusive)
+    if cutoff < 0:
+        raise OwnerVoicePrivateMaterializationError(
+            "OWNER_PRONUNCIATION_REFERENCE_BOUNDARY_INVALID"
+        )
+
+    materializable: list[dict[str, Any]] = []
+    invalid_lineage_count = 0
+    fresh_reference_count = 0
+    for item in parsed["references"]:
+        try:
+            input_id = int(item["telegram_input_id"])
+            message_id = int(item["telegram_message_id"])
+            update_id = int(item["telegram_update_id"])
+            user_id = int(item["telegram_user_id"])
+            chat_id = int(item["telegram_chat_id"])
+        except (KeyError, TypeError, ValueError):
+            invalid_lineage_count += 1
+            continue
+        if input_id == 0 or message_id <= 0 or update_id <= 0 or user_id <= 0 or chat_id == 0:
+            invalid_lineage_count += 1
+            continue
+        row = dict(item)
+        materializable.append(row)
+        if cutoff > 0 and message_id > cutoff:
+            fresh_reference_count += 1
+
+    if not materializable:
+        raise OwnerVoicePrivateMaterializationError(
+            "OWNER_REFERENCE_INDEX_NO_MATERIALIZABLE_REFERENCES"
+        )
+    if require_fresh and cutoff > 0 and fresh_reference_count <= 0:
+        raise OwnerVoicePrivateMaterializationError(
+            "OWNER_PRONUNCIATION_REFERENCE_NOT_MATERIALIZED"
+        )
+
+    unsigned = {
+        "schema": parsed["schema"],
+        "voice_identity_id": parsed["voice_identity_id"],
+        "source": parsed.get("source"),
+        "reference_count": len(materializable),
+        "references": materializable,
+    }
+    clean = {
+        **unsigned,
+        "index_sha256": hashlib.sha256(_canonical_json(unsigned)).hexdigest(),
+    }
+    health = {
+        "original_reference_count": len(parsed["references"]),
+        "materializable_reference_count": len(materializable),
+        "invalid_lineage_count": invalid_lineage_count,
+        "fresh_reference_count": fresh_reference_count,
+    }
+    return clean, health
+
+
 def require_private_voice_runtime(*, base_url: str, auth_token: str) -> str:
     root = str(base_url or "").strip().rstrip("/")
     token = str(auth_token or "").strip()
