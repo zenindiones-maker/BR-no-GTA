@@ -48,7 +48,7 @@ def test_single_clone_runtime_has_real_identity_profile_and_no_placeholder_simil
     assert "x_vector_only_mode=False" in source
     assert "language=segment_languages" in source
     assert "TRANSCRIPT_CONDITIONED_ICL" in source
-    assert 'identity_gate="PASS" if identity["passed"] is True else "FAIL"' in source
+    assert 'identity_gate="PASS" if segmented_identity["passed"] is True else "FAIL"' in source
     assert 'print("CLONE_IDENTITY_GATE="+identity_gate)' in source
     assert 'print("QWEN3_TTS_IDENTITY_MATCH="+identity_gate)' in source
     assert "Chatterbox" not in source
@@ -520,3 +520,18 @@ def test_narration_fluency_no_longer_special_cases_only_vice_city():
     source=Path("app/services/narration_pipeline.py").read_text(encoding="utf-8")
     assert "non_vice_foreign" not in source
     assert "governed_foreign" in source
+
+
+def test_multilingual_identity_gate_is_language_matched_not_whole_clone_cross_lingual():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert "evaluate_language_matched_segment_identity_gate" in source
+    assert "pronunciation_reference_embedding" in source
+    assert "segment_identity_rows=[]" in source
+    assert 'reference_embedding=canonical_embedding' in source
+    assert 'reference_embedding=pronunciation_reference_embedding' in source
+    assert "LANGUAGE_MATCHED_OWNER_REFERENCE_P10" in Path(
+        "app/services/owner_voice_speaker_identity_service.py"
+    ).read_text(encoding="utf-8")
+    assert 'identity_gate="PASS" if segmented_identity["passed"] is True else "FAIL"' in source
+    assert "OWNER_CLONE_GLOBAL_IDENTITY_DIAGNOSTIC=" in source
+    assert "OWNER_CLONE_SEGMENT_IDENTITY=" in source
