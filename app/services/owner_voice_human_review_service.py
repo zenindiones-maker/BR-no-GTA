@@ -75,9 +75,52 @@ def _persist_state(path: Path, payload: Mapping[str, Any]) -> None:
         pass
 
 
-def _parse_callback_data(value: str) -> dict[str, str] | None:
+def _parse_callback_data(value: str) -> dict[str, Any] | None:
     data = str(value or "").strip()
-    if data.startswith("ov2:"):
+    if data.startswith("ov2c:"):
+        parts=data.split(":")
+        if len(parts)!=7:
+            raise ValueError("OWNER_VOICE_REVIEW_CALLBACK_INVALID")
+        action_codes={
+            "a":"approve",
+            "i":"reject_identity",
+            "p":"reject_pronunciation",
+        }
+        action=action_codes.get(str(parts[1] or "").strip())
+        token=str(parts[2] or "").strip().lower()
+        gate=str(parts[3] or "").strip().upper()
+        try:
+            anchor=int(parts[4])
+            pronunciation=(
+                []
+                if parts[5]=="-"
+                else [int(value) for value in parts[5].split(",") if value]
+            )
+            vice=int(parts[6])
+        except ValueError as exc:
+            raise ValueError("OWNER_VOICE_REVIEW_CALLBACK_INVALID") from exc
+        if (
+            action not in _SINGLE_ALLOWED_ACTIONS
+            or len(token)!=20
+            or any(ch not in "0123456789abcdef" for ch in token)
+            or gate not in {"P","F"}
+            or anchor<=0
+            or len(pronunciation)>2
+            or any(value<=0 for value in pronunciation)
+            or (vice>0 and vice not in pronunciation)
+        ):
+            raise ValueError("OWNER_VOICE_REVIEW_CALLBACK_INVALID")
+        return {
+            "version":"v2c",
+            "action":str(action),
+            "subject":token,
+            "automatic_gates_passed":gate=="P",
+            "identity_anchor_telegram_input_id":anchor,
+            "pronunciation_reference_telegram_input_ids":pronunciation,
+            "vice_city_reference_telegram_input_id":vice if vice>0 else None,
+        }
+
+    if data.startswith("ov2:")
         parts=data.split(":")
         if len(parts)!=3:
             raise ValueError("OWNER_VOICE_REVIEW_CALLBACK_INVALID")
@@ -163,7 +206,7 @@ def process_owner_voice_review_callback(
     if existing is not None:
         return {**existing, "idempotent_replay": True}
 
-    if version=="v2":
+    if version in {"v2","v2c"}:
         status,activation=_SINGLE_ALLOWED_ACTIONS[action]
         receipt = {
             "schema":"OwnerVoiceHumanReviewReceipt/v2",
@@ -181,6 +224,28 @@ def process_owner_voice_review_callback(
             "recorded_at_epoch":float(now_epoch if now_epoch is not None else time.time()),
             "idempotent_replay":False,
         }
+        if version=="v2c":
+            receipt.update({
+                "lineage_bound":True,
+                "automatic_gates_passed":bool(
+                    parsed["automatic_gates_passed"]
+                ),
+                "identity_anchor_telegram_input_id":int(
+                    parsed["identity_anchor_telegram_input_id"]
+                ),
+                "pronunciation_reference_telegram_input_ids":[
+                    int(value)
+                    for value in parsed["pronunciation_reference_telegram_input_ids"]
+                ],
+                "vice_city_reference_telegram_input_id":(
+                    int(parsed["vice_city_reference_telegram_input_id"])
+                    if parsed["vice_city_reference_telegram_input_id"] is not None
+                    else None
+                ),
+            })
+        else:
+            receipt["lineage_bound"]=False
+            receipt["automatic_gates_passed"]=False
     else:
         status,activation=_LEGACY_ALLOWED_ACTIONS[action]
         receipt = {
