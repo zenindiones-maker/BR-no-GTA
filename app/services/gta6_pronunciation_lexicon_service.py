@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from difflib import SequenceMatcher
 from typing import Iterable
 
 
@@ -23,6 +24,18 @@ GTA6_CANONICAL_PRONUNCIATION_TERMS: tuple[str, ...] = (
     "Brian Heder",
 )
 
+VICE_CITY_ASR_EVIDENCE_ALIASES: tuple[str, ...] = (
+    "Vice City",
+    "Vise City",
+    "Vici City",
+    "Vice Siti",
+    "Vise Siti",
+    "Vici Siti",
+    "Vais City",
+    "Vais Siti",
+    "Vaice City",
+)
+
 GTA6_PRONUNCIATION_SOURCE_URLS: tuple[str, ...] = (
     "https://www.rockstargames.com/VI",
     "https://www.rockstargames.com/VI/only-in-leonida",
@@ -38,6 +51,35 @@ def gta6_pronunciation_hotwords() -> str:
 
 def _normalized(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
+
+
+def gta6_target_evidence_score(text: str, target: str) -> float:
+    haystack=_normalized(text)
+    needle=_normalized(target)
+    if not haystack or not needle:
+        return 0.0
+
+    aliases=(target,)
+    if needle==_normalized("Vice City"):
+        aliases=VICE_CITY_ASR_EVIDENCE_ALIASES
+
+    hay_words=haystack.split()
+    best=0.0
+    for alias in aliases:
+        alias_norm=_normalized(alias)
+        alias_words=alias_norm.split()
+        if not alias_words:
+            continue
+        if f" {alias_norm} " in f" {haystack} ":
+            return 1.0
+        min_width=max(1,len(alias_words)-1)
+        max_width=min(len(hay_words),len(alias_words)+1)
+        for width in range(min_width,max_width+1):
+            for start in range(0,len(hay_words)-width+1):
+                window=" ".join(hay_words[start:start+width])
+                score=SequenceMatcher(None,window,alias_norm).ratio()
+                best=max(best,float(score))
+    return round(max(0.0,min(1.0,best)),6)
 
 
 def gta6_lexicon_hits(text: str) -> tuple[str, ...]:
