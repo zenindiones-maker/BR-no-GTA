@@ -1,0 +1,16 @@
+{
+  "schema_version": "OwnerVoiceQwen3TTSFineTuneRequest/v1",
+  "voice_identity_id": "BR_OWNER_V1",
+  "reference_source": "TELEGRAM_HUMAN_OWNER",
+  "model_id": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+  "trainer_engine": "modelscope/ms-swift",
+  "trainer_commit": "6f62bd4b3032197dce934b4eba1bb65463b29918",
+  "requested": true,
+  "single_speaker_only": true,
+  "runtime_activation": false,
+  "human_review_required": true,
+  "generic_voice_fallback": false,
+  "provider_default_voice": false,
+  "provider_preset_voice": false,
+  "reason": "ZERO_SHOT_IDENTITY_GATE_FAILED; PROCEED_TO_SINGLE_SPEAKER_FINE_TUNE"
+}
