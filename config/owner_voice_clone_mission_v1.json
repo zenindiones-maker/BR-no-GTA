@@ -27,8 +27,8 @@
     "single_speaker_required": true,
     "speech_required": true,
     "clean_audio_required": true,
-    "preferred_conditioning_seconds_min": 6.0,
-    "preferred_conditioning_seconds_max": 10.0,
+    "preferred_conditioning_seconds_min": 10.0,
+    "preferred_conditioning_seconds_max": 20.0,
     "latest_input_wins": false
   },
   "synthesis": {

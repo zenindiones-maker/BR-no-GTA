@@ -1,9 +1,12 @@
 {
-  "schema_version": "OwnerVoiceQwen3TTSFineTunePolicy/v1",
+  "schema_version": "OwnerVoiceQwen3TTSFineTunePolicy/v2",
   "voice_identity_id": "BR_OWNER_V1",
   "reference_source": "TELEGRAM_HUMAN_OWNER",
   "model_id": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
-  "qwen_upstream_commit": "022e286b98fbec7e1e916cb940cdf532cd9f488e",
+  "trainer_engine": "modelscope/ms-swift",
+  "trainer_commit": "6f62bd4b3032197dce934b4eba1bb65463b29918",
+  "qwen_tts_version": "0.1.1",
+  "transformers_constraint": "<5",
   "single_speaker_only": true,
   "same_ref_audio_for_all_samples": true,
   "generic_voice_fallback": false,
@@ -12,12 +15,25 @@
   "runtime_activation_after_training": false,
   "human_review_required": true,
   "minimum_training_samples": 12,
-  "minimum_training_seconds": 180.0,
+  "minimum_training_seconds": 180,
   "training_requires_gpu": true,
-  "upstream_patch_contract": {
-    "text_projection": true,
-    "remove_future_codec_leak": true,
-    "causal_label_alignment": true,
-    "subtalker_shift_labels": true
+  "zero_shot_boundary": {
+    "status": "BLOCKED_AFTER_CALIBRATED_IDENTITY_FAIL",
+    "run_id": 37546522842,
+    "clone_similarity_to_centroid": 0.817829,
+    "clone_similarity_to_reference": 0.810344,
+    "centroid_min_similarity": 0.866383,
+    "reference_min_similarity": 0.811584,
+    "telegram_side_effect": "NONE",
+    "retry_policy": "DO_NOT_REPEAT_ZERO_SHOT_WITH_SAME_ARCHITECTURE"
+  },
+  "trainer_contract": {
+    "qwen3_tts_projected_text_embedding": true,
+    "causal_label_handling": true,
+    "qwen3_tts_incorrect_loss_fix": true,
+    "speaker_encoder_frozen": true,
+    "full_parameter_sft": true,
+    "learning_rate": 0.000002,
+    "target_epochs": 10
   }
 }

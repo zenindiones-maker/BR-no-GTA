@@ -115,8 +115,10 @@ def main()->int:
     )
 
     train_raw=root/"dataset"/"train_raw.jsonl"
+    train_swift=root/"dataset"/"train_swift.jsonl"
     train_raw.parent.mkdir(parents=True,exist_ok=True)
     rows=[]
+    swift_rows=[]
     total_seconds=0.0
     for candidate,text,audio in training:
         total_seconds+=float(candidate["duration_seconds"])
@@ -125,12 +127,20 @@ def main()->int:
             "text":text,
             "ref_audio":str(canonical24.resolve()),
         })
+        swift_rows.append({
+            "messages":[{"role":"assistant","content":text}],
+            "audios":[str(audio.resolve())],
+            "ref_audios":[str(canonical24.resolve())],
+        })
     if len(rows)<MIN_TRAINING_SAMPLES:
         raise RuntimeError("OWNER_FINETUNE_ELIGIBLE_SAMPLE_COUNT_TOO_SMALL")
     if total_seconds<MIN_TRAINING_SECONDS:
         raise RuntimeError("OWNER_FINETUNE_TOTAL_DURATION_TOO_SMALL")
     with train_raw.open("w",encoding="utf-8") as stream:
         for row in rows:
+            stream.write(json.dumps(row,ensure_ascii=False,separators=(",",":"))+"\n")
+    with train_swift.open("w",encoding="utf-8") as stream:
+        for row in swift_rows:
             stream.write(json.dumps(row,ensure_ascii=False,separators=(",",":"))+"\n")
 
     manifest={
@@ -155,6 +165,7 @@ def main()->int:
     if output:
         with open(output,"a",encoding="utf-8") as stream:
             stream.write(f"train_raw_jsonl={train_raw}\n")
+            stream.write(f"train_swift_jsonl={train_swift}\n")
             stream.write(f"dataset_manifest={manifest_path}\n")
             stream.write(f"sample_count={len(rows)}\n")
             stream.write(f"total_seconds={total_seconds:.3f}\n")
@@ -162,6 +173,7 @@ def main()->int:
     print(f"OWNER_FINETUNE_SAMPLE_COUNT={len(rows)}")
     print(f"OWNER_FINETUNE_TOTAL_SECONDS={total_seconds:.3f}")
     print("OWNER_FINETUNE_SAME_REFERENCE_FOR_ALL_SAMPLES=PASS")
+    print("OWNER_FINETUNE_SWIFT_NATIVE_JSONL=PASS")
     print("OWNER_FINETUNE_DATASET=PASS")
     return 0
 
