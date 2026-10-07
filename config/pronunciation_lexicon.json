@@ -1,35 +1,23 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.09.20.5-all-ptbr-no-language-switch",
+  "version": "2026.10.07.1-owner-qwen-governed-code-switch",
   "default_locale": "pt-BR",
   "policy": {
-    "authority": "DeepSeek Harness via narration/spoken-branding capability",
+    "authority": "DeepSeek Harness + BR_OWNER_V1 human acoustic authority",
     "priority": [
       "canonical-lexicon",
-      "explicit-span-metadata",
+      "owner-acoustic-reference",
       "pt-BR-fallback"
     ],
     "canonical_text_immutable": true,
     "human_gate_for_critical_terms": true,
-    "only_forced_en_us_term": null,
-    "unnecessary_language_switches_forbidden": true,
-    "character_aliases_synthesis_only": true,
-    "character_name_en_us_chunks_forbidden": true,
-    "generic_name_autodetection_enabled": false,
-    "foreign_language_chunks_forbidden": true,
-    "all_pronunciation_synthesis_locale": "pt-BR"
+    "governed_foreign_chunks_only": true,
+    "foreign_language_chunks_forbidden": false,
+    "arbitrary_foreign_chunks_forbidden": true,
+    "same_owner_voice_required": true,
+    "generic_name_autodetection_enabled": false
   },
   "entries": [
-    {
-      "identity": "vice-city",
-      "term": "Vice City",
-      "locale": "pt-BR",
-      "strategy": "alias",
-      "critical": true,
-      "target_ipa": "vaɪs ˈsɪti",
-      "source": "previously human-approved target sound, now rendered only inside BR_OWNER_V1 pt-BR lane; no en-US chunk allowed",
-      "synthesis_text": "Váis Síti"
-    },
     {
       "identity": "gta-6",
       "term": "GTA 6",
@@ -38,27 +26,172 @@
       ],
       "locale": "pt-BR",
       "strategy": "alias",
-      "synthesis_text": "gê tê á seis",
+      "synthesis_text": "Gê Tê A seis",
       "critical": true,
-      "source": "human-approved Brazilian reading; canonical/editorial text remains GTA 6"
+      "source": "owner-approved Brazilian reading; canonical editorial text remains GTA 6"
     },
     {
-      "identity": "character-lucia",
-      "term": "Lucia",
-      "locale": "pt-BR",
-      "strategy": "alias",
-      "synthesis_text": "Lucía",
+      "identity": "rockstar-games",
+      "term": "Rockstar Games",
+      "locale": "en-US",
+      "strategy": "canonical-owner-acoustic",
+      "synthesis_text": "Rockstar Games",
       "critical": true,
-      "source": "human-approved synthesis-only alias; canonical editorial/transcript/SEO text remains Lucia"
+      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
+    },
+    {
+      "identity": "vice-city",
+      "term": "Vice City",
+      "locale": "en-US",
+      "strategy": "canonical-owner-acoustic",
+      "synthesis_text": "Vice City",
+      "critical": true,
+      "target_ipa": "vaɪs ˈsɪti",
+      "source": "Rockstar canonical spelling plus fresh BR_OWNER_V1 acoustic authority"
+    },
+    {
+      "identity": "leonida-keys",
+      "term": "Leonida Keys",
+      "locale": "en-US",
+      "strategy": "canonical-owner-acoustic",
+      "synthesis_text": "Leonida Keys",
+      "critical": true,
+      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
     },
     {
       "identity": "leonida",
       "term": "Leonida",
-      "locale": "pt-BR",
-      "strategy": "alias",
-      "synthesis_text": "Leônida",
+      "locale": "en-US",
+      "strategy": "canonical-owner-acoustic",
+      "synthesis_text": "Leonida",
       "critical": true,
-      "source": "human-requested synthesis-only PT-BR alias; auditory approval pending; canonical editorial/transcript/SEO/caption text remains Leonida"
+      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
+    },
+    {
+      "identity": "port-gellhorn",
+      "term": "Port Gellhorn",
+      "locale": "en-US",
+      "strategy": "canonical-owner-acoustic",
+      "synthesis_text": "Port Gellhorn",
+      "critical": true,
+      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
+    },
+    {
+      "identity": "ambrosia",
+      "term": "Ambrosia",
+      "locale": "en-US",
+      "strategy": "canonical-owner-acoustic",
+      "synthesis_text": "Ambrosia",
+      "critical": true,
+      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
+    },
+    {
+      "identity": "grassrivers",
+      "term": "Grassrivers",
+      "locale": "en-US",
+      "strategy": "canonical-owner-acoustic",
+      "synthesis_text": "Grassrivers",
+      "critical": true,
+      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
+    },
+    {
+      "identity": "mount-kalaga",
+      "term": "Mount Kalaga",
+      "locale": "en-US",
+      "strategy": "canonical-owner-acoustic",
+      "synthesis_text": "Mount Kalaga",
+      "critical": true,
+      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
+    },
+    {
+      "identity": "jason-duval",
+      "term": "Jason Duval",
+      "locale": "en-US",
+      "strategy": "canonical-owner-acoustic",
+      "synthesis_text": "Jason Duval",
+      "critical": true,
+      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
+    },
+    {
+      "identity": "character-jason",
+      "term": "Jason",
+      "locale": "en-US",
+      "strategy": "canonical-owner-acoustic",
+      "synthesis_text": "Jason",
+      "critical": true,
+      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
+    },
+    {
+      "identity": "lucia-caminos",
+      "term": "Lucia Caminos",
+      "locale": "en-US",
+      "strategy": "canonical-owner-acoustic",
+      "synthesis_text": "Lucia Caminos",
+      "critical": true,
+      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
+    },
+    {
+      "identity": "character-lucia",
+      "term": "Lucia",
+      "locale": "en-US",
+      "strategy": "canonical-owner-acoustic",
+      "synthesis_text": "Lucia",
+      "critical": true,
+      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
+    },
+    {
+      "identity": "cal-hampton",
+      "term": "Cal Hampton",
+      "locale": "en-US",
+      "strategy": "canonical-owner-acoustic",
+      "synthesis_text": "Cal Hampton",
+      "critical": true,
+      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
+    },
+    {
+      "identity": "boobie-ike",
+      "term": "Boobie Ike",
+      "locale": "en-US",
+      "strategy": "canonical-owner-acoustic",
+      "synthesis_text": "Boobie Ike",
+      "critical": true,
+      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
+    },
+    {
+      "identity": "drequan-priest",
+      "term": "Dre'Quan Priest",
+      "locale": "en-US",
+      "strategy": "canonical-owner-acoustic",
+      "synthesis_text": "Dre'Quan Priest",
+      "critical": true,
+      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
+    },
+    {
+      "identity": "real-dimez",
+      "term": "Real Dimez",
+      "locale": "en-US",
+      "strategy": "canonical-owner-acoustic",
+      "synthesis_text": "Real Dimez",
+      "critical": true,
+      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
+    },
+    {
+      "identity": "raul-bautista",
+      "term": "Raul Bautista",
+      "locale": "en-US",
+      "strategy": "canonical-owner-acoustic",
+      "synthesis_text": "Raul Bautista",
+      "critical": true,
+      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
+    },
+    {
+      "identity": "brian-heder",
+      "term": "Brian Heder",
+      "locale": "en-US",
+      "strategy": "canonical-owner-acoustic",
+      "synthesis_text": "Brian Heder",
+      "critical": true,
+      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
     }
   ]
 }
