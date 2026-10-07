@@ -11,6 +11,7 @@ from app.services.owner_voice_private_materialization_service import (
     materialize_telegram_owner_references,
     parse_owner_reference_index_secret,
     require_private_voice_runtime,
+    sanitize_owner_reference_index,
 )
 
 
@@ -120,3 +121,45 @@ def test_private_qwen_runtime_is_mandatory_before_prompt_creation():
         base_url="https://voice.internal",
         auth_token="runtime-secret",
     ) == "https://voice.internal"
+
+
+def test_sanitize_reference_index_quarantines_incomplete_lineage_and_keeps_fresh_rows():
+    payload=_index()
+    bad=dict(payload["references"][0])
+    bad.pop("telegram_message_id")
+    fresh=dict(payload["references"][0])
+    fresh["telegram_input_id"]=8
+    fresh["telegram_message_id"]=640
+    fresh["telegram_update_id"]=2008
+    fresh["telegram_file_id"]="fresh-file-id"
+    fresh["telegram_file_unique_id"]="fresh-unique-id"
+    base={
+        "schema":payload["schema"],
+        "voice_identity_id":payload["voice_identity_id"],
+        "source":payload["source"],
+        "reference_count":2,
+        "references":[bad,fresh],
+    }
+    rendered=json.dumps(base,ensure_ascii=False,sort_keys=True,separators=(",",":")).encode()
+    signed={**base,"index_sha256":hashlib.sha256(rendered).hexdigest()}
+
+    clean,health=sanitize_owner_reference_index(
+        signed,
+        min_message_id_exclusive=637,
+    )
+
+    assert clean["reference_count"]==1
+    assert clean["references"][0]["telegram_message_id"]==640
+    assert health["invalid_lineage_count"]==1
+    assert health["fresh_reference_count"]==1
+
+
+def test_sanitize_reference_index_fails_closed_when_no_fresh_reference_exists():
+    with pytest.raises(
+        OwnerVoicePrivateMaterializationError,
+        match="OWNER_PRONUNCIATION_REFERENCE_NOT_MATERIALIZED",
+    ):
+        sanitize_owner_reference_index(
+            _index(),
+            min_message_id_exclusive=637,
+        )
