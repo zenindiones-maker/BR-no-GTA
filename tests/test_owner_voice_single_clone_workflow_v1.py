@@ -178,8 +178,8 @@ def test_canonical_identity_decision_has_single_calibrated_authority():
 def test_pronunciation_reference_policy_allows_authorized_code_switch():
     source=ORCHESTRATOR.read_text(encoding="utf-8")
     assert "PRONUNCIATION_LANGUAGE_POLICY=CODE_SWITCH_ALLOWED" in source
-    assert "gta6_lexicon_hits(strong_text)" in source
-    assert "pronunciation_hits" in source
+    assert '"lexicon_hits":gta6_lexicon_hits(transcript)' in source
+    assert 'pronunciation_hits=tuple(hypothesis["lexicon_hits"])' in source
     assert "float(strong_vad)>=0.55 and strong_text and pronunciation_hits" in source
 
 
