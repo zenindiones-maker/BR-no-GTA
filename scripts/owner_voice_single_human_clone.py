@@ -813,10 +813,7 @@ def main()->int:
             raise RuntimeError("OWNER_VICE_CITY_PRONUNCIATION_REFERENCE_REQUIRED")
         vice_row_for_authority,_vice_text_for_authority=vice_city_selected
         if bool(vice_row_for_authority.get("owner_asserted_vice_city")):
-            print(
-                "OWNER_VICE_CITY_REFERENCE_AUTHORITY="
-                "OWNER_ASSERTED_FRESH_SAMPLE"
-            )
+            print("OWNER_VICE_CITY_REFERENCE_AUTHORITY=OWNER_ASSERTED_FRESH_SAMPLE")
         else:
             print("OWNER_VICE_CITY_REFERENCE_AUTHORITY=ASR_VERIFIED")
         ranked_pronunciation=list(pronunciation_selected)
