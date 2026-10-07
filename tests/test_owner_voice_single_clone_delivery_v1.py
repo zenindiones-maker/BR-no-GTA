@@ -237,3 +237,28 @@ def test_compact_review_callback_binds_lineage_and_stays_within_telegram_limit(t
     assert receipt["identity_anchor_telegram_input_id"]==125
     assert receipt["pronunciation_reference_telegram_input_ids"]==[126,127]
     assert receipt["vice_city_reference_telegram_input_id"]==126
+
+def test_delivery_control_call_matches_telegram_api_signature_without_duplicate_review_token_kwarg():
+    class StrictApi:
+        def copy_reference(self,*,chat_id,source_message_id,protect_content):
+            return 801
+        def send_clone_audio(self,*,chat_id,clone_path,protect_content):
+            return 802
+        def send_control(self,*,chat_id,protect_content):
+            return 803
+
+    store=FakeStore()
+    ledger=SingleCloneDeliveryLedger(store=store,clone_id="strict-api-clone")
+    ledger.create(
+        telegram_chat_id=-1001,
+        reference_source_message_id=625,
+        clone_sha256="d"*64,
+        authority_ref="owner-explicit:BR_OWNER_V1_SINGLE_CLONE",
+        review_token=review_token_for_clone("strict-api-clone"),
+    )
+    result=deliver_single_clone_durable(
+        StrictApi(),ledger=ledger,clone_path="/tmp/clone.wav"
+    )
+    assert result["state"]=="CONFIRMED"
+    assert result["confirmed_message_ids"]["control"]==803
+
