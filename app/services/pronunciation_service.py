@@ -11,7 +11,7 @@ import time
 from typing import Any
 from xml.sax.saxutils import escape, quoteattr
 
-PRONUNCIATION_LAYER_VERSION = "br-no-gta-pronunciation/v6-all-ptbr"
+PRONUNCIATION_LAYER_VERSION = "br-no-gta-pronunciation/v7-owner-qwen-governed-code-switch"
 DEFAULT_LOCALE = "pt-BR"
 DEFAULT_VOICE = "BR_OWNER_V1"
 LEXICON_PATH = Path(__file__).resolve().parents[2] / "config" / "pronunciation_lexicon.json"
@@ -268,6 +268,19 @@ def synthesis_plan_from_dict(payload: dict[str, Any]) -> SynthesisPlan:
 
 def provider_capabilities(provider_id: str, *, provider_version: str | None = None, voice: str = DEFAULT_VOICE) -> ProviderCapabilities:
     normalized=provider_id.strip().lower()
+    if normalized in {"qwen3-tts","owner-private-runtime","private-voice-runtime"}:
+        return ProviderCapabilities(
+            "qwen3-tts" if normalized=="qwen3-tts" else normalized,
+            provider_version,
+            False,
+            True,
+            False,
+            False,
+            True,
+            True,
+            False,
+            "explicit-batch-language",
+        )
     multilingual="multilingual" in voice.lower()
     if normalized in {"azure-speech","azure-cognitive-speech"}:
         return ProviderCapabilities("azure-speech",provider_version,True,True,True,not multilingual,not multilingual,multilingual,True,"ssml-lang")
@@ -276,15 +289,29 @@ def provider_capabilities(provider_id: str, *, provider_version: str | None = No
 def validate_provider_plan(plan: SynthesisPlan, capabilities: ProviderCapabilities) -> None:
     if not plan.canonical_text_preserved:
         raise PronunciationError("canonical text mutation is forbidden")
-    if plan.foreign_span_count:
-        raise PronunciationError("foreign-language pronunciation chunks are forbidden by human pt-BR policy")
     if any(span.strategy=="phoneme" for span in plan.spans) and not capabilities.supports_phoneme:
         raise PronunciationError("provider/voice does not support phoneme strategy")
-    if plan.foreign_span_count and not (
-        capabilities.supports_language_spans or
-        (capabilities.supports_isolated_multilingual_chunks and capabilities.supports_same_voice_multilingual)
-    ):
-        raise PronunciationError("provider cannot preserve requested multilingual pronunciation")
+    if plan.foreign_span_count:
+        allowed_foreign_ids={
+            str(entry["identity"])
+            for entry in canonical_lexicon_entries()
+            if str(entry.get("locale") or DEFAULT_LOCALE)!=DEFAULT_LOCALE
+        }
+        foreign_spans=[span for span in plan.spans if span.locale!=plan.default_locale]
+        if any(
+            span.source!="lexicon"
+            or not span.pronunciation_identity
+            or span.pronunciation_identity not in allowed_foreign_ids
+            for span in foreign_spans
+        ):
+            raise PronunciationError("ungoverned foreign-language pronunciation chunk")
+        if not capabilities.supports_same_voice_multilingual:
+            raise PronunciationError("provider cannot preserve owner identity across multilingual pronunciation")
+        if not (
+            capabilities.supports_language_spans
+            or capabilities.supports_isolated_multilingual_chunks
+        ):
+            raise PronunciationError("provider cannot preserve requested multilingual pronunciation")
 
 def synthesis_plan_cache_payload(plan: SynthesisPlan) -> dict[str, Any]:
     """Deterministic synthesis identity; runtime telemetry is intentionally excluded."""
