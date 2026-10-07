@@ -244,7 +244,6 @@ def deliver_single_clone_durable(api,*,ledger:SingleCloneDeliveryLedger,clone_pa
             receipt=api.send_control(
                 chat_id=int(state["telegram_chat_id"]),
                 protect_content=True,
-                review_token=str(state["review_token"]),
             )
         except Exception as exc:
             return ledger.ambiguous("control",type(exc).__name__)
