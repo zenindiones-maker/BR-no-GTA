@@ -8,7 +8,10 @@ from app.services.gta6_pronunciation_lexicon_service import (
     canonicalize_gta6_target_transcript,
     gta6_target_evidence_score,
 )
-from app.services.owner_voice_human_audition_pack_service import evaluate_short_candidate
+from app.services.owner_voice_human_audition_pack_service import (
+    evaluate_segment_transcript_qa,
+    evaluate_short_candidate,
+)
 from app.services.pronunciation_service import (
     provider_capabilities,
     resolve_synthesis_plan,
@@ -535,3 +538,45 @@ def test_multilingual_identity_gate_is_language_matched_not_whole_clone_cross_li
     assert 'identity_gate="PASS" if segmented_identity["passed"] is True else "FAIL"' in source
     assert "OWNER_CLONE_GLOBAL_IDENTITY_DIAGNOSTIC=" in source
     assert "OWNER_CLONE_SEGMENT_IDENTITY=" in source
+
+
+def test_ptbr_short_segment_qa_uses_cer_primary_without_ignoring_real_errors():
+    near=evaluate_segment_transcript_qa(
+        expected="Gê Tê A seis e hoje vamos falar das novidades.",
+        observed="Gê Tê A seis hoje vamos falar de novidades.",
+        language="pt",
+    )
+    assert near["character_error_rate"]<=0.20
+    assert near["passed"] is True
+    assert near["decision_basis"]=="PTBR_CER_PRIMARY"
+
+    bad=evaluate_segment_transcript_qa(
+        expected="Gê Tê A seis e hoje vamos falar das novidades.",
+        observed="conteúdo totalmente diferente e sem relação",
+        language="pt",
+    )
+    assert bad["passed"] is False
+
+
+def test_english_governed_segment_keeps_strict_wer_and_cer_gate():
+    ok=evaluate_segment_transcript_qa(
+        expected="Vice City Jason Duval",
+        observed="Vice City Jason Duval",
+        language="en",
+    )
+    assert ok["passed"] is True
+    assert ok["decision_basis"]=="EN_WER_AND_CER"
+
+    bad=evaluate_segment_transcript_qa(
+        expected="Vice City Jason Duval",
+        observed="Vice City",
+        language="en",
+    )
+    assert bad["passed"] is False
+
+
+def test_clone_runtime_uses_language_aware_segment_transcript_qa():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert "evaluate_segment_transcript_qa" in source
+    assert "segment_transcript_qa=evaluate_segment_transcript_qa(" in source
+    assert 'segment_pass=bool(segment_transcript_qa["passed"])' in source
