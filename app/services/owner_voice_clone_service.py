@@ -6,17 +6,24 @@ from typing import Any, Iterable, Mapping
 VOICE_IDENTITY_ID = "BR_OWNER_V1"
 REFERENCE_SOURCE = "TELEGRAM"
 EXTERNAL_LOCALE = "pt-BR"
-CHATTERBOX_LANGUAGE_ID = "pt"
-CHATTERBOX_PTBR_MODEL_ID = "ResembleAI/Chatterbox-Multilingual-pt-br"
-CHATTERBOX_PTBR_T3_SHA256 = (
-    "074aaf65255eb9cb960288f7cc72e09d3b5008f6e0b14868c0d4e5b0bd7cbb6c"
-)
-CHATTERBOX_PTBR_S3GEN_SHA256 = (
-    "4a46190f3dccc2230fbb3488a930bccc925862ee68f2662433dfcfe93ce6c2cb"
-)
+QWEN_OWNER_MODEL_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+QWEN_OWNER_MODEL_REVISION = "fd4b254389122332181a7c3db7f27e918eec64e3"
+QWEN_TTS_VERSION = "0.1.1"
+QWEN_CLONE_MODE = "TRANSCRIPT_CONDITIONED_ICL"
+QWEN_GENERATION_CONFIG = {
+    "do_sample": True,
+    "top_k": 50,
+    "top_p": 1.0,
+    "temperature": 0.9,
+    "repetition_penalty": 1.05,
+    "subtalker_dosample": True,
+    "subtalker_top_k": 50,
+    "subtalker_top_p": 1.0,
+    "subtalker_temperature": 0.9,
+}
 PREFERRED_REFERENCE_SECONDS_MIN = 6.0
-PREFERRED_REFERENCE_SECONDS_MAX = 10.0
-PREFERRED_REFERENCE_SECONDS_TARGET = 8.0
+PREFERRED_REFERENCE_SECONDS_MAX = 15.0
+PREFERRED_REFERENCE_SECONDS_TARGET = 10.0
 PTBR_REFERENCE_PROBABILITY_MIN = 0.90
 SNR_DB_MIN = 15.0
 CLIPPING_RATIO_MAX = 0.01
@@ -82,12 +89,27 @@ def select_owner_reference(
     return selected
 
 
+def _reference_text(
+    reference: Mapping[str, Any],
+    explicit_reference_text: str | None,
+) -> str:
+    text = str(
+        explicit_reference_text
+        or reference.get("reference_text")
+        or reference.get("transcript")
+        or ""
+    ).strip()
+    if not text:
+        raise ValueError("OWNER_REFERENCE_TRANSCRIPT_REQUIRED")
+    return text
+
+
 def build_ptbr_clone_request(
     *,
     reference: Mapping[str, Any],
     text: str,
-    cfg_weight: float,
-    seed: int,
+    seed: int = 424242,
+    reference_text: str | None = None,
 ) -> dict[str, Any]:
     private_ref = str(reference.get("private_audio_ref") or "").strip()
     if not private_ref.startswith(f"private://voice/{VOICE_IDENTITY_ID}/"):
@@ -99,26 +121,27 @@ def build_ptbr_clone_request(
     if not target_text:
         raise ValueError("OWNER_CLONE_TEXT_REQUIRED")
 
-    weight = float(cfg_weight)
-    if not 0.0 <= weight <= 1.0:
-        raise ValueError("OWNER_CLONE_CFG_WEIGHT_OUT_OF_RANGE")
-
+    ref_text = _reference_text(reference, reference_text)
     return {
-        "schema": "OwnerVoicePtBrCloneRequest/v1",
+        "schema": "OwnerVoiceQwenCloneRequest/v2",
         "voice_identity_id": VOICE_IDENTITY_ID,
         "reference_source": REFERENCE_SOURCE,
         "private_audio_ref": private_ref,
         "reference_sha256": str(reference["sha256"]).lower(),
         "reference_telegram_input_id": int(reference["telegram_input_id"]),
-        "audio_prompt_path": str(reference["runtime_path"]),
+        "ref_audio_path": str(reference["runtime_path"]),
+        "ref_text": ref_text,
         "text": target_text,
         "locale": EXTERNAL_LOCALE,
-        "language_id": CHATTERBOX_LANGUAGE_ID,
-        "model_id": CHATTERBOX_PTBR_MODEL_ID,
-        "cfg_weight": weight,
-        "exaggeration": 0.5,
-        "temperature": 0.8,
+        "language": "Portuguese",
+        "model_id": QWEN_OWNER_MODEL_ID,
+        "model_revision": QWEN_OWNER_MODEL_REVISION,
+        "qwen_tts_version": QWEN_TTS_VERSION,
+        "clone_mode": QWEN_CLONE_MODE,
+        "x_vector_only_mode": False,
+        "one_candidate_only": True,
         "seed": int(seed),
+        "generation_config": dict(QWEN_GENERATION_CONFIG),
         "provider_preset_voice_allowed": False,
         "provider_default_voice_allowed": False,
         "generic_voice_fallback": False,
@@ -132,13 +155,14 @@ def build_ptbr_audition_variants(
     *,
     reference: Mapping[str, Any],
     text: str,
+    reference_text: str | None = None,
 ) -> list[dict[str, Any]]:
+    """Backward-compatible name; the governed policy returns exactly one candidate."""
     return [
         build_ptbr_clone_request(
             reference=reference,
             text=text,
-            cfg_weight=cfg_weight,
+            reference_text=reference_text,
             seed=424242,
         )
-        for cfg_weight in (0.3, 0.5, 0.7)
     ]
