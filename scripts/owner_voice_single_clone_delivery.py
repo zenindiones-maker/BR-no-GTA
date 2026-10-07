@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -78,7 +79,18 @@ class TelegramSingleCloneApi:
         path=Path(clone_path).resolve()
         if not path.is_file() or path.stat().st_size<=0:
             raise RuntimeError("SINGLE_CLONE_AUDIO_MISSING")
-        with path.open("rb") as handle:
+        upload_path=path.with_name("telegram-audition.m4a")
+        subprocess.run(
+            [
+                "ffmpeg","-y","-v","error","-i",str(path),"-vn",
+                "-c:a","aac","-b:a","192k",str(upload_path),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        if not upload_path.is_file() or upload_path.stat().st_size<=0:
+            raise RuntimeError("TELEGRAM_AUDITION_TRANSCODE_FAILED")
+        with upload_path.open("rb") as handle:
             result=_telegram_post(
                 self.token,"sendAudio",
                 data={
@@ -86,7 +98,7 @@ class TelegramSingleCloneApi:
                     "caption":self.caption,
                     "protect_content":"true" if protect_content else "false",
                 },
-                files={"audio":(path.name,handle,"audio/wav")},
+                files={"audio":(upload_path.name,handle,"audio/mp4")},
             )
         return int(result["message_id"])
 
