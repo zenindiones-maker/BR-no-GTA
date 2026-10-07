@@ -367,16 +367,16 @@ class OwnerVoiceQwenRuntime:
         for item in batches:
             language=str(item["language"])
             canonical=str(item["canonical_text"])
+            if "Vice City" in canonical:
+                prompts.append(target_prompt("Vice City"))
+                prompt_authority.append("OWNER_VICE_CITY_REFERENCE_BR")
+                continue
             if language=="Portuguese":
                 prompts.append(anchor_prompt)
                 prompt_authority.append("OWNER_PTBR_ANCHOR")
                 continue
-            target="Vice City" if "Vice City" in canonical else "__english__"
-            prompts.append(target_prompt(target))
-            prompt_authority.append(
-                "OWNER_VICE_CITY_REFERENCE" if target=="Vice City"
-                else "OWNER_ENGLISH_PRONUNCIATION_REFERENCE"
-            )
+            prompts.append(target_prompt("__english__"))
+            prompt_authority.append("OWNER_ENGLISH_PRONUNCIATION_REFERENCE")
 
         self._seed_setter(RUNTIME_SEED)
         wavs,sample_rate=model.generate_voice_clone(
