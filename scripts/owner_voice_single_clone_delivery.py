@@ -136,7 +136,10 @@ def main()->int:
     ledger=SingleCloneDeliveryLedger(store=store,clone_id=str(manifest["clone_id"]))
     ledger.create(
         telegram_chat_id=int(manifest["telegram_chat_id"]),
-        reference_source_message_id=int(manifest["canonical_reference_source_message_id"]),
+        reference_source_message_id=int(
+            manifest.get("human_review_reference_source_message_id")
+            or manifest["canonical_reference_source_message_id"]
+        ),
         clone_sha256=str(manifest["clone_sha256"]),
         authority_ref=authority,
         clone_identity_gate=str(manifest["clone_identity_gate"]),
