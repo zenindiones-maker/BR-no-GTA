@@ -256,12 +256,16 @@ def handoff_reference_index_to_actions(
         capture_output=True,
         check=False,
     )
-    if int(dispatch_result.returncode) != 0:
-        raise RuntimeError("OWNER_REFERENCE_MATERIALIZATION_DISPATCH_FAILED")
+    dispatch_succeeded = int(dispatch_result.returncode) == 0
+    status = (
+        "DISPATCHED"
+        if dispatch_succeeded
+        else "SECRET_UPDATED_DISPATCH_DEFERRED"
+    )
 
     return {
         "schema": "OwnerVoiceReferenceHandoffReceipt/v2",
-        "status": "DISPATCHED",
+        "status": status,
         "voice_identity_id": OWNER_VOICE_IDENTITY_ID,
         "reference_count": int(index.get("reference_count") or 0),
         "index_sha256": str(index.get("index_sha256") or ""),
@@ -269,6 +273,7 @@ def handoff_reference_index_to_actions(
         "secret_name": OWNER_VOICE_REFERENCE_ENVELOPE_SECRET,
         "legacy_structured_secret_deleted": True,
         "workflow": OWNER_VOICE_MATERIALIZATION_WORKFLOW,
+        "dispatch_succeeded": dispatch_succeeded,
         "sensitive_metadata_logged": False,
         "media_bytes_on_a15": False,
     }
