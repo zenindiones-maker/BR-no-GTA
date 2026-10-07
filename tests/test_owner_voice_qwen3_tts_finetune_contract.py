@@ -57,7 +57,9 @@ def test_training_workflow_is_request_gated_private_gpu_and_pinned_ms_swift():
     assert "nvidia-smi" in source
     assert "git clone --filter=blob:none https://github.com/modelscope/ms-swift.git" in source
     assert "checkout --detach 6f62bd4b3032197dce934b4eba1bb65463b29918" in source
-    assert "--model Qwen/Qwen3-TTS-12Hz-1.7B-Base" in source
+    assert '--model "$BR_OWNER_QWEN_BASE_MODEL"' in source
+    cfg=json.loads(CONFIG.read_text(encoding="utf-8"))
+    assert cfg["model_id"]=="Qwen/Qwen3-TTS-12Hz-1.7B-Base"
     assert "--tuner_type full" in source
     assert "--learning_rate 2e-6" in source
     assert "runtime_activation=false" in source
