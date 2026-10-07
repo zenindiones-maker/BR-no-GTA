@@ -336,3 +336,23 @@ def test_final_multilingual_qa_transcribes_each_generated_segment_in_its_languag
     assert '"language_mode":"EXPLICIT_SEGMENTED_MULTILINGUAL"' in source
     assert '"expected_text":spoken_expected_text' in source
     assert 'str(clone16),language="pt"' not in source
+
+def test_voice_synergy_stitch_uses_crossfade_not_fixed_silence_gap():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert "VOICE_SEGMENT_CROSSFADE_MS=30" in source
+    stitch=source.split("def _stitch_generated_segments",1)[1].split("def _prepare_qwen_model",1)[0]
+    assert "gap=np.zeros" not in stitch
+    assert "crossfade_samples" in stitch
+    assert "np.linspace" in stitch
+
+
+def test_vice_city_gets_dedicated_fresh_owner_prompt():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert 'VICE_CITY_TERM="Vice City"' in source
+    assert 'VICE_CITY_TERM in row["pronunciation_hits"]' in source
+    assert "OWNER_VICE_CITY_REFERENCE_TELEGRAM_INPUT_ID=" in source
+    assert "vice_city_prompt" in source
+    assert "segment_prompts=[]" in source
+    assert 'VICE_CITY_TERM in str(row["canonical_text"])' in source
+    assert "voice_clone_prompt=segment_prompts" in source
+
