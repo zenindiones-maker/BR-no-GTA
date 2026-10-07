@@ -465,6 +465,42 @@ def main()->int:
     cache_root=Path(os.environ.get("BR_OWNER_PUBLIC_MODEL_CACHE") or Path.home()/".cache"/"br-owner-voice"/"hf-public").resolve()
     workspace.mkdir(parents=True,exist_ok=True)
     request_payload=_request_payload()
+    reconciliation=request_payload.get("delivery_reconciliation")
+    if reconciliation is not None:
+        if not isinstance(reconciliation,dict):
+            raise RuntimeError("SINGLE_CLONE_CONTROL_RECONCILIATION_REQUEST_INVALID")
+        mode=str(reconciliation.get("mode") or "").strip()
+        clone_id=str(reconciliation.get("clone_id") or "").strip()
+        failure_class=str(reconciliation.get("failure_class") or "").strip()
+        if (
+            mode!="CONTROL_ONLY_KNOWN_PRE_SIDE_EFFECT_FAILURE"
+            or not clone_id.startswith("BR_OWNER_V1_SINGLE_CLONE_")
+            or failure_class!="control:TypeError"
+        ):
+            raise RuntimeError("SINGLE_CLONE_CONTROL_RECONCILIATION_REQUEST_INVALID")
+        manifest={
+            "schema_version":"OwnerVoiceSingleCloneControlReconciliation/v1",
+            "voice_identity_id":VOICE_IDENTITY_ID,
+            "clone_id":clone_id,
+            "control_only":True,
+            "mode":mode,
+            "expected_failure_class":failure_class,
+            "runtime_activation":False,
+        }
+        manifest_path=workspace/"single-clone-control-reconciliation.json"
+        manifest_path.write_text(
+            json.dumps(manifest,sort_keys=True,indent=2)+"\n",
+            encoding="utf-8",
+        )
+        out=str(os.environ.get("GITHUB_OUTPUT") or "").strip()
+        if out:
+            with open(out,"a",encoding="utf-8") as stream:
+                stream.write(f"manifest_path={manifest_path}\n")
+                stream.write(f"clone_id={clone_id}\n")
+        print("SINGLE_CLONE_CONTROL_RECONCILIATION_ONLY=TRUE")
+        print("SINGLE_CLONE_CONTROL_RECONCILIATION_TARGET="+clone_id)
+        return 0
+
     pronunciation_after_message_id=_pronunciation_after_message_id(request_payload)
     owner_asserted_pronunciation_targets=_owner_asserted_pronunciation_targets(
         request_payload
