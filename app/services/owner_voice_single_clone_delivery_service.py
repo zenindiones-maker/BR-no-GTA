@@ -195,6 +195,39 @@ class SingleCloneDeliveryLedger:
             row["blind_retry_count"]=0
         return self._commit(mutate,event="AMBIGUOUS_SIDE_EFFECT",payload={"logical_operation":logical_operation})
 
+    def reopen_known_pre_side_effect_control_failure(
+        self,
+        *,
+        expected_failure_class:str="control:TypeError",
+    )->dict[str,Any]:
+        state=self.load()
+        ids=dict(state.get("confirmed_message_ids") or {})
+        safe=(
+            state.get("state")=="CLONE_SENT"
+            and state.get("reconciliation_state")==RECONCILIATION_REQUIRED
+            and str(state.get("failure_class") or "")==str(expected_failure_class)
+            and state.get("active_operation") is None
+            and isinstance(ids.get("reference"),int)
+            and isinstance(ids.get("clone"),int)
+            and "control" not in ids
+            and int(state.get("blind_retry_count") or 0)==0
+        )
+        if not safe:
+            raise ValueError("SINGLE_CLONE_CONTROL_RECONCILIATION_NOT_SAFE")
+
+        def mutate(row):
+            row["reconciliation_state"]=None
+            row["failure_class"]=None
+            row["active_operation"]=None
+            row["side_effect_status"]=SENT
+            row["state"]="CLONE_SENT"
+            row["blind_retry_count"]=0
+        return self._commit(
+            mutate,
+            event="KNOWN_PRE_SIDE_EFFECT_CONTROL_FAILURE_REOPENED",
+            payload={"failure_class":str(expected_failure_class)},
+        )
+
     def finalize(self)->dict[str,Any]:
         def mutate(row):
             row["state"]="CONFIRMED"; row["side_effect_status"]=SENT
