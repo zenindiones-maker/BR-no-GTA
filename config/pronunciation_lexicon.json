@@ -1,6 +1,6 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.10.07.4-owner-vice-citi-ptbr",
+  "version": "2026.10.07.5-owner-vaicy-siti",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "DeepSeek Harness + BR_OWNER_V1 human acoustic authority",
@@ -44,9 +44,9 @@
       "term": "Vice City",
       "locale": "pt-BR",
       "strategy": "owner-brazilian-acoustic",
-      "synthesis_text": "Vice Citi",
+      "synthesis_text": "vaicy siti",
       "critical": true,
-      "source": "owner explicit Brazilian reading: Vice Citi; acoustic authority is fresh BR_OWNER_V1 Telegram reference",
+      "source": "owner-explicit Brazilian pronunciation: vaicy siti; acoustic authority is fresh BR_OWNER_V1 Telegram reference",
       "owner_reading_authority": "EXPLICIT_OWNER_PTBR"
     },
     {
