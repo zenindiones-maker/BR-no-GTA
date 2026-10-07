@@ -4,5 +4,6 @@
   "reference_source": "TELEGRAM_HUMAN_OWNER",
   "one_candidate_only": true,
   "runtime_activation": false,
-  "pronunciation_after_message_id": 637
+  "pronunciation_after_message_id": 637,
+  "recover_pending_telegram_updates": true
 }
