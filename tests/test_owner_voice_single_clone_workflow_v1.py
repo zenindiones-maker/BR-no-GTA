@@ -1,5 +1,6 @@
-from app.services.gta6_pronunciation_lexicon_service import build_gta6_pronunciation_segments
 from __future__ import annotations
+
+from app.services.gta6_pronunciation_lexicon_service import build_gta6_pronunciation_segments
 
 from pathlib import Path
 
