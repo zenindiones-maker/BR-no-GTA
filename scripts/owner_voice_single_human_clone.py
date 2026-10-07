@@ -856,11 +856,10 @@ def main()->int:
     print("GTA6_PRONUNCIATION_SEGMENT_LANGUAGES="+",".join(segment_languages))
     segment_prompts=[]
     for row in pronunciation_segments:
-        canonical_text=str(row["canonical_text"])
         language=str(row["language"])
         if language=="Portuguese":
             segment_prompts.append(anchor_prompt)
-        elif VICE_CITY_TERM in canonical_text:
+        elif VICE_CITY_TERM in str(row["canonical_text"]):
             if vice_city_prompt is None:
                 raise RuntimeError("OWNER_VICE_CITY_PRONUNCIATION_REFERENCE_REQUIRED")
             segment_prompts.append(vice_city_prompt)
