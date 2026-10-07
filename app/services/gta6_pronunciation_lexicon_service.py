@@ -53,15 +53,68 @@ def _normalized(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
 
 
+def _target_aliases(target: str) -> tuple[str, ...]:
+    needle=_normalized(target)
+    if needle==_normalized("Vice City"):
+        return VICE_CITY_ASR_EVIDENCE_ALIASES
+    return (target,)
+
+
+def _best_target_window(text: str, target: str) -> tuple[float, int | None, int | None]:
+    raw=str(text or "")
+    aliases=_target_aliases(target)
+    tokens=[
+        (match.group(0),match.start(),match.end())
+        for match in re.finditer(r"[A-Za-zÀ-ÿ0-9']+",raw)
+    ]
+    if not tokens:
+        return 0.0,None,None
+
+    normalized_tokens=[_normalized(token) for token,_start,_end in tokens]
+    best_score=0.0
+    best_span=(None,None)
+    for alias in aliases:
+        alias_norm=_normalized(alias)
+        alias_words=alias_norm.split()
+        if not alias_words:
+            continue
+        min_width=max(1,len(alias_words)-1)
+        max_width=min(len(tokens),len(alias_words)+1)
+        for width in range(min_width,max_width+1):
+            for start_index in range(0,len(tokens)-width+1):
+                window=" ".join(normalized_tokens[start_index:start_index+width])
+                score=1.0 if window==alias_norm else SequenceMatcher(
+                    None,window,alias_norm
+                ).ratio()
+                if float(score)>best_score:
+                    best_score=float(score)
+                    best_span=(
+                        tokens[start_index][1],
+                        tokens[start_index+width-1][2],
+                    )
+    return round(max(0.0,min(1.0,best_score)),6),best_span[0],best_span[1]
+
+
+def canonicalize_gta6_target_transcript(
+    text: str,
+    target: str,
+    *,
+    minimum_score: float = 0.45,
+) -> str:
+    raw=str(text or "")
+    score,start,end=_best_target_window(raw,target)
+    if start is None or end is None or score<float(minimum_score):
+        return raw
+    return raw[:start]+str(target)+raw[end:]
+
+
 def gta6_target_evidence_score(text: str, target: str) -> float:
     haystack=_normalized(text)
     needle=_normalized(target)
     if not haystack or not needle:
         return 0.0
 
-    aliases=(target,)
-    if needle==_normalized("Vice City"):
-        aliases=VICE_CITY_ASR_EVIDENCE_ALIASES
+    aliases=_target_aliases(target)
 
     hay_words=haystack.split()
     best=0.0
