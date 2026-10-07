@@ -40,6 +40,7 @@ from app.services.owner_voice_speaker_identity_service import (
     calibrate_owner_window_consistency,
     cosine_similarity,
     evaluate_clone_identity_gate,
+    evaluate_language_matched_segment_identity_gate,
     evaluate_reference_window_consistency,
     sanitized_profile,
     select_canonical_reference,
@@ -911,9 +912,26 @@ def main()->int:
         json.dumps(sanitized,sort_keys=True,indent=2)+"\n",encoding="utf-8"
     )
 
+    pronunciation_reference_embedding=None
+    if pronunciation_prompt_audio is not None:
+        pronunciation_identity16=_ffmpeg(
+            pronunciation_prompt_audio,
+            workspace/"pronunciation-reference-identity-16k.wav",
+            16000,
+        )
+        pronunciation_reference_embedding=_embedding(
+            classifier,
+            pronunciation_identity16,
+        )
+
     import numpy as np
     np.save(workspace/"owner-speaker-centroid.npy",np.asarray(profile["centroid"],dtype="float32"))
     np.save(workspace/"canonical-speaker-embedding.npy",np.asarray(canonical_embedding,dtype="float32"))
+    if pronunciation_reference_embedding is not None:
+        np.save(
+            workspace/"pronunciation-speaker-embedding.npy",
+            np.asarray(pronunciation_reference_embedding,dtype="float32"),
+        )
 
     import torch
     import soundfile as sf
@@ -1034,14 +1052,59 @@ def main()->int:
 
     clone16=_ffmpeg(clone_path,workspace/"clone-16k.wav",16000)
     clone_embedding=_embedding(classifier,clone16)
-    identity=evaluate_clone_identity_gate(
-        profile,clone_embedding=clone_embedding,canonical_embedding=canonical_embedding
+    global_identity=evaluate_clone_identity_gate(
+        profile,
+        clone_embedding=clone_embedding,
+        canonical_embedding=canonical_embedding,
     )
-    print(f"OWNER_CLONE_SIMILARITY_TO_CENTROID={identity['similarity_to_centroid']}")
-    print(f"OWNER_CLONE_SIMILARITY_TO_REFERENCE={identity['similarity_to_reference']}")
-    print(f"OWNER_CLONE_CENTROID_MIN_SIMILARITY={identity['centroid_min_similarity']}")
-    print(f"OWNER_CLONE_REFERENCE_MIN_SIMILARITY={identity['reference_min_similarity']}")
-    identity_gate="PASS" if identity["passed"] is True else "FAIL"
+    print(
+        "OWNER_CLONE_GLOBAL_IDENTITY_DIAGNOSTIC="
+        +json.dumps(global_identity,sort_keys=True,separators=(",",":"))
+    )
+
+    segment_identity_rows=[]
+    for position,(wav,row) in enumerate(zip(wavs,pronunciation_segments),1):
+        language=str(row["language"])
+        segment_identity_path=workspace/f"identity-segment-{position:02d}.wav"
+        sf.write(
+            str(segment_identity_path),
+            wav,
+            int(sample_rate),
+            subtype="PCM_16",
+        )
+        segment_identity16=_ffmpeg(
+            segment_identity_path,
+            workspace/f"identity-segment-{position:02d}-16k.wav",
+            16000,
+        )
+        segment_embedding=_embedding(classifier,segment_identity16)
+        if language=="Portuguese":
+            reference_embedding=canonical_embedding
+            gate_language="pt"
+        elif language=="English":
+            if pronunciation_reference_embedding is None:
+                raise RuntimeError("OWNER_ENGLISH_IDENTITY_REFERENCE_REQUIRED")
+            reference_embedding=pronunciation_reference_embedding
+            gate_language="en"
+        else:
+            raise RuntimeError("OWNER_CLONE_SEGMENT_LANGUAGE_UNSUPPORTED")
+        segment_identity_rows.append({
+            "position":position,
+            "language":gate_language,
+            "embedding":segment_embedding,
+            "reference_embedding":reference_embedding,
+        })
+
+    segmented_identity=evaluate_language_matched_segment_identity_gate(
+        profile,
+        segments=segment_identity_rows,
+    )
+    for row in segmented_identity["segments"]:
+        print(
+            "OWNER_CLONE_SEGMENT_IDENTITY="
+            +json.dumps(row,sort_keys=True,separators=(",",":"))
+        )
+    identity_gate="PASS" if segmented_identity["passed"] is True else "FAIL"
     print("CLONE_IDENTITY_GATE="+identity_gate)
     print("QWEN3_TTS_IDENTITY_MATCH="+identity_gate)
 
@@ -1127,7 +1190,14 @@ def main()->int:
         "segment_language_qas":segment_language_qas,
         "vad_speech_ratio":_vad_ratio(global_segments,float(clone_metrics.get("duration_seconds") or 0.0)),
         "expected_text":spoken_expected_text,"observed_text":observed,"audio_metrics":clone_metrics,
-        "speaker_similarity":{"status":identity_gate,"score":identity["similarity_to_centroid"],"certifies_identity":identity_gate=="PASS"},
+        "speaker_similarity":{
+            "status":identity_gate,
+            "score":min(
+                float(row["similarity_to_language_reference"])
+                for row in segmented_identity["segments"]
+            ),
+            "certifies_identity":identity_gate=="PASS",
+        },
     })
     content_audio_prescreen="PASS" if qa["eligible"] is True else "FAIL"
     print("CONTENT_AUDIO_PRESCREEN="+content_audio_prescreen)
@@ -1180,10 +1250,12 @@ def main()->int:
         "human_review":review_decision["human_review"],
         "runtime_activation":review_decision["runtime_activation"],
         "automatic_gates_passed":review_decision["automatic_gates_passed"],
-        "clone_similarity_to_centroid":identity["similarity_to_centroid"],
-        "clone_similarity_to_reference":identity["similarity_to_reference"],
-        "clone_centroid_threshold":identity["centroid_min_similarity"],
-        "clone_reference_threshold":identity["reference_min_similarity"],
+        "clone_similarity_to_centroid":global_identity["similarity_to_centroid"],
+        "clone_similarity_to_reference":global_identity["similarity_to_reference"],
+        "clone_centroid_threshold":global_identity["centroid_min_similarity"],
+        "clone_reference_threshold":global_identity["reference_min_similarity"],
+        "global_identity_diagnostic":global_identity,
+        "language_matched_segment_identity":segmented_identity,
         "text":SHORT_TEXT,
         "generation":{
             "engine":"QWEN3_TTS",
