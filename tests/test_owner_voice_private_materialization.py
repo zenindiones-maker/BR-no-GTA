@@ -88,10 +88,12 @@ def test_cloud_materialization_downloads_directly_to_private_runner_root(tmp_pat
     assert row["sha256"] == hashlib.sha256(b"owner-ref").hexdigest()
     assert row["remote_verified"] is True
     assert row["media_bytes_on_a15"] is False
+    assert row["telegram_message_id"] == 1007
     assert row["private_audio_ref"].startswith("private://voice/BR_OWNER_V1/")
     serialized = json.dumps(result["public_evidence"], sort_keys=True)
     assert "sensitive-file-id" not in serialized
     assert "sensitive-unique-id" not in serialized
+    assert "1007" not in serialized
     assert "owner-ref" not in serialized
 
 
