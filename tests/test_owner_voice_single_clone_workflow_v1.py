@@ -112,3 +112,8 @@ def test_pronunciation_audition_challenges_official_gta_vi_names():
     ):
         assert term in source
 
+
+
+def test_private_materializer_preserves_message_id_for_pronunciation_boundary():
+    service=Path("app/services/owner_voice_private_materialization_service.py").read_text(encoding="utf-8")
+    assert '"telegram_message_id": int(item["telegram_message_id"])' in service
