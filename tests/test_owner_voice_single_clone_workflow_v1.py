@@ -127,3 +127,11 @@ def test_pending_telegram_recovery_is_non_acknowledging_and_owner_scoped():
     assert "telegram_user_id" in service
     assert "telegram_chat_id" in service
     assert "recovered_reference_count" in service
+
+
+def test_owner_voice_handoff_keeps_secret_authoritative_when_dispatch_is_unavailable():
+    service=Path("app/services/owner_voice_telegram_handoff_service.py").read_text(encoding="utf-8")
+    command=Path("scripts/owner_voice_reference_handoff.py").read_text(encoding="utf-8")
+    assert "OWNER_REFERENCE_MATERIALIZATION_DISPATCH_FAILED" not in service
+    assert "SECRET_UPDATED_DISPATCH_DEFERRED" in service
+    assert 'receipt["status"]' in command
