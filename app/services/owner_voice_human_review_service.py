@@ -7,10 +7,15 @@ from typing import Any, Mapping
 
 
 VOICE_IDENTITY_ID = "BR_OWNER_V1"
-_ALLOWED_ACTIONS = {
+_LEGACY_ALLOWED_ACTIONS = {
     "approve": ("APPROVED_PENDING_ACTIVATION", "BLOCKED_PENDING_PROMOTION"),
     "reject_identity": ("REJECTED_IDENTITY", "BLOCKED_REJECTED"),
     "reject_ptbr": ("REJECTED_PTBR", "BLOCKED_REJECTED"),
+}
+_SINGLE_ALLOWED_ACTIONS = {
+    "approve": ("APPROVED_PENDING_PROMOTION", "BLOCKED_PENDING_PROMOTION"),
+    "reject_identity": ("REJECTED_IDENTITY", "BLOCKED_REJECTED"),
+    "reject_pronunciation": ("REJECTED_PRONUNCIATION", "BLOCKED_REJECTED"),
 }
 _ALLOWED_VARIANTS = {"A", "B", "C"}
 
@@ -70,17 +75,39 @@ def _persist_state(path: Path, payload: Mapping[str, Any]) -> None:
         pass
 
 
-def _parse_callback_data(value: str) -> tuple[str, str] | None:
+def _parse_callback_data(value: str) -> dict[str, str] | None:
     data = str(value or "").strip()
+    if data.startswith("ov2:"):
+        parts=data.split(":")
+        if len(parts)!=3:
+            raise ValueError("OWNER_VOICE_REVIEW_CALLBACK_INVALID")
+        action=str(parts[1] or "").strip()
+        token=str(parts[2] or "").strip().lower()
+        if (
+            action not in _SINGLE_ALLOWED_ACTIONS
+            or len(token)!=20
+            or any(ch not in "0123456789abcdef" for ch in token)
+        ):
+            raise ValueError("OWNER_VOICE_REVIEW_CALLBACK_INVALID")
+        return {
+            "version":"v2",
+            "action":action,
+            "subject":token,
+        }
+
     if not data.startswith("ov1:"):
         return None
     parts = data.split(":")
     if len(parts) != 3:
         raise ValueError("OWNER_VOICE_REVIEW_CALLBACK_INVALID")
     action, variant = parts[1], parts[2].upper()
-    if action not in _ALLOWED_ACTIONS or variant not in _ALLOWED_VARIANTS:
+    if action not in _LEGACY_ALLOWED_ACTIONS or variant not in _ALLOWED_VARIANTS:
         raise ValueError("OWNER_VOICE_REVIEW_CALLBACK_INVALID")
-    return action, variant
+    return {
+        "version":"v1",
+        "action":action,
+        "subject":variant,
+    }
 
 
 def process_owner_voice_review_callback(
@@ -98,7 +125,9 @@ def process_owner_voice_review_callback(
     parsed = _parse_callback_data(str(callback.get("data") or ""))
     if parsed is None:
         return None
-    action, variant = parsed
+    version=str(parsed["version"])
+    action=str(parsed["action"])
+    subject=str(parsed["subject"])
 
     sender = callback.get("from")
     message = callback.get("message")
@@ -134,21 +163,41 @@ def process_owner_voice_review_callback(
     if existing is not None:
         return {**existing, "idempotent_replay": True}
 
-    status, activation = _ALLOWED_ACTIONS[action]
-    receipt = {
-        "schema": "OwnerVoiceHumanReviewReceipt/v1",
-        "voice_identity_id": VOICE_IDENTITY_ID,
-        "status": status,
-        "variant": variant,
-        "review_action": action,
-        "production_activation": activation,
-        "authorized_human": True,
-        "telegram_chat_id": chat_id,
-        "telegram_message_id": message_id,
-        "callback_query_id": callback_id,
-        "recorded_at_epoch": float(now_epoch if now_epoch is not None else time.time()),
-        "idempotent_replay": False,
-    }
+    if version=="v2":
+        status,activation=_SINGLE_ALLOWED_ACTIONS[action]
+        receipt = {
+            "schema":"OwnerVoiceHumanReviewReceipt/v2",
+            "voice_identity_id":VOICE_IDENTITY_ID,
+            "candidate_mode":"SINGLE_CLONE",
+            "review_token":subject,
+            "status":status,
+            "review_action":action,
+            "production_activation":activation,
+            "authorized_human":True,
+            "production_authority":True,
+            "telegram_chat_id":chat_id,
+            "telegram_message_id":message_id,
+            "callback_query_id":callback_id,
+            "recorded_at_epoch":float(now_epoch if now_epoch is not None else time.time()),
+            "idempotent_replay":False,
+        }
+    else:
+        status,activation=_LEGACY_ALLOWED_ACTIONS[action]
+        receipt = {
+            "schema":"OwnerVoiceHumanReviewReceipt/v1",
+            "voice_identity_id":VOICE_IDENTITY_ID,
+            "status":status,
+            "variant":subject,
+            "review_action":action,
+            "production_activation":activation,
+            "authorized_human":True,
+            "production_authority":False,
+            "telegram_chat_id":chat_id,
+            "telegram_message_id":message_id,
+            "callback_query_id":callback_id,
+            "recorded_at_epoch":float(now_epoch if now_epoch is not None else time.time()),
+            "idempotent_replay":False,
+        }
     history.append(receipt)
     next_state = {
         "schema": "OwnerVoiceHumanReviewState/v1",
