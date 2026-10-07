@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - recovery/dev/br-owner-v1-human-audition-v2
+      - recovery/dev/br-owner-v1-vice-citi-final-v1
 
 concurrency:
   group: br-owner-v1-single-human-clone-${{ github.sha }}
