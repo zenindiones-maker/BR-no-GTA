@@ -70,6 +70,53 @@ def character_error_rate(expected: str, observed: str) -> float:
     return round(_levenshtein(ref,hyp)/len(ref),6)
 
 
+def evaluate_segment_transcript_qa(
+    *,
+    expected: str,
+    observed: str,
+    language: str,
+) -> dict[str, Any]:
+    expected_text=str(expected or "").strip()
+    observed_text=str(observed or "").strip()
+    if not expected_text:
+        raise ValueError("EXPECTED_TEXT_REQUIRED")
+    normalized_language=str(language or "").strip().lower().replace("_","-")
+    wer=word_error_rate(expected_text,observed_text)
+    cer=character_error_rate(expected_text,observed_text)
+    expected_tokens=len(_normalize_words(expected_text))
+    observed_tokens=len(_normalize_words(observed_text))
+    token_coverage=min(1.0,observed_tokens/max(1,expected_tokens))
+
+    if normalized_language in {"pt","pt-br","portuguese"}:
+        passed=bool(
+            observed_text
+            and cer<=0.20
+            and token_coverage>=0.70
+        )
+        decision_basis="PTBR_CER_PRIMARY"
+    elif normalized_language in {"en","en-us","english"}:
+        passed=bool(
+            observed_text
+            and wer<=0.25
+            and cer<=0.20
+            and token_coverage>=0.70
+        )
+        decision_basis="EN_WER_AND_CER"
+    else:
+        raise ValueError("SEGMENT_TRANSCRIPT_LANGUAGE_UNSUPPORTED")
+
+    return {
+        "passed":passed,
+        "language":normalized_language,
+        "word_error_rate":wer,
+        "character_error_rate":cer,
+        "expected_token_count":expected_tokens,
+        "observed_token_count":observed_tokens,
+        "token_coverage":round(token_coverage,6),
+        "decision_basis":decision_basis,
+    }
+
+
 def _adjacent_repetition_count(text: str) -> int:
     words=_normalize_words(text)
     return sum(1 for a,b in zip(words,words[1:]) if a==b)
@@ -120,10 +167,11 @@ def evaluate_short_candidate(candidate: Mapping[str, Any]) -> dict[str, Any]:
             issues.append("SEGMENT_LANGUAGE_QA_FAIL")
     elif language not in {"pt","pt-br"} or probability < 0.90:
         issues.append("NON_PORTUGUESE_OUTPUT")
-    if wer > 0.25:
-        issues.append("HIGH_WORD_ERROR_RATE")
-    if cer > 0.20:
-        issues.append("HIGH_CHARACTER_ERROR_RATE")
+    if not explicit_multilingual:
+        if wer > 0.25:
+            issues.append("HIGH_WORD_ERROR_RATE")
+        if cer > 0.20:
+            issues.append("HIGH_CHARACTER_ERROR_RATE")
     if observed_tokens < max(1,int(expected_tokens*0.70)):
         issues.append("TRUNCATED_TEXT")
     if inserted_est > max(5,int(expected_tokens*0.20)):
