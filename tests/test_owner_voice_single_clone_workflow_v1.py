@@ -89,10 +89,9 @@ def test_auto_gate_failure_blocks_activation_but_not_human_audition_delivery():
     assert "Runtime activation: BLOQUEADA até aprovação humana." in delivery
 
 def test_pronunciation_calibration_requires_newer_telegram_reference_boundary():
-    workflow=WORKFLOW.read_text(encoding="utf-8")
     source=ORCHESTRATOR.read_text(encoding="utf-8")
-    assert "pronunciation_after_message_id" in workflow
-    assert "BR_OWNER_PRONUNCIATION_AFTER_MESSAGE_ID" in workflow
+    assert ".run/br-owner-v1-single-human-clone.request.json" in source
+    assert "pronunciation_after_message_id" in source
     assert "OWNER_PRONUNCIATION_REFERENCE_COUNT=" in source
     assert "OWNER_PRONUNCIATION_REFERENCE_NOT_MATERIALIZED" in source
     assert 'int(row["telegram_message_id"])>pronunciation_after_message_id' in source
