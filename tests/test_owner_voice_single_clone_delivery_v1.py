@@ -7,6 +7,7 @@ from pathlib import Path
 from app.services.owner_voice_single_clone_delivery_service import (
     SingleCloneDeliveryLedger,
     deliver_single_clone_durable,
+    review_callback_data,
     review_token_for_clone,
 )
 from app.services.owner_voice_human_review_service import (
@@ -190,3 +191,38 @@ def test_single_clone_delivery_persists_exact_identity_and_pronunciation_lineage
     assert 'manifest.get("pronunciation_reference_telegram_input_ids",[])' in source
     assert "vice_city_reference_telegram_input_id=(" in source
     assert 'manifest.get("vice_city_reference_telegram_input_id")' in source
+
+
+def test_compact_review_callback_binds_lineage_and_stays_within_telegram_limit():
+    token=review_token_for_clone("clone-compact")
+    callback=review_callback_data(
+        "approve",
+        token=token,
+        automatic_gates_passed=True,
+        identity_anchor_telegram_input_id=125,
+        pronunciation_reference_telegram_input_ids=[126,127],
+        vice_city_reference_telegram_input_id=126,
+    )
+    assert len(callback.encode("utf-8"))<=64
+    assert callback.startswith("ov2c:a:")
+    update={
+        "callback_query":{
+            "id":"cb-compact",
+            "data":callback,
+            "from":{"id":77},
+            "message":{"message_id":704,"chat":{"id":-1001}},
+        }
+    }
+    receipt=process_owner_voice_review_callback(
+        update=update,
+        allowed_user_id=77,
+        allowed_chat_ids={-1001},
+        state_path=__import__("pathlib").Path("/tmp")/"review-compact-test.json",
+        now_epoch=124.0,
+    )
+    assert receipt["review_token"]==token
+    assert receipt["lineage_bound"] is True
+    assert receipt["automatic_gates_passed"] is True
+    assert receipt["identity_anchor_telegram_input_id"]==125
+    assert receipt["pronunciation_reference_telegram_input_ids"]==[126,127]
+    assert receipt["vice_city_reference_telegram_input_id"]==126
