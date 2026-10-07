@@ -163,6 +163,9 @@ def test_single_clone_control_message_carries_exact_v2_review_token(monkeypatch)
         identity_gate="PASS",
         content_audio_prescreen="PASS",
         review_token=token,
+        identity_anchor_telegram_input_id=125,
+        pronunciation_reference_telegram_input_ids=[126,127],
+        vice_city_reference_telegram_input_id=126,
     )
     message_id=api.send_control(
         chat_id=-1001,
@@ -176,11 +179,19 @@ def test_single_clone_control_message_carries_exact_v2_review_token(monkeypatch)
         for row in markup["inline_keyboard"]
         for button in row
     }
-    assert callbacks=={
-        f"ov2:approve:{token}",
-        f"ov2:reject_identity:{token}",
-        f"ov2:reject_pronunciation:{token}",
+    expected={
+        review_callback_data(
+            action,
+            token=token,
+            automatic_gates_passed=True,
+            identity_anchor_telegram_input_id=125,
+            pronunciation_reference_telegram_input_ids=[126,127],
+            vice_city_reference_telegram_input_id=126,
+        )
+        for action in ("approve","reject_identity","reject_pronunciation")
     }
+    assert callbacks==expected
+    assert all(value.startswith("ov2c:") for value in callbacks)
 
 
 def test_single_clone_delivery_persists_exact_identity_and_pronunciation_lineage():
