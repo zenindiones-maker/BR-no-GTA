@@ -25,6 +25,7 @@ from app.services.owner_voice_speaker_identity_service import (
     select_canonical_reference,
 )
 from app.services.owner_voice_telegram_handoff_service import parse_reference_envelope_b64
+from app.services.owner_voice_zero_cost_policy_service import validate_owner_voice_execution
 VOICE_IDENTITY_ID="BR_OWNER_V1"
 QWEN_MODEL_ID="Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 QWEN_MODEL_REVISION="fd4b254389122332181a7c3db7f27e918eec64e3"
@@ -200,6 +201,7 @@ def _vad_ratio(segments,duration:float)->float:
 
 
 def main()->int:
+    validate_owner_voice_execution(mode="inference")
     if IDENTITY_PROFILE_SCHEMA!=PROFILE_SCHEMA:
         raise RuntimeError("OWNER_SPEAKER_PROFILE_SCHEMA_MISMATCH")
     if PINNED_SPEAKER_MODEL_ID!=SPEAKER_MODEL_ID:
