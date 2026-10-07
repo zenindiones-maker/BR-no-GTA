@@ -109,7 +109,16 @@ def evaluate_short_candidate(candidate: Mapping[str, Any]) -> dict[str, Any]:
     similarity=dict(candidate.get("speaker_similarity") or {})
     if str(similarity.get("status") or "").upper()=="FAIL":
         issues.append("SPEAKER_SIMILARITY_FAIL")
-    if language not in {"pt","pt-br"} or probability < 0.90:
+    language_mode=str(candidate.get("language_mode") or "").strip().upper()
+    segment_language_qas=list(candidate.get("segment_language_qas") or [])
+    explicit_multilingual=(
+        language_mode=="EXPLICIT_SEGMENTED_MULTILINGUAL"
+        and bool(segment_language_qas)
+    )
+    if explicit_multilingual:
+        if not all(bool(dict(row).get("passed")) for row in segment_language_qas):
+            issues.append("SEGMENT_LANGUAGE_QA_FAIL")
+    elif language not in {"pt","pt-br"} or probability < 0.90:
         issues.append("NON_PORTUGUESE_OUTPUT")
     if wer > 0.25:
         issues.append("HIGH_WORD_ERROR_RATE")
@@ -144,6 +153,8 @@ def evaluate_short_candidate(candidate: Mapping[str, Any]) -> dict[str, Any]:
         "missing_word_estimate":missing_est,
         "inserted_word_estimate":inserted_est,
         "adjacent_repetition_count":repetition,
+        "language_mode":language_mode or "SINGLE_LANGUAGE",
+        "segment_language_qas":[dict(row) for row in segment_language_qas],
         "speaker_similarity":similarity or {
             "status":"PENDING_INDEPENDENT_VERIFIER",
             "score":None,
