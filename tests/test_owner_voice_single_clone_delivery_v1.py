@@ -51,3 +51,22 @@ def test_single_clone_delivery_persists_sending_before_each_side_effect_and_conf
     assert result["confirmed_message_ids"]=={"reference":701,"clone":702,"control":703}
     assert [name for name,_ in api.calls]==["reference","clone","control"]
     assert result["blind_retry_count"]==0
+
+
+def test_delivery_ledger_persists_auto_gate_evidence_without_enabling_runtime():
+    store=FakeStore()
+    ledger=SingleCloneDeliveryLedger(store=store,clone_id="clone-auto-fail")
+    state=ledger.create(
+        telegram_chat_id=-1001,
+        reference_source_message_id=625,
+        clone_sha256="b"*64,
+        authority_ref="owner-explicit:BR_OWNER_V1_SINGLE_CLONE",
+        clone_identity_gate="FAIL",
+        content_audio_prescreen="PASS",
+        human_review="PENDING",
+        runtime_activation=False,
+    )
+    assert state["clone_identity_gate"]=="FAIL"
+    assert state["content_audio_prescreen"]=="PASS"
+    assert state["human_review"]=="PENDING"
+    assert state["runtime_activation"] is False
