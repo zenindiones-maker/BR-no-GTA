@@ -199,38 +199,35 @@ def _reference_asr_metrics(
     return ptbr_probability,vad_speech_ratio,language,transcript
 
 
-def _compose_reference_audio(
-    anchor:Path,
+def _compose_pronunciation_reference_audio(
     pronunciations:list[Path],
     target:Path,
 )->Path:
     import numpy as np
     import soundfile as sf
 
-    anchor_audio,anchor_rate=sf.read(str(anchor),dtype="float32",always_2d=True)
-    if int(anchor_rate)!=24000 or anchor_audio.size==0:
-        raise RuntimeError("OWNER_COMPOSITE_REFERENCE_RATE_INVALID")
-    if anchor_audio.shape[1]>1:
-        anchor_audio=anchor_audio.mean(axis=1,keepdims=True)
-
+    if not pronunciations:
+        raise RuntimeError("OWNER_PRONUNCIATION_AUDIO_REQUIRED")
     silence=np.zeros((int(0.20*24000),1),dtype="float32")
-    chunks=[anchor_audio]
+    chunks=[]
     for pronunciation in pronunciations:
         pronunciation_audio,pronunciation_rate=sf.read(
             str(pronunciation),dtype="float32",always_2d=True
         )
         if int(pronunciation_rate)!=24000:
-            raise RuntimeError("OWNER_COMPOSITE_REFERENCE_RATE_INVALID")
+            raise RuntimeError("OWNER_PRONUNCIATION_REFERENCE_RATE_INVALID")
         if pronunciation_audio.size==0:
-            raise RuntimeError("OWNER_COMPOSITE_REFERENCE_AUDIO_EMPTY")
+            raise RuntimeError("OWNER_PRONUNCIATION_REFERENCE_AUDIO_EMPTY")
         if pronunciation_audio.shape[1]>1:
             pronunciation_audio=pronunciation_audio.mean(axis=1,keepdims=True)
-        chunks.extend([silence,pronunciation_audio])
+        if chunks:
+            chunks.append(silence)
+        chunks.append(pronunciation_audio)
 
     combined=np.concatenate(chunks,axis=0)
     sf.write(str(target),combined,24000,subtype="PCM_16")
     if not target.is_file() or target.stat().st_size<=0:
-        raise RuntimeError("OWNER_COMPOSITE_REFERENCE_WRITE_FAILED")
+        raise RuntimeError("OWNER_PRONUNCIATION_REFERENCE_WRITE_FAILED")
     return target
 
 
@@ -558,9 +555,9 @@ def main()->int:
     if _sha256(canonical24)=="":
         raise RuntimeError("CANONICAL_REFERENCE_DIGEST_MISSING")
 
-    prompt_audio=canonical24
-    canonical_ref_text=anchor_ref_text
+    pronunciation_prompt_audio=None
     human_review_reference=canonical
+    qwen_reference_audio_lineage="ORIGINAL_TELEGRAM_TO_24K_DIRECT"
     if pronunciation_canonical is not None:
         pronunciation24s=[]
         for position,(pronunciation_row,_text) in enumerate(pronunciation_selected,1):
@@ -570,13 +567,12 @@ def main()->int:
                 workspace/f"pronunciation-owner-reference-{position}-24k.wav",
                 24000,
             ))
-        prompt_audio=_compose_reference_audio(
-            canonical24,
+        pronunciation_prompt_audio=_compose_pronunciation_reference_audio(
             pronunciation24s,
-            workspace/"composite-owner-reference-24k.wav",
+            workspace/"pronunciation-reference-combined-24k.wav",
         )
-        canonical_ref_text=anchor_ref_text+" "+pronunciation_ref_text
         human_review_reference=pronunciation_canonical
+        qwen_reference_audio_lineage="ANCHOR_SPK_EMBEDDING_PLUS_FRESH_PRONUNCIATION_CODE"
         print(f"OWNER_IDENTITY_ANCHOR_TELEGRAM_INPUT_ID={canonical['telegram_input_id']}")
         print(
             "OWNER_PRONUNCIATION_REFERENCE_TELEGRAM_INPUT_ID="
@@ -586,7 +582,6 @@ def main()->int:
             "OWNER_PRONUNCIATION_REFERENCE_TELEGRAM_INPUT_IDS="
             +",".join(str(row["telegram_input_id"]) for row,_text in pronunciation_selected)
         )
-        print("QWEN_REFERENCE_AUDIO_LINEAGE=IDENTITY_ANCHOR_PLUS_FRESH_PRONUNCIATION")
 
     sanitized=sanitized_profile(profile)
     sanitized["window_consistency_calibration"]=dict(window_calibration)
@@ -607,7 +602,7 @@ def main()->int:
 
     import torch
     import soundfile as sf
-    from qwen_tts import Qwen3TTSModel
+    from qwen_tts import Qwen3TTSModel, VoiceClonePromptItem
 
     torch.set_num_threads(4)
     qwen_snapshot=_prepare_qwen_model(cache_root/"qwen3-tts")
@@ -617,13 +612,36 @@ def main()->int:
         dtype=torch.float32,
         attn_implementation="sdpa",
     )
-    prompt=model.create_voice_clone_prompt(
-        ref_audio=str(prompt_audio),
-        ref_text=canonical_ref_text,
+    anchor_prompt_items=model.create_voice_clone_prompt(
+        ref_audio=str(canonical24),
+        ref_text=anchor_ref_text,
         x_vector_only_mode=False,
     )
-    if not prompt:
-        raise RuntimeError("QWEN3_TTS_OWNER_PROMPT_REQUIRED")
+    if not anchor_prompt_items:
+        raise RuntimeError("QWEN3_TTS_OWNER_ANCHOR_PROMPT_REQUIRED")
+
+    if pronunciation_prompt_audio is not None:
+        pronunciation_prompt_items=model.create_voice_clone_prompt(
+            ref_audio=str(pronunciation_prompt_audio),
+            ref_text=pronunciation_ref_text,
+            x_vector_only_mode=False,
+        )
+        if not pronunciation_prompt_items:
+            raise RuntimeError("QWEN3_TTS_PRONUNCIATION_PROMPT_REQUIRED")
+        anchor_prompt=anchor_prompt_items[0]
+        pronunciation_prompt=pronunciation_prompt_items[0]
+        prompt=[VoiceClonePromptItem(
+            ref_code=pronunciation_prompt.ref_code,
+            ref_spk_embedding=anchor_prompt.ref_spk_embedding,
+            x_vector_only_mode=False,
+            icl_mode=True,
+            ref_text=pronunciation_ref_text,
+        )]
+        print("QWEN_PROMPT_COMPONENT_AUTHORITY=ANCHOR_SPK_PLUS_PRONUNCIATION_CODE")
+    else:
+        prompt=anchor_prompt_items
+        print("QWEN_PROMPT_COMPONENT_AUTHORITY=ANCHOR_ONLY")
+    print("QWEN_REFERENCE_AUDIO_LINEAGE="+qwen_reference_audio_lineage)
     generation_t0=time.monotonic()
     wavs,sample_rate=model.generate_voice_clone(
         text=SHORT_TEXT,
@@ -649,7 +667,6 @@ def main()->int:
     print(f"OWNER_CLONE_SIMILARITY_TO_REFERENCE={identity['similarity_to_reference']}")
     print(f"OWNER_CLONE_CENTROID_MIN_SIMILARITY={identity['centroid_min_similarity']}")
     print(f"OWNER_CLONE_REFERENCE_MIN_SIMILARITY={identity['reference_min_similarity']}")
-    print("QWEN_REFERENCE_AUDIO_LINEAGE=ORIGINAL_TELEGRAM_TO_24K_DIRECT")
     identity_gate="PASS" if identity["passed"] is True else "FAIL"
     print("CLONE_IDENTITY_GATE="+identity_gate)
     print("QWEN3_TTS_IDENTITY_MATCH="+identity_gate)
@@ -738,10 +755,11 @@ def main()->int:
             "clone_mode":"TRANSCRIPT_CONDITIONED_ICL",
             "x_vector_only_mode":False,
             "ref_audio_source":"TELEGRAM_HUMAN_OWNER",
-            "ref_audio_lineage":(
-                "IDENTITY_ANCHOR_PLUS_FRESH_PRONUNCIATION"
+            "ref_audio_lineage":qwen_reference_audio_lineage,
+            "prompt_component_authority":(
+                "ANCHOR_SPK_PLUS_PRONUNCIATION_CODE"
                 if pronunciation_canonical is not None
-                else "ORIGINAL_TELEGRAM_TO_24K_DIRECT"
+                else "ANCHOR_ONLY"
             ),
             "ref_text_private_only":True,
             "generate_call_count":1,
