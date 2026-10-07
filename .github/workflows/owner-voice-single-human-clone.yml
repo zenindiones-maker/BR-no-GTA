@@ -35,7 +35,8 @@ jobs:
           python -m pytest -q \
             tests/test_owner_voice_speaker_identity_service.py \
             tests/test_owner_voice_single_clone_delivery_v1.py \
-            tests/test_owner_voice_single_clone_workflow_v1.py
+            tests/test_owner_voice_single_clone_workflow_v1.py \
+            tests/test_owner_voice_human_review_delivery_policy.py
       - name: Detect explicit single-clone request
         id: request
         run: |
@@ -121,7 +122,10 @@ jobs:
       - name: Install pinned audio identity runtime
         run: |
           set -euo pipefail
-          if ! command -v ffmpeg >/dev/null 2>&1; then sudo apt-get install -y -qq ffmpeg; fi
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v sox >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ffmpeg sox
+          fi
           python -m venv /tmp/br-owner-single-clone-venv
           PY=/tmp/br-owner-single-clone-venv/bin/python
           CONSTRAINTS=integrations/qwen3-tts/constraints.txt
