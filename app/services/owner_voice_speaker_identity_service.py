@@ -147,9 +147,16 @@ def calibrate_owner_identity_profile(
         "intra_speaker_similarity_median":round(med,6),
         "intra_speaker_similarity_p10":round(p10,6),
         "robust_mad":round(mad,6),
-        "clone_centroid_min_similarity":round(clone_centroid_min,6),
-        "clone_reference_min_similarity":round(clone_reference_min,6),
-        "reference_similarity_to_centroid":{key:round(value,6) for key,value in centroid_sims.items()},
+        "clone_centroid_min_similarity":clone_centroid_min,
+        "clone_reference_min_similarity":clone_reference_min,
+        "reference_similarity_to_centroid":dict(centroid_sims),
+        "reporting":{
+            "clone_centroid_min_similarity":round(clone_centroid_min,6),
+            "clone_reference_min_similarity":round(clone_reference_min,6),
+            "reference_similarity_to_centroid":{
+                key:round(value,6) for key,value in centroid_sims.items()
+            },
+        },
         "centroid":centroid,
         "threshold_calibration":"OWNER_INTRA_SPEAKER_P10",
     }
