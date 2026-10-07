@@ -26,7 +26,7 @@ def test_single_clone_runtime_has_real_identity_profile_and_no_placeholder_simil
     assert "create_voice_clone_prompt" in source
     assert "generate_voice_clone" in source
     assert "x_vector_only_mode=False" in source
-    assert 'language="Portuguese"' in source
+    assert 'language="Auto"' in source
     assert "TRANSCRIPT_CONDITIONED_ICL" in source
     assert 'identity_gate="PASS" if identity["passed"] is True else "FAIL"' in source
     assert 'print("CLONE_IDENTITY_GATE="+identity_gate)' in source
@@ -94,7 +94,9 @@ def test_pronunciation_calibration_requires_newer_telegram_reference_boundary():
     assert "pronunciation_after_message_id" in source
     assert "OWNER_PRONUNCIATION_REFERENCE_COUNT=" in source
     assert "OWNER_PRONUNCIATION_REFERENCE_NOT_MATERIALIZED" in source
-    assert 'int(row["telegram_message_id"])>pronunciation_after_message_id' in source
+    assert "PRONUNCIATION_REFERENCE_SCOPE=FRESH_TELEGRAM_ONLY" in source
+    assert "IDENTITY_REFERENCE_SCOPE=GLOBAL_OWNER_INLIERS" in source
+    assert "QWEN3_TTS_LANGUAGE_MODE=AUTO_CODE_SWITCH" in source
 
 
 def test_pronunciation_audition_challenges_official_gta_vi_names():
@@ -135,3 +137,11 @@ def test_owner_voice_handoff_keeps_secret_authoritative_when_dispatch_is_unavail
     assert "OWNER_REFERENCE_MATERIALIZATION_DISPATCH_FAILED" not in service
     assert "SECRET_UPDATED_DISPATCH_DEFERRED" in service
     assert 'receipt["status"]' in command
+
+
+def test_pronunciation_refs_do_not_replace_global_identity_anchor():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert "fresh_reference_ids" in source
+    assert "OWNER_PRONUNCIATION_REFERENCE_COUNT=" in source
+    assert "pronunciation_after_message_id<=0 or int(row" not in source
+    assert '"pronunciation_reference_count":len(pronunciation_refs)' in source
