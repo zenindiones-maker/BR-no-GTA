@@ -1,6 +1,6 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.10.07.1-owner-qwen-governed-code-switch",
+  "version": "2026.10.07.2-owner-br-vice-city",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "DeepSeek Harness + BR_OWNER_V1 human acoustic authority",
@@ -42,12 +42,11 @@
     {
       "identity": "vice-city",
       "term": "Vice City",
-      "locale": "en-US",
-      "strategy": "canonical-owner-acoustic",
-      "synthesis_text": "Vice City",
+      "locale": "pt-BR",
+      "strategy": "owner-brazilian-acoustic",
+      "synthesis_text": "Vice Citi",
       "critical": true,
-      "target_ipa": "vaɪs ˈsɪti",
-      "source": "Rockstar canonical spelling plus fresh BR_OWNER_V1 acoustic authority"
+      "source": "owner-explicit Brazilian pronunciation: Vice Citi; acoustic authority is fresh BR_OWNER_V1 Telegram reference"
     },
     {
       "identity": "leonida-keys",
