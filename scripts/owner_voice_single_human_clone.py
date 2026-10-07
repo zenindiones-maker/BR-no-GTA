@@ -12,7 +12,13 @@ from typing import Any
 from app.services.owner_voice_audio_quality_service import pcm16_quality_metrics
 from app.services.owner_voice_human_audition_pack_service import evaluate_short_candidate
 from app.services.owner_voice_human_review_delivery_policy_service import build_human_review_delivery_decision
-from app.services.owner_voice_private_materialization_service import materialize_telegram_owner_references
+from app.services.owner_voice_private_materialization_service import (
+    materialize_telegram_owner_references,
+    sanitize_owner_reference_index,
+)
+from app.services.owner_voice_telegram_pending_recovery_service import (
+    recover_pending_owner_voice_references,
+)
 from app.services.owner_voice_speaker_identity_service import (
     PROFILE_SCHEMA,
     SPEAKER_MODEL_ID,
@@ -66,10 +72,16 @@ def _index() -> dict[str,Any]:
     raise RuntimeError("OWNER_TELEGRAM_REFERENCE_INDEX_NOT_MATERIALIZED")
 
 
-def _pronunciation_after_message_id()->int:
+def _request_payload()->dict[str,Any]:
     if not REQUEST_PATH.is_file():
-        return 0
+        return {}
     payload=json.loads(REQUEST_PATH.read_text(encoding="utf-8"))
+    if not isinstance(payload,dict):
+        raise RuntimeError("OWNER_SINGLE_CLONE_REQUEST_INVALID")
+    return payload
+
+
+def _pronunciation_after_message_id(payload:dict[str,Any])->int:
     value=int(payload.get("pronunciation_after_message_id") or 0)
     if value<0:
         raise RuntimeError("OWNER_PRONUNCIATION_REFERENCE_BOUNDARY_INVALID")
@@ -225,7 +237,44 @@ def main()->int:
     workspace=Path(os.environ["BR_OWNER_AUDITION_WORKSPACE"]).resolve()
     cache_root=Path(os.environ.get("BR_OWNER_PUBLIC_MODEL_CACHE") or Path.home()/".cache"/"br-owner-voice"/"hf-public").resolve()
     workspace.mkdir(parents=True,exist_ok=True)
-    index=_index()
+    request_payload=_request_payload()
+    pronunciation_after_message_id=_pronunciation_after_message_id(request_payload)
+    raw_index=_index()
+    index,health=sanitize_owner_reference_index(
+        raw_index,
+        min_message_id_exclusive=pronunciation_after_message_id,
+        require_fresh=False,
+    )
+    print(f"OWNER_REFERENCE_INDEX_INVALID_LINEAGE_COUNT={health['invalid_lineage_count']}")
+    print(f"OWNER_REFERENCE_INDEX_MATERIALIZABLE_COUNT={health['materializable_reference_count']}")
+    print(f"OWNER_PRONUNCIATION_INDEX_REFERENCE_COUNT={health['fresh_reference_count']}")
+
+    if (
+        pronunciation_after_message_id>0
+        and int(health["fresh_reference_count"])<=0
+        and request_payload.get("recover_pending_telegram_updates") is True
+    ):
+        recovery=recover_pending_owner_voice_references(
+            telegram_bot_token=token,
+            reference_index=index,
+            after_message_id=pronunciation_after_message_id,
+        )
+        print(
+            "OWNER_PENDING_TELEGRAM_RECOVERED_REFERENCE_COUNT="
+            +str(int(recovery["recovered_reference_count"]))
+        )
+        index,health=sanitize_owner_reference_index(
+            recovery["merged_index"],
+            min_message_id_exclusive=pronunciation_after_message_id,
+            require_fresh=True,
+        )
+    elif pronunciation_after_message_id>0:
+        index,health=sanitize_owner_reference_index(
+            index,
+            min_message_id_exclusive=pronunciation_after_message_id,
+            require_fresh=True,
+        )
+
     materialized=materialize_telegram_owner_references(
         index,private_root=workspace/"owner-references",
         repository_root=Path.cwd().resolve(),telegram_bot_token=token,
@@ -233,7 +282,6 @@ def main()->int:
     refs=list(materialized.get("references") or [])
     if len(refs)<3:
         raise RuntimeError("OWNER_REFERENCE_COUNT_TOO_SMALL")
-    pronunciation_after_message_id=_pronunciation_after_message_id()
     pronunciation_refs=[
         row for row in refs
         if int(row["telegram_message_id"])>pronunciation_after_message_id
