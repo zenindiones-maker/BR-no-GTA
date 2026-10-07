@@ -144,7 +144,7 @@ class NarrationPipelineTests(unittest.TestCase):
         self.assertIn("Gê Tê A seis", spoken)
         self.assertIn("Take-Two", spoken)
         self.assertEqual(PRONUNCIATION_PROFILE_VERSION, "br-no-gta-ptbr-v3")
-        self.assertEqual([item["identity"] for item in applied], ["gta-6"])
+        self.assertEqual([item["identity"] for item in applied], ["gta-6", "rockstar-games"])
 
     def test_fingerprint_changes_only_when_synthesis_identity_changes(self):
         segment = deterministic_segment_script(SECTIONS, target_wpm=125)[0]
