@@ -75,8 +75,14 @@ def test_qwen_workflows_disable_implicit_huggingface_auth_and_paid_routes():
         assert 'HF_HUB_DISABLE_TELEMETRY: "1"' in source
         assert "owner_voice_zero_cost_policy_service --mode" in source
         assert "ELEVENLABS_API_KEY" not in source
+        assert "ELEVENLABS_API_KEY" not in source
         assert "HF_TOKEN: ${{ secrets." not in source
         assert "HUGGING_FACE_HUB_TOKEN: ${{ secrets." not in source
+
+
+def test_single_clone_contract_executes_zero_cost_test_in_same_pytest_command():
+    source=SINGLE_CLONE_WORKFLOW.read_text(encoding="utf-8")
+    assert "tests/test_owner_voice_single_clone_workflow_v1.py \\\n            tests/test_owner_voice_zero_cost_execution_policy.py" in source
 
 
 def test_inference_runtime_enforces_zero_cost_policy_before_materialization():
