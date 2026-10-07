@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.services.gta6_pronunciation_lexicon_service import (
     build_gta6_pronunciation_batches,
     build_gta6_pronunciation_segments,
+    canonicalize_gta6_target_transcript,
     gta6_target_evidence_score,
 )
 from app.services.owner_voice_human_audition_pack_service import evaluate_short_candidate
@@ -390,3 +391,30 @@ def test_vice_city_reference_uses_targeted_second_pass_asr_before_failing():
     assert "OWNER_VICE_CITY_TARGETED_ASR_EVIDENCE_SCORE=" in source
     assert "targeted_vice_city" in source
 
+
+
+def test_owner_asserted_vice_city_reference_can_survive_imperfect_asr_without_relaxing_auto_gate():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert "owner_asserted_pronunciation_targets" in source
+    assert "OWNER_ASSERTED_PRONUNCIATION_TARGETS=" in source
+    assert "OWNER_VICE_CITY_REFERENCE_AUTHORITY=OWNER_ASSERTED_FRESH_SAMPLE" in source
+    assert "VICE_CITY_REFERENCE_EVIDENCE_MIN" in source
+    assert "VICE_CITY_OWNER_ASSERTED_EVIDENCE_FLOOR" in source
+    assert "canonicalize_gta6_target_transcript" in source
+
+
+def test_owner_asserted_transcript_canonicalization_repairs_only_target_window():
+    repaired=canonicalize_gta6_target_transcript(
+        "agora vamos para vici city no jogo",
+        "Vice City",
+    )
+    assert repaired=="agora vamos para Vice City no jogo"
+
+
+def test_owner_asserted_transcript_canonicalization_does_not_invent_target_without_evidence():
+    repaired=canonicalize_gta6_target_transcript(
+        "agora vamos falar de rockstar games",
+        "Vice City",
+        minimum_score=0.45,
+    )
+    assert repaired=="agora vamos falar de rockstar games"
