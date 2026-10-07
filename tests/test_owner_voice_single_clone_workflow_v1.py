@@ -580,3 +580,15 @@ def test_clone_runtime_uses_language_aware_segment_transcript_qa():
     assert "evaluate_segment_transcript_qa" in source
     assert "segment_transcript_qa=evaluate_segment_transcript_qa(" in source
     assert 'segment_pass=bool(segment_transcript_qa["passed"])' in source
+
+def test_control_only_reconciliation_exits_before_reference_or_model_materialization():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    delivery=DELIVERY.read_text(encoding="utf-8")
+    assert "OwnerVoiceSingleCloneControlReconciliation/v1" in source
+    assert "CONTROL_ONLY_KNOWN_PRE_SIDE_EFFECT_FAILURE" in source
+    assert "SINGLE_CLONE_CONTROL_RECONCILIATION_ONLY=TRUE" in source
+    assert source.index("SINGLE_CLONE_CONTROL_RECONCILIATION_ONLY=TRUE") < source.index("raw_index=_index()")
+    assert "reopen_known_pre_side_effect_control_failure" in delivery
+    assert "CONTROL_RECONCILIATION=PASS" in delivery
+    assert "clone_path=""" in delivery
+
