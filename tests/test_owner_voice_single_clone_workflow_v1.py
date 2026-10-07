@@ -189,3 +189,22 @@ def test_pronunciation_prompt_can_use_all_fresh_verified_clips():
     assert "pronunciation_selected=[]" in source
     assert "pronunciation_reference_telegram_input_ids" in source
     assert "OWNER_PRONUNCIATION_PROMPT_REFERENCE_COUNT=" in source
+
+
+def test_pronunciation_asr_uses_multihypothesis_language_search():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert 'PRONUNCIATION_ASR_LANGUAGES=(None,"en","pt","es")' in source
+    assert "def _best_pronunciation_asr_hypothesis(" in source
+    assert "for forced_language in PRONUNCIATION_ASR_LANGUAGES" in source
+    assert '"lexicon_hits":gta6_lexicon_hits(transcript)' in source
+    assert "OWNER_PRONUNCIATION_ASR_LANGUAGE=" in source
+
+
+def test_fresh_pronunciation_evidence_is_not_blocked_by_identity_inlier_filter():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert "pronunciation_source_rows=[]" in source
+    assert "if rid in fresh_reference_ids:" in source
+    assert "pronunciation_source_rows.append(" in source
+    pronunciation_block=source.split("pronunciation_pre_asr=[",1)[1].split("]",1)[0]
+    assert "inlier_ids" not in pronunciation_block
+    assert "clone_centroid_min_similarity" not in pronunciation_block
