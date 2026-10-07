@@ -1,3 +1,4 @@
+from app.services.gta6_pronunciation_lexicon_service import build_gta6_pronunciation_segments
 from __future__ import annotations
 
 from pathlib import Path
@@ -241,3 +242,11 @@ def test_final_gta_pronunciation_generation_uses_explicit_multilingual_segments(
     assert "language=segment_languages" in source
     assert 'language="Auto"' not in source.split("generation_t0=",1)[1]
     assert "Gê Tê A seis" in Path("app/services/gta6_pronunciation_lexicon_service.py").read_text(encoding="utf-8")
+
+
+def test_explicit_gta_segmenter_runtime_contract():
+    segments=build_gta6_pronunciation_segments("GTA 6, Vice City, Rockstar Games.")
+    assert any(row["spoken_text"]=="Gê Tê A seis" and row["language"]=="Portuguese" for row in segments)
+    assert any(row["spoken_text"]=="Vice City" and row["language"]=="English" for row in segments)
+    assert any(row["spoken_text"]=="Rockstar Games" and row["language"]=="English" for row in segments)
+    assert all(row["language"]!="Auto" for row in segments)
