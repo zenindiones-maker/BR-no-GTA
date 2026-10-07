@@ -61,3 +61,35 @@ def test_training_workflow_is_request_gated_private_gpu_and_pinned_ms_swift():
     assert "--learning_rate 2e-6" in source
     assert "runtime_activation=false" in source
     assert "actions/upload-artifact" not in source
+
+
+PREPARE=Path("scripts/owner_voice_qwen3_tts_ms_swift_prepare_data.py")
+PATCHER=Path("scripts/owner_voice_ms_swift_qwen3_tts_patch.py")
+EVALUATE=Path("scripts/owner_voice_qwen3_tts_finetune_evaluate.py")
+
+
+def test_professional_ms_swift_path_closes_known_training_gaps():
+    cfg=json.loads(CONFIG.read_text(encoding="utf-8"))
+    assert cfg["model_revision"]=="fd4b254389122332181a7c3db7f27e918eec64e3"
+    assert cfg["tokenizer_revision"]=="a87c50897bb00837eb857d0538b29d117541d7f6"
+    assert cfg["trainer_contract"]["target_epochs"]==3
+    assert cfg["trainer_contract"]["checkpoint_identity_evaluation"] is True
+    assert cfg["trainer_contract"]["remove_ar_future_subcodebook_leak"] is True
+    patch=PATCHER.read_text(encoding="utf-8")
+    assert "AR_FUTURE_CODEC_LEAK=REMOVED" in patch
+    assert "6f62bd4b3032197dce934b4eba1bb65463b29918" in patch
+
+
+def test_audio_codes_are_precomputed_with_exact_private_dataset_paths():
+    source=PREPARE.read_text(encoding="utf-8")
+    assert 'row.get("audios")' in source
+    assert 'row.get("ref_audios")' in source
+    assert 'item["audio_codes"]' in source
+
+
+def test_checkpoint_selection_is_identity_and_content_gated_before_telegram():
+    source=EVALUATE.read_text(encoding="utf-8")
+    assert "evaluate_clone_identity_gate" in source
+    assert "OWNER_FINETUNE_NO_QUALIFIED_CHECKPOINT" in source
+    assert '"content_audio_prescreen":"PASS"' in source
+    assert '"runtime_activation":False' in source

@@ -34,6 +34,12 @@
     "speaker_encoder_frozen": true,
     "full_parameter_sft": true,
     "learning_rate": 0.000002,
-    "target_epochs": 10
-  }
+    "target_epochs": 3,
+    "checkpoint_identity_evaluation": true,
+    "remove_ar_future_subcodebook_leak": true,
+    "runtime_activation_without_human_review": false
+  },
+  "model_revision": "fd4b254389122332181a7c3db7f27e918eec64e3",
+  "tokenizer_id": "Qwen/Qwen3-TTS-Tokenizer-12Hz",
+  "tokenizer_revision": "a87c50897bb00837eb857d0538b29d117541d7f6"
 }

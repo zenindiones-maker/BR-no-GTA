@@ -9,6 +9,9 @@ on:
       - ".github/workflows/owner-voice-qwen3-tts-finetune.yml"
       - "config/owner_voice_qwen3_tts_finetune_v1.json"
       - "scripts/owner_voice_qwen3_tts_finetune_dataset.py"
+      - "scripts/owner_voice_qwen3_tts_ms_swift_prepare_data.py"
+      - "scripts/owner_voice_ms_swift_qwen3_tts_patch.py"
+      - "scripts/owner_voice_qwen3_tts_finetune_evaluate.py"
       - "tests/test_owner_voice_qwen3_tts_finetune_contract.py"
       - ".run/br-owner-v1-qwen3-tts-finetune.request.json"
 
@@ -36,7 +39,7 @@ jobs:
           set -euo pipefail
           if [ -f .run/br-owner-v1-qwen3-tts-finetune.request.json ]; then
             python - <<'PY'
-          import json
+          import json,os
           from pathlib import Path
           row=json.loads(Path(".run/br-owner-v1-qwen3-tts-finetune.request.json").read_text())
           assert row["schema_version"]=="OwnerVoiceQwen3TTSFineTuneRequest/v1"
@@ -44,8 +47,10 @@ jobs:
           assert row["reference_source"]=="TELEGRAM_HUMAN_OWNER"
           assert row["model_id"]=="Qwen/Qwen3-TTS-12Hz-1.7B-Base"
           assert row["runtime_activation"] is False
+          requested=row.get("requested") is True
+          with open(os.environ["GITHUB_OUTPUT"],"a",encoding="utf-8") as stream:
+              stream.write("requested="+("true" if requested else "false")+"\n")
           PY
-            echo "requested=true" >> "$GITHUB_OUTPUT"
           else
             echo "requested=false" >> "$GITHUB_OUTPUT"
           fi
@@ -58,6 +63,7 @@ jobs:
           assert row["schema_version"]=="OwnerVoiceQwen3TTSFineTunePolicy/v2"
           assert row["trainer_engine"]=="modelscope/ms-swift"
           assert row["trainer_commit"]=="6f62bd4b3032197dce934b4eba1bb65463b29918"
+          assert row["trainer_contract"]["checkpoint_identity_evaluation"] is True
           assert row["runtime_activation_after_training"] is False
           assert row["zero_shot_boundary"]["status"]=="BLOCKED_AFTER_CALIBRATED_IDENTITY_FAIL"
           print("OWNER_QWEN3_TTS_FINETUNE_CONTRACT=PASS")
@@ -75,22 +81,27 @@ jobs:
       BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64 }}
       BR_OWNER_TELEGRAM_REFERENCE_INDEX: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_INDEX }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      BR_OWNER_AUDITION_LEDGER_REPOSITORY: zenindiones-maker/BR-no-GTA-audition-ledger
+      BR_OWNER_AUDITION_AUTHORITY_REF: owner-explicit:BR_OWNER_V1_FINE_TUNE
       BR_OWNER_STT_MODEL: large-v3-turbo
       OMP_NUM_THREADS: "4"
       MKL_NUM_THREADS: "4"
+      TOKENIZERS_PARALLELISM: "false"
       SPEAKER_NAME: BR_OWNER_V1
-      TTS_TOKENIZER_PATH: Qwen/Qwen3-TTS-Tokenizer-12Hz
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
 
-      - name: GPU and zero-fallback preflight
+      - name: GPU and authority preflight
+        env:
+          BR_OWNER_AUDITION_LEDGER_SSH_KEY: ${{ secrets.BR_OWNER_AUDITION_LEDGER_SSH_KEY }}
         run: |
           set -euo pipefail
           nvidia-smi
           test -n "${BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64:-}${BR_OWNER_TELEGRAM_REFERENCE_INDEX:-}"
           test -n "${TELEGRAM_BOT_TOKEN:-}"
+          test -n "${BR_OWNER_AUDITION_LEDGER_SSH_KEY:-}"
           echo "SOLE_AUTHORIZED_IDENTITY=BR_OWNER_V1"
           echo "OWNER_REFERENCE_SOURCE=TELEGRAM_HUMAN_OWNER"
           echo "GENERIC_VOICE_FALLBACK=FORBIDDEN"
@@ -108,22 +119,61 @@ jobs:
             echo "BR_OWNER_FINETUNE_PRIVATE_WORKSPACE=$PRIVATE"
             echo "BR_OWNER_PUBLIC_MODEL_CACHE=$PUBLIC_CACHE"
             echo "BR_OWNER_FINETUNE_MODEL_CANDIDATE=$MODEL_CANDIDATE"
+            echo "HF_HOME=$PUBLIC_CACHE/huggingface"
           } >> "$GITHUB_ENV"
 
-      - name: Install pinned Qwen and ms-swift trainer
+      - name: Install exact governed ms-swift and Qwen runtime
         run: |
           set -euo pipefail
           python3 -m venv "$BR_OWNER_FINETUNE_PRIVATE_WORKSPACE/venv"
           PY="$BR_OWNER_FINETUNE_PRIVATE_WORKSPACE/venv/bin/python"
+          SWIFT_ROOT="$BR_OWNER_FINETUNE_PRIVATE_WORKSPACE/ms-swift"
+          git clone --filter=blob:none https://github.com/modelscope/ms-swift.git "$SWIFT_ROOT"
+          git -C "$SWIFT_ROOT" checkout --detach 6f62bd4b3032197dce934b4eba1bb65463b29918
+          test "$(git -C "$SWIFT_ROOT" rev-parse HEAD)" = "6f62bd4b3032197dce934b4eba1bb65463b29918"
+          "$PY" scripts/owner_voice_ms_swift_qwen3_tts_patch.py "$SWIFT_ROOT"
           "$PY" -m pip install --disable-pip-version-check --upgrade pip
           "$PY" -m pip install --disable-pip-version-check --prefer-binary             "qwen-tts==0.1.1" "transformers<5"             "faster-whisper==1.2.0" "av==18.0.0"             "speechbrain==1.1.1" soundfile requests huggingface_hub
-          "$PY" -m pip install --disable-pip-version-check             "git+https://github.com/modelscope/ms-swift.git@6f62bd4b3032197dce934b4eba1bb65463b29918"
+          "$PY" -m pip install --disable-pip-version-check -e "$SWIFT_ROOT"
           "$PY" -m pip check
-          "$PY" - <<'PY'
-          import importlib.metadata as md
-          assert md.version("qwen-tts")=="0.1.1"
-          print("QWEN3_TTS_RUNTIME=PINNED")
-          print("MS_SWIFT_COMMIT=6f62bd4b3032197dce934b4eba1bb65463b29918")
+          echo "BR_OWNER_MS_SWIFT_ROOT=$SWIFT_ROOT" >> "$GITHUB_ENV"
+
+      - name: Materialize exact Qwen base and tokenizer
+        run: |
+          set -euo pipefail
+          PY="$BR_OWNER_FINETUNE_PRIVATE_WORKSPACE/venv/bin/python"
+          MODEL_PATH="$("$PY" - <<'PY'
+          import os
+          from pathlib import Path
+          from scripts.owner_voice_single_human_clone import _prepare_qwen_model
+          print(_prepare_qwen_model(Path(os.environ["BR_OWNER_PUBLIC_MODEL_CACHE"])/"qwen3-tts"))
+          PY
+          )"
+          TOKENIZER_PATH="$("$PY" - <<'PY'
+          import os
+          from huggingface_hub import snapshot_download
+          print(snapshot_download(
+              repo_id="Qwen/Qwen3-TTS-Tokenizer-12Hz",
+              revision="a87c50897bb00837eb857d0538b29d117541d7f6",
+              cache_dir=os.path.join(os.environ["BR_OWNER_PUBLIC_MODEL_CACHE"],"huggingface"),
+          ))
+          PY
+          )"
+          {
+            echo "BR_OWNER_QWEN_BASE_MODEL=$MODEL_PATH"
+            echo "BR_OWNER_QWEN_TOKENIZER=$TOKENIZER_PATH"
+            echo "tts_tokenizer_path=$TOKENIZER_PATH"
+          } >> "$GITHUB_ENV"
+
+      - name: Prove CUDA runtime
+        run: |
+          set -euo pipefail
+          "$BR_OWNER_FINETUNE_PRIVATE_WORKSPACE/venv/bin/python" - <<'PY'
+          import torch
+          if not torch.cuda.is_available():
+              raise SystemExit("OWNER_FINE_TUNE_CUDA_REQUIRED")
+          print("OWNER_FINE_TUNE_GPU="+torch.cuda.get_device_name(0))
+          print("OWNER_FINE_TUNE_BF16="+str(torch.cuda.is_bf16_supported()).upper())
           PY
 
       - name: Build private owner-only training dataset
@@ -133,23 +183,52 @@ jobs:
         run: |
           set -euo pipefail
           "$BR_OWNER_FINETUNE_PRIVATE_WORKSPACE/venv/bin/python"             scripts/owner_voice_qwen3_tts_finetune_dataset.py
+          {
+            echo "BR_OWNER_FINETUNE_IDENTITY_PROFILE_PRIVATE=${{ steps.dataset.outputs.identity_profile_private }}"
+            echo "BR_OWNER_FINETUNE_DATASET_MANIFEST=${{ steps.dataset.outputs.dataset_manifest }}"
+          } >> "$GITHUB_ENV"
 
-      - name: Fine-tune BR_OWNER_V1 with pinned ms-swift
-        env:
-          HF_HOME: ${{ env.BR_OWNER_PUBLIC_MODEL_CACHE }}/huggingface
+      - name: Precompute exact 12Hz audio codes on GPU
+        id: codes
         run: |
           set -euo pipefail
-          SWIFT="$BR_OWNER_FINETUNE_PRIVATE_WORKSPACE/venv/bin/swift"
-          "$SWIFT" sft             --model Qwen/Qwen3-TTS-12Hz-1.7B-Base             --dataset "${{ steps.dataset.outputs.train_swift_jsonl }}"             --split_dataset_ratio 0.10             --load_from_cache_file false             --tuner_type full             --torch_dtype bfloat16             --num_train_epochs 10             --per_device_train_batch_size 1             --per_device_eval_batch_size 1             --learning_rate 2e-6             --gradient_accumulation_steps 4             --gradient_checkpointing true             --save_steps 5             --save_total_limit 10             --logging_steps 1             --max_length 4096             --output_dir "$BR_OWNER_FINETUNE_MODEL_CANDIDATE"             --warmup_ratio 0.05             --dataset_num_proc 1             --dataloader_num_workers 0             --report_to none
-          echo "OWNER_QWEN3_TTS_FINETUNE=PASS"
-          echo "TRAINER_ENGINE=MS_SWIFT"
-          echo "runtime_activation=false"
-          echo "HUMAN_REVIEW=PENDING"
+          OUT="$BR_OWNER_FINETUNE_PRIVATE_WORKSPACE/ms_swift_train_with_codes.jsonl"
+          "$BR_OWNER_FINETUNE_PRIVATE_WORKSPACE/venv/bin/python"             scripts/owner_voice_qwen3_tts_ms_swift_prepare_data.py             --tokenizer-model-path "$BR_OWNER_QWEN_TOKENIZER"             --input-jsonl "${{ steps.dataset.outputs.train_swift_jsonl }}"             --output-jsonl "$OUT"             --device cuda:0
+          echo "prepared_dataset=$OUT" >> "$GITHUB_OUTPUT"
 
-      - name: Preserve private candidate and remove transient biometrics
+      - name: Fine-tune BR_OWNER_V1 with governed ms-swift
+        run: |
+          set -euo pipefail
+          export CUDA_VISIBLE_DEVICES=0
+          export NPROC_PER_NODE=1
+          "$BR_OWNER_FINETUNE_PRIVATE_WORKSPACE/venv/bin/swift" sft             --model "$BR_OWNER_QWEN_BASE_MODEL"             --check_model false             --dataset "${{ steps.codes.outputs.prepared_dataset }}"             --split_dataset_ratio 0             --load_from_cache_file false             --tuner_type full             --torch_dtype bfloat16             --num_train_epochs 3             --per_device_train_batch_size 1             --learning_rate 2e-6             --gradient_accumulation_steps 4             --gradient_checkpointing true             --save_strategy epoch             --save_total_limit 3             --logging_steps 1             --max_length 4096             --output_dir "$BR_OWNER_FINETUNE_MODEL_CANDIDATE"             --warmup_ratio 0.05             --dataset_num_proc 1             --dataloader_num_workers 0             --attn_impl sdpa             --report_to none
+          echo "OWNER_QWEN3_TTS_FINETUNE_TRAINING=PASS"
+          echo "runtime_activation=false"
+
+      - name: Evaluate every checkpoint against owner identity and content
+        id: evaluate
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          "$BR_OWNER_FINETUNE_PRIVATE_WORKSPACE/venv/bin/python"             scripts/owner_voice_qwen3_tts_finetune_evaluate.py
+
+      - name: Deliver one fine-tuned proof only after automatic PASS
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          BR_OWNER_AUDITION_LEDGER_SSH_KEY: ${{ secrets.BR_OWNER_AUDITION_LEDGER_SSH_KEY }}
+          BR_OWNER_SINGLE_CLONE_MANIFEST_PATH: ${{ steps.evaluate.outputs.manifest_path }}
+        run: |
+          set -euo pipefail
+          "$BR_OWNER_FINETUNE_PRIVATE_WORKSPACE/venv/bin/python"             scripts/owner_voice_single_clone_delivery.py
+          echo "HUMAN_REVIEW=PENDING"
+          echo "runtime_activation=false"
+
+      - name: Remove transient biometrics while preserving private model candidate
         if: ${{ always() }}
         run: |
           set -euo pipefail
           rm -rf             "$BR_OWNER_FINETUNE_PRIVATE_WORKSPACE/owner-references"             "$BR_OWNER_FINETUNE_PRIVATE_WORKSPACE/identity-16k"             "$BR_OWNER_FINETUNE_PRIVATE_WORKSPACE/dataset/audio"
           echo "PUBLIC_OWNER_AUDIO_ARTIFACTS=0"
           echo "PUBLIC_FINETUNE_MODEL_ARTIFACTS=0"
+          echo "RUNTIME_ACTIVATION=BLOCKED_PENDING_HUMAN_REVIEW"

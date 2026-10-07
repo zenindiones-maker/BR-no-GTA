@@ -143,14 +143,31 @@ def main()->int:
         for row in swift_rows:
             stream.write(json.dumps(row,ensure_ascii=False,separators=(",",":"))+"\n")
 
+    identity_private=root/"identity-profile.private.json"
+    identity_private.write_text(
+        json.dumps({
+            "profile":profile,
+            "canonical_embedding":embeddings[canonical_id],
+            "canonical_reference_telegram_input_id":int(canonical["telegram_input_id"]),
+            "canonical_reference_sha256":str(canonical["sha256"]),
+        },separators=(",",":"))+"\n",
+        encoding="utf-8",
+    )
+    source_row=next(
+        row for row in index["references"]
+        if int(row["telegram_input_id"])==int(canonical["telegram_input_id"])
+    )
+
     manifest={
-        "schema_version":"OwnerVoiceQwen3TTSFineTuneDataset/v1",
+        "schema_version":"OwnerVoiceQwen3TTSFineTuneDataset/v2",
         "voice_identity_id":VOICE_IDENTITY_ID,
         "reference_source":REFERENCE_SOURCE,
         "sample_count":len(rows),
         "total_seconds":round(total_seconds,3),
         "canonical_reference_telegram_input_id":int(canonical["telegram_input_id"]),
         "canonical_reference_sha256":str(canonical["sha256"]),
+        "canonical_reference_source_message_id":int(source_row["telegram_message_id"]),
+        "telegram_chat_id":int(source_row["telegram_chat_id"]),
         "same_ref_audio_for_all_samples":True,
         "reference_audio_lineage":"ORIGINAL_TELEGRAM_TO_24K_DIRECT",
         "training_audio_lineage":"ORIGINAL_TELEGRAM_TO_24K_DIRECT",
@@ -167,6 +184,8 @@ def main()->int:
             stream.write(f"train_raw_jsonl={train_raw}\n")
             stream.write(f"train_swift_jsonl={train_swift}\n")
             stream.write(f"dataset_manifest={manifest_path}\n")
+            stream.write(f"identity_profile_private={identity_private}\n")
+            stream.write(f"canonical_reference_24k={canonical24}\n")
             stream.write(f"sample_count={len(rows)}\n")
             stream.write(f"total_seconds={total_seconds:.3f}\n")
     print(f"OWNER_FINETUNE_REFERENCE_ASR_COUNT={asr_count}")
