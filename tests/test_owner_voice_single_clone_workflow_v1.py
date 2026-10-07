@@ -377,3 +377,16 @@ def test_vice_city_prompt_selection_uses_fuzzy_asr_evidence_without_respelled_tt
     assert "VICE_CITY_ASR_EVIDENCE_ALIASES" in lexicon
     assert '{"canonical_text":"Vice City","spoken_text":"Vice City","language":"English"}' not in lexicon
     assert '"spoken_text":term,"language":"English"' in lexicon
+
+def test_vice_city_reference_uses_targeted_second_pass_asr_before_failing():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert "def _targeted_vice_city_asr_hypothesis(" in source
+    helper=source.split("def _targeted_vice_city_asr_hypothesis(",1)[1].split("\ndef ",1)[0]
+    assert 'language="en"' in helper
+    assert "initial_prompt=VICE_CITY_TERM" in helper
+    assert "hotwords=VICE_CITY_TERM" in helper
+    assert "beam_size=5" in helper
+    assert "condition_on_previous_text=False" in helper
+    assert "OWNER_VICE_CITY_TARGETED_ASR_EVIDENCE_SCORE=" in source
+    assert "targeted_vice_city" in source
+
