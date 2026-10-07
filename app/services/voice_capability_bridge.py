@@ -103,7 +103,7 @@ def voice_capability_records() -> tuple[CapabilityRecord, ...]:
             executor_binding="app.services.voice_capability_bridge.execute_narration_voice_capability",
             cost_class="SELF_HOSTED_COMPUTE",
             health_policy="VOICE_RUNTIME_AND_IDENTITY_REQUIRED",
-            policy_tags=("narration", "qwen3-tts", "chatterbox", "voice-clone", "long-form"),
+            policy_tags=("narration", "qwen3-tts", "voice-clone", "long-form"),
         ),
         _record(
             capability_id="voice.clone.pt-BR",
@@ -114,7 +114,7 @@ def voice_capability_records() -> tuple[CapabilityRecord, ...]:
             executor_binding="app.services.voice_capability_bridge.execute_owner_voice_clone_capability",
             cost_class="SELF_HOSTED_COMPUTE",
             health_policy="VOICE_RUNTIME_AND_IDENTITY_REQUIRED",
-            policy_tags=("voice-clone", "owner-reference", "telegram", "pt-br", "chatterbox"),
+            policy_tags=("voice-clone", "owner-reference", "telegram", "pt-br", "qwen3-tts"),
         ),
     )
 
