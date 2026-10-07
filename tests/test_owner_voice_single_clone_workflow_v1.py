@@ -271,7 +271,7 @@ def test_final_gta_pronunciation_generation_uses_explicit_multilingual_segments(
 def test_explicit_gta_segmenter_runtime_contract():
     segments=build_gta6_pronunciation_segments("GTA 6, Vice City, Rockstar Games.")
     assert any(row["spoken_text"]=="Gê Tê A seis" and row["language"]=="Portuguese" for row in segments)
-    assert any(row["spoken_text"]=="Vice City" and row["language"]=="English" for row in segments)
+    assert any(row["spoken_text"]=="Vice Citi" and row["language"]=="Portuguese" for row in segments)
     assert any(row["spoken_text"]=="Rockstar Games" and row["language"]=="English" for row in segments)
     assert all(row["language"]!="Auto" for row in segments)
 
@@ -284,10 +284,12 @@ def test_gta_pronunciation_batches_coalesce_adjacent_english_targets_for_cpu():
         "Real Dimez, Raul Bautista e Brian Heder."
     )
     batches=build_gta6_pronunciation_batches(proof)
-    assert len(batches)<=5
+    assert len(batches)<=7
     assert any(row["spoken_text"]=="Gê Tê A seis" and row["language"]=="Portuguese" for row in batches)
     english=" ".join(str(row["spoken_text"]) for row in batches if row["language"]=="English")
-    for term in ("Rockstar Games","Vice City","Leonida","Port Gellhorn","Jason Duval","Lucia Caminos","Brian Heder"):
+    portuguese=" ".join(str(row["spoken_text"]) for row in batches if row["language"]=="Portuguese")
+    assert "Vice Citi" in portuguese
+    for term in ("Rockstar Games","Leonida","Port Gellhorn","Jason Duval","Lucia Caminos","Brian Heder"):
         assert term in english
 
 
@@ -492,8 +494,8 @@ def test_production_pronunciation_uses_governed_qwen_code_switch_not_portuguese_
     }
     assert by_id["gta-6"].locale=="pt-BR"
     assert by_id["gta-6"].synthesis_text=="Gê Tê A seis"
-    assert by_id["vice-city"].locale=="en-US"
-    assert by_id["vice-city"].synthesis_text=="Vice City"
+    assert by_id["vice-city"].locale=="pt-BR"
+    assert by_id["vice-city"].synthesis_text=="Vice Citi"
     assert by_id["lucia-caminos"].locale=="en-US"
     assert by_id["lucia-caminos"].synthesis_text=="Lucia Caminos"
     assert by_id["jason-duval"].locale=="en-US"
@@ -592,3 +594,17 @@ def test_control_only_reconciliation_exits_before_reference_or_model_materializa
     assert "CONTROL_RECONCILIATION=PASS" in delivery
     assert "clone_path=""" in delivery
 
+
+
+def test_vice_city_brazilian_owner_pronunciation_overrides_english_language_routing():
+    segments=build_gta6_pronunciation_segments("Vice City")
+    assert segments==({
+        "canonical_text":"Vice City",
+        "spoken_text":"Vice Citi",
+        "language":"Portuguese",
+        "is_pronunciation_target":True,
+    },)
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    routing=source.split("segment_prompts=[]",1)[1].split("generation_t0=",1)[0]
+    assert 'if VICE_CITY_TERM in str(row["canonical_text"]):' in routing
+    assert routing.index('if VICE_CITY_TERM in str(row["canonical_text"]):') < routing.index('if language=="Portuguese":')
