@@ -10,6 +10,7 @@ from app.services.owner_voice_single_clone_delivery_service import (
     RECONCILIATION_REQUIRED,
     SingleCloneDeliveryLedger,
     deliver_single_clone_durable,
+    review_token_for_clone,
 )
 
 CONTROL_TEXT=(
@@ -47,10 +48,12 @@ class TelegramSingleCloneApi:
         *,
         identity_gate:str,
         content_audio_prescreen:str,
+        review_token:str,
     )->None:
         self.token=str(token)
         self.identity_gate=str(identity_gate)
         self.content_audio_prescreen=str(content_audio_prescreen)
+        self.review_token=str(review_token).strip().lower()
         self.caption=(
             "BR_OWNER_V1 — prova única | "
             f"identity={self.identity_gate} | "
@@ -91,10 +94,35 @@ class TelegramSingleCloneApi:
         return int(result["message_id"])
 
     def send_control(self,*,chat_id:int,protect_content:bool)->int:
+        reply_markup={
+            "inline_keyboard":[
+                [
+                    {
+                        "text":"✅ Aprovar voz",
+                        "callback_data":f"ov2:approve:{self.review_token}",
+                    }
+                ],
+                [
+                    {
+                        "text":"❌ Reprovar identidade",
+                        "callback_data":f"ov2:reject_identity:{self.review_token}",
+                    },
+                    {
+                        "text":"🗣️ Reprovar pronúncia",
+                        "callback_data":f"ov2:reject_pronunciation:{self.review_token}",
+                    },
+                ],
+            ]
+        }
         result=_telegram_post(self.token,"sendMessage",data={
             "chat_id":str(chat_id),
             "text":self.control_text,
             "protect_content":"true" if protect_content else "false",
+            "reply_markup":json.dumps(
+                reply_markup,
+                ensure_ascii=False,
+                separators=(",",":"),
+            ),
         })
         return int(result["message_id"])
 
@@ -133,7 +161,9 @@ def main()->int:
     manifest=_load_manifest(Path(manifest_env).resolve())
     workspace=Path(os.environ["BR_OWNER_AUDITION_WORKSPACE"]).resolve()
     store=store_from_environment(repo_root=Path.cwd(),workspace=workspace)
-    ledger=SingleCloneDeliveryLedger(store=store,clone_id=str(manifest["clone_id"]))
+    clone_id=str(manifest["clone_id"])
+    review_token=review_token_for_clone(clone_id)
+    ledger=SingleCloneDeliveryLedger(store=store,clone_id=clone_id)
     ledger.create(
         telegram_chat_id=int(manifest["telegram_chat_id"]),
         reference_source_message_id=int(
@@ -146,11 +176,25 @@ def main()->int:
         content_audio_prescreen=str(manifest["content_audio_prescreen"]),
         human_review=str(manifest["human_review"]),
         runtime_activation=bool(manifest["runtime_activation"]),
+        review_token=review_token,
+        identity_anchor_telegram_input_id=int(
+            manifest["identity_anchor_telegram_input_id"]
+        ),
+        pronunciation_reference_telegram_input_ids=[
+            int(value)
+            for value in manifest.get("pronunciation_reference_telegram_input_ids",[])
+        ],
+        vice_city_reference_telegram_input_id=(
+            int(manifest["vice_city_reference_telegram_input_id"])
+            if manifest.get("vice_city_reference_telegram_input_id") is not None
+            else None
+        ),
     )
     api=TelegramSingleCloneApi(
         token,
         identity_gate=str(manifest["clone_identity_gate"]),
         content_audio_prescreen=str(manifest["content_audio_prescreen"]),
+        review_token=review_token,
     )
     result=deliver_single_clone_durable(
         api,ledger=ledger,clone_path=str(manifest["clone_path"])
@@ -167,6 +211,8 @@ def main()->int:
     print(f"REFERENCE_TELEGRAM_MESSAGE_ID={ids['reference']}")
     print(f"CLONE_TELEGRAM_MESSAGE_ID={ids['clone']}")
     print(f"CONTROL_TELEGRAM_MESSAGE_ID={ids['control']}")
+    print(f"OWNER_VOICE_REVIEW_TOKEN={review_token}")
+    print("OWNER_VOICE_REVIEW_UI=INLINE_SINGLE_CLONE_V2")
     print("SINGLE_CLONE_DELIVERED_TO_TELEGRAM=PASS")
     print("HUMAN_REVIEW=PENDING")
     print("BR_OWNER_V1_RUNTIME_ACTIVATION=BLOCKED_PENDING_HUMAN_REVIEW")
