@@ -666,8 +666,8 @@ def main()->int:
         ))
         vice_city_selected=next(
             (
-                item for item in pronunciation_selected
-                if VICE_CITY_TERM in item[0]["pronunciation_hits"]
+                (row,text) for row,text in pronunciation_selected
+                if VICE_CITY_TERM in row["pronunciation_hits"]
             ),
             None,
         )
@@ -840,7 +840,8 @@ def main()->int:
             ref_text=vice_ref_text,
         )
         print("OWNER_VICE_CITY_REFERENCE_TELEGRAM_INPUT_ID="+str(vice_input_id))
-        print("QWEN_PROMPT_COMPONENT_AUTHORITY=ANCHOR_SPK_PLUS_TARGETED_PRONUNCIATION_CODE")
+        print("QWEN_PROMPT_COMPONENT_AUTHORITY=ANCHOR_SPK_PLUS_PRONUNCIATION_CODE")
+        print("QWEN_TARGETED_PROMPT_AUTHORITY=VICE_CITY_FRESH_OWNER_REFERENCE")
     else:
         print("QWEN_PROMPT_COMPONENT_AUTHORITY=ANCHOR_ONLY")
     print("QWEN_REFERENCE_AUDIO_LINEAGE="+qwen_reference_audio_lineage)
