@@ -29,5 +29,8 @@
   "public_model_download_only": true,
   "inference_cpu_allowed": true,
   "fine_tune_cpu_allowed": false,
-  "fine_tune_requires_zero_cost_gpu": true
+  "fine_tune_requires_zero_cost_gpu": true,
+  "external_tts_api_allowed": false,
+  "commercial_voice_account_required": false,
+  "source_transport_auth_scope": "TELEGRAM_HUMAN_OWNER_INGRESS_ONLY"
 }
