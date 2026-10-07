@@ -162,3 +162,10 @@ def test_pronunciation_asr_uses_official_name_hotwords():
     assert "hotwords=PRONUNCIATION_HOTWORDS" in source
     for term in ("Vice City","Jason Duval","Lucia Caminos","Cal Hampton","Boobie Ike","Dre'Quan Priest","Real Dimez","Raul Bautista","Brian Heder"):
         assert term in source
+
+
+def test_canonical_identity_decision_has_single_calibrated_authority():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert 'canonical_similarity=float(profile["reference_similarity_to_centroid"][cid])' in source
+    assert "CANONICAL_REFERENCE_SIMILARITY_RECOMPUTE_DRIFT" in source
+    assert "math.isclose(" in source
