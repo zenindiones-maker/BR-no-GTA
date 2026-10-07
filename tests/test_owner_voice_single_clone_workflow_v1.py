@@ -240,7 +240,7 @@ def test_pronunciation_audition_covers_full_official_gta_vi_target_set():
 
 def test_final_gta_pronunciation_generation_uses_explicit_multilingual_segments():
     source=ORCHESTRATOR.read_text(encoding="utf-8")
-    assert "build_gta6_pronunciation_segments" in source
+    assert "build_gta6_pronunciation_batches" in source
     assert "segment_texts=" in source
     assert "segment_languages=" in source
     assert "language=segment_languages" in source
