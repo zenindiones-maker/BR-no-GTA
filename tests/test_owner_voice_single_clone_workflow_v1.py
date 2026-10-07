@@ -608,3 +608,15 @@ def test_vice_city_brazilian_owner_pronunciation_overrides_english_language_rout
     routing=source.split("segment_prompts=[]",1)[1].split("generation_t0=",1)[0]
     assert 'if VICE_CITY_TERM in str(row["canonical_text"]):' in routing
     assert routing.index('if VICE_CITY_TERM in str(row["canonical_text"]):') < routing.index('if language=="Portuguese":')
+
+
+def test_vice_city_owner_ptbr_reading_is_explicit_and_keeps_targeted_prompt():
+    segments=build_gta6_pronunciation_segments("Chegamos em Vice City hoje.")
+    vice=next(row for row in segments if row["canonical_text"]=="Vice City")
+    assert vice["spoken_text"]=="vaice citi"
+    assert vice["language"]=="Portuguese"
+
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    prompt_block=source.split("segment_prompts=[]",1)[1].split("generation_t0=",1)[0]
+    assert 'if VICE_CITY_TERM in str(row["canonical_text"]):' in prompt_block
+    assert prompt_block.index('if VICE_CITY_TERM in str(row["canonical_text"]):') < prompt_block.index('if language=="Portuguese":')
