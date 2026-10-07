@@ -268,6 +268,50 @@ def _best_pronunciation_asr_hypothesis(
     return hypotheses[0]
 
 
+def _targeted_vice_city_asr_hypothesis(
+    stt,
+    path:Path,
+    duration_seconds:float,
+)->dict[str,Any]:
+    segments_iter,info=stt.transcribe(
+        str(path),
+        language="en",
+        initial_prompt=VICE_CITY_TERM,
+        hotwords=VICE_CITY_TERM,
+        beam_size=5,
+        vad_filter=True,
+        word_timestamps=False,
+        condition_on_previous_text=False,
+    )
+    segments=list(segments_iter)
+    transcript=" ".join(
+        str(getattr(segment,"text","") or "").strip()
+        for segment in segments
+        if str(getattr(segment,"text","") or "").strip()
+    ).strip()
+    avg_logprobs=[
+        float(getattr(segment,"avg_logprob",-99.0) or -99.0)
+        for segment in segments
+    ]
+    return {
+        "forced_language":"en",
+        "language":str(getattr(info,"language","en") or "en").lower().replace("_","-"),
+        "language_probability":float(getattr(info,"language_probability",0.0) or 0.0),
+        "vad_speech_ratio":_vad_ratio(segments,float(duration_seconds)),
+        "transcript":transcript,
+        "lexicon_hits":gta6_lexicon_hits(transcript),
+        "vice_city_evidence_score":gta6_target_evidence_score(
+            transcript,
+            VICE_CITY_TERM,
+        ),
+        "avg_logprob":(
+            sum(avg_logprobs)/len(avg_logprobs)
+            if avg_logprobs else -99.0
+        ),
+        "targeted_vice_city":True,
+    }
+
+
 def _compose_pronunciation_reference_audio(
     pronunciations:list[Path],
     target:Path,
@@ -648,11 +692,35 @@ def main()->int:
             str(row["sha256"]),
         ))
         for row in pronunciation_pre_asr:
+            reference_path=normalized[str(row["reference_id"])]
+            reference_duration=float(row["duration_seconds"])
             hypothesis=_best_pronunciation_asr_hypothesis(
                 stt,
-                normalized[str(row["reference_id"])],
-                float(row["duration_seconds"]),
+                reference_path,
+                reference_duration,
             )
+            general_vice_score=float(hypothesis["vice_city_evidence_score"])
+            targeted_vice_city=None
+            if general_vice_score<VICE_CITY_REFERENCE_EVIDENCE_MIN:
+                targeted_vice_city=_targeted_vice_city_asr_hypothesis(
+                    stt,
+                    reference_path,
+                    reference_duration,
+                )
+                targeted_score=float(
+                    targeted_vice_city["vice_city_evidence_score"]
+                )
+                print(
+                    "OWNER_VICE_CITY_TARGETED_ASR_EVIDENCE_SCORE="
+                    +str(targeted_score)
+                )
+                if (
+                    float(targeted_vice_city["vad_speech_ratio"])>=0.55
+                    and float(targeted_vice_city["avg_logprob"])>=-1.0
+                    and targeted_score>general_vice_score
+                ):
+                    hypothesis=targeted_vice_city
+
             strong_vad=float(hypothesis["vad_speech_ratio"])
             strong_language=str(hypothesis["language"])
             strong_text=str(hypothesis["transcript"])
