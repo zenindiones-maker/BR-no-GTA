@@ -169,6 +169,18 @@ class TelegramSingleCloneApi:
 
 def _load_manifest(path:Path)->dict[str,Any]:
     payload=json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("schema_version")=="OwnerVoiceSingleCloneControlReconciliation/v1":
+        if (
+            payload.get("voice_identity_id")!="BR_OWNER_V1"
+            or payload.get("control_only") is not True
+            or payload.get("mode")!="CONTROL_ONLY_KNOWN_PRE_SIDE_EFFECT_FAILURE"
+            or payload.get("expected_failure_class")!="control:TypeError"
+            or payload.get("runtime_activation") is not False
+            or not str(payload.get("clone_id") or "").startswith("BR_OWNER_V1_SINGLE_CLONE_")
+        ):
+            raise RuntimeError("SINGLE_CLONE_CONTROL_RECONCILIATION_MANIFEST_INVALID")
+        return payload
+
     if (
         payload.get("schema_version")!="OwnerVoiceSingleCloneCandidate/v1"
         or payload.get("voice_identity_id")!="BR_OWNER_V1"
@@ -201,6 +213,59 @@ def main()->int:
     manifest=_load_manifest(Path(manifest_env).resolve())
     workspace=Path(os.environ["BR_OWNER_AUDITION_WORKSPACE"]).resolve()
     store=store_from_environment(repo_root=Path.cwd(),workspace=workspace)
+
+    if manifest.get("schema_version")=="OwnerVoiceSingleCloneControlReconciliation/v1":
+        clone_id=str(manifest["clone_id"])
+        ledger=SingleCloneDeliveryLedger(store=store,clone_id=clone_id)
+        state=ledger.load()
+        ledger.reopen_known_pre_side_effect_control_failure(
+            expected_failure_class=str(manifest["expected_failure_class"])
+        )
+        state=ledger.load()
+        api=TelegramSingleCloneApi(
+            token,
+            identity_gate=str(state["clone_identity_gate"]),
+            content_audio_prescreen=str(state["content_audio_prescreen"]),
+            review_token=str(state["review_token"]),
+            identity_anchor_telegram_input_id=int(
+                state["identity_anchor_telegram_input_id"]
+            ),
+            pronunciation_reference_telegram_input_ids=[
+                int(value)
+                for value in state.get(
+                    "pronunciation_reference_telegram_input_ids",[]
+                )
+            ],
+            vice_city_reference_telegram_input_id=(
+                int(state["vice_city_reference_telegram_input_id"])
+                if state.get("vice_city_reference_telegram_input_id") is not None
+                else None
+            ),
+        )
+        result=deliver_single_clone_durable(
+            api,
+            ledger=ledger,
+            clone_path="",
+        )
+        if result.get("reconciliation_state")==RECONCILIATION_REQUIRED:
+            raise RuntimeError("SINGLE_CLONE_CONTROL_RECONCILIATION_REQUIRED")
+        if result.get("state")!="CONFIRMED":
+            raise RuntimeError("SINGLE_CLONE_CONTROL_RECONCILIATION_NOT_CONFIRMED")
+        ids=dict(result.get("confirmed_message_ids") or {})
+        if any(not isinstance(ids.get(key),int) for key in ("reference","clone","control")):
+            raise RuntimeError("SINGLE_CLONE_CONTROL_RECONCILIATION_RECEIPT_INCOMPLETE")
+        print("CONTROL_RECONCILIATION=PASS")
+        print(f"REFERENCE_TELEGRAM_MESSAGE_ID={ids['reference']}")
+        print(f"CLONE_TELEGRAM_MESSAGE_ID={ids['clone']}")
+        print(f"CONTROL_TELEGRAM_MESSAGE_ID={ids['control']}")
+        print(f"OWNER_VOICE_REVIEW_TOKEN={state['review_token']}")
+        print("OWNER_VOICE_REVIEW_UI=INLINE_SINGLE_CLONE_V2")
+        print("SINGLE_CLONE_DELIVERED_TO_TELEGRAM=PASS")
+        print("HUMAN_REVIEW=PENDING")
+        print("BR_OWNER_V1_RUNTIME_ACTIVATION=BLOCKED_PENDING_HUMAN_REVIEW")
+        print("BLIND_TELEGRAM_RETRY=0")
+        return 0
+
     clone_id=str(manifest["clone_id"])
     review_token=review_token_for_clone(clone_id)
     ledger=SingleCloneDeliveryLedger(store=store,clone_id=clone_id)
