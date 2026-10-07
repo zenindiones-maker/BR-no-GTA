@@ -120,7 +120,7 @@ def _parse_callback_data(value: str) -> dict[str, Any] | None:
             "vice_city_reference_telegram_input_id":vice if vice>0 else None,
         }
 
-    if data.startswith("ov2:")
+    if data.startswith("ov2:"):
         parts=data.split(":")
         if len(parts)!=3:
             raise ValueError("OWNER_VOICE_REVIEW_CALLBACK_INVALID")
