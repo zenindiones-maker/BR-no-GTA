@@ -156,7 +156,7 @@ def iter_gta6_pronunciation_terms() -> Iterable[str]:
 GTA6_SYNTHESIS_OVERRIDES: tuple[dict[str, str], ...] = (
     {"canonical_text":"GTA 6","spoken_text":"Gê Tê A seis","language":"Portuguese"},
     {"canonical_text":"GTA VI","spoken_text":"Gê Tê A seis","language":"Portuguese"},
-    {"canonical_text":"Vice City","spoken_text":"vaicy siti","language":"Portuguese"},
+    {"canonical_text":"Vice City","spoken_text":"Vice Citi","language":"Portuguese"},
     *tuple(
         {"canonical_text":term,"spoken_text":term,"language":"English"}
         for term in GTA6_CANONICAL_PRONUNCIATION_TERMS
