@@ -5,6 +5,7 @@ from app.services.owner_voice_speaker_identity_service import (
     SPEAKER_MODEL_ID,
     SPEAKER_MODEL_REVISION,
     calibrate_owner_identity_profile,
+    cosine_similarity,
     calibrate_owner_window_consistency,
     evaluate_clone_identity_gate,
     evaluate_reference_window_consistency,
@@ -107,3 +108,22 @@ def test_window_consistency_calibration_excludes_nonfinite_and_requires_owner_di
     import pytest
     with pytest.raises(ValueError,match="OWNER_WINDOW_CONSISTENCY_REQUIRES_REFERENCES"):
         calibrate_owner_window_consistency({})
+
+
+def test_identity_decision_metrics_keep_full_precision_and_round_only_for_reporting():
+    profile=calibrate_owner_identity_profile(_embeddings())
+    for ref_id in profile["inlier_ids"]:
+        exact=cosine_similarity(_embeddings()[ref_id],profile["centroid"])
+        assert profile["reference_similarity_to_centroid"][ref_id]==exact
+
+    exact_sims=[
+        profile["reference_similarity_to_centroid"][ref_id]
+        for ref_id in profile["inlier_ids"]
+    ]
+    ordered=sorted(exact_sims)
+    pos=0.10*(len(ordered)-1)
+    lo=int(pos)
+    hi=min(len(ordered)-1,lo+1)
+    fraction=pos-lo
+    expected=ordered[lo]*(1.0-fraction)+ordered[hi]*fraction
+    assert profile["clone_centroid_min_similarity"]==expected
