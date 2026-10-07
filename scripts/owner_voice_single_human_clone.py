@@ -1238,6 +1238,10 @@ def main()->int:
         "pronunciation_reference_telegram_input_ids":[
             int(row["telegram_input_id"]) for row,_text in pronunciation_selected
         ],
+        "vice_city_reference_telegram_input_id":(
+            int(vice_city_selected[0]["telegram_input_id"])
+            if vice_city_selected is not None else None
+        ),
         "pronunciation_after_message_id":pronunciation_after_message_id,
         "pronunciation_reference_count":len(pronunciation_refs),
         "identity_reference_scope":"GLOBAL_OWNER_INLIERS",
