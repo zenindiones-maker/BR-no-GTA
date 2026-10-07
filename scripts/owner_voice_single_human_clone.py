@@ -10,8 +10,10 @@ from pathlib import Path
 from typing import Any
 
 from app.services.gta6_pronunciation_lexicon_service import (
+    GTA6_CANONICAL_PRONUNCIATION_TERMS,
     build_gta6_pronunciation_batches,
     build_gta6_pronunciation_segments,
+    canonicalize_gta6_target_transcript,
     gta6_lexicon_hits,
     gta6_pronunciation_hotwords,
     gta6_target_evidence_score,
@@ -64,6 +66,7 @@ MAX_PRONUNCIATION_PROMPT_REFERENCES=2
 PRONUNCIATION_ASR_LANGUAGES=(None,"en","pt","es")
 VICE_CITY_TERM="Vice City"
 VICE_CITY_REFERENCE_EVIDENCE_MIN=0.78
+VICE_CITY_OWNER_ASSERTED_EVIDENCE_FLOOR=0.45
 VOICE_SEGMENT_CROSSFADE_MS=30
 VOICE_SEGMENT_LEVEL_MATCH_DB_LIMIT=1.5
 SPEECHBRAIN_VERSION="1.1.1"
@@ -97,6 +100,21 @@ def _request_payload()->dict[str,Any]:
     if not isinstance(payload,dict):
         raise RuntimeError("OWNER_SINGLE_CLONE_REQUEST_INVALID")
     return payload
+
+
+def _owner_asserted_pronunciation_targets(payload:dict[str,Any])->tuple[str,...]:
+    raw=payload.get("owner_asserted_pronunciation_targets") or []
+    if not isinstance(raw,list):
+        raise RuntimeError("OWNER_ASSERTED_PRONUNCIATION_TARGETS_INVALID")
+    allowed=set(GTA6_CANONICAL_PRONUNCIATION_TERMS)
+    targets=[]
+    for value in raw:
+        target=str(value or "").strip()
+        if not target or target not in allowed:
+            raise RuntimeError("OWNER_ASSERTED_PRONUNCIATION_TARGET_UNKNOWN")
+        if target not in targets:
+            targets.append(target)
+    return tuple(targets)
 
 
 def _pronunciation_after_message_id(payload:dict[str,Any])->int:
@@ -448,6 +466,16 @@ def main()->int:
     workspace.mkdir(parents=True,exist_ok=True)
     request_payload=_request_payload()
     pronunciation_after_message_id=_pronunciation_after_message_id(request_payload)
+    owner_asserted_pronunciation_targets=_owner_asserted_pronunciation_targets(
+        request_payload
+    )
+    owner_asserted_vice_city=(
+        VICE_CITY_TERM in owner_asserted_pronunciation_targets
+    )
+    print(
+        "OWNER_ASSERTED_PRONUNCIATION_TARGETS="
+        +(",".join(owner_asserted_pronunciation_targets) or "NONE")
+    )
     raw_index=_index()
     index,health=sanitize_owner_reference_index(
         raw_index,
@@ -724,10 +752,21 @@ def main()->int:
             strong_vad=float(hypothesis["vad_speech_ratio"])
             strong_language=str(hypothesis["language"])
             strong_text=str(hypothesis["transcript"])
-            pronunciation_hits=tuple(hypothesis["lexicon_hits"])
             vice_city_evidence_score=float(
                 hypothesis["vice_city_evidence_score"]
             )
+            owner_asserted_vice_match=(
+                owner_asserted_vice_city
+                and vice_city_evidence_score
+                >=VICE_CITY_OWNER_ASSERTED_EVIDENCE_FLOOR
+            )
+            if owner_asserted_vice_match:
+                strong_text=canonicalize_gta6_target_transcript(
+                    strong_text,
+                    VICE_CITY_TERM,
+                    minimum_score=VICE_CITY_OWNER_ASSERTED_EVIDENCE_FLOOR,
+                )
+            pronunciation_hits=tuple(gta6_lexicon_hits(strong_text))
             print(
                 "OWNER_PRONUNCIATION_ASR_LANGUAGE="
                 +str(hypothesis["forced_language"] or "auto")
@@ -738,14 +777,18 @@ def main()->int:
                 and (
                     pronunciation_hits
                     or vice_city_evidence_score>=VICE_CITY_REFERENCE_EVIDENCE_MIN
+                    or owner_asserted_vice_match
                 )
             ):
                 row["speech_ratio"]=strong_vad
                 row["detected_language"]=strong_language
                 row["pronunciation_hits"]=pronunciation_hits
                 row["vice_city_evidence_score"]=vice_city_evidence_score
+                row["owner_asserted_vice_city"]=bool(owner_asserted_vice_match)
                 pronunciation_selected.append((row,strong_text))
         pronunciation_selected.sort(key=lambda item:(
+            -int(VICE_CITY_TERM in item[0]["pronunciation_hits"]),
+            -float(item[0].get("vice_city_evidence_score",0.0)),
             -len(item[0]["pronunciation_hits"]),
             -float(item[0]["snr_db"]),
             str(item[0]["sha256"]),
@@ -757,12 +800,25 @@ def main()->int:
                     VICE_CITY_TERM in row["pronunciation_hits"]
                     or float(row.get("vice_city_evidence_score",0.0))
                     >=VICE_CITY_REFERENCE_EVIDENCE_MIN
+                    or (
+                        owner_asserted_vice_city
+                        and float(row.get("vice_city_evidence_score",0.0))
+                        >=VICE_CITY_OWNER_ASSERTED_EVIDENCE_FLOOR
+                    )
                 )
             ),
             None,
         )
         if vice_city_selected is None:
             raise RuntimeError("OWNER_VICE_CITY_PRONUNCIATION_REFERENCE_REQUIRED")
+        vice_row_for_authority,_vice_text_for_authority=vice_city_selected
+        if bool(vice_row_for_authority.get("owner_asserted_vice_city")):
+            print(
+                "OWNER_VICE_CITY_REFERENCE_AUTHORITY="
+                "OWNER_ASSERTED_FRESH_SAMPLE"
+            )
+        else:
+            print("OWNER_VICE_CITY_REFERENCE_AUTHORITY=ASR_VERIFIED")
         ranked_pronunciation=list(pronunciation_selected)
         pronunciation_selected=ranked_pronunciation[:MAX_PRONUNCIATION_PROMPT_REFERENCES]
         if vice_city_selected not in pronunciation_selected:
