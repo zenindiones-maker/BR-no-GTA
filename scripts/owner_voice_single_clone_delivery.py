@@ -41,8 +41,29 @@ def _telegram_post(token:str,method:str,*,data:Mapping[str,Any],files=None)->Any
 
 
 class TelegramSingleCloneApi:
-    def __init__(self,token:str)->None:
+    def __init__(
+        self,
+        token:str,
+        *,
+        identity_gate:str,
+        content_audio_prescreen:str,
+    )->None:
         self.token=str(token)
+        self.identity_gate=str(identity_gate)
+        self.content_audio_prescreen=str(content_audio_prescreen)
+        self.caption=(
+            "BR_OWNER_V1 — prova única | "
+            f"identity={self.identity_gate} | "
+            f"content={self.content_audio_prescreen} | "
+            "HUMAN_REVIEW=PENDING"
+        )
+        self.control_text=(
+            CONTROL_TEXT
+            +"\n\n"
+            +f"Auto identity gate: {self.identity_gate}\n"
+            +f"Auto content gate: {self.content_audio_prescreen}\n"
+            +"Runtime activation: BLOQUEADA até aprovação humana."
+        )
 
     def copy_reference(self,*,chat_id:int,source_message_id:int,protect_content:bool)->int:
         result=_telegram_post(self.token,"copyMessage",data={
@@ -62,7 +83,7 @@ class TelegramSingleCloneApi:
                 self.token,"sendAudio",
                 data={
                     "chat_id":str(chat_id),
-                    "caption":"BR_OWNER_V1 — prova única",
+                    "caption":self.caption,
                     "protect_content":"true" if protect_content else "false",
                 },
                 files={"audio":(path.name,handle,"audio/wav")},
@@ -72,7 +93,7 @@ class TelegramSingleCloneApi:
     def send_control(self,*,chat_id:int,protect_content:bool)->int:
         result=_telegram_post(self.token,"sendMessage",data={
             "chat_id":str(chat_id),
-            "text":CONTROL_TEXT,
+            "text":self.control_text,
             "protect_content":"true" if protect_content else "false",
         })
         return int(result["message_id"])
@@ -84,8 +105,12 @@ def _load_manifest(path:Path)->dict[str,Any]:
         payload.get("schema_version")!="OwnerVoiceSingleCloneCandidate/v1"
         or payload.get("voice_identity_id")!="BR_OWNER_V1"
         or payload.get("reference_source")!="TELEGRAM_HUMAN_OWNER"
-        or payload.get("clone_identity_gate")!="PASS"
-        or payload.get("content_audio_prescreen")!="PASS"
+        or payload.get("clone_identity_gate") not in {"PASS","FAIL"}
+        or payload.get("content_audio_prescreen") not in {"PASS","FAIL"}
+        or payload.get("audition_delivery_eligible") is not True
+        or payload.get("human_review_required") is not True
+        or payload.get("human_review")!="PENDING"
+        or payload.get("runtime_activation") is not False
         or int(payload.get("generation",{}).get("generate_call_count") or 0)!=1
     ):
         raise RuntimeError("SINGLE_CLONE_MANIFEST_CONTRACT_INVALID")
@@ -114,8 +139,16 @@ def main()->int:
         reference_source_message_id=int(manifest["canonical_reference_source_message_id"]),
         clone_sha256=str(manifest["clone_sha256"]),
         authority_ref=authority,
+        clone_identity_gate=str(manifest["clone_identity_gate"]),
+        content_audio_prescreen=str(manifest["content_audio_prescreen"]),
+        human_review=str(manifest["human_review"]),
+        runtime_activation=bool(manifest["runtime_activation"]),
     )
-    api=TelegramSingleCloneApi(token)
+    api=TelegramSingleCloneApi(
+        token,
+        identity_gate=str(manifest["clone_identity_gate"]),
+        content_audio_prescreen=str(manifest["content_audio_prescreen"]),
+    )
     result=deliver_single_clone_durable(
         api,ledger=ledger,clone_path=str(manifest["clone_path"])
     )
