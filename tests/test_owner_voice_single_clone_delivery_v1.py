@@ -5,6 +5,10 @@ from dataclasses import dataclass
 from app.services.owner_voice_single_clone_delivery_service import (
     SingleCloneDeliveryLedger,
     deliver_single_clone_durable,
+    review_token_for_clone,
+)
+from app.services.owner_voice_human_review_service import (
+    process_owner_voice_review_callback,
 )
 
 
@@ -70,3 +74,72 @@ def test_delivery_ledger_persists_auto_gate_evidence_without_enabling_runtime():
     assert state["content_audio_prescreen"]=="PASS"
     assert state["human_review"]=="PENDING"
     assert state["runtime_activation"] is False
+
+
+def test_single_clone_review_token_is_deterministic_and_persisted():
+    token=review_token_for_clone("BR_OWNER_V1_SINGLE_CLONE_123_1")
+    assert len(token)==20
+    assert all(ch in "0123456789abcdef" for ch in token)
+    assert token==review_token_for_clone("BR_OWNER_V1_SINGLE_CLONE_123_1")
+    store=FakeStore()
+    ledger=SingleCloneDeliveryLedger(store=store,clone_id="BR_OWNER_V1_SINGLE_CLONE_123_1")
+    state=ledger.create(
+        telegram_chat_id=-1001,
+        reference_source_message_id=625,
+        clone_sha256="c"*64,
+        authority_ref="owner-explicit:BR_OWNER_V1_SINGLE_CLONE",
+        review_token=token,
+    )
+    assert state["review_token"]==token
+
+
+def test_clone_bound_owner_review_approves_exact_token_without_activating_runtime(tmp_path):
+    token=review_token_for_clone("BR_OWNER_V1_SINGLE_CLONE_123_1")
+    update={
+        "callback_query":{
+            "id":"cb-single-1",
+            "data":f"ov2:approve:{token}",
+            "from":{"id":77},
+            "message":{"message_id":703,"chat":{"id":-1001}},
+        }
+    }
+    receipt=process_owner_voice_review_callback(
+        update=update,
+        allowed_user_id=77,
+        allowed_chat_ids={-1001},
+        state_path=tmp_path/"review.json",
+        now_epoch=123.0,
+    )
+    assert receipt["schema"]=="OwnerVoiceHumanReviewReceipt/v2"
+    assert receipt["candidate_mode"]=="SINGLE_CLONE"
+    assert receipt["review_token"]==token
+    assert receipt["status"]=="APPROVED_PENDING_PROMOTION"
+    assert receipt["production_activation"]=="BLOCKED_PENDING_PROMOTION"
+    assert receipt["authorized_human"] is True
+    again=process_owner_voice_review_callback(
+        update=update,
+        allowed_user_id=77,
+        allowed_chat_ids={-1001},
+        state_path=tmp_path/"review.json",
+        now_epoch=999.0,
+    )
+    assert again["idempotent_replay"] is True
+
+
+def test_clone_bound_owner_review_rejects_invalid_token(tmp_path):
+    update={
+        "callback_query":{
+            "id":"cb-bad-token",
+            "data":"ov2:approve:not-a-token",
+            "from":{"id":77},
+            "message":{"message_id":703,"chat":{"id":-1001}},
+        }
+    }
+    import pytest
+    with pytest.raises(ValueError,match="OWNER_VOICE_REVIEW_CALLBACK_INVALID"):
+        process_owner_voice_review_callback(
+            update=update,
+            allowed_user_id=77,
+            allowed_chat_ids={-1001},
+            state_path=tmp_path/"review.json",
+        )
