@@ -97,6 +97,11 @@ class NarrationProvider(Protocol):
 
 
 PRONUNCIATION_ENTRIES: tuple[dict[str, Any], ...] = canonical_lexicon_entries()
+GOVERNED_FOREIGN_PRONUNCIATION_IDS = frozenset(
+    str(entry["identity"])
+    for entry in PRONUNCIATION_ENTRIES
+    if str(entry.get("locale") or "pt-BR") != "pt-BR"
+)
 
 _ABBREVIATIONS = (
     "Sr.", "Sra.", "Dr.", "Dra.", "Prof.", "etc.", "ex.", "vs.", "EUA.", "U.S.", "S.A."
@@ -939,19 +944,28 @@ def _narration_fluency_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
         for span in (plan.get("spans") or [])
         if isinstance(span, dict) and str(span.get("locale") or "pt-BR") != "pt-BR"
     ]
-    non_vice_foreign = [
-        span for span in foreign_spans
-        if span.get("pronunciation_identity") != "vice-city"
-    ]
-    mixed_provider_rows = [
-        dict(item.get("provider_metadata") or {})
+    governed_foreign = all(
+        span.get("source") == "lexicon"
+        and str(span.get("pronunciation_identity") or "")
+        in GOVERNED_FOREIGN_PRONUNCIATION_IDS
+        for span in foreign_spans
+    )
+    mixed_records = [
+        item
         for item in records
         if int((item.get("synthesis_plan") or {}).get("foreign_span_count") or 0) > 0
     ]
-    mixed_join_ok = all(
-        row.get("join_policy") == "same-locale-coalesced-safe-margin-acrossfade"
-        and float(row.get("inserted_silence_seconds") or 0.0) == 0.0
-        for row in mixed_provider_rows
+    mixed_provider_rows = [
+        dict(item.get("provider_metadata") or {})
+        for item in mixed_records
+    ]
+    mixed_join_ok = (
+        len(mixed_provider_rows) == len(mixed_records)
+        and all(
+            row.get("join_policy") == "same-locale-coalesced-safe-margin-acrossfade"
+            and float(row.get("inserted_silence_seconds") or 0.0) == 0.0
+            for row in mixed_provider_rows
+        )
     )
     measurable = [row for row in joins if row.get("measurable")]
     max_pause = max(
@@ -964,21 +978,24 @@ def _narration_fluency_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
         float(item.get("assembly_trimmed_seconds") or 0.0) >= 0.0
         for item in records
     )
-    continuous_ptbr = not non_vice_foreign and mixed_join_ok
-    passed = no_chunk_boundaries and no_unplanned_pauses and continuous_ptbr
+    continuous_owner_prosody = governed_foreign and mixed_join_ok
+    passed = no_chunk_boundaries and no_unplanned_pauses and continuous_owner_prosody
     return {
         "status": "PASS" if passed else "FAIL",
         "NARRATION_FLUENCY": "PASS" if passed else "FAIL",
         "NO_AUDIBLE_CHUNK_BOUNDARIES": "PASS" if no_chunk_boundaries else "FAIL",
         "NO_UNPLANNED_PAUSES": "PASS" if no_unplanned_pauses else "FAIL",
-        "CONTINUOUS_PTBR_PROSODY": "PASS" if continuous_ptbr else "FAIL",
+        "CONTINUOUS_PTBR_PROSODY": "PASS" if continuous_owner_prosody else "FAIL",
+        "GOVERNED_CODE_SWITCH": "PASS" if governed_foreign else "FAIL",
         "max_planned_section_boundary_pause_seconds": max_pause,
         "allowed_section_boundary_pause_seconds": MAX_PLANNED_SECTION_BOUNDARY_PAUSE_SECONDS,
         "measured_join_count": len(measurable),
         "join_count": len(joins),
         "joins": joins,
         "foreign_span_count": len(foreign_spans),
-        "non_vice_city_foreign_span_count": len(non_vice_foreign),
+        "governed_foreign_span_count": (
+            len(foreign_spans) if governed_foreign else 0
+        ),
         "mixed_locale_segment_count": len(mixed_provider_rows),
         "mixed_locale_join_policy_ok": mixed_join_ok,
         "section_join_policy": "native-word-edge-trim-decoded-pcm-concat",
