@@ -54,6 +54,7 @@ SHORT_TEXT=(
 )
 PRONUNCIATION_HOTWORDS=gta6_pronunciation_hotwords()
 MAX_PRONUNCIATION_PROMPT_REFERENCES=2
+PRONUNCIATION_ASR_LANGUAGES=(None,"en","pt","es")
 SPEECHBRAIN_VERSION="1.1.1"
 SPEAKER_MODEL_EMBEDDING_SHA256="0575cb64845e6b9a10db9bcb74d5ac32b326b8dc90352671d345e2ee3d0126a2"
 
@@ -197,6 +198,58 @@ def _reference_asr_metrics(
         if str(getattr(segment,"text","") or "").strip()
     ).strip()
     return ptbr_probability,vad_speech_ratio,language,transcript
+
+
+def _best_pronunciation_asr_hypothesis(
+    stt,
+    path:Path,
+    duration_seconds:float,
+)->dict[str,Any]:
+    hypotheses=[]
+    for forced_language in PRONUNCIATION_ASR_LANGUAGES:
+        segments_iter,info=stt.transcribe(
+            str(path),
+            language=forced_language,
+            beam_size=5,
+            vad_filter=True,
+            word_timestamps=False,
+            condition_on_previous_text=False,
+            hotwords=PRONUNCIATION_HOTWORDS,
+        )
+        segments=list(segments_iter)
+        transcript=" ".join(
+            str(getattr(segment,"text","") or "").strip()
+            for segment in segments
+            if str(getattr(segment,"text","") or "").strip()
+        ).strip()
+        detected_language=str(
+            getattr(info,"language",forced_language or "") or forced_language or ""
+        ).lower().replace("_","-")
+        language_probability=float(
+            getattr(info,"language_probability",0.0) or 0.0
+        )
+        vad_speech_ratio=_vad_ratio(segments,float(duration_seconds))
+        hypotheses.append({
+            "forced_language":forced_language,
+            "language":detected_language,
+            "language_probability":language_probability,
+            "vad_speech_ratio":vad_speech_ratio,
+            "transcript":transcript,
+            "lexicon_hits":gta6_lexicon_hits(transcript),
+        })
+    hypotheses.sort(
+        key=lambda row:(
+            -len(row["lexicon_hits"]),
+            -float(row["vad_speech_ratio"]),
+            -float(row["language_probability"]),
+            0 if row["forced_language"] is None else 1,
+            str(row["forced_language"] or ""),
+            str(row["transcript"]),
+        )
+    )
+    if not hypotheses:
+        raise RuntimeError("OWNER_PRONUNCIATION_ASR_HYPOTHESIS_EMPTY")
+    return hypotheses[0]
 
 
 def _compose_pronunciation_reference_audio(
@@ -364,6 +417,43 @@ def main()->int:
         for rid in sorted(inlier_ids)
     }
     window_calibration=calibrate_owner_window_consistency(window_scores_by_id)
+    pronunciation_source_rows=[]
+    for row in refs:
+        rid=str(int(row["telegram_input_id"]))
+        if rid in fresh_reference_ids:
+            m=metrics[rid]
+            fresh_window_scores=_window_identity_scores(
+                classifier,normalized[rid],embeddings[rid]
+            )
+            consistent=False
+            fresh_window_p10=-1.0
+            if fresh_window_scores:
+                fresh_window_eval=evaluate_reference_window_consistency(
+                    fresh_window_scores,
+                    window_calibration,
+                )
+                consistent=bool(fresh_window_eval["passed"])
+                fresh_window_p10=float(fresh_window_eval["reference_p10"])
+            pronunciation_source_rows.append({
+                "reference_id":rid,
+                "telegram_input_id":int(row["telegram_input_id"]),
+                "telegram_message_id":int(row["telegram_message_id"]),
+                "sha256":str(row["sha256"]),
+                "duration_seconds":float(
+                    m.get("duration_seconds") or row.get("duration_seconds") or 0.0
+                ),
+                "snr_db":float(m.get("snr_db") or 0.0),
+                "clipping_ratio":float(m.get("clipping_ratio") or 0.0),
+                "single_speaker":consistent,
+                "clear_speech":(
+                    float(m.get("snr_db") or 0.0)>=15.0
+                    and float(m.get("clipping_ratio") or 0.0)<=0.01
+                ),
+                "no_overlap":consistent,
+                "no_music":consistent,
+                "window_identity_p10":fresh_window_p10,
+            })
+
     candidate_rows=[]
     for row in refs:
         rid=str(int(row["telegram_input_id"]))
@@ -478,38 +568,39 @@ def main()->int:
     pronunciation_ref_text=""
     if pronunciation_after_message_id>0:
         pronunciation_pre_asr=[
-            row for row in candidate_rows
-            if str(row["reference_id"]) in fresh_reference_ids
-            and row["single_speaker"] is True
+            row for row in pronunciation_source_rows
+            if row["single_speaker"] is True
             and row["clear_speech"] is True
             and row["no_overlap"] is True
             and row["no_music"] is True
             and float(row["duration_seconds"])>0.0
         ]
         pronunciation_pre_asr.sort(key=lambda row:(
-            -float(profile["reference_similarity_to_centroid"].get(str(row["reference_id"]),-1.0)),
-            -row["snr_db"],
+            -float(row["snr_db"]),
             abs(float(row["duration_seconds"])-12.0),
             str(row["sha256"]),
         ))
         for row in pronunciation_pre_asr:
-            strong_ptbr,strong_vad,strong_language,strong_text=_reference_asr_metrics(
+            hypothesis=_best_pronunciation_asr_hypothesis(
                 stt,
                 normalized[str(row["reference_id"])],
                 float(row["duration_seconds"]),
-                beam_size=5,
-                pronunciation_hint=True,
             )
-            pronunciation_hits=gta6_lexicon_hits(strong_text)
+            strong_vad=float(hypothesis["vad_speech_ratio"])
+            strong_language=str(hypothesis["language"])
+            strong_text=str(hypothesis["transcript"])
+            pronunciation_hits=tuple(hypothesis["lexicon_hits"])
+            print(
+                "OWNER_PRONUNCIATION_ASR_LANGUAGE="
+                +str(hypothesis["forced_language"] or "auto")
+            )
             if float(strong_vad)>=0.55 and strong_text and pronunciation_hits:
-                row["ptbr_probability"]=strong_ptbr
                 row["speech_ratio"]=strong_vad
                 row["detected_language"]=strong_language
                 row["pronunciation_hits"]=pronunciation_hits
                 pronunciation_selected.append((row,strong_text))
         pronunciation_selected.sort(key=lambda item:(
             -len(item[0]["pronunciation_hits"]),
-            -float(profile["reference_similarity_to_centroid"].get(str(item[0]["reference_id"]),-1.0)),
             -float(item[0]["snr_db"]),
             str(item[0]["sha256"]),
         ))
