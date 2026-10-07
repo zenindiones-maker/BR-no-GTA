@@ -22,7 +22,7 @@ from app.services.pronunciation_service import (
 
 def test_lexicon_is_governed_owner_qwen_code_switch_without_respellings():
     lexicon=load_pronunciation_lexicon()
-    assert lexicon["version"]=="2026.10.07.4-owner-vice-citi-ptbr"
+    assert lexicon["version"]=="2026.10.07.5-owner-vaicy-siti"
     assert lexicon["default_locale"]=="pt-BR"
     assert lexicon["policy"]["governed_foreign_chunks_only"] is True
     assert lexicon["policy"]["foreign_language_chunks_forbidden"] is False
