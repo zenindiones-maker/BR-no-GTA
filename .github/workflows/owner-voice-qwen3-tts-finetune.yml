@@ -24,6 +24,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       train_requested: ${{ steps.request.outputs.requested }}
+      compute_ready: ${{ steps.compute.outputs.ready }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -60,7 +61,7 @@ jobs:
           import json
           from pathlib import Path
           row=json.loads(Path("config/owner_voice_qwen3_tts_finetune_v1.json").read_text())
-          assert row["schema_version"]=="OwnerVoiceQwen3TTSFineTunePolicy/v2"
+          assert row["schema_version"]=="OwnerVoiceQwen3TTSFineTunePolicy/v3"
           assert row["trainer_engine"]=="modelscope/ms-swift"
           assert row["trainer_commit"]=="6f62bd4b3032197dce934b4eba1bb65463b29918"
           assert row["trainer_contract"]["checkpoint_identity_evaluation"] is True
@@ -69,10 +70,25 @@ jobs:
           print("OWNER_QWEN3_TTS_FINETUNE_CONTRACT=PASS")
           print("ZERO_SHOT_RETRY_BLOCK=PASS")
           PY
+      - name: Compute admission
+        id: compute
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          row=json.loads(Path("config/owner_voice_qwen3_tts_finetune_v1.json").read_text())
+          ready=row["compute_admission"]["github_self_hosted_gpu"]["status"]=="READY"
+          with open(os.environ["GITHUB_OUTPUT"],"a",encoding="utf-8") as stream:
+              stream.write("ready="+("true" if ready else "false")+"\n")
+          print("OWNER_FINE_TUNE_COMPUTE_READY="+("TRUE" if ready else "FALSE"))
+          if not ready:
+              print("OWNER_FINE_TUNE_SELF_HOSTED_GPU=BLOCKED_NO_VERIFIED_ONLINE_MATCHING_RUNNER")
+              print("OWNER_FINE_TUNE_ZERO_COST_BACKEND=KAGGLE_T4X2")
+          PY
 
   train:
     needs: contract
-    if: ${{ needs.contract.outputs.train_requested == 'true' }}
+    if: ${{ needs.contract.outputs.train_requested == 'true' && needs.contract.outputs.compute_ready == 'true' }}
     runs-on: [self-hosted, linux, x64, br-owner-voice-gpu]
     timeout-minutes: 480
     permissions:
@@ -218,6 +234,8 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}
           BR_OWNER_AUDITION_LEDGER_SSH_KEY: ${{ secrets.BR_OWNER_AUDITION_LEDGER_SSH_KEY }}
           BR_OWNER_SINGLE_CLONE_MANIFEST_PATH: ${{ steps.evaluate.outputs.manifest_path }}
+          BR_OWNER_AUDITION_WORKSPACE: ${{ env.BR_OWNER_FINETUNE_PRIVATE_WORKSPACE }}
+          BR_OWNER_AUDITION_AUTHORITY_REF: owner-explicit:BR_OWNER_V1_FINE_TUNE
         run: |
           set -euo pipefail
           "$BR_OWNER_FINETUNE_PRIVATE_WORKSPACE/venv/bin/python"             scripts/owner_voice_single_clone_delivery.py
@@ -232,3 +250,28 @@ jobs:
           echo "PUBLIC_OWNER_AUDIO_ARTIFACTS=0"
           echo "PUBLIC_FINETUNE_MODEL_ARTIFACTS=0"
           echo "RUNTIME_ACTIVATION=BLOCKED_PENDING_HUMAN_REVIEW"
+
+
+  compute_blocked_receipt:
+    needs: contract
+    if: ${{ needs.contract.outputs.train_requested == 'true' && needs.contract.outputs.compute_ready != 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          row=json.loads(Path("config/owner_voice_qwen3_tts_finetune_v1.json").read_text())
+          assert row["compute_admission"]["github_self_hosted_gpu"]["status"]=="BLOCKED_NO_VERIFIED_ONLINE_MATCHING_RUNNER"
+          assert row["compute_admission"]["preferred_zero_cost_backend"]=="KAGGLE_T4X2"
+          assert row["compute_admission"]["github_paid_gpu_fallback"]=="FORBIDDEN"
+          print("OWNER_FINE_TUNE_TRAINING=BLOCKED_NO_VERIFIED_GPU_RUNNER")
+          print("OWNER_FINE_TUNE_ZERO_COST_BACKEND=KAGGLE_T4X2")
+          print("PAID_GPU_FALLBACK=FORBIDDEN")
+          print("RUNTIME_ACTIVATION=BLOCKED")
+          PY

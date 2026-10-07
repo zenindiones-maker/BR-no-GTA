@@ -9,7 +9,7 @@ SINGLE_CLONE_REQUEST=Path(".run/br-owner-v1-single-human-clone.request.json")
 
 def test_finetune_policy_is_single_human_qwen_17b_only():
     row=json.loads(CONFIG.read_text(encoding="utf-8"))
-    assert row["schema_version"]=="OwnerVoiceQwen3TTSFineTunePolicy/v2"
+    assert row["schema_version"]=="OwnerVoiceQwen3TTSFineTunePolicy/v3"
     assert row["voice_identity_id"]=="BR_OWNER_V1"
     assert row["reference_source"]=="TELEGRAM_HUMAN_OWNER"
     assert row["model_id"]=="Qwen/Qwen3-TTS-12Hz-1.7B-Base"
@@ -96,3 +96,21 @@ def test_checkpoint_selection_is_identity_and_content_gated_before_telegram():
     assert "OWNER_FINETUNE_NO_QUALIFIED_CHECKPOINT" in source
     assert '"content_audio_prescreen":"PASS"' in source
     assert '"runtime_activation":False' in source
+
+
+def test_compute_admission_blocks_unverified_self_hosted_gpu():
+    cfg=json.loads(CONFIG.read_text(encoding="utf-8"))
+    admission=cfg["compute_admission"]
+    assert admission["github_self_hosted_gpu"]["status"]=="BLOCKED_NO_VERIFIED_ONLINE_MATCHING_RUNNER"
+    assert admission["preferred_zero_cost_backend"]=="KAGGLE_T4X2"
+    assert admission["github_paid_gpu_fallback"]=="FORBIDDEN"
+    source=WORKFLOW.read_text(encoding="utf-8")
+    assert "needs.contract.outputs.compute_ready == 'true'" in source
+    assert "compute_blocked_receipt:" in source
+
+def test_finetune_delivery_manifest_and_workspace_contract():
+    source=EVALUATE.read_text(encoding="utf-8")
+    assert '"generate_call_count":1' in source
+    workflow=WORKFLOW.read_text(encoding="utf-8")
+    assert "BR_OWNER_AUDITION_WORKSPACE:" in workflow
+    assert "BR_OWNER_V1_FINE_TUNE" in workflow

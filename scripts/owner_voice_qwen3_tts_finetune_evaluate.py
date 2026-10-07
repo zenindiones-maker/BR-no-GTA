@@ -168,6 +168,7 @@ def main()->int:
             "speaker":"BR_OWNER_V1",
             "checkpoint":checkpoint.name,
             "reference_source":"TELEGRAM_HUMAN_OWNER",
+            "generate_call_count":1,
             "runtime_activation":False,
         },
     }

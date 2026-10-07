@@ -1,5 +1,5 @@
 {
-  "schema_version": "OwnerVoiceQwen3TTSFineTunePolicy/v2",
+  "schema_version": "OwnerVoiceQwen3TTSFineTunePolicy/v3",
   "voice_identity_id": "BR_OWNER_V1",
   "reference_source": "TELEGRAM_HUMAN_OWNER",
   "model_id": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
@@ -41,5 +41,22 @@
   },
   "model_revision": "fd4b254389122332181a7c3db7f27e918eec64e3",
   "tokenizer_id": "Qwen/Qwen3-TTS-Tokenizer-12Hz",
-  "tokenizer_revision": "a87c50897bb00837eb857d0538b29d117541d7f6"
+  "tokenizer_revision": "a87c50897bb00837eb857d0538b29d117541d7f6",
+  "compute_admission": {
+    "github_self_hosted_gpu": {
+      "required_labels": [
+        "self-hosted",
+        "linux",
+        "x64",
+        "br-owner-voice-gpu"
+      ],
+      "status": "BLOCKED_NO_VERIFIED_ONLINE_MATCHING_RUNNER",
+      "evidence_run_id": 37554675405,
+      "queued_train_job_id": 112578116010,
+      "fail_closed": true
+    },
+    "preferred_zero_cost_backend": "KAGGLE_T4X2",
+    "github_paid_gpu_fallback": "FORBIDDEN",
+    "unknown_cost_backend": "FORBIDDEN"
+  }
 }
