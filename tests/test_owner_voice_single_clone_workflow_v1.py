@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.services.gta6_pronunciation_lexicon_service import (
     build_gta6_pronunciation_batches,
     build_gta6_pronunciation_segments,
+    gta6_target_evidence_score,
 )
 from app.services.owner_voice_human_audition_pack_service import evaluate_short_candidate
 
@@ -356,3 +357,21 @@ def test_vice_city_gets_dedicated_fresh_owner_prompt():
     assert 'VICE_CITY_TERM in str(row["canonical_text"])' in source
     assert "voice_clone_prompt=segment_prompts" in source
 
+
+
+def test_vice_city_reference_detection_accepts_asr_near_matches_only_as_evidence():
+    assert gta6_target_evidence_score("vici city", "Vice City") >= 0.78
+    assert gta6_target_evidence_score("vise siti", "Vice City") >= 0.78
+    assert gta6_target_evidence_score("vais siti", "Vice City") >= 0.78
+    assert gta6_target_evidence_score("Liberty City", "Vice City") < 0.78
+
+
+def test_vice_city_prompt_selection_uses_fuzzy_asr_evidence_without_respelled_tts():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    lexicon=Path("app/services/gta6_pronunciation_lexicon_service.py").read_text(encoding="utf-8")
+    assert "VICE_CITY_REFERENCE_EVIDENCE_MIN=0.78" in source
+    assert "vice_city_evidence_score" in source
+    assert "gta6_target_evidence_score" in source
+    assert "VICE_CITY_ASR_EVIDENCE_ALIASES" in lexicon
+    assert '{"canonical_text":"Vice City","spoken_text":"Vice City","language":"English"}' not in lexicon
+    assert '"spoken_text":term,"language":"English"' in lexicon
