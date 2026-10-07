@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from app.services.owner_voice_single_clone_delivery_service import (
+    RECONCILIATION_REQUIRED,
     SingleCloneDeliveryLedger,
     deliver_single_clone_durable,
     review_callback_data,
@@ -261,4 +262,85 @@ def test_delivery_control_call_matches_telegram_api_signature_without_duplicate_
     )
     assert result["state"]=="CONFIRMED"
     assert result["confirmed_message_ids"]["control"]==803
+
+def _control_typeerror_reconciliation_ledger():
+    store=FakeStore()
+    ledger=SingleCloneDeliveryLedger(
+        store=store,
+        clone_id="BR_OWNER_V1_SINGLE_CLONE_37694868547_1",
+    )
+    ledger.create(
+        telegram_chat_id=-1003932610936,
+        reference_source_message_id=638,
+        clone_sha256="b045f551cbd560b048ba5489d1addeff12744fd262f7f6d70e265cc2f6ed7c96",
+        authority_ref="owner-explicit:BR_OWNER_V1_SINGLE_CLONE",
+        clone_identity_gate="FAIL",
+        content_audio_prescreen="FAIL",
+        review_token="cf30d705f2d0259fc844",
+        identity_anchor_telegram_input_id=121,
+        pronunciation_reference_telegram_input_ids=[126,127],
+        vice_city_reference_telegram_input_id=126,
+    )
+    def seed(row):
+        row["state"]="CLONE_SENT"
+        row["side_effect_status"]="SENDING"
+        row["reconciliation_state"]=RECONCILIATION_REQUIRED
+        row["failure_class"]="control:TypeError"
+        row["active_operation"]=None
+        row["confirmed_message_ids"]={"reference":662,"clone":663}
+        row["blind_retry_count"]=0
+    ledger._commit(seed,event="TEST_SEED_CONTROL_TYPEERROR")
+    return store,ledger
+
+
+def test_known_pre_side_effect_control_typeerror_can_reopen_only_control():
+    _store,ledger=_control_typeerror_reconciliation_ledger()
+    state=ledger.reopen_known_pre_side_effect_control_failure(
+        expected_failure_class="control:TypeError"
+    )
+    assert state["state"]=="CLONE_SENT"
+    assert state["reconciliation_state"] is None
+    assert state["failure_class"] is None
+    assert state["active_operation"] is None
+    assert state["confirmed_message_ids"]=={"reference":662,"clone":663}
+    assert state["blind_retry_count"]==0
+
+
+def test_control_reconciliation_sends_only_control_and_preserves_reference_clone_ids():
+    _store,ledger=_control_typeerror_reconciliation_ledger()
+    ledger.reopen_known_pre_side_effect_control_failure(
+        expected_failure_class="control:TypeError"
+    )
+    api=FakeApi()
+    result=deliver_single_clone_durable(
+        api,ledger=ledger,clone_path=""
+    )
+    assert [name for name,_kwargs in api.calls]==["control"]
+    assert result["state"]=="CONFIRMED"
+    assert result["confirmed_message_ids"]=={
+        "reference":662,
+        "clone":663,
+        "control":703,
+    }
+    assert result["blind_retry_count"]==0
+
+
+def test_control_reconciliation_refuses_potential_post_side_effect_failures():
+    for failure in (
+        "control:TimeoutError",
+        "control:ConnectionError",
+        "control:process_restarted_during_sending",
+    ):
+        _store,ledger=_control_typeerror_reconciliation_ledger()
+        def mutate(row):
+            row["failure_class"]=failure
+        ledger._commit(mutate,event="TEST_MUTATE_FAILURE")
+        import pytest
+        with pytest.raises(
+            ValueError,
+            match="SINGLE_CLONE_CONTROL_RECONCILIATION_NOT_SAFE",
+        ):
+            ledger.reopen_known_pre_side_effect_control_failure(
+                expected_failure_class="control:TypeError"
+            )
 
