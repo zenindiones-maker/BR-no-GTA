@@ -193,7 +193,7 @@ def test_single_clone_delivery_persists_exact_identity_and_pronunciation_lineage
     assert 'manifest.get("vice_city_reference_telegram_input_id")' in source
 
 
-def test_compact_review_callback_binds_lineage_and_stays_within_telegram_limit():
+def test_compact_review_callback_binds_lineage_and_stays_within_telegram_limit(tmp_path):
     token=review_token_for_clone("clone-compact")
     callback=review_callback_data(
         "approve",
@@ -217,7 +217,7 @@ def test_compact_review_callback_binds_lineage_and_stays_within_telegram_limit()
         update=update,
         allowed_user_id=77,
         allowed_chat_ids={-1001},
-        state_path=__import__("pathlib").Path("/tmp")/"review-compact-test.json",
+        state_path=tmp_path/"review-compact-test.json",
         now_epoch=124.0,
     )
     assert receipt["review_token"]==token
