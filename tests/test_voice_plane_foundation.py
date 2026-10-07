@@ -41,6 +41,10 @@ from app.services.owner_voice_qwen_runtime_service import (
     OwnerVoiceQwenRuntimeError,
     load_private_prompt_bundle,
 )
+from app.services.owner_voice_private_promotion_service import (
+    OwnerVoicePrivatePromotionError,
+    promote_approved_owner_voice,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -575,3 +579,125 @@ def test_qwen_runtime_http_server_is_loopback_authenticated_and_bounded():
     assert "BR_VOICE_RUNTIME_TOKEN" in source
     assert "MAX_REQUEST_BYTES" in source
     assert '"/v1/speech"' in source
+
+
+def _promotion_reference(tmp_path, input_id, name, text):
+    path=tmp_path/f"{name}.wav"
+    payload=(name+"-audio").encode()
+    path.write_bytes(payload)
+    return {
+        "telegram_input_id":input_id,
+        "runtime_path":str(path),
+        "sha256":hashlib.sha256(payload).hexdigest(),
+        "ref_text":text,
+    }
+
+
+def _promotion_delivery(token):
+    return {
+        "schema_version":"OwnerVoiceSingleCloneDelivery/v1",
+        "clone_id":"BR_OWNER_V1_SINGLE_CLONE_FINAL_1",
+        "state":"CONFIRMED",
+        "candidate_mode":"SINGLE_CLONE",
+        "review_token":token,
+        "clone_identity_gate":"PASS",
+        "content_audio_prescreen":"PASS",
+        "runtime_activation":False,
+        "identity_anchor_telegram_input_id":125,
+        "pronunciation_reference_telegram_input_ids":[126,127],
+        "vice_city_reference_telegram_input_id":126,
+    }
+
+
+def _promotion_review(token):
+    return {
+        "schema":"OwnerVoiceHumanReviewReceipt/v2",
+        "voice_identity_id":"BR_OWNER_V1",
+        "candidate_mode":"SINGLE_CLONE",
+        "review_token":token,
+        "status":"APPROVED_PENDING_PROMOTION",
+        "review_action":"approve",
+        "production_activation":"BLOCKED_PENDING_PROMOTION",
+        "authorized_human":True,
+        "production_authority":True,
+        "lineage_bound":True,
+        "automatic_gates_passed":True,
+        "identity_anchor_telegram_input_id":125,
+        "pronunciation_reference_telegram_input_ids":[126,127],
+        "vice_city_reference_telegram_input_id":126,
+        "recorded_at_epoch":123.0,
+    }
+
+
+def test_private_promotion_writes_hash_bound_qwen_package_and_profile_without_activation(tmp_path):
+    repo_root=tmp_path/"repo"; repo_root.mkdir()
+    source_root=tmp_path/"materialized"; source_root.mkdir()
+    private_root=tmp_path/"private"
+    refs={
+        125:_promotion_reference(source_root,125,"anchor","Booooa meu povo, aqui é BR no GTA 6."),
+        126:_promotion_reference(source_root,126,"vice","Vice City."),
+        127:_promotion_reference(source_root,127,"names","Rockstar Games, Jason Duval e Lucia Caminos."),
+    }
+    token=review_token_for_clone("BR_OWNER_V1_SINGLE_CLONE_FINAL_1")
+    receipt=promote_approved_owner_voice(
+        clone_delivery=_promotion_delivery(token),
+        human_review=_promotion_review(token),
+        references_by_input_id=refs,
+        private_store_root=private_root,
+        repository_root=repo_root,
+    )
+    assert receipt["schema"]=="OwnerVoicePrivatePromotionReceipt/v1"
+    assert receipt["status"]=="PROMOTED_PRIVATE_PENDING_PUBLIC_ACTIVATION"
+    assert receipt["runtime_activation"] is False
+    assert len(receipt["voice_prompt_sha256"])==64
+    assert len(receipt["profile_sha256"])==64
+
+    package_path=private_root/"BR_OWNER_V1.prompt.json"
+    profile_path=private_root/"BR_OWNER_V1.json"
+    assert package_path.is_file()
+    assert profile_path.is_file()
+    package=json.loads(package_path.read_text())
+    profile=json.loads(profile_path.read_text())
+    assert hashlib.sha256(package_path.read_bytes()).hexdigest()==receipt["voice_prompt_sha256"]
+    assert profile["clone_provider"]=="qwen3-tts"
+    assert profile["clone_model"]=="Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+    assert profile["voice_prompt_sha256"]==receipt["voice_prompt_sha256"]
+    assert profile["quality_status"]=="READY"
+    assert profile["generic_voice_fallback"] is False
+    assert package["pronunciation_references"]["Vice City"]["ref_text"]=="Vice City."
+    assert package["pronunciation_references"]["__english__"]["ref_text"].startswith("Rockstar Games")
+    assert (package_path.stat().st_mode & 0o777)==0o600
+    assert (profile_path.stat().st_mode & 0o777)==0o600
+    assert (private_root.stat().st_mode & 0o777)==0o700
+
+
+def test_private_promotion_rejects_auto_gate_failure_even_with_human_approval(tmp_path):
+    repo_root=tmp_path/"repo"; repo_root.mkdir()
+    private_root=tmp_path/"private"
+    token=review_token_for_clone("BR_OWNER_V1_SINGLE_CLONE_FINAL_1")
+    delivery=_promotion_delivery(token)
+    delivery["clone_identity_gate"]="FAIL"
+    with pytest.raises(OwnerVoicePrivatePromotionError,match="AUTOMATIC_GATES_REQUIRED"):
+        promote_approved_owner_voice(
+            clone_delivery=delivery,
+            human_review=_promotion_review(token),
+            references_by_input_id={},
+            private_store_root=private_root,
+            repository_root=repo_root,
+        )
+
+
+def test_private_promotion_rejects_review_token_or_lineage_mismatch(tmp_path):
+    repo_root=tmp_path/"repo"; repo_root.mkdir()
+    private_root=tmp_path/"private"
+    token=review_token_for_clone("BR_OWNER_V1_SINGLE_CLONE_FINAL_1")
+    review=_promotion_review(token)
+    review["review_token"]="0"*20
+    with pytest.raises(OwnerVoicePrivatePromotionError,match="REVIEW_BINDING_MISMATCH"):
+        promote_approved_owner_voice(
+            clone_delivery=_promotion_delivery(token),
+            human_review=review,
+            references_by_input_id={},
+            private_store_root=private_root,
+            repository_root=repo_root,
+        )
