@@ -22,7 +22,7 @@ from app.services.pronunciation_service import (
 
 def test_lexicon_is_governed_owner_qwen_code_switch_without_respellings():
     lexicon=load_pronunciation_lexicon()
-    assert lexicon["version"]=="2026.10.07.1-owner-qwen-governed-code-switch"
+    assert lexicon["version"]=="2026.10.07.2-owner-br-vice-city"
     assert lexicon["default_locale"]=="pt-BR"
     assert lexicon["policy"]["governed_foreign_chunks_only"] is True
     assert lexicon["policy"]["foreign_language_chunks_forbidden"] is False
@@ -32,9 +32,9 @@ def test_lexicon_is_governed_owner_qwen_code_switch_without_respellings():
     entries={item["identity"]:item for item in lexicon["entries"]}
     assert entries["gta-6"]["locale"]=="pt-BR"
     assert entries["gta-6"]["synthesis_text"]=="Gê Tê A seis"
-    assert entries["vice-city"]["locale"]=="en-US"
-    assert entries["vice-city"]["synthesis_text"]=="Vice City"
-    assert entries["vice-city"]["target_ipa"]=="vaɪs ˈsɪti"
+    assert entries["vice-city"]["locale"]=="pt-BR"
+    assert entries["vice-city"]["synthesis_text"]=="vaice citi"
+    assert entries["vice-city"]["owner_reading_authority"]=="EXPLICIT_OWNER_PTBR"
     assert entries["character-lucia"]["locale"]=="en-US"
     assert entries["character-lucia"]["synthesis_text"]=="Lucia"
     assert entries["leonida"]["locale"]=="en-US"
@@ -73,14 +73,13 @@ def test_explicit_foreign_metadata_cannot_create_ungoverned_foreign_chunk():
     assert plan.spans[0].locale=="pt-BR"
 
 
-def test_vice_city_uses_canonical_english_segment_same_owner_voice():
+def test_vice_city_uses_owner_approved_brazilian_reading_without_mutating_canonical_text():
     text="A Rockstar mostrou Vice City e Jason comentou a novidade."
     plan=resolve_synthesis_plan(text)
     vice=next(span for span in plan.spans if span.pronunciation_identity=="vice-city")
     assert vice.text=="Vice City"
-    assert vice.locale=="en-US"
-    assert vice.synthesis_text=="Vice City"
-    assert vice.target_ipa=="vaɪs ˈsɪti"
+    assert vice.locale=="pt-BR"
+    assert vice.synthesis_text=="vaice citi"
     assert plan.canonical_text_preserved is True
 
 
@@ -218,6 +217,6 @@ def test_explicit_metadata_cannot_override_governed_vice_city_lexicon():
         "synthesis_text":"Váis Síti",
     }])
     vice=next(span for span in plan.spans if span.pronunciation_identity=="vice-city")
-    assert vice.locale=="en-US"
-    assert vice.synthesis_text=="Vice City"
-    assert plan.rendered_text=="Vice City"
+    assert vice.locale=="pt-BR"
+    assert vice.synthesis_text=="vaice citi"
+    assert plan.rendered_text=="vaice citi"
