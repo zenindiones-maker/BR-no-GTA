@@ -8,6 +8,7 @@ from app.services.owner_voice_speaker_identity_service import (
     cosine_similarity,
     calibrate_owner_window_consistency,
     evaluate_clone_identity_gate,
+    evaluate_language_matched_segment_identity_gate,
     evaluate_reference_window_consistency,
     select_canonical_reference,
 )
@@ -127,3 +128,49 @@ def test_identity_decision_metrics_keep_full_precision_and_round_only_for_report
     fraction=pos-lo
     expected=ordered[lo]*(1.0-fraction)+ordered[hi]*fraction
     assert profile["clone_centroid_min_similarity"]==expected
+
+
+def test_language_matched_identity_keeps_pt_strict_and_english_reference_matched():
+    profile=calibrate_owner_identity_profile(_embeddings())
+
+    result=evaluate_language_matched_segment_identity_gate(
+        profile,
+        segments=[
+            {
+                "position":1,
+                "language":"pt",
+                "embedding":[0.999,0.01,0.0],
+                "reference_embedding":[1.0,0.0,0.0],
+            },
+            {
+                "position":2,
+                "language":"en",
+                "embedding":[0.0,0.999,0.01],
+                "reference_embedding":[0.0,1.0,0.0],
+            },
+        ],
+    )
+    assert result["passed"] is True
+    assert result["calibration"]=="LANGUAGE_MATCHED_OWNER_REFERENCE_P10"
+    assert result["segments"][0]["gate_mode"]=="PT_OWNER_CENTROID_PLUS_REFERENCE"
+    assert result["segments"][1]["gate_mode"]=="LANGUAGE_MATCHED_OWNER_REFERENCE"
+    assert result["segments"][1]["similarity_to_centroid"] < profile["clone_centroid_min_similarity"]
+    assert result["segments"][1]["similarity_to_language_reference"] >= profile["clone_reference_min_similarity"]
+
+
+def test_language_matched_identity_rejects_bad_english_owner_match_without_lowering_threshold():
+    profile=calibrate_owner_identity_profile(_embeddings())
+    result=evaluate_language_matched_segment_identity_gate(
+        profile,
+        segments=[
+            {
+                "position":1,
+                "language":"en",
+                "embedding":[0.0,0.0,1.0],
+                "reference_embedding":[0.0,1.0,0.0],
+            },
+        ],
+    )
+    assert result["passed"] is False
+    assert result["reference_min_similarity"]==profile["clone_reference_min_similarity"]
+    assert result["segments"][0]["passed"] is False
