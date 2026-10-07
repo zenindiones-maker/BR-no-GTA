@@ -271,7 +271,7 @@ def test_final_gta_pronunciation_generation_uses_explicit_multilingual_segments(
 def test_explicit_gta_segmenter_runtime_contract():
     segments=build_gta6_pronunciation_segments("GTA 6, Vice City, Rockstar Games.")
     assert any(row["spoken_text"]=="Gê Tê A seis" and row["language"]=="Portuguese" for row in segments)
-    assert any(row["spoken_text"]=="vaicy siti" and row["language"]=="Portuguese" for row in segments)
+    assert any(row["spoken_text"]=="Vice Citi" and row["language"]=="Portuguese" for row in segments)
     assert any(row["spoken_text"]=="Rockstar Games" and row["language"]=="English" for row in segments)
     assert all(row["language"]!="Auto" for row in segments)
 
@@ -288,7 +288,7 @@ def test_gta_pronunciation_batches_coalesce_adjacent_english_targets_for_cpu():
     assert any(row["spoken_text"]=="Gê Tê A seis" and row["language"]=="Portuguese" for row in batches)
     english=" ".join(str(row["spoken_text"]) for row in batches if row["language"]=="English")
     portuguese=" ".join(str(row["spoken_text"]) for row in batches if row["language"]=="Portuguese")
-    assert "vaicy siti" in portuguese
+    assert "Vice Citi" in portuguese
     for term in ("Rockstar Games","Leonida","Port Gellhorn","Jason Duval","Lucia Caminos","Brian Heder"):
         assert term in english
 
@@ -374,7 +374,7 @@ def test_vice_city_gets_dedicated_fresh_owner_prompt():
     assert "OWNER_VICE_CITY_REFERENCE_TELEGRAM_INPUT_ID=" in source
     assert "vice_city_prompt" in source
     assert "segment_prompts=[]" in source
-    assert 'VICE_CITY_TERM in str(row["canonical_text"])' in source
+    assert 'VICE_CITY_TERM in canonical_text' in source
     assert "voice_clone_prompt=segment_prompts" in source
 
 
@@ -495,7 +495,7 @@ def test_production_pronunciation_uses_governed_qwen_code_switch_not_portuguese_
     assert by_id["gta-6"].locale=="pt-BR"
     assert by_id["gta-6"].synthesis_text=="Gê Tê A seis"
     assert by_id["vice-city"].locale=="pt-BR"
-    assert by_id["vice-city"].synthesis_text=="vaicy siti"
+    assert by_id["vice-city"].synthesis_text=="Vice Citi"
     assert by_id["lucia-caminos"].locale=="en-US"
     assert by_id["lucia-caminos"].synthesis_text=="Lucia Caminos"
     assert by_id["jason-duval"].locale=="en-US"
@@ -600,23 +600,23 @@ def test_vice_city_brazilian_owner_pronunciation_overrides_english_language_rout
     segments=build_gta6_pronunciation_segments("Vice City")
     assert segments==({
         "canonical_text":"Vice City",
-        "spoken_text":"vaicy siti",
+        "spoken_text":"Vice Citi",
         "language":"Portuguese",
         "is_pronunciation_target":True,
     },)
     source=ORCHESTRATOR.read_text(encoding="utf-8")
     routing=source.split("segment_prompts=[]",1)[1].split("generation_t0=",1)[0]
-    assert 'if VICE_CITY_TERM in str(row["canonical_text"]):' in routing
-    assert routing.index('if VICE_CITY_TERM in str(row["canonical_text"]):') < routing.index('if language=="Portuguese":')
+    assert 'if VICE_CITY_TERM in canonical_text:' in routing
+    assert routing.index('if VICE_CITY_TERM in canonical_text:') < routing.index('if language=="Portuguese":')
 
 
 def test_vice_city_owner_ptbr_reading_is_explicit_and_keeps_targeted_prompt():
     segments=build_gta6_pronunciation_segments("Chegamos em Vice City hoje.")
     vice=next(row for row in segments if row["canonical_text"]=="Vice City")
-    assert vice["spoken_text"]=="vaicy siti"
+    assert vice["spoken_text"]=="Vice Citi"
     assert vice["language"]=="Portuguese"
 
     source=ORCHESTRATOR.read_text(encoding="utf-8")
     prompt_block=source.split("segment_prompts=[]",1)[1].split("generation_t0=",1)[0]
-    assert 'if VICE_CITY_TERM in str(row["canonical_text"]):' in prompt_block
-    assert prompt_block.index('if VICE_CITY_TERM in str(row["canonical_text"]):') < prompt_block.index('if language=="Portuguese":')
+    assert 'if VICE_CITY_TERM in canonical_text:' in prompt_block
+    assert prompt_block.index('if VICE_CITY_TERM in canonical_text:') < prompt_block.index('if language=="Portuguese":')
