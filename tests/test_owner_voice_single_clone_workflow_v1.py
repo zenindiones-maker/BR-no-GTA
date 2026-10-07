@@ -4,6 +4,7 @@ from app.services.gta6_pronunciation_lexicon_service import (
     build_gta6_pronunciation_batches,
     build_gta6_pronunciation_segments,
 )
+from app.services.owner_voice_human_audition_pack_service import evaluate_short_candidate
 
 from pathlib import Path
 
@@ -269,3 +270,69 @@ def test_gta_pronunciation_batches_coalesce_adjacent_english_targets_for_cpu():
     english=" ".join(str(row["spoken_text"]) for row in batches if row["language"]=="English")
     for term in ("Rockstar Games","Vice City","Leonida","Port Gellhorn","Jason Duval","Lucia Caminos","Brian Heder"):
         assert term in english
+
+
+def test_multilingual_candidate_qa_requires_segment_language_evidence_not_global_pt():
+    result=evaluate_short_candidate({
+        "candidate_id":"CLONE",
+        "voice_identity_id":"BR_OWNER_V1",
+        "provider_default_voice_used":False,
+        "provider_preset_voice_used":False,
+        "generic_voice_fallback":False,
+        "detected_language":"multilingual",
+        "language_probability":1.0,
+        "language_mode":"EXPLICIT_SEGMENTED_MULTILINGUAL",
+        "segment_language_qas":[
+            {"language":"pt","passed":True},
+            {"language":"en","passed":True},
+        ],
+        "vad_speech_ratio":0.95,
+        "expected_text":"Gê Tê A seis Vice City",
+        "observed_text":"Gê Tê A seis Vice City",
+        "audio_metrics":{
+            "duration_seconds":3.0,
+            "clipping_ratio":0.0,
+            "speech_ratio":0.95,
+        },
+        "speaker_similarity":{"status":"PASS","score":0.99,"certifies_identity":True},
+    })
+    assert "NON_PORTUGUESE_OUTPUT" not in result["issues"]
+    assert "SEGMENT_LANGUAGE_QA_FAIL" not in result["issues"]
+    assert result["eligible"] is True
+
+
+def test_multilingual_candidate_qa_fails_when_any_segment_language_qa_fails():
+    result=evaluate_short_candidate({
+        "candidate_id":"CLONE",
+        "voice_identity_id":"BR_OWNER_V1",
+        "provider_default_voice_used":False,
+        "provider_preset_voice_used":False,
+        "generic_voice_fallback":False,
+        "detected_language":"multilingual",
+        "language_probability":1.0,
+        "language_mode":"EXPLICIT_SEGMENTED_MULTILINGUAL",
+        "segment_language_qas":[
+            {"language":"pt","passed":True},
+            {"language":"en","passed":False},
+        ],
+        "vad_speech_ratio":0.95,
+        "expected_text":"Gê Tê A seis Vice City",
+        "observed_text":"Gê Tê A seis Vice City",
+        "audio_metrics":{
+            "duration_seconds":3.0,
+            "clipping_ratio":0.0,
+            "speech_ratio":0.95,
+        },
+        "speaker_similarity":{"status":"PASS","score":0.99,"certifies_identity":True},
+    })
+    assert "SEGMENT_LANGUAGE_QA_FAIL" in result["issues"]
+
+
+def test_final_multilingual_qa_transcribes_each_generated_segment_in_its_language():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert "segment_language_qas=[]" in source
+    assert 'forced_language="pt" if language=="Portuguese" else "en"' in source
+    assert "qa-segment-" in source
+    assert '"language_mode":"EXPLICIT_SEGMENTED_MULTILINGUAL"' in source
+    assert '"expected_text":spoken_expected_text' in source
+    assert 'str(clone16),language="pt"' not in source
