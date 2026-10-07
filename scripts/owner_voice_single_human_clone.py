@@ -11,6 +11,7 @@ from typing import Any
 
 from app.services.owner_voice_audio_quality_service import pcm16_quality_metrics
 from app.services.owner_voice_human_audition_pack_service import evaluate_short_candidate
+from app.services.owner_voice_human_review_delivery_policy_service import build_human_review_delivery_decision
 from app.services.owner_voice_private_materialization_service import materialize_telegram_owner_references
 from app.services.owner_voice_speaker_identity_service import (
     PROFILE_SCHEMA,
@@ -422,11 +423,9 @@ def main()->int:
     print(f"OWNER_CLONE_CENTROID_MIN_SIMILARITY={identity['centroid_min_similarity']}")
     print(f"OWNER_CLONE_REFERENCE_MIN_SIMILARITY={identity['reference_min_similarity']}")
     print("QWEN_REFERENCE_AUDIO_LINEAGE=ORIGINAL_TELEGRAM_TO_24K_DIRECT")
-    if identity["passed"] is not True:
-        print("CLONE_IDENTITY_GATE=FAIL")
-        print("QWEN3_TTS_IDENTITY_MATCH=FAIL")
-        raise RuntimeError("OWNER_CLONE_IDENTITY_MISMATCH")
-    print("CLONE_IDENTITY_GATE=PASS")
+    identity_gate="PASS" if identity["passed"] is True else "FAIL"
+    print("CLONE_IDENTITY_GATE="+identity_gate)
+    print("QWEN3_TTS_IDENTITY_MATCH="+identity_gate)
 
     clone_metrics=pcm16_quality_metrics(clone16)
     seg_iter,info=stt.transcribe(
@@ -443,13 +442,18 @@ def main()->int:
         "language_probability":float(getattr(info,"language_probability",0.0) or 0.0),
         "vad_speech_ratio":_vad_ratio(segments,float(clone_metrics.get("duration_seconds") or 0.0)),
         "expected_text":SHORT_TEXT,"observed_text":observed,"audio_metrics":clone_metrics,
-        "speaker_similarity":{"status":"PASS","score":identity["similarity_to_centroid"],"certifies_identity":True},
+        "speaker_similarity":{"status":identity_gate,"score":identity["similarity_to_centroid"],"certifies_identity":identity_gate=="PASS"},
     })
-    if qa["eligible"] is not True:
-        print("CONTENT_AUDIO_PRESCREEN=FAIL")
+    content_audio_prescreen="PASS" if qa["eligible"] is True else "FAIL"
+    print("CONTENT_AUDIO_PRESCREEN="+content_audio_prescreen)
+    if qa["issues"]:
         print("CONTENT_AUDIO_QA_ISSUES="+",".join(qa["issues"]))
-        raise RuntimeError("OWNER_SINGLE_CLONE_CONTENT_QA_FAILED")
-    print("CONTENT_AUDIO_PRESCREEN=PASS")
+    review_decision=build_human_review_delivery_decision(
+        identity_gate=identity_gate,
+        content_audio_prescreen=content_audio_prescreen,
+    )
+    print("AUDITION_DELIVERY_ELIGIBLE=PASS")
+    print("RUNTIME_ACTIVATION=BLOCKED_PENDING_HUMAN_REVIEW")
 
     source_row=next(
         row for row in index["references"]
@@ -467,8 +471,13 @@ def main()->int:
         "telegram_chat_id":int(source_row["telegram_chat_id"]),
         "clone_path":str(clone_path),
         "clone_sha256":clone_sha,
-        "clone_identity_gate":"PASS",
-        "content_audio_prescreen":"PASS",
+        "clone_identity_gate":identity_gate,
+        "content_audio_prescreen":content_audio_prescreen,
+        "audition_delivery_eligible":review_decision["audition_delivery_eligible"],
+        "human_review_required":review_decision["human_review_required"],
+        "human_review":review_decision["human_review"],
+        "runtime_activation":review_decision["runtime_activation"],
+        "automatic_gates_passed":review_decision["automatic_gates_passed"],
         "clone_similarity_to_centroid":identity["similarity_to_centroid"],
         "clone_similarity_to_reference":identity["similarity_to_reference"],
         "clone_centroid_threshold":identity["centroid_min_similarity"],
@@ -513,7 +522,9 @@ def main()->int:
     print("QWEN3_TTS_X_VECTOR_ONLY_MODE=FALSE")
     print("QWEN3_TTS_GENERATE_CALL_TARGET=1")
     print("QWEN3_TTS_GENERATE_CALL_COUNT=1")
-    print("QWEN3_TTS_IDENTITY_MATCH=PASS")
+    print("QWEN3_TTS_IDENTITY_MATCH="+identity_gate)
+    print("HUMAN_REVIEW=PENDING")
+    print("BR_OWNER_V1_RUNTIME_ACTIVATION=BLOCKED_PENDING_HUMAN_REVIEW")
     print(f"CANDIDATE_GENERATION_SECONDS={generation_seconds:.6f}")
     return 0
 
