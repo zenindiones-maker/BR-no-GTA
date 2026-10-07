@@ -1057,12 +1057,13 @@ def main()->int:
     segment_prompts=[]
     for row in pronunciation_segments:
         language=str(row["language"])
-        if language=="Portuguese":
-            segment_prompts.append(anchor_prompt)
-        elif VICE_CITY_TERM in str(row["canonical_text"]):
+        canonical_text=str(row["canonical_text"])
+        if VICE_CITY_TERM in canonical_text:
             if vice_city_prompt is None:
                 raise RuntimeError("OWNER_VICE_CITY_PRONUNCIATION_REFERENCE_REQUIRED")
             segment_prompts.append(vice_city_prompt)
+        elif language=="Portuguese":
+            segment_prompts.append(anchor_prompt)
         elif pronunciation_hybrid_prompt is not None:
             segment_prompts.append(pronunciation_hybrid_prompt)
         else:
@@ -1113,7 +1114,13 @@ def main()->int:
             16000,
         )
         segment_embedding=_embedding(classifier,segment_identity16)
-        if language=="Portuguese":
+        canonical_text=str(row["canonical_text"])
+        if VICE_CITY_TERM in canonical_text:
+            if pronunciation_reference_embedding is None:
+                raise RuntimeError("OWNER_VICE_CITY_IDENTITY_REFERENCE_REQUIRED")
+            reference_embedding=pronunciation_reference_embedding
+            gate_language="pt"
+        elif language=="Portuguese":
             reference_embedding=canonical_embedding
             gate_language="pt"
         elif language=="English":
