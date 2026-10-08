@@ -24,6 +24,7 @@ WEB_HAR_CAPABILITY_ID = "reverse-engineering.web.har-observe"
 EXPERIMENT_CAPABILITY_ID = "reverse-engineering.experiment.assess"
 FIDELITY_CAPABILITY_ID = "reverse-engineering.reconstruction.fidelity"
 STUDIO_CAPABILITY_ID = "reverse-engineering.studio.forensics"
+IRIS_CAPABILITY_ID = "reverse-engineering.web.iris-vision"
 MEDIA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_media_observation"
 REA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_software_observation"
 WEB_HAR_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_web_har_observation"
@@ -413,4 +414,69 @@ def execute_authorized_studio_observation(
         "production_mutation":False,
         "memory_write":"NOT_ATTEMPTED",
         "authority":"DEEPSEEK_HARNESS",
+    }
+
+
+def execute_authorized_iris_capture(
+    *, authorization: Any, routing_decision: Any, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """A single owned-file visual observation, not a generic browser MCP bridge."""
+    auth = _authorized_context(
+        authorization=authorization, routing_decision=routing_decision,
+        capability_id=IRIS_CAPABILITY_ID,
+    )
+    if not isinstance(payload, dict) or set(payload) != {
+        "source_path", "output_path", "rights", "viewport", "selector"
+    }:
+        raise PermissionError("IRIS_HARNESS_PAYLOAD_SCHEMA_INVALID")
+    if payload["rights"] != "owned":
+        raise PermissionError("IRIS_HARNESS_ONLY_OWNED_STATIC_PAGES")
+    src = _scope(auth, payload["source_path"])
+    out = Path(str(payload["output_path"]))
+    raw_roots = auth.lineage.get("allowed_vision_output_roots")
+    if not isinstance(raw_roots, list) or not 1 <= len(raw_roots) <= 4:
+        raise PermissionError("IRIS_HARNESS_PRIVATE_OUTPUT_ROOT_REQUIRED")
+    if not out.is_absolute() or out.suffix != ".png" or out.exists() or out.is_symlink():
+        raise PermissionError("IRIS_HARNESS_OUTPUT_SCOPE_INVALID")
+    try:
+        parent = out.parent.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise PermissionError("IRIS_HARNESS_OUTPUT_PARENT_INVALID") from exc
+    if not parent.is_dir() or parent != out.parent:
+        raise PermissionError("IRIS_HARNESS_OUTPUT_PARENT_SYMLINKED")
+    permitted = False
+    for value in raw_roots:
+        base = Path(str(value or ""))
+        if not base.is_absolute() or base.is_symlink() or not base.is_dir():
+            continue
+        try:
+            root = base.resolve(strict=True)
+        except (OSError, RuntimeError):
+            continue
+        if (root == parent or root in parent.parents) and not any(
+            part.casefold() in _SENSITIVE_PATH_MARKERS for part in parent.parts
+        ):
+            permitted = True
+            break
+    if not permitted:
+        raise PermissionError("IRIS_HARNESS_OUTPUT_OUTSIDE_PRIVATE_SCOPE")
+    binary_path = os.getenv("BR_IRIS_PINNED_BIN")
+    if not binary_path:
+        raise PermissionError("IRIS_HARNESS_PINNED_BINARY_REQUIRED")
+    from app.services.reverse_engineering_iris_v7_service import capture_owned_static_page
+    evidence = capture_owned_static_page(
+        source_path=src, output_path=out, iris_binary=binary_path,
+        size=payload["viewport"], selector=payload["selector"],
+    )
+    return {
+        "schema_version": "BRHarnessReverseEngineeringResult/v1",
+        "capability_id": IRIS_CAPABILITY_ID,
+        "authorization_id": auth.authorization_id,
+        "harness_decision_id": auth.harness_decision_id,
+        "execution_id": auth.execution_id,
+        "status": "PRIVATE_VISUAL_CAPTURED",
+        "evidence": evidence, "approval": "NOT_REQUESTED",
+        "owner_voice_access": "FORBIDDEN", "network_site_capture": "NOT_ATTEMPTED",
+        "memory_write": "NOT_ATTEMPTED", "production_mutation": False,
+        "publication": "FORBIDDEN", "authority": "DEEPSEEK_HARNESS",
     }
