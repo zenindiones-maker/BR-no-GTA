@@ -81,3 +81,59 @@ def execute_authorized_pixel_observation(
         "production_mutation":False,
         "publication":"FORBIDDEN",
     }
+
+
+
+PRODUCTION_QA_CAPABILITY_ID="production.technical-media-forensics"
+
+
+def execute_authorized_production_media_qa(
+    *, authorization:Any, routing_decision:Any, payload:dict[str,Any],
+)->dict[str,Any]:
+    """Unify V10/V10b original MP4 technical evidence under one Harness gate."""
+    from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
+    from app.services.br_production_forensic_qa_v10 import analyze_render
+    from app.services.br_full_media_decode_v10b import verify_full_decode
+
+    auth=validate_harness_authorization(
+        authorization,expected_action="RESEARCH",
+        expected_subject=f"capability:{PRODUCTION_QA_CAPABILITY_ID}",
+    )
+    capability=GLOBAL_CAPABILITY_REGISTRY.get(PRODUCTION_QA_CAPABILITY_ID)
+    if (capability is None or not capability.execution_enabled
+        or routing_decision.selected_capability_id!=PRODUCTION_QA_CAPABILITY_ID
+        or routing_decision.authorized_action!="RESEARCH"
+        or routing_decision.selected_executor_binding!=capability.executor_binding):
+        raise PermissionError("SENSORY_PRODUCTION_HARNESS_ROUTE_DENIED")
+    if (not isinstance(payload,dict)
+        or set(payload)!={"source_path","rights","profile","full_decode"}
+        or payload["rights"]!="owned"
+        or type(payload["full_decode"]) is not bool
+        or payload["profile"] not in ("synthetic_ci_canary","br_no_gta_1080p_master")):
+        raise PermissionError("SENSORY_PRODUCTION_PAYLOAD_DENIED")
+    source=_admit(auth,payload["source_path"])
+    evidence=analyze_render(source,profile=payload["profile"])
+    entire=None
+    if payload["full_decode"] and evidence["status"]=="TECHNICAL_SAMPLED_QA_PASS":
+        entire=verify_full_decode(source,evidence)
+    board=None
+    if evidence["status"] in ("TECHNICAL_SAMPLED_QA_PASS","TECHNICAL_QA_FAIL"):
+        from app.services.br_production_readiness_board_v10 import diagnose_technical_readiness
+        board=diagnose_technical_readiness(evidence)
+    return {
+        "schema_version":"BRHarnessProductionForensicsExecution/v12",
+        "capability_id":PRODUCTION_QA_CAPABILITY_ID,
+        "status":"TECHNICAL_RESEARCH_EVIDENCE_ONLY",
+        "authorization_id":auth.authorization_id,
+        "execution_id":auth.execution_id,
+        "evidence":evidence,
+        "full_decode_evidence":entire,
+        "production_readiness_board":board,
+        "br_owner_v1_approval":"NOT_VERIFIED",
+        "real_20_minute_episode_verified":False,
+        "human_review_approved":False,
+        "production_ready":False,
+        "publication":"FORBIDDEN",
+        "memory_write":"NOT_ATTEMPTED",
+        "authority":"DEEPSEEK_HARNESS",
+    }
