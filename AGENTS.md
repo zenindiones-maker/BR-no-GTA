@@ -23,6 +23,15 @@ contents in repository artifacts, GitHub logs, Telegram review groups or traces.
 OpenAI Platform API spend is forbidden unless the owner explicitly changes that
 policy; Codex ChatGPT-subscription execution must not fall back to paid API.
 
+## Mandatory source-of-truth and deletion integrity
+
+Required: `docs/governance/source-of-truth.md`. Before consulting prior branches,
+receipts, recovered work, or deleted code as operational authority, verify the
+exact authorized commit/tree and the preservation/deletion guard. Historical
+or tombstoned components are evidence only, not implementation candidates.
+This is subordinate to the existing DeepSeek Harness authority and cannot
+authorize restoration, side effects, promotion, or dismissal of WIP.
+
 ## Canonical references
 
 Required: `docs/operations/system-operational-readiness.html`
