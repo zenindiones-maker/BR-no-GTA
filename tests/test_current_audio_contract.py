@@ -26,8 +26,9 @@ def test_current_audio_contract_is_owner_only_and_fail_closed_until_private_refe
     assert c["GTA_6_SYNTHESIS"] == "Gê Tê A seis"
     assert c["OFFICIAL_VOICE"] == "BR_OWNER_V1"
     assert c["VICE_CITY_LOCALE"] == "pt-BR"
-    assert c["VICE_CITY_TARGET_IPA"] == "vaɪs ˈsɪti"
-    assert c["LUCIA_SYNTHESIS_ALIAS"] == "Lucía"
+    assert c["VICE_CITY_TARGET_IPA"] is None
+    assert c["VICE_CITY_SYNTHESIS"] == "vaicy siti"
+    assert c["LUCIA_SYNTHESIS_ALIAS"] == "Lucia"
     assert len(c["CURRENT_AUDIO_CONTRACT_FINGERPRINT"]) == 64
 
 
