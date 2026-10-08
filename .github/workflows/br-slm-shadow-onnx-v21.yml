@@ -32,7 +32,8 @@ jobs:
       - name: Test denied model privilege and unsafe requests
         run: |
           set -euo pipefail
-          python -m pip install -q --disable-pip-version-check pytest==8.4.2 numpy==2.2.6
+          python -m pip install -q --disable-pip-version-check pytest==8.4.2 numpy==2.2.6 python-dotenv==1.2.3
+          export BR_TEST_DATABASE="$RUNNER_TEMP/br-v21-shadow-policy.db"
           python -m pytest -q tests/test_br_slm_onnx_shadow_v21.py
           echo "BR_V21_SLM_SHADOW_PRIVILEGE_DENIAL=PASS"
   real-local-inference:
