@@ -501,6 +501,49 @@ def br_capability_execute(
     # They are deliberately not trusted as authorization provenance.
     _ = (harness_decision_id, execution_id)
 
+    # Security: public MCP arguments are not authenticated Harness capability
+    # authorizations. Addy semantic skills must enter through the internal
+    # persisted-authorization path, never through a caller-supplied ID that
+    # causes the MCP boundary to self-mint the credential.
+    if capability_id.startswith("addy:"):
+        blocked = {
+            "capability_id": capability_id,
+            "status": "BLOCKED",
+            "active": False,
+            "authority": HARNESS_ISSUER,
+            "authorized_action": str(authorized_action or "").strip().upper(),
+            "authorization_id": None,
+            "harness_decision_id": None,
+            "execution_id": None,
+            "result": {
+                "stage": "authentication",
+                "reason": "MCP_CALLER_NOT_INDEPENDENTLY_AUTHENTICATED",
+                "model_turn_started": False,
+            },
+            "boundary": (
+                "Public MCP cannot issue Addy execution authority; "
+                "use persisted internal Harness authorization and routing"
+            ),
+        }
+        receipt = canonical_execution_result(
+            authority=HARNESS_ISSUER,
+            authorized_action=str(authorized_action or "").strip().upper(),
+            execution_id=None,
+            capability_id=capability_id,
+            tool="br_capability_execute",
+            operation="br_capability_execute",
+            status="BLOCKED",
+            success=False,
+            result=blocked["result"],
+            evidence={"authentication":"NOT_PROVEN"},
+            error={"error":"MCP_CALLER_NOT_INDEPENDENTLY_AUTHENTICATED"},
+        )
+        return _json_result(
+            operation="br_capability_execute",
+            result=blocked,
+            evidence=receipt,
+        )
+
     try:
         routing = route_harness_request(
             HarnessRoutingRequest(
