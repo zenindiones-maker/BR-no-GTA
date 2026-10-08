@@ -5,6 +5,10 @@ on:
       - work/br-harness-sensory-owner-v12
     paths:
       - "app/services/br_harness_sensory_pixel_v12.py"
+      - "app/services/br_production_forensic_qa_v10.py"
+      - "app/services/br_production_readiness_board_v10.py"
+      - "app/services/br_full_media_decode_v10b.py"
+      - "tests/test_br_harness_integrated_production_v12.py"
       - "app/services/br_harness_sensory_authorization_v12.py"
       - "app/services/global_capability_registry.py"
       - "scripts/owner_voice_single_human_clone.py"
@@ -82,4 +86,8 @@ jobs:
           set -euo pipefail
           python -m pytest -q tests/test_br_harness_sensory_pixel_v12.py -k real_video
           echo "BR_V12_VIDEO_FRAME_FFMPEG_OBSERVATION=PASS"
+          python -m pip install -q --disable-pip-version-check numpy==2.2.6 packaging==25.0
+          echo "BR_TEST_DATABASE=$RUNNER_TEMP/br-v12-integrated-render.db" >> "$GITHUB_ENV"
+          python -m pytest -q tests/test_br_harness_integrated_production_v12.py
+          echo "BR_V12_REAL_MP4_AND_PRIVATE_OWNER_GATE_INTEGRATED=PASS"
           echo "BR_V12_SEMANTIC_EYES_REQUIRE_SEPARATE_PROVIDER_PROOF=TRUE"
