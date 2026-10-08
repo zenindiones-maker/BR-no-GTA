@@ -110,6 +110,7 @@ def current_audio_contract() -> dict[str, Any]:
         "ONLY_FORCED_EN_US_TERM": (lexicon.get("policy") or {}).get("only_forced_en_us_term"),
         "GTA_6_SYNTHESIS": gta.get("synthesis_text"),
         "VICE_CITY_LOCALE": vice.get("locale"),
+        "VICE_CITY_SYNTHESIS": vice.get("synthesis_text"),
         "VICE_CITY_TARGET_IPA": vice.get("target_ipa"),
         "PRONUNCIATION_LEXICON_VERSION": lexicon.get("version"),
         "LUCIA_SYNTHESIS_ALIAS": lucia.get("synthesis_text"),
