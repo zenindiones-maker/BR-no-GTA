@@ -192,3 +192,53 @@ def test_exact_one_sided_sign_p_handles_ties_and_small_n():
     assert _p_value(6,0)==1/64
     assert _p_value(0,6)==1.0
     assert _p_value(0,0) is None
+
+
+def test_multiple_techniques_control_familywise_false_positive_rate():
+    d = make_dataset(n_development=6, n_holdout=6)
+    arms = tuple(f"technique-{k}" for k in range(8))
+    observations = make_obs(d, techniques=arms, model_gain=4.0)
+    report = assess_technique_experiments(
+        dataset=d, observations=observations, allowed_technique_ids=list(arms)
+    )
+    # Six out of six holdout wins yield p=1/64 but cannot meet 0.05/8.
+    assert report["familywise_significance_alpha"] == 0.00625
+    assert all(r["status"] == "NO_DEMONSTRATED_IMPROVEMENT"
+               for r in report["results"])
+    assert report["recommended_for_independent_review"] == []
+
+
+def test_techniques_cannot_select_different_baselines_for_the_same_case():
+    d = make_dataset()
+    observations = make_obs(d, techniques=("first", "second"))
+    row = next(x for x in observations if x["technique_id"] == "second")
+    row["baseline_metric"] = -18.0
+    rehash(row)
+    with pytest.raises(ExperimentEvidenceError, match="INCONSISTENT_BASELINE_ACROSS_TECHNIQUES"):
+        assess_technique_experiments(
+            dataset=d, observations=observations,
+            allowed_technique_ids=["first", "second"],
+        )
+
+
+def test_changing_benchmark_to_allow_payment_is_rejected_even_with_valid_hash():
+    d = make_dataset()
+    d["rubric"]["zero_cost"] = False
+    d["dataset_sha256"] = digest({k: v for k, v in d.items() if k != "dataset_sha256"})
+    with pytest.raises(ExperimentEvidenceError, match="ZERO_COST_REQUIRED"):
+        assess_technique_experiments(
+            dataset=d, observations=make_obs(d),
+            allowed_technique_ids=["eq-refinement"],
+        )
+
+
+def test_same_artifact_with_claimed_changed_audio_metric_cannot_pass():
+    d = make_dataset()
+    observations = make_obs(d)
+    observations[0]["candidate_artifact_sha256"] = observations[0]["baseline_artifact_sha256"]
+    rehash(observations[0])
+    with pytest.raises(ExperimentEvidenceError, match="ARTIFACT_METRIC_CONTRADICTION"):
+        assess_technique_experiments(
+            dataset=d, observations=observations,
+            allowed_technique_ids=["eq-refinement"],
+        )
