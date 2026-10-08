@@ -49,7 +49,7 @@ def test_single_clone_runtime_has_real_identity_profile_and_no_placeholder_simil
     assert "create_voice_clone_prompt" in source
     assert "generate_voice_clone" in source
     assert "x_vector_only_mode=False" in source
-    assert "language=segment_languages" in source
+    assert "segment_languages=segment_languages" in source
     assert "TRANSCRIPT_CONDITIONED_ICL" in source
     assert 'identity_gate="PASS" if segmented_identity["passed"] is True else "FAIL"' in source
     assert 'print("CLONE_IDENTITY_GATE="+identity_gate)' in source
@@ -180,7 +180,7 @@ def test_pronunciation_clone_uses_hybrid_qwen_prompt_components():
     assert "ref_text=pronunciation_ref_text" in source
     assert "QWEN_PROMPT_COMPONENT_AUTHORITY=ANCHOR_SPK_PLUS_PRONUNCIATION_CODE" in source
     assert "composite-owner-reference-24k.wav" not in source
-    assert "language=segment_languages" in source
+    assert "segment_languages=segment_languages" in source
 
 
 def test_pronunciation_asr_uses_official_name_hotwords():
@@ -263,7 +263,7 @@ def test_final_gta_pronunciation_generation_uses_explicit_multilingual_segments(
     assert "build_gta6_pronunciation_batches" in source
     assert "segment_texts=" in source
     assert "segment_languages=" in source
-    assert "language=segment_languages" in source
+    assert "segment_languages=segment_languages" in source
     assert 'language="Auto"' not in source.split("from app.services.owner_voice_serial_generation_v11",1)[1]
     assert "Gê Tê A seis" in Path("app/services/gta6_pronunciation_lexicon_service.py").read_text(encoding="utf-8")
 
@@ -375,7 +375,7 @@ def test_vice_city_gets_dedicated_fresh_owner_prompt():
     assert "vice_city_prompt" in source
     assert "segment_prompts=[]" in source
     assert 'VICE_CITY_TERM in canonical_text' in source
-    assert "voice_clone_prompt=segment_prompts" in source
+    assert "segment_prompts=segment_prompts" in source
 
 
 
@@ -635,7 +635,7 @@ def test_qwen_generation_emits_periodic_heartbeat_without_changing_audio_contrac
     assert "heartbeat=_run_with_generation_heartbeat" in generation
     assert "generate_one_private_audition(" in generation
     assert "model.generate_voice_clone" in generation
-    assert "text=segment_texts" in generation
-    assert "language=segment_languages" in generation
-    assert "voice_clone_prompt=segment_prompts" in generation
+    assert "segment_texts=segment_texts" in generation
+    assert "segment_languages=segment_languages" in generation
+    assert "segment_prompts=segment_prompts" in generation
 
