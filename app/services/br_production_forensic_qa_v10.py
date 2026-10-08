@@ -188,11 +188,18 @@ def analyze_render(path: str | Path,*,profile: str=PROFILE_MASTER) -> dict[str,A
             if not checked["audio_measured"]:
                 reasons.append("AUDIO_VOLUME_MEASUREMENT_FAILED")
             elif checked["audio_mean_dbfs"] is None or checked["audio_mean_dbfs"]<=-60:
-                reasons.append("SAMPLED_AUDIO_SILENT_OR_TOO_LOW")
+                if profile==PROFILE_CANARY:
+                    reasons.append("SAMPLED_AUDIO_SILENT_OR_TOO_LOW")
+                else:
+                    warnings.append("REVIEW_SILENT_SAMPLED_WINDOW")
             if not checked["video_heuristic_filter_ok"]:
                 reasons.append("VISUAL_HEURISTIC_FILTER_FAILED")
             if checked["black_event_count"] or checked["freeze_event_count"]:
                 warnings.append("REVIEW_INTENTIONAL_BLACK_OR_STATIC_SHOTS")
+    if profile==PROFILE_MASTER and windows and all(
+        (w["audio_mean_dbfs"] is None or w["audio_mean_dbfs"]<=-60) for w in windows
+    ):
+        reasons.append("ALL_SAMPLED_AUDIO_SILENT_OR_TOO_LOW")
     reasons=sorted(set(reasons))
     warnings=sorted(set(warnings))
     receipt={
