@@ -78,3 +78,19 @@ def test_version_tag_not_a_substitute_for_hardware_readiness():
     assert item["allowed_stage"]=="PINNED_SOURCE_AND_METADATA_ONLY"
     assert item["training_enabled"] is False
     assert item["approval_required_for_activation"] is True
+
+
+
+def test_harness_registry_surfaces_llamafactory_but_cannot_route_training():
+    from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
+    r=GLOBAL_CAPABILITY_REGISTRY.get("model-specialization.llamafactory-v095-staged")
+    assert r is not None
+    assert r.capability_type=="PROVIDER"
+    assert r.availability=="BLOCKED"
+    assert r.execution_enabled is False
+    assert r.allowed_actions==()
+    assert r.executor_binding is None
+    assert r.fallback_eligibility is False
+    assert r.cost_class=="UNKNOWN_COST_DENY"
+    assert r.authority==r.memory_write==r.publication_authority=="NONE"
+    assert "no-owner-voice" in r.policy_tags
