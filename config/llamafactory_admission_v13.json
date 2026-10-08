@@ -1,0 +1,22 @@
+{
+  "schema_version": "BRLlamaFactoryAdmission/v1",
+  "repository": "hiyouga/LlamaFactory",
+  "release": "v0.9.5",
+  "commit": "7af909522a951e3ad9f022ea6f88b6755257eaa5",
+  "package_name": "llamafactory",
+  "expected_package_version": "0.9.5",
+  "allowed_stage": "PINNED_SOURCE_AND_METADATA_ONLY",
+  "training_enabled": false,
+  "inference_enabled": false,
+  "api_server_enabled": false,
+  "webui_exposed": false,
+  "autonomous_training": false,
+  "model_download_authorized": false,
+  "paid_compute_fallback": false,
+  "unknown_cost_allowed": false,
+  "owner_voice_access": false,
+  "br_owner_v1_trainer": "modelscope/ms-swift",
+  "approval_required_for_activation": true,
+  "sole_authority": "DEEPSEEK_HARNESS",
+  "purpose": "future authorized text/multimodal model fine-tuning research; never a TTS identity trainer by assumption"
+}
