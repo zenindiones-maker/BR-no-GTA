@@ -19,6 +19,7 @@ on:
       - "app/services/reverse_engineering_studio_v6_service.py"
       - "scripts/br_studio_forensics_v6.py"
       - "tests/test_reverse_engineering_studio_v6.py"
+      - "tests/test_reverse_engineering_studio_harness_v6.py"
       - "app/services/reverse_engineering_fidelity_trial_bridge_v5.py"
       - "docs/architecture/br-reconstruction-fidelity-laboratory-v5.md"
       - "tests/test_reverse_engineering_fidelity_trial_bridge_v5.py"
@@ -71,7 +72,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check -q pytest "python-dotenv==1.2.3" "scenedetect==0.7.1" "opencv-python-headless==4.12.0.88" "opentimelineio==0.18.1"
-          python -m pytest -q tests/test_reverse_engineering_media_service.py tests/test_reverse_engineering_harness_v2.py tests/test_reverse_engineering_story_v1.py tests/test_reverse_engineering_learning_proposal_v1.py tests/test_reverse_engineering_multimodal_v3.py tests/test_reverse_engineering_web_har_v3.py tests/test_reverse_engineering_longform_coverage.py tests/test_reverse_engineering_experiment_intelligence_v4.py tests/test_reverse_engineering_experiment_harness_v4.py tests/test_reverse_engineering_fidelity_v5.py tests/test_reverse_engineering_fidelity_harness_v5.py tests/test_reverse_engineering_fidelity_trial_bridge_v5.py tests/test_reverse_engineering_studio_v6.py tests/test_global_capability_registry.py
+          python -m pytest -q tests/test_reverse_engineering_media_service.py tests/test_reverse_engineering_harness_v2.py tests/test_reverse_engineering_story_v1.py tests/test_reverse_engineering_learning_proposal_v1.py tests/test_reverse_engineering_multimodal_v3.py tests/test_reverse_engineering_web_har_v3.py tests/test_reverse_engineering_longform_coverage.py tests/test_reverse_engineering_experiment_intelligence_v4.py tests/test_reverse_engineering_experiment_harness_v4.py tests/test_reverse_engineering_fidelity_v5.py tests/test_reverse_engineering_fidelity_harness_v5.py tests/test_reverse_engineering_fidelity_trial_bridge_v5.py tests/test_reverse_engineering_studio_v6.py tests/test_reverse_engineering_studio_harness_v6.py tests/test_global_capability_registry.py
       - name: Install required FFmpeg observation runtime
         run: |
           set -euo pipefail
