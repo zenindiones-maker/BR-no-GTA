@@ -2904,3 +2904,59 @@ _REGISTRY._records=tuple(sorted(
     (*_REGISTRY._records,BR_INTEGRATED_PRODUCTION_QA_V12_RECORD),
     key=lambda item:item.capability_id,
 ))
+
+
+
+# LlamaFactory V13 exact-source installation has only a disposable CI metadata
+# proof. No installed GPU runtime on BR-no-GTA workstation is attested.
+BR_LLAMAFACTORY_STAGED_RECORD=CapabilityRecord(
+    capability_id="model-specialization.llamafactory-v095-staged",
+    capability_type="PROVIDER",
+    domain="authorized-model-finetuning",
+    implementation="Exact official hiyouga/LlamaFactory v0.9.5 source and ephemeral package metadata only",
+    input_contract="No executable workload until owner review, licensed dataset and runtime/cost attestation",
+    output_contract="BRLlamaFactoryAdmissionEvidence/v1",
+    requirements=("pinned SHA 7af909522a951e3ad9f022ea6f88b6755257eaa5",
+                  "approved model architecture", "licensed training set",
+                  "zero-cost GPU runtime verified","independent security and model-quality review"),
+    maturity=PARTIAL,
+    availability="BLOCKED",
+    allowed_actions=(),
+    policy_tags=("llamafactory","source-pinned","model-finetuning",
+                 "vision","text","research-only","not-ready","no-owner-voice"),
+    security_boundary="CI source/metadata install only. Training, API server, WebUI, model downloads, BR_OWNER_V1 biometrics, runtime routing, payment and automatic learning forbidden.",
+    cost_class="UNKNOWN_COST_DENY",
+    quota_class="NO_ADMISSION",
+    latency_class="NOT_APPLICABLE",
+    quality_class="METADATA_ONLY_NOT_MODEL_CAPABILITY",
+    evidence_contract="BRLlamaFactoryAdmissionEvidence/v1",
+    fallback_eligibility=False,
+    executor_binding=None,
+    version="v0.9.5",
+    provider_id="llamafactory-upstream-pinned-nonruntime",
+    agent_id=None,
+    authority="NONE",
+    memory_write="NONE",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+    supports_parallelism=False,
+    supports_retry=False,
+    supports_resume=False,
+    supports_review=False,
+    side_effect_class="READ_ONLY",
+    default_read_scope=(),
+    default_write_scope=(),
+    allowed_tools=(),
+    health_policy="EXPLICIT_ADMISSION_REQUIRED",
+    execution_kind="PROVIDER",
+    functional_roles=("FUTURE_LICENSED_TEXT_LLM_FINETUNING",
+                      "FUTURE_LICENSED_VISION_LLM_FINETUNING"),
+)
+if _REGISTRY._by_id.get(BR_LLAMAFACTORY_STAGED_RECORD.capability_id) is not None:
+    raise ValueError("Duplicate LlamaFactory staged capability")
+_REGISTRY._by_id[BR_LLAMAFACTORY_STAGED_RECORD.capability_id]=BR_LLAMAFACTORY_STAGED_RECORD
+_REGISTRY._records=tuple(sorted(
+    (*_REGISTRY._records,BR_LLAMAFACTORY_STAGED_RECORD),
+    key=lambda item:item.capability_id,
+))
