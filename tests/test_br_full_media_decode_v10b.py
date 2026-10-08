@@ -55,7 +55,9 @@ def test_canary_full_decode_passes_without_claiming_real_master(tmp_path,monkeyp
     assert result["publish_authorized"] is False
     assert result["audio_identity_certified"] is False
     assert result["can_authorize_render"] is False
-    assert "-map" in calls[0] and "0:v:0" in calls[0] and "0:a:0" in calls[0]
+    assert len(calls)==2
+    assert "-map" in calls[0] and "0:v:0" in calls[0]
+    assert "-map" in calls[1] and "0:a:0" in calls[1]
     assert "-c:v" in calls[0] and "rawvideo" in calls[0]
     assert result["evidence_sha256"]
 
@@ -91,3 +93,20 @@ def test_20_minute_master_cannot_pass_3sec_fixture(tmp_path,monkeypatch):
     path=_source(tmp_path)
     with pytest.raises(ValueError,match="LONGFORM_LENGTH_INVALID"):
         full.verify_full_decode(path,_sampled(path,profile="br_no_gta_1080p_master"))
+
+
+
+def test_full_video_cannot_hide_shortened_audio_track(tmp_path,monkeypatch):
+    path=_source(tmp_path)
+    counter=0
+    def runner(*_args,**_kwargs):
+        nonlocal counter
+        counter+=1
+        return _progress(seconds=3.0 if counter==1 else 0.8)
+    monkeypatch.setattr(full,"_runner",runner)
+    evidence=full.verify_full_decode(path,_sampled(path))
+    assert evidence["status"]=="FULL_DECODE_BLOCKED"
+    assert evidence["entire_video_decoder_completed"] is True
+    assert evidence["entire_audio_decoder_completed"] is False
+    assert evidence["checks"]["audio_time_at_least_98pct"] is False
+    assert evidence["publish_authorized"] is False
