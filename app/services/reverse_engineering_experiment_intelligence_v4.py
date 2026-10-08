@@ -190,6 +190,9 @@ def assess_technique_experiments(*, dataset: dict, observations: list[dict],
     if set(groups) != set(approved_ids):
         raise ExperimentEvidenceError("EXPERIMENT_MISSING_TECHNIQUE")
     comparison = []
+    # Multiple candidate arms share the same 0.05 false-positive budget.
+    # Use conservative family-wise Bonferroni adjustment (no extra package).
+    familywise_alpha = SIGNIFICANCE_ALPHA / len(groups)
     for technique_id in sorted(groups):
         trials = groups[technique_id]
         if set(trials) != set(case_ids):
@@ -228,7 +231,7 @@ def assess_technique_experiments(*, dataset: dict, observations: list[dict],
         # A held-out result is only a recommendation to human reviewers.
         positive = (
             data_sufficient and safe and held["win"] > held["loss"] and
-            p is not None and p <= SIGNIFICANCE_ALPHA and
+            p is not None and p <= familywise_alpha and
             development["win"] > development["loss"]
         )
         status = ("BLOCKED" if not safe else
@@ -256,6 +259,7 @@ def assess_technique_experiments(*, dataset: dict, observations: list[dict],
         "decision": "PROPOSE_ONLY_NO_AUTOMATIC_ROUTING_OR_LEARNING",
         "confidence": "PAIRED_SELF_REPORTED_HASHES_NOT_INDEPENDENT_ATTESTATION",
         "holdout_policy": "PRE_REGISTERED_DISJOINT_HOLDOUT_SIGN_TEST",
+        "familywise_significance_alpha": round(familywise_alpha, 8),
         "memory_write": "NOT_ATTEMPTED",
         "production_promotion": "FORBIDDEN",
         "owner_voice_identity": "BR_OWNER_V1_UNTOUCHED",
