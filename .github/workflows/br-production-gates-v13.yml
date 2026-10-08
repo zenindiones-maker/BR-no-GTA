@@ -71,7 +71,7 @@ jobs:
           "$RUNNER_TEMP/llamafactory-admission-venv/bin/python" -m pip install \
             --disable-pip-version-check -q hatchling==1.27.0
           "$RUNNER_TEMP/llamafactory-admission-venv/bin/python" -m pip install \
-            --disable-pip-version-check --no-deps --no-build-isolation -e "$GITHUB_WORKSPACE/.llamafactory-source"
+            --disable-pip-version-check --no-deps --no-build-isolation "$GITHUB_WORKSPACE/.llamafactory-source"
           "$RUNNER_TEMP/llamafactory-admission-venv/bin/python" \
             scripts/br_llamafactory_admission_v13.py \
             --policy "$GITHUB_WORKSPACE/config/llamafactory_admission_v13.json" \
