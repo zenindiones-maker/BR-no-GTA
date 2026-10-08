@@ -121,7 +121,7 @@ def analyze_stems(paths: list[str | Path], *, window_seconds: int = 2) -> dict[s
     return result
 
 
-def audit_external_word_alignment(path: str | Path) -> dict[str, Any]:
+def audit_external_word_alignment(path: str | Path, audio_path: str | Path) -> dict[str, Any]:
     """Validate locally produced alignment metadata, never run an ASR model.
 
     The input may contain transcript words; output deliberately contains none.
@@ -134,9 +134,18 @@ def audit_external_word_alignment(path: str | Path) -> dict[str, Any]:
         raise ObservationError("STUDIO_ALIGNMENT_MODEL_OR_LANGUAGE_INVALID")
     if not isinstance(data["audio_sha256"],str) or not re.fullmatch(r"[a-f0-9]{64}",data["audio_sha256"]):
         raise ObservationError("STUDIO_ALIGNMENT_SOURCE_HASH_INVALID")
+    media=_source(audio_path,allowed_suffixes=(".wav",".flac",".mp3",".m4a"))
+    if _sha256(media)!=data["audio_sha256"]:
+        raise ObservationError("STUDIO_ALIGNMENT_AUDIO_HASH_MISMATCH")
+    probe=probe_media(media)
+    if not any(s.get("codec_type")=="audio" for s in probe["streams"]):
+        raise ObservationError("STUDIO_ALIGNMENT_AUDIO_STREAM_REQUIRED")
     duration=data["duration_seconds"]
     if type(duration) not in (int,float) or not math.isfinite(duration) or not 0<duration<=3600:
         raise ObservationError("STUDIO_ALIGNMENT_DURATION_INVALID")
+    observed_duration=probe["duration_seconds"]
+    if observed_duration is None or abs(observed_duration-duration)>0.05:
+        raise ObservationError("STUDIO_ALIGNMENT_AUDIO_DURATION_MISMATCH")
     words=data["aligned_words"]
     expected=data["expected_tokens"]
     if not isinstance(words,list) or not isinstance(expected,list) or not 1<=len(words)<=5000 or len(words)!=len(expected):
@@ -164,6 +173,7 @@ def audit_external_word_alignment(path: str | Path) -> dict[str, Any]:
         "schema_version":"BRPTBRAlignmentEvidence/v1",
         "status":"STRUCTURAL_AND_TEXTUAL_CHECK_ONLY",
         "source_manifest_sha256":_sha256(_source(path)),
+        "media_source_sha256_verified":True,
         "audio_sha256":data["audio_sha256"],"model_id":data["model_id"],
         "duration_seconds":duration,"word_count":len(words),
         "counts":counts,"mean_alignment_score":round(sum(confidence)/len(confidence),4),
