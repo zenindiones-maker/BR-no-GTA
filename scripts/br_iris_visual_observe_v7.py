@@ -24,6 +24,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-receipt",required=True,help="New private .json path")
     parser.add_argument("--viewport",choices=("960x600","390x844"),default="960x600")
     parser.add_argument("--selector",default=None)
+    parser.add_argument("--full-page",action="store_true")
+    parser.add_argument("--dark",action="store_true")
+    parser.add_argument("--padding",type=int,default=0)
+    parser.add_argument("--wait-for",default=None)
     args=parser.parse_args(argv)
     receipt=Path(args.output_receipt)
     if (not receipt.is_absolute() or receipt.suffix!=".json"
@@ -44,7 +48,9 @@ def main(argv: list[str] | None = None) -> int:
         ),
         routing_decision=route,
         payload={"source_path":args.input,"output_path":args.output_image,
-                 "rights":"owned","viewport":args.viewport,"selector":args.selector},
+                 "rights":"owned","viewport":args.viewport,"selector":args.selector,
+                 "full_page":args.full_page,"dark":args.dark,
+                 "padding":args.padding,"wait_for":args.wait_for},
     )
     data=json.dumps(result.to_dict(),ensure_ascii=False,sort_keys=True,indent=2)+"\n"
     fd=os.open(receipt,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)
