@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import subprocess
 from pathlib import Path
@@ -23,7 +24,7 @@ WEB_HAR_CAPABILITY_ID = "reverse-engineering.web.har-observe"
 MEDIA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_media_observation"
 REA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_software_observation"
 WEB_HAR_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_web_har_observation"
-_ALLOWED_MEDIA_PAYLOAD = frozenset({"source_path", "rights", "transcript_path", "include_scene_cuts", "include_audio_dynamics", "adaptive_shot_window_seconds", "owner_goal", "candidate_path", "candidate_rights"})
+_ALLOWED_MEDIA_PAYLOAD = frozenset({"source_path", "rights", "transcript_path", "include_scene_cuts", "include_audio_dynamics", "adaptive_shot_window_seconds", "adaptive_shot_start_seconds", "owner_goal", "candidate_path", "candidate_rights"})
 _ALLOWED_SOFTWARE_PAYLOAD = frozenset({"source_path", "rights"})
 _SOFTWARE_RIGHTS = frozenset({"owned", "licensed", "observation_only"})
 _SENSITIVE_PATH_MARKERS = frozenset({".ssh", ".aws", ".env", ".run", ".git", "credentials", "tokens", "private_material", "owner_voice", "audition-ledger"})
@@ -114,11 +115,15 @@ def execute_authorized_media_observation(
         shot = args["adaptive_shot_window_seconds"]
         if type(shot) not in (float, int) or not 0 < shot <= 90:
             raise PermissionError("REVERSE_ENGINEERING_SHOT_WINDOW_INVALID")
+    start = args.get("adaptive_shot_start_seconds", 0.0)
+    if type(start) not in (float, int) or not math.isfinite(start) or start < 0 or (start > 0 and args.get("adaptive_shot_window_seconds") is None):
+        raise PermissionError("REVERSE_ENGINEERING_SHOT_START_INVALID")
     observation = analyze_forensics(
         source, rights=args["rights"], transcript=transcript,
         include_scene_cuts=args.get("include_scene_cuts", False),
         include_audio_dynamics=args.get("include_audio_dynamics", False),
         adaptive_shot_window_seconds=args.get("adaptive_shot_window_seconds"),
+        adaptive_shot_start_seconds=start,
     )
     candidate = None
     if args.get("candidate_path") is not None:
