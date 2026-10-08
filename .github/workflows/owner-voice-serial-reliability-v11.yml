@@ -58,8 +58,8 @@ jobs:
           from pathlib import Path
           source=Path("scripts/owner_voice_single_human_clone.py").read_text()
           assert "QWEN_GENERATION_HEARTBEAT_SECONDS=30" in source
-          assert "QWEN_MODEL_ID=\\"Qwen/Qwen3-TTS-12Hz-1.7B-Base\\"" in source
-          assert "VOICE_IDENTITY_ID=\\"BR_OWNER_V1\\"" in source
+          assert 'QWEN_MODEL_ID="Qwen/Qwen3-TTS-12Hz-1.7B-Base"' in source
+          assert 'VOICE_IDENTITY_ID="BR_OWNER_V1"' in source
           assert "build_gta6_pronunciation_batches(SHORT_TEXT)" in source
           assert "generate_one_private_audition(" in source
           assert "GTA6_PRONUNCIATION_SEGMENT_COUNT=" in source
