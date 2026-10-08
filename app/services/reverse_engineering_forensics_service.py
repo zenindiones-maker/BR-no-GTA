@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
+from app.services.reverse_engineering_story_service import analyze_script_structure
 from app.services.reverse_engineering_media_service import (
     ObservationError, _command, _source, analyze_reference,
 )
@@ -180,6 +181,7 @@ def analyze_forensics(
         "audio": audio,
         "video": video,
         "transcript": base["evidence"]["script_timing"],
+        "story_structure": analyze_script_structure(transcript, media_duration_seconds=duration) if transcript is not None else {"status": "NOT_PROVIDED"},
         "interpretation": {
             "status": "MEASUREMENTS_NOT_ARTISTIC_VERDICT",
             "speaker_identity_verified": False,
