@@ -43,7 +43,8 @@ def inspect_ledger_head(ledger: Any) -> dict[str, Any]:
     content=ledger.get("content_audio_prescreen")
     review=ledger.get("human_review")
     effect=ledger.get("side_effect_status")
-    if (state not in _LEDGER_STATES
+    if (not all(isinstance(v,str) for v in (state,identity,content,review,effect))
+        or state not in _LEDGER_STATES
         or identity not in _GATES
         or content not in _GATES
         or review not in _REVIEWS
@@ -106,6 +107,7 @@ def build_grounded_launch_preflight(
             or set(latest_attempt)!={"run_id","failure_class"}
             or type(latest_attempt["run_id"]) is not int
             or latest_attempt["run_id"]<=0
+            or not isinstance(latest_attempt["failure_class"],str)
             or latest_attempt["failure_class"] not in {
                 "LEDGER_FAST_FORWARD_PUSH_REJECTED",
                 "RUNNER_SHUTDOWN",
@@ -115,6 +117,7 @@ def build_grounded_launch_preflight(
     if media_evidence is not None:
         if (not isinstance(media_evidence,dict)
             or media_evidence.get("schema_version")!="BRFullMediaDecodeEvidence/v1"
+            or not isinstance(media_evidence.get("profile"),str)
             or media_evidence.get("profile") not in {
                 "synthetic_ci_canary","br_no_gta_1080p_master"
             }):
