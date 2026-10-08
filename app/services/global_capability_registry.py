@@ -2875,3 +2875,41 @@ _REGISTRY._records = tuple(sorted(
     (*_REGISTRY._records, REVERSE_ENGINEERING_EXPERIMENT_RECORD),
     key=lambda item: item.capability_id,
 ))
+
+
+# Original / licensed same-content reconstruction quality measurements.
+RECONSTRUCTION_FIDELITY_RECORD = CapabilityRecord(
+    capability_id="reverse-engineering.reconstruction.fidelity",
+    capability_type="TOOL", domain="reconstruction-fidelity",
+    implementation="Strict aligned-frame SSIM/PSNR and time-aligned decoded audio difference measurements",
+    input_contract="fresh persisted Harness RESEARCH authorization, exact allowed_media_roots, two distinct owned/licensed local files and a bounded 12s window",
+    output_contract="BRHarnessReverseEngineeringResult/v1 including BRReconstructionFidelity/v1",
+    requirements=("local ffmpeg and ffprobe", "numpy", "matching FPS/resolution/duration",
+                  "independently verified owned/licensed material"),
+    maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("RESEARCH",),
+    policy_tags=("reverse-engineering", "fidelity", "audio", "video", "frame-aligned",
+                 "original-assets", "copyright", "readonly", "zero-cost"),
+    security_boundary="Only DeepSeek Harness may authorize scoped reference/candidate material. Deny observation-only copying, private owner voice, out-of-scope files, resizing/timestamp coercion, unauthorized reproduction, memory writes, agent self-promotion or publication.",
+    cost_class="FREE_NO_BILLING", quota_class="LOCAL_FFMPEG_CPU_BOUNDED_12S",
+    latency_class="BOUNDED_ASYNC", quality_class="ALIGNED_TECHNICAL_MEASUREMENT_NOT_ARTISTIC_IDENTITY",
+    evidence_contract="BRHarnessReverseEngineeringResult/v1",
+    fallback_eligibility=False,
+    executor_binding="app.services.reverse_engineering_harness_service.execute_authorized_fidelity_assessment",
+    version="1", provider_id="ffmpeg-numpy-local",
+    agent_id="harness-reverse-engineering-specialist",
+    authority="NONE", memory_write="NONE", routing_authority="NONE",
+    editorial_authority="NONE", publication_authority="NONE",
+    supports_parallelism=False, supports_retry=False, supports_resume=False,
+    supports_review=False, side_effect_class="READ_ONLY",
+    default_read_scope=(), default_write_scope=(),
+    allowed_tools=("ffmpeg", "ffprobe"), health_policy="DEFAULT",
+    execution_kind="DETERMINISTIC_ANALYSIS_AGENT",
+    functional_roles=("RECONSTRUCTION_FIDELITY_EVIDENCE",),
+)
+if _REGISTRY._by_id.get(RECONSTRUCTION_FIDELITY_RECORD.capability_id) is not None:
+    raise ValueError("Duplicate reconstruction-fidelity capability")
+_REGISTRY._by_id[RECONSTRUCTION_FIDELITY_RECORD.capability_id] = RECONSTRUCTION_FIDELITY_RECORD
+_REGISTRY._records = tuple(sorted(
+    (*_REGISTRY._records, RECONSTRUCTION_FIDELITY_RECORD),
+    key=lambda item: item.capability_id,
+))
