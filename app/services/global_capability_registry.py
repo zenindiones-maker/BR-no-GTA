@@ -2760,7 +2760,7 @@ REVERSE_ENGINEERING_RECORDS = (
         evidence_contract="BRHarnessReverseEngineeringResult/v1",
         fallback_eligibility=False,
         executor_binding="app.services.reverse_engineering_harness_service.execute_authorized_media_observation",
-        version="2", provider_id="ffmpeg-local", agent_id="harness-reverse-engineering-specialist",
+        version="3", provider_id="ffmpeg-local", agent_id="harness-reverse-engineering-specialist",
         authority="NONE", memory_write="NONE", routing_authority="NONE",
         editorial_authority="NONE", publication_authority="NONE",
         supports_parallelism=False, supports_retry=False, supports_resume=False,
