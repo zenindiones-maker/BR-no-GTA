@@ -343,4 +343,3 @@ def test_control_reconciliation_refuses_potential_post_side_effect_failures():
             ledger.reopen_known_pre_side_effect_control_failure(
                 expected_failure_class="control:TypeError"
             )
-
