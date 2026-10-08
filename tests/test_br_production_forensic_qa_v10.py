@@ -165,3 +165,29 @@ def test_harness_cannot_process_public_or_private_source(tmp_path):
             authorization=auth,routing_decision=_route(),
             payload={"source_path":str(p),"rights":"owned","profile":qa.PROFILE_CANARY,"publish":True},
         )
+
+
+
+def test_master_ignores_one_intentional_silent_scene_but_blocks_all_silent(tmp_path,monkeypatch):
+    p=_owned(tmp_path)
+    m=_meta(1200)
+    m["streams"][0]["width"]=1920
+    m["streams"][0]["height"]=1080
+    monkeypatch.setattr(qa,"_probe",lambda _:m)
+    seen={"count":0}
+    def mixed(*args):
+        seen["count"]+=1
+        record=_measured()
+        if seen["count"]==2:
+            record["audio_mean_dbfs"]=None
+        return record
+    monkeypatch.setattr(qa,"_sample_window",mixed)
+    output=qa.analyze_render(p,profile=qa.PROFILE_MASTER)
+    assert output["status"]=="TECHNICAL_SAMPLED_QA_PASS"
+    assert "REVIEW_SILENT_SAMPLED_WINDOW" in output["review_warnings"]
+    assert output["publish_authorized"] is False
+    monkeypatch.setattr(qa,"_sample_window",lambda *_args:{
+        **_measured(),"audio_mean_dbfs":None
+    })
+    no_audio=qa.analyze_render(p,profile=qa.PROFILE_MASTER)
+    assert "ALL_SAMPLED_AUDIO_SILENT_OR_TOO_LOW" in no_audio["failure_codes"]
