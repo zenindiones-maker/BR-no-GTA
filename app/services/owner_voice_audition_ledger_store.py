@@ -192,6 +192,10 @@ class OwnerVoiceAuditionGitLedgerStore:
         This is a ledger Git push only. It cannot retry or authorize Telegram
         media sends and cannot force-push a changed branch.
         """
+        if (not isinstance(expected_head_sha,str) or not _GIT_OID.fullmatch(expected_head_sha)
+            or not isinstance(candidate,str) or not _GIT_OID.fullmatch(candidate)
+            or candidate==expected_head_sha):
+            raise ValueError("OWNER_LEDGER_COMMIT_OID_INVALID")
         observed_before=self._remote_oid()
         if observed_before!=expected_head_sha:
             raise CasConflict(
