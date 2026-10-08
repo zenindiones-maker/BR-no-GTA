@@ -9,6 +9,7 @@ on:
       - "app/services/br_production_readiness_board_v10.py"
       - "app/services/br_full_media_decode_v10b.py"
       - "tests/test_br_harness_integrated_production_v12.py"
+      - "scripts/agent-tooling/check_discovery.py"
       - "app/services/br_harness_sensory_authorization_v12.py"
       - "app/services/global_capability_registry.py"
       - "scripts/owner_voice_single_human_clone.py"
@@ -59,6 +60,17 @@ jobs:
             tests/test_owner_voice_single_clone_workflow_v1.py \
             tests/test_owner_voice_speaker_identity_service.py \
             tests/test_pronunciation_service.py
+          python - <<'PY'
+          import subprocess,sys
+          p=subprocess.run(
+              [sys.executable,"scripts/agent-tooling/check_discovery.py","invalid"],
+              capture_output=True,text=True,check=False,timeout=30,
+          )
+          assert p.returncode!=0
+          assert "Expected all or codex" in (p.stdout+p.stderr)
+          assert "ModuleNotFoundError" not in (p.stdout+p.stderr)
+          print("BR_V12_DIRECT_ADDY_SCRIPT_IMPORT_PATH=PASS")
+          PY
           echo "BR_V12_OWNER_PROMPT_COHERENCE_TESTS=PASS"
           echo "BR_V12_HARNESS_SCOPED_REAL_PIXELS=PASS"
           echo "BR_V12_OWNER_CLONE_IDENTITY_APPROVED=FALSE"
