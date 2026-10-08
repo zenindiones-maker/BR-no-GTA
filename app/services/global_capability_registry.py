@@ -2988,3 +2988,40 @@ _REGISTRY._records = tuple(sorted(
     (*_REGISTRY._records, IRIS_VISUAL_OBSERVATION_RECORD),
     key=lambda item: item.capability_id,
 ))
+
+
+# REA/Ghidra native x86-64 analysis: runtime gated by doctor+exact version.
+REA_GHIDRA_NATIVE_RECORD = CapabilityRecord(
+    capability_id="reverse-engineering.software.rea-native-ghidra",
+    capability_type="TOOL", domain="native-binary-forensics",
+    implementation="REA 6.0.0 function CLI through Ghidra 12.1.4 on owner-built ELF64",
+    input_contract="persisted exact Harness RESEARCH authorization and allowed_media_roots for one owned x86-64 ELF function",
+    output_contract="BRHarnessReverseEngineeringResult/v1 containing BRREANativeFunctionEvidence/v1",
+    requirements=("exact REA 6.0.0 Node CLI","Ghidra 12.1.4","JDK 21+",
+                  "Linux x86-64", "provider-specific doctor success",
+                  "owned local ELF", "bounded no-network research runner"),
+    maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("RESEARCH",),
+    policy_tags=("reverse-engineering","rea","ghidra","native","elf","function",
+                 "static-analysis","original-owned","zero-cost","fail-closed"),
+    security_boundary="Only existing Harness authority, no arbitrary executable execution or open-target dynamic debugging, no native MCP server, no exfiltration or code forwarding. Runtime provider health and exact binary provenance required. Output is Evidence, not independent equivalent code.",
+    cost_class="FREE_NO_BILLING", quota_class="LOCAL_ISOLATED_NATIVE_CPU",
+    latency_class="LONG_BOUNDED_ASYNC", quality_class="NATIVE_ANALYSIS_NOT_EQUIVALENCE",
+    evidence_contract="BRHarnessReverseEngineeringResult/v1",
+    fallback_eligibility=False,
+    executor_binding="app.services.reverse_engineering_harness_service.execute_authorized_native_rea_function",
+    version="1", provider_id="rea-ghidra-local-pinned", agent_id="harness-reverse-engineering-specialist",
+    authority="NONE", memory_write="NONE", routing_authority="NONE",
+    editorial_authority="NONE", publication_authority="NONE",
+    supports_parallelism=False, supports_retry=False, supports_resume=False,
+    supports_review=False, side_effect_class="LOCAL_PRIVATE_ARTIFACT",
+    default_read_scope=(),default_write_scope=(),allowed_tools=("rea","ghidra"),
+    health_policy="DEFAULT",execution_kind="DETERMINISTIC_ANALYSIS_AGENT",
+    functional_roles=("OWNER_ELF_FUNCTION_EVIDENCE",),
+)
+if _REGISTRY._by_id.get(REA_GHIDRA_NATIVE_RECORD.capability_id) is not None:
+    raise ValueError("Duplicate Ghidra REA capability")
+_REGISTRY._by_id[REA_GHIDRA_NATIVE_RECORD.capability_id] = REA_GHIDRA_NATIVE_RECORD
+_REGISTRY._records = tuple(sorted(
+    (*_REGISTRY._records,REA_GHIDRA_NATIVE_RECORD),
+    key=lambda item:item.capability_id,
+))
