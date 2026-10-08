@@ -36,7 +36,7 @@ _DENY=re.compile(
     r"(?i)\b(ignore (?:all )?(?:previous )?instructions|override (?:policy|authorization)|"
     r"expose (?:secret|token|password)|send (?:me )?(?:the )?(?:key|credentials)|"
     r"publique|publicar|publish|upload|force.push|enviar (?:a |para )?voz|"
-    r"train(?:ing)?|fine.tune|finetune)\\b"
+    r"train(?:ing)?|fine.tune|finetune)\b"
 )
 
 
