@@ -441,6 +441,8 @@ jobs:
           }
           (base/"original-timeline.json").write_text(json.dumps(timeline))
           PY
+          export BR_STUDIO_HARNESS_AUTH_ID="$(grep '^BR_STUDIO_HARNESS_AUTH_ID=' "$GITHUB_ENV" | tail -n 1 | cut -d= -f2-)"
+          test -n "$BR_STUDIO_HARNESS_AUTH_ID"
           python scripts/br_studio_forensics_v6.py \
             --authorization-id "$BR_STUDIO_HARNESS_AUTH_ID" \
             --mode stems --rights owned \
