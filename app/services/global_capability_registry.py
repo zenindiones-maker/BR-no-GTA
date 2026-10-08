@@ -2952,3 +2952,39 @@ _REGISTRY._records = tuple(sorted(
     (*_REGISTRY._records, STUDIO_REVERSE_ENGINEERING_RECORD),
     key=lambda item:item.capability_id,
 ))
+
+
+# Iris is a subordinate camera; raw Iris MCP cannot bypass Harness authority.
+IRIS_VISUAL_OBSERVATION_RECORD = CapabilityRecord(
+    capability_id="reverse-engineering.web.iris-vision",
+    capability_type="TOOL", domain="web-visual-observation",
+    implementation="Iris 0.4.1 screenshot CLI, pinned release SHA, Chrome rendering of authorized trusted local static HTML",
+    input_contract="persisted Harness RESEARCH authorization, allowed_media_roots and allowed_vision_output_roots, owned local .html, restricted viewport/element selector, private PNG output",
+    output_contract="BRHarnessReverseEngineeringResult/v1 including BRIrisVisionObservation/v1 and a private PNG path",
+    requirements=("pinned Iris v0.4.1 binary", "local Chrome/Chromium", "owned static HTML", "private destination"),
+    maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("RESEARCH",),
+    policy_tags=("reverse-engineering", "iris", "camera", "screenshot", "visual",
+                 "web", "local", "read-only", "zero-cost", "harness-authorized"),
+    security_boundary="Only the Harness authorizes a single private file:// observation. No direct Iris MCP tool exposure, arbitrary HTTPS browsing, localhost, private app sessions, JS, external assets, login state, open-world URLs, agent-chosen network calls, learning/policy change or publication. Browser egress isolation remains unverified.",
+    cost_class="FREE_NO_BILLING", quota_class="LOCAL_CHROME_CPU_SINGLE_CAPTURE",
+    latency_class="BOUNDED_ASYNC", quality_class="VISUAL_PIXELS_NO_CREATIVE_APPROVAL",
+    evidence_contract="BRHarnessReverseEngineeringResult/v1",
+    fallback_eligibility=False,
+    executor_binding="app.services.reverse_engineering_harness_service.execute_authorized_iris_capture",
+    version="1", provider_id="iris-0.4.1-pinned",
+    agent_id="harness-reverse-engineering-specialist",
+    authority="NONE", memory_write="NONE", routing_authority="NONE",
+    editorial_authority="NONE", publication_authority="NONE",
+    supports_parallelism=False, supports_retry=False, supports_resume=False,
+    supports_review=False, side_effect_class="LOCAL_PRIVATE_ARTIFACT",
+    default_read_scope=(), default_write_scope=(), allowed_tools=("iris", "chromium"),
+    health_policy="DEFAULT", execution_kind="DETERMINISTIC_ANALYSIS_AGENT",
+    functional_roles=("OWNED_STATIC_WEB_VISUAL_CAPTURE",),
+)
+if _REGISTRY._by_id.get(IRIS_VISUAL_OBSERVATION_RECORD.capability_id) is not None:
+    raise ValueError("Duplicate Iris visual observation capability")
+_REGISTRY._by_id[IRIS_VISUAL_OBSERVATION_RECORD.capability_id] = IRIS_VISUAL_OBSERVATION_RECORD
+_REGISTRY._records = tuple(sorted(
+    (*_REGISTRY._records, IRIS_VISUAL_OBSERVATION_RECORD),
+    key=lambda item: item.capability_id,
+))
