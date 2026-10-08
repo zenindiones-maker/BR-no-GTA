@@ -19,7 +19,6 @@ FIELDS = {
     "Peak level dB": "sample_peak_dbfs",
     "RMS level dB": "rms_dbfs",
     "DC offset": "dc_offset_linear",
-    "Crest factor": "crest_factor_linear",
     "Number of samples": "sample_count",
 }
 
@@ -73,7 +72,7 @@ def analyze_audio_dynamics(path: str | Path, *, timeout_seconds: int = 300) -> d
         "rms_dbfs": {"value": rms, "unit": "dBFS"},
         "crest_db": {"value": round(peak - rms, 3) if peak is not None and rms is not None else None, "unit": "dB"},
         "dc_offset_linear": {"value": values["dc_offset_linear"], "unit": "normalized_linear"},
-        "crest_factor_linear": {"value": values["crest_factor_linear"], "unit": "ratio"},
+        "crest_factor_linear": {"value": round(10 ** ((peak - rms) / 20), 6) if peak is not None and rms is not None else None, "unit": "ratio", "derivation": "10^(crest_db/20)"}
         "sample_count": {"value": values["sample_count"], "unit": "samples"},
     }
     receipt: dict[str, Any] = {
