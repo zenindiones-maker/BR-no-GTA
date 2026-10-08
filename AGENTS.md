@@ -65,3 +65,14 @@ names remain unchanged with controlled spoken "vaicy siti". No recovery push
 may trigger owner fine-tuning. Production begins only after a new, delivered
 human-approved audition, actual 20–25min fully decoded original render,
 rights/factual review and explicit PRIVATE HD owner approval. No auto-publish.
+
+## V17 verified specialist policy (isolated candidate)
+
+See docs/architecture/br-specialist-intelligence-v17.md. Specialization is a
+versioned capability specification, never an autonomous second authority. The
+first specialist operates only through Harness RESEARCH and real observed pixel
+and FFmpeg timeline evidence, with 20 repeated ground-truth trials. Abstain on
+unknown requests, protected owner voice, publication or unproven provider.
+Do not confuse synthetic task verification with professional real-episode or
+SLM competence. No paid model, self-training, unreviewed MCP or canonical
+promotion is authorized by this milestone.
