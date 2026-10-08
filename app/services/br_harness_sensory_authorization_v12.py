@@ -56,8 +56,12 @@ def execute_authorized_pixel_observation(
         or routing_decision.authorized_action!="RESEARCH"
         or routing_decision.selected_executor_binding!=capability.executor_binding):
         raise PermissionError("SENSORY_HARNESS_ROUTE_MISMATCH")
+    required={"source_path","rights","kind","private_workspace"}
     if (not isinstance(payload,dict)
-        or set(payload)!={"source_path","rights","kind","private_workspace"}
+        or not required.issubset(payload)
+        or not set(payload).issubset(required|{"scene_scan"})
+        or type(payload.get("scene_scan",False)) is not bool
+        or (payload.get("scene_scan",False) and payload["kind"]!="owner_video_mp4")
         or payload["rights"]!="owned"):
         raise PermissionError("SENSORY_HARNESS_PAYLOAD_DENIED")
     source=_admit(auth,payload["source_path"])
@@ -66,6 +70,10 @@ def execute_authorized_pixel_observation(
         raise PermissionError("SENSORY_SOURCE_WORKSPACE_COLLISION")
     from app.services.br_harness_sensory_pixel_v12 import inspect_pixel_evidence
     report=inspect_pixel_evidence(source,kind=payload["kind"],private_workspace=workspace)
+    timeline=None
+    if payload.get("scene_scan",False):
+        from app.services.br_harness_visual_timeline_v16 import observe_timeline
+        timeline=observe_timeline(source=source,authoritative_pixel_evidence=report)
     return {
         "schema_version":"BRHarnessSensoryObservationExecution/v1",
         "status":"OBSERVED_PIXEL_EVIDENCE_ONLY",
@@ -74,6 +82,7 @@ def execute_authorized_pixel_observation(
         "harness_decision_id":auth.harness_decision_id,
         "execution_id":auth.execution_id,
         "evidence":report,
+        "visual_timeline_evidence":timeline,
         "agents_can_consume_private_frames":False,
         "scene_semantics_certified":False,
         "authority":"DEEPSEEK_HARNESS",
