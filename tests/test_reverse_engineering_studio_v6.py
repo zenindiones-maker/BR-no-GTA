@@ -98,7 +98,7 @@ def test_invalid_or_fabricated_alignment_is_blocked(tmp_path,monkeypatch):
     data["aligned_words"][1]["start"]=-1
     p.write_text(json.dumps(data))
     with pytest.raises(ObservationError,match="STUDIO_ALIGNMENT_TIME_OR_SCORE_INVALID"):
-        studio.audit_external_word_alignment(p)
+        studio.audit_external_word_alignment(p,audio)
 
 
 def _timeline(tmp_path):
