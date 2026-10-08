@@ -27,6 +27,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--input", required=True, help="Existing local artifact within approved auth lineage root")
     parser.add_argument("--rights", choices=["owned", "licensed", "observation_only"], required=True)
     parser.add_argument("--transcript")
+    parser.add_argument("--goal", help="Human-provided original creative experiment objective")
+    parser.add_argument("--candidate", help="Original media candidate for differential analysis")
+    parser.add_argument("--candidate-rights", choices=["owned", "licensed"], help="Original candidate rights declaration")
     parser.add_argument("--detect-scenes", action="store_true")
     parser.add_argument("--output", required=True, help="New private JSON result file")
     args = parser.parse_args(argv)
@@ -35,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     target = Path(args.output).expanduser()
     if target.exists() or target.is_symlink() or not target.is_absolute() or not target.parent.is_dir():
         raise PermissionError("REVERSE_ENGINEERING_OUTPUT_PATH_NOT_FRESH")
-    if args.mode == "rea-js" and (args.transcript or args.detect_scenes):
+    if args.mode == "rea-js" and (args.transcript or args.detect_scenes or args.goal or args.candidate):
         raise PermissionError("REA_JS_MEDIA_FLAGS_FORBIDDEN")
     capability_id = MEDIA_CAPABILITY_ID if args.mode == "media" else REA_CAPABILITY_ID
     domain = "audiovisual-analysis" if args.mode == "media" else "software-investigation"
@@ -53,6 +56,11 @@ def main(argv: list[str] | None = None) -> int:
             payload["transcript_path"] = args.transcript
         if args.detect_scenes:
             payload["include_scene_cuts"] = True
+        if args.goal:
+            payload["owner_goal"] = args.goal
+        if args.candidate:
+            payload["candidate_path"] = args.candidate
+            payload["candidate_rights"] = args.candidate_rights
     result = CapabilityAdapter().execute(
         authorization=args.authorization_id,
         task_envelope=TaskEnvelope(
