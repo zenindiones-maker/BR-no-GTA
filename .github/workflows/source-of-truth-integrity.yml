@@ -1,0 +1,32 @@
+name: BR Source of Truth Integrity Gate
+on:
+  push:
+    branches:
+      - "work/**"
+      - "staging/**"
+      - main
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-of-truth:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Check immutable Git provenance and retired architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          AUTHORIZED_SHA="$(git rev-parse HEAD)"
+          AUTHORIZED_TREE="$(git rev-parse HEAD^{tree})"
+          python scripts/source_of_truth_guard.py --expected-sha "$AUTHORIZED_SHA" --expected-tree "$AUTHORIZED_TREE"
+      - name: Execute adversarial source-of-truth regressions
+        run: python -m unittest discover -s tests -p 'test_source_of_truth_guard.py' -v
