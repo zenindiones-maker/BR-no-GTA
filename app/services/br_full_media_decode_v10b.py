@@ -59,29 +59,48 @@ def verify_full_decode(
         raise ValueError("FULL_DECODE_LONGFORM_LENGTH_INVALID")
     if profile==PROFILE_CANARY and not 0.5<=duration<=10:
         raise ValueError("FULL_DECODE_CANARY_LENGTH_INVALID")
-    cmd=[
-        "ffmpeg","-nostdin","-hide_banner","-v","error","-xerror",
-        "-threads","2","-i",str(source),"-map","0:v:0","-map","0:a:0",
-        "-c:v","rawvideo","-c:a","pcm_s16le",
-        "-progress","pipe:1","-f","null","-",
-    ]
-    out=_runner(cmd,timeout=timeout_seconds)
-    report=(out.stdout or "")[:2_000_000]
-    frames=[int(m) for m in _FRAME.findall(report)]
-    progress_end=bool(_PROGRESS_END.search(report))
-    timings=[int(m)/1_000_000 for m in _OUT_US.findall(report)]
-    last_time=max(timings,default=0.0)
-    # For a constant 30fps profile, frame count is an additional guard
-    # against success with an incomplete video stream.
+    # Decode each stream independently. A complete video track with a
+    # prematurely ended audio track must not be called "full audio decode".
+    streams={}
+    for kind in ("video","audio"):
+        stream="v" if kind=="video" else "a"
+        codec_args=["-c:v","rawvideo"] if kind=="video" else ["-c:a","pcm_s16le"]
+        command=[
+            "ffmpeg","-nostdin","-hide_banner","-v","error","-xerror",
+            "-threads","2","-i",str(source),"-map",f"0:{stream}:0",
+            *codec_args,"-progress","pipe:1","-f","null","-",
+        ]
+        completed=_runner(command,timeout=timeout_seconds)
+        report=(completed.stdout or "")[:2_000_000]
+        frames=[int(m) for m in _FRAME.findall(report)]
+        times=[int(m)/1_000_000 for m in _OUT_US.findall(report)]
+        streams[kind]={
+            "exit_ok":completed.returncode==0,
+            "progress_end":bool(_PROGRESS_END.search(report)),
+            "frames":max(frames,default=0),
+            "out_time_seconds":max(times,default=0.0),
+        }
     expected_frames=int(math.floor(duration*30*0.99))
-    frame_count=max(frames,default=0)
+    frame_count=streams["video"]["frames"]
+    video_time=streams["video"]["out_time_seconds"]
+    audio_time=streams["audio"]["out_time_seconds"]
     checks={
-        "ffmpeg_exit_zero":out.returncode==0,
-        "progress_end":progress_end,
+        "video_decode_exit_zero":streams["video"]["exit_ok"],
+        "video_progress_end":streams["video"]["progress_end"],
         "decoded_frames_at_least_99pct":frame_count>=expected_frames,
-        "reported_time_at_least_98pct":last_time>=0.98*duration,
+        "video_time_at_least_98pct":video_time>=0.98*duration,
+        "audio_decode_exit_zero":streams["audio"]["exit_ok"],
+        "audio_progress_end":streams["audio"]["progress_end"],
+        "audio_time_at_least_98pct":audio_time>=0.98*duration,
     }
-    full=all(checks.values())
+    video_ok=all(checks[key] for key in (
+        "video_decode_exit_zero","video_progress_end",
+        "decoded_frames_at_least_99pct","video_time_at_least_98pct",
+    ))
+    audio_ok=all(checks[key] for key in (
+        "audio_decode_exit_zero","audio_progress_end","audio_time_at_least_98pct",
+    ))
+    full=video_ok and audio_ok
     result={
         "schema_version":SCHEMA,
         "status":"FULL_SYNTHETIC_CANARY_DECODE_PASS" if full and profile==PROFILE_CANARY
@@ -93,10 +112,11 @@ def verify_full_decode(
         "checks":checks,
         "expected_min_video_frames":expected_frames,
         "observed_video_frames":frame_count,
-        "observed_max_media_time_seconds":round(last_time,3),
+        "observed_video_time_seconds":round(video_time,3),
+        "observed_audio_time_seconds":round(audio_time,3),
         "source_duration_seconds":duration,
-        "entire_video_decoder_completed":full,
-        "entire_audio_decoder_completed":full,
+        "entire_video_decoder_completed":video_ok,
+        "entire_audio_decoder_completed":audio_ok,
         "audio_identity_certified":False,
         "image_editorial_certified":False,
         "no_overlay_certified":False,
