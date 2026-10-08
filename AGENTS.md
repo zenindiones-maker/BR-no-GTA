@@ -46,3 +46,13 @@ through the Harness-controlled capability IDs and the measured-evidence protocol
 `docs/agent-execution/reverse-engineering-specialist-v2.md`. The policy is a research
 method, not permission to copy expression, issue new authorizations, access owner
 voice material, publish, or change canonical learning without explicit review.
+
+## Experimental improvement discipline (candidate-only)
+
+For evidence-first improvement proposals, use the frozen dataset, paired trial,
+heldout evaluation and false-positive controls in
+`docs/architecture/br-reverse-engineering-experiment-intelligence-v4.md`.
+An agent must not interpret a positive sign test as permission to change
+canonical routing, train a model, modify Owner Voice identity or write memory.
+Independent evidence, heldout integrity and Human + Harness approval remain
+mandatory. Research sensors cannot initiate additional jobs or change billing.
