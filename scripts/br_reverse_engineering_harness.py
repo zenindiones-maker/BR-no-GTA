@@ -17,13 +17,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.services.harness_capability_adapter import CapabilityAdapter
 from app.services.harness_collaboration_service import TaskEnvelope
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
-from app.services.reverse_engineering_harness_service import MEDIA_CAPABILITY_ID, REA_CAPABILITY_ID, WEB_HAR_CAPABILITY_ID
+from app.services.reverse_engineering_harness_service import MEDIA_CAPABILITY_ID, REA_CAPABILITY_ID, WEB_HAR_CAPABILITY_ID, FIDELITY_CAPABILITY_ID
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Harness-governed, read-only reverse engineering")
     parser.add_argument("--authorization-id", required=True, help="Existing persisted Harness authorization ID")
-    parser.add_argument("--mode", required=True, choices=["media", "rea-js", "web-har"])
+    parser.add_argument("--mode", required=True, choices=["media", "rea-js", "web-har", "fidelity"])
     parser.add_argument("--input", required=True, help="Existing local artifact within approved auth lineage root")
     parser.add_argument("--rights", choices=["owned", "licensed", "observation_only"], required=True)
     parser.add_argument("--transcript")
@@ -34,6 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--audio-dynamics", action="store_true", help="Run FFmpeg overall signal stats")
     parser.add_argument("--adaptive-shot-window", type=float, help="Opt in to 0-90s adaptive scene observation")
     parser.add_argument("--adaptive-shot-start", type=float, default=0.0, help="Authorized shot observation start time")
+    parser.add_argument("--window-seconds", type=float, default=None, help="Max 12s aligned fidelity comparison")
     parser.add_argument("--output", required=True, help="New private JSON result file")
     args = parser.parse_args(argv)
 
@@ -41,10 +42,17 @@ def main(argv: list[str] | None = None) -> int:
     target = Path(args.output).expanduser()
     if target.exists() or target.is_symlink() or not target.is_absolute() or not target.parent.is_dir():
         raise PermissionError("REVERSE_ENGINEERING_OUTPUT_PATH_NOT_FRESH")
-    if args.mode in {"rea-js", "web-har"} and (args.transcript or args.detect_scenes or args.goal or args.candidate or args.audio_dynamics or args.adaptive_shot_window is not None or args.adaptive_shot_start != 0.0):
+    if args.mode in {"rea-js", "web-har"} and (args.transcript or args.detect_scenes or args.goal or args.candidate or args.audio_dynamics or args.adaptive_shot_window is not None or args.adaptive_shot_start != 0.0 or args.window_seconds is not None):
         raise PermissionError("REA_JS_MEDIA_FLAGS_FORBIDDEN")
-    capability_id = {"media": MEDIA_CAPABILITY_ID, "rea-js": REA_CAPABILITY_ID, "web-har": WEB_HAR_CAPABILITY_ID}[args.mode]
-    domain = {"media": "audiovisual-analysis", "rea-js": "software-investigation", "web-har": "website-observation"}[args.mode]
+    if args.mode == "fidelity":
+        if args.transcript or args.goal or args.detect_scenes or args.audio_dynamics or args.adaptive_shot_window is not None or args.adaptive_shot_start != 0:
+            parser.error("fidelity does not accept scene or script flags")
+        if not args.candidate or not args.candidate_rights or args.rights == "observation_only":
+            parser.error("fidelity needs two distinct owned or licensed sources")
+    elif args.window_seconds is not None:
+        parser.error("--window-seconds is exclusive to fidelity mode")
+    capability_id = {"media": MEDIA_CAPABILITY_ID, "rea-js": REA_CAPABILITY_ID, "web-har": WEB_HAR_CAPABILITY_ID, "fidelity": FIDELITY_CAPABILITY_ID}[args.mode]
+    domain = {"media": "audiovisual-analysis", "rea-js": "software-investigation", "web-har": "website-observation", "fidelity": "reconstruction-fidelity"}[args.mode]
     decision = route_harness_request(HarnessRoutingRequest(
         intent=f"read-only {domain} evidence",
         authorized_action="RESEARCH",
@@ -71,6 +79,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.candidate:
             payload["candidate_path"] = args.candidate
             payload["candidate_rights"] = args.candidate_rights
+    if args.mode == "fidelity":
+        payload = {
+            "reference_path": str(source), "candidate_path": args.candidate,
+            "reference_rights": args.rights, "candidate_rights": args.candidate_rights,
+            "window_seconds": args.window_seconds if args.window_seconds is not None else 2.0,
+        }
     result = CapabilityAdapter().execute(
         authorization=args.authorization_id,
         task_envelope=TaskEnvelope(
@@ -78,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
             capability_id=capability_id,
             action="RESEARCH",
             objective="Observe authorized source only",
-            allowed_tools=("ffmpeg", "ffprobe") if args.mode == "media" else (("rea",) if args.mode == "rea-js" else ()),
+            allowed_tools=("ffmpeg", "ffprobe") if args.mode in {"media", "fidelity"} else (("rea",) if args.mode == "rea-js" else ()),
             cost_budget=0.0,
             retry_budget=0,
         ),
