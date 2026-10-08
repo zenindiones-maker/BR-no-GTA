@@ -1070,6 +1070,36 @@ def main()->int:
         print("QWEN_TARGETED_PROMPT_AUTHORITY=VICE_CITY_FRESH_OWNER_REFERENCE")
     else:
         print("QWEN_PROMPT_COMPONENT_AUTHORITY=ANCHOR_ONLY")
+    # V23 diagnostic mode is opt-in and returns before audition creation or delivery.
+    if os.environ.get("BR_OWNER_V23_ABLATION_ONLY") == "1":
+        if pronunciation_prompt_audio is None or pronunciation_hybrid_prompt is None:
+            raise RuntimeError("V23_ABLATION_OWNER_PRONUNCIATION_REFERENCE_REQUIRED")
+        from qwen_tts import VoiceClonePromptItem
+        from app.services.owner_voice_qwen_ablation_v23 import run_private_ablation
+        import random
+
+        def _set_paired_seed(seed: int) -> None:
+            random.seed(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+
+        run_private_ablation(
+            model=model,
+            anchor_prompt=anchor_prompt,
+            pronunciation_prompt=pronunciation_prompt,
+            prompt_factory=VoiceClonePromptItem,
+            profile=profile,
+            canonical_embedding=canonical_embedding,
+            workspace=workspace,
+            seed_setter=_set_paired_seed,
+            normalize_16k=_ffmpeg,
+            identity_embedding=lambda source: _embedding(classifier,source),
+            stt=stt,
+        )
+        print("V23_ABLATION_MODE=DIAGNOSTIC_ONLY")
+        print("V23_NEW_AUDITION_GENERATED=FALSE")
+        return 0
+
     print("QWEN_REFERENCE_AUDIO_LINEAGE="+qwen_reference_audio_lineage)
     pronunciation_segments=build_gta6_pronunciation_batches(SHORT_TEXT)
     if not pronunciation_segments:
