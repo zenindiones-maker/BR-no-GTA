@@ -100,3 +100,58 @@ def test_wrong_pinned_iris_version_rejected(tmp_path,monkeypatch):
         returncode=0,stdout="iris 9.9.9\n",stderr=""))
     with pytest.raises(ObservationError,match="IRIS_VERSION_UNPINNED"):
         iris._iris_path(binary)
+
+
+
+def test_extended_iris_modes_are_bounded(tmp_path):
+    page=_html(tmp_path)
+    for kwargs,expected in [
+        ({"full_page":True,"selector":"h1"},"IRIS_FULL_PAGE_SELECTOR_CONFLICT"),
+        ({"padding":30},"IRIS_PADDING_UNSUPPORTED"),
+        ({"selector":"h1","padding":49},"IRIS_PADDING_UNSUPPORTED"),
+        ({"dark":"yes"},"IRIS_MODE_FLAGS_INVALID"),
+        ({"wait_for":"a;alert(1)"},"IRIS_WAIT_FOR_UNSUPPORTED"),
+    ]:
+        with pytest.raises(ObservationError,match=expected):
+            iris.capture_owned_static_page(
+                source_path=page,output_path=tmp_path/"new.png",
+                iris_binary=tmp_path/"iris",**kwargs,
+            )
+
+
+def test_iris_full_page_dark_and_selector_padding_translate_to_upstream_cli(tmp_path,monkeypatch):
+    page=_html(tmp_path)
+    binary=tmp_path/"iris"
+    binary.write_bytes(b"test")
+    monkeypatch.setattr(iris,"_iris_path",lambda path: binary)
+    recorded=[]
+    def fake_run(argv,**kwargs):
+        recorded.append(argv)
+        stage=Path(argv[argv.index("-o")+1])
+        width,height=(960,1500) if "--full" in argv else (180,60)
+        stage.write_bytes(b"\x89PNG\r\n\x1a\n"+b"\0\0\0\rIHDR"+
+                          struct.pack(">II",width,height)+b"\x08\x02\0\0\0"+
+                          b"\0\0\0\0"+b"FAKE")
+        info={"status":"ok","url":page.as_uri(),"output":str(stage),
+              "format":"png","mode":"full_page" if "--full" in argv else "element",
+              "css_width":width,"css_height":height}
+        if "--selector" in argv:
+            info["selector"]="h1"
+            info["padding"]=24
+        return SimpleNamespace(returncode=0,stdout=json.dumps(info)+"\n",stderr="")
+    monkeypatch.setattr(iris.subprocess,"run",fake_run)
+    full=iris.capture_owned_static_page(
+        source_path=page,output_path=tmp_path/"full.png",iris_binary=binary,
+        full_page=True,dark=True,wait_for="h1",
+    )
+    element=iris.capture_owned_static_page(
+        source_path=page,output_path=tmp_path/"element.png",iris_binary=binary,
+        selector="h1",padding=24,dark=True,
+    )
+    assert ["--full"]==[x for x in recorded[0] if x=="--full"]
+    assert "--dark" in recorded[0] and "--wait-for" in recorded[0]
+    assert "--selector" in recorded[1] and "--padding" in recorded[1]
+    assert full["capture_mode"]=="local_static_full_page"
+    assert full["image_height"]==1500
+    assert element["padding"]==24
+    assert full["live_website_capture"] is False
