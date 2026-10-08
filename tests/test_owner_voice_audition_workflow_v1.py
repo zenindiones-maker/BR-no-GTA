@@ -95,7 +95,8 @@ def test_workflow_preflights_secrets_before_model_download_and_pins_stt_decode_c
 
 def test_workflow_runs_contract_on_recovery_push_but_gates_heavy_audition_on_explicit_request():
     text=WORKFLOW.read_text(encoding="utf-8")
-    assert "recovery/dev/br-owner-v1-human-audition-v2" in text
+    assert "workflow_dispatch:" in text
+    assert "recovery/dev/br-owner-v1-human-audition-v2" not in text
     assert "audition_requested" in text
     assert ".run/br-owner-v1-human-audition.request.json" in text
     assert "needs.contract.outputs.audition_requested == 'true'" in text
