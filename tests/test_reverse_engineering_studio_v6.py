@@ -56,9 +56,11 @@ def test_stems_reject_duplicate_missing_surround_and_long_analysis(tmp_path, mon
 
 
 def _alignment(tmp_path):
+    audio=_sample(tmp_path,"trusted.wav")
+    from app.services.reverse_engineering_media_service import _sha256
     doc={
         "language":"pt","model_id":"external-alignment-fixture-v1",
-        "audio_sha256":"a"*64,"duration_seconds":2.0,
+        "audio_sha256":_sha256(audio),"duration_seconds":2.0,
         "expected_tokens":["vaicy","siti"],
         "aligned_words":[
             {"word":"vaicy","start":0.0,"end":0.4,"score":0.98},
@@ -67,12 +69,13 @@ def _alignment(tmp_path):
     }
     p=tmp_path/"alignment.json"
     p.write_text(json.dumps(doc),encoding="utf-8")
-    return p,doc
+    return p,doc,audio
 
 
-def test_ptbr_alignment_is_not_proof_of_acoustic_pronunciation(tmp_path):
-    p,doc=_alignment(tmp_path)
-    r=studio.audit_external_word_alignment(p)
+def test_ptbr_alignment_is_not_proof_of_acoustic_pronunciation(tmp_path,monkeypatch):
+    p,doc,audio=_alignment(tmp_path)
+    monkeypatch.setattr(studio,"probe_media",lambda _:{"duration_seconds":2.0,"streams":[{"codec_type":"audio"}]})
+    r=studio.audit_external_word_alignment(p,audio)
     assert r["counts"]["matched_text"]==2
     assert r["phoneme_pronunciation_verified"] is False
     assert r["speaker_identity_verified"] is False
@@ -80,16 +83,17 @@ def test_ptbr_alignment_is_not_proof_of_acoustic_pronunciation(tmp_path):
     assert "expected_tokens" not in json.dumps(r)
     doc["aligned_words"][1]["word"]="city"
     p.write_text(json.dumps(doc))
-    s=studio.audit_external_word_alignment(p)
+    s=studio.audit_external_word_alignment(p,audio)
     assert s["counts"]["lexical_mismatch"]==1
 
 
-def test_invalid_or_fabricated_alignment_is_blocked(tmp_path):
-    p,data=_alignment(tmp_path)
+def test_invalid_or_fabricated_alignment_is_blocked(tmp_path,monkeypatch):
+    p,data,audio=_alignment(tmp_path)
+    monkeypatch.setattr(studio,"probe_media",lambda _:{"duration_seconds":2.0,"streams":[{"codec_type":"audio"}]})
     data["aligned_words"][1]["score"]=1.8
     p.write_text(json.dumps(data))
     with pytest.raises(ObservationError,match="STUDIO_ALIGNMENT_TIME_OR_SCORE_INVALID"):
-        studio.audit_external_word_alignment(p)
+        studio.audit_external_word_alignment(p,audio)
     data["aligned_words"][1]["score"]=0.5
     data["aligned_words"][1]["start"]=-1
     p.write_text(json.dumps(data))
@@ -144,3 +148,13 @@ def test_motion_frame_count_and_shape_are_limited_before_decode(tmp_path):
     p=_sample(tmp_path,"clip.mp4")
     with pytest.raises(ObservationError,match="STUDIO_MOTION_FRAME_WINDOW_INVALID"):
         studio.analyze_animation_motion(p,max_frames=200)
+
+
+
+def test_ptbr_alignment_claiming_another_audio_hash_fails_closed(tmp_path,monkeypatch):
+    p,document,audio=_alignment(tmp_path)
+    document["audio_sha256"]="d"*64
+    p.write_text(json.dumps(document))
+    monkeypatch.setattr(studio,"probe_media",lambda _:{"duration_seconds":2.0,"streams":[{"codec_type":"audio"}]})
+    with pytest.raises(ObservationError,match="STUDIO_ALIGNMENT_AUDIO_HASH_MISMATCH"):
+        studio.audit_external_word_alignment(p,audio)
