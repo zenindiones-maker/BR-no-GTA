@@ -34,7 +34,7 @@ jobs:
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
           set -euo pipefail
-          python -m pip install -q --disable-pip-version-check pytest==8.4.2
+          python -m pip install -q --disable-pip-version-check pytest==8.4.2 python-dotenv==1.2.3
           python -m pytest -q tests/test_br_slm_evidence_verifier_v22.py
           echo "V22_INDEPENDENT_POLICY_TESTS=PASS"
 
