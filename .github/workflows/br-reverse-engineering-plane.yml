@@ -6,6 +6,8 @@ on:
     paths:
       - "app/services/reverse_engineering_media_service.py"
       - "app/services/reverse_engineering_forensics_service.py"
+      - "app/services/reverse_engineering_story_service.py"
+      - "tests/test_reverse_engineering_story_v1.py"
       - "app/services/reverse_engineering_harness_service.py"
       - "app/services/global_capability_registry.py"
       - "scripts/br_reverse_engineering_harness.py"
@@ -42,7 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check -q pytest "python-dotenv==1.2.3"
-          python -m pytest -q tests/test_reverse_engineering_media_service.py tests/test_reverse_engineering_harness_v2.py tests/test_global_capability_registry.py
+          python -m pytest -q tests/test_reverse_engineering_media_service.py tests/test_reverse_engineering_harness_v2.py tests/test_reverse_engineering_story_v1.py tests/test_global_capability_registry.py
       - name: Install required FFmpeg observation runtime
         run: |
           set -euo pipefail
