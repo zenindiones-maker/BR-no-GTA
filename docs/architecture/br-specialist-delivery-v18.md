@@ -27,3 +27,7 @@ The V18 CI uses mocked Git snapshots and existing transient/CAS regression tests
 3. Keep full 20–25 minute master and owner PRIVATE review blocked until real acoustic QA and explicit approval.
 
 **Source authority**: the repository's existing Harness and OwnerVoiceAuditionGitLedgerStore; no model is given Git writer permissions. New LLaMA-Factory training is NOT authorized. V17 first specialist remains isolated at 9f8831fdf4ab8404220c5e9e6b9e27e4b46be6a7.
+
+## Additional V18 authority gate
+
+The live private-ledger helper requires a persisted Harness RESEARCH authorization with exact subject `capability:owner-voice.ledger-readonly-v18` and `lineage.allow_remote_ledger_read=true`. Without that explicit grant, it refuses a snapshot even if an SSH-capable store object is available. Tests check revoked and no-grant cases against an initialized private Harness authorization database. This helper is not yet a newly promoted Registry executor: no model or agent has automatic access to its private ledger scope.
