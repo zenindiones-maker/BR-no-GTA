@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - work/br-iris-vision-harness-v7
+      - work/br-harness-capability-utilization-v8
     paths:
       - "app/services/reverse_engineering_iris_v7_service.py"
       - "app/services/reverse_engineering_harness_service.py"
@@ -11,6 +12,10 @@ on:
       - "scripts/br_iris_visual_observe_v7.py"
       - "tests/test_reverse_engineering_iris_v7.py"
       - "tests/test_reverse_engineering_iris_harness_v7.py"
+      - "app/services/harness_capability_utilization_v8.py"
+      - "scripts/br_harness_capability_audit_v8.py"
+      - "tests/test_harness_capability_utilization_v8.py"
+      - "docs/architecture/br-harness-utilization-v8.md"
       - ".github/workflows/br-iris-vision-v7.yml"
       - "docs/architecture/br-iris-vision-v7.md"
       - "AGENTS.md"
@@ -40,7 +45,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check -q pytest "python-dotenv==1.2.3"
-          python -m pytest -q tests/test_reverse_engineering_iris_v7.py tests/test_reverse_engineering_iris_harness_v7.py tests/test_global_capability_registry.py
+          python -m pytest -q tests/test_reverse_engineering_iris_v7.py tests/test_reverse_engineering_iris_harness_v7.py tests/test_harness_capability_utilization_v8.py tests/test_global_capability_registry.py
       - name: Confirm runtime prerequisites
         run: |
           set -euo pipefail
@@ -136,4 +141,99 @@ jobs:
               assert data["memory_write"]=="NOT_ATTEMPTED"
           print("BR_IRIS_REAL_CHROME_DESKTOP_AND_ELEMENT=PASS")
           print("BR_IRIS_NO_CANONICAL_PROMOTION=PASS")
+          PY
+      - name: Prove expanded Iris page and element modes on owned local static HTML
+        env:
+          BR_IRIS_PINNED_BIN: ${{ runner.temp }}/br-iris-0.4.1/iris
+          BR_TEST_DATABASE: ${{ runner.temp }}/br-iris-v7-auth.db
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/approved-iris-pages/tall-fixture.html" <<'HTML'
+          <!doctype html><html lang="pt"><head><meta charset="utf-8">
+          <style>body{margin:0;background:#101726;color:white}
+          main{min-height:1800px;padding:16px;background:linear-gradient(90deg,#101726,#204660)}
+          h1{font-size:28px;padding:20px} p{font-size:18px}</style></head>
+          <body><main><h1 id="hero">OWNED VISUAL RESEARCH</h1>
+          <p>This local document is deliberately taller than the viewport.</p></main></body></html>
+          HTML
+          export BR_IRIS_AUTH_ID="$(grep '^BR_IRIS_AUTH_ID=' "$GITHUB_ENV" | tail -n 1 | cut -d= -f2-)"
+          python scripts/br_iris_visual_observe_v7.py \
+            --authorization-id "$BR_IRIS_AUTH_ID" \
+            --input "$RUNNER_TEMP/approved-iris-pages/tall-fixture.html" \
+            --output-image "$RUNNER_TEMP/private-iris-shots/full-dark.png" \
+            --output-receipt "$RUNNER_TEMP/private-iris-shots/full-dark-receipt.json" \
+            --viewport 960x600 --full-page --dark --wait-for '#hero'
+          python scripts/br_iris_visual_observe_v7.py \
+            --authorization-id "$BR_IRIS_AUTH_ID" \
+            --input "$RUNNER_TEMP/approved-iris-pages/tall-fixture.html" \
+            --output-image "$RUNNER_TEMP/private-iris-shots/padded-element.png" \
+            --output-receipt "$RUNNER_TEMP/private-iris-shots/padded-element-receipt.json" \
+            --viewport 390x844 --selector '#hero' --padding 24 --dark
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path(os.environ["RUNNER_TEMP"])/"private-iris-shots"
+          full=json.loads((root/"full-dark-receipt.json").read_text())["result"]["evidence"]
+          part=json.loads((root/"padded-element-receipt.json").read_text())["result"]["evidence"]
+          assert full["capture_mode"]=="local_static_full_page"
+          assert full["image_height"]>600
+          assert full["dark"] is True
+          assert full["wait_for_used"] is True
+          assert part["capture_mode"]=="local_static_element"
+          assert part["dark"] is True and part["padding"]==24
+          for item in (full,part):
+              assert item["live_website_capture"] is False
+              assert item["mcp_registered"] is False
+              assert item["publication"]=="FORBIDDEN"
+          print("BR_IRIS_FULL_PAGE_DARK_WAIT_AND_PADDING=PASS")
+          PY
+
+  rea-catalog:
+    name: Pinned REA doctor and Harness all-capabilities inventory
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          submodules: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: "24.11.0"
+      - name: Install exact REA package and inspect available probes
+        env:
+          BR_REA_INSTALL_PREFIX: ${{ runner.temp }}/rea-install
+        run: |
+          set -euo pipefail
+          bash integrations/rea_install_and_doctor.sh --install
+          test -s "$BR_REA_INSTALL_PREFIX/rea-capabilities.json"
+          test "$("$BR_REA_INSTALL_PREFIX/node_modules/.bin/rea" --version)" = "6.0.0"
+      - name: Produce private honest inventory and deny false native/MCP PASS
+        env:
+          BR_REA_INSTALL_PREFIX: ${{ runner.temp }}/rea-install
+        run: |
+          set -euo pipefail
+          python scripts/br_harness_capability_audit_v8.py \
+            --rea-bin "$BR_REA_INSTALL_PREFIX/node_modules/.bin/rea" \
+            --output "$RUNNER_TEMP/harness-utilization-v8.json"
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path(os.environ["RUNNER_TEMP"])/"harness-utilization-v8.json"
+          result=json.loads(p.read_text())
+          rea=result["rea_discovery"]
+          assert rea["rea_version"]=="6.0.0"
+          assert rea["catalog"]["capabilities"]["readiness"]=="DISCOVERY_SUCCEEDED"
+          assert rea["native_provider_ready"] is False
+          assert rea["mcp_registration"]=="NOT_ATTEMPTED"
+          assert result["registry_total"]>=7
+          assert result["runtime_verified_count"]==0
+          assert result["capability_autorouting_changed"] is False
+          assert result["canonical_learning_changed"] is False
+          print("BR_REA_REAL_CATALOG_PROBE=PASS")
+          print("BR_HARNESS_ENTIRE_REGISTRY_INVENTORY=PASS")
+          print("BR_REA_NATIVE_FALSE_PASS=BLOCKED")
           PY
