@@ -12,7 +12,7 @@ import statistics
 from pathlib import Path
 from typing import Any
 
-from app.services.reverse_engineering_media_service import ObservationError, _source, probe_media
+from app.services.reverse_engineering_media_service import ObservationError, _source, _sha256, probe_media
 
 SCHEMA = "BRAdaptiveShotObservation/v1"
 MAX_SECONDS_PER_PASS = 90.0
@@ -77,7 +77,7 @@ def analyze_shots(
     result: dict[str, Any] = {
         "schema_version": SCHEMA,
         "status": "MEASURED",
-        "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest() if source.stat().st_size <= 4_000_000 else None,
+        "source_sha256": _sha256(source),
         "algorithm": f"PySceneDetect_0.7.1_{algorithm}",
         "start_seconds": round(start_seconds, 3),
         "stop_seconds": round(stop, 3),
