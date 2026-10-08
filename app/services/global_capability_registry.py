@@ -2804,3 +2804,38 @@ _REGISTRY._records = tuple(sorted(
     (*_REGISTRY._records, *REVERSE_ENGINEERING_RECORDS),
     key=lambda item: item.capability_id,
 ))
+
+
+# Offline web behavior evidence extends the existing Harness registry; no browser access.
+WEB_REVERSE_ENGINEERING_RECORD = CapabilityRecord(
+    capability_id="reverse-engineering.web.har-observe",
+    capability_type="TOOL", domain="website-observation",
+    implementation="Offline HAR v1.2 request/timing metadata anonymization under Harness authorization",
+    input_contract="persisted RESEARCH capability authorization + bounded local authorized HAR 1.2 and declared rights",
+    output_contract="BRHarnessReverseEngineeringResult/v1 containing BROfflineWebHARObservation/v1",
+    requirements=("local approved HAR", "persisted allowed_media_roots", "no live browser/network"),
+    maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("RESEARCH",),
+    policy_tags=("reverse-engineering", "web", "website", "har", "privacy", "deterministic", "readonly", "zero-cost"),
+    security_boundary="DeepSeek Harness sole authority. No requests, cookies, URLs, origins, payloads or HAR bodies are leaked to agent responses; no live network, browser, publication or memory mutation.",
+    cost_class="FREE_NO_BILLING", quota_class="LOCAL_PYTHON_CPU",
+    latency_class="LOCAL", quality_class="OFFLINE_MEASURED_HAR_ONLY",
+    evidence_contract="BRHarnessReverseEngineeringResult/v1",
+    fallback_eligibility=False,
+    executor_binding="app.services.reverse_engineering_harness_service.execute_authorized_web_har_observation",
+    version="1", provider_id="internal", agent_id="harness-reverse-engineering-specialist",
+    authority="NONE", memory_write="NONE", routing_authority="NONE",
+    editorial_authority="NONE", publication_authority="NONE",
+    supports_parallelism=False, supports_retry=False, supports_resume=False,
+    supports_review=False, side_effect_class="READ_ONLY",
+    default_read_scope=(), default_write_scope=(),
+    allowed_tools=(), health_policy="DEFAULT",
+    execution_kind="DETERMINISTIC_ANALYSIS_AGENT",
+    functional_roles=("WEBSITE_BEHAVIOR_EVIDENCE",),
+)
+if _REGISTRY._by_id.get(WEB_REVERSE_ENGINEERING_RECORD.capability_id) is not None:
+    raise ValueError("Duplicate reverse-engineering HAR capability")
+_REGISTRY._by_id[WEB_REVERSE_ENGINEERING_RECORD.capability_id] = WEB_REVERSE_ENGINEERING_RECORD
+_REGISTRY._records = tuple(sorted(
+    (*_REGISTRY._records, WEB_REVERSE_ENGINEERING_RECORD),
+    key=lambda item: item.capability_id,
+))
