@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""Execute already-authorized reverse engineering through canonical Harness routing.
+
+This CLI NEVER issues authority. A live persisted authorization ID must be
+provided by DeepSeek Harness. No fallback, publication or autonomous looping.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.services.harness_capability_adapter import CapabilityAdapter
+from app.services.harness_collaboration_service import TaskEnvelope
+from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
+from app.services.reverse_engineering_harness_service import MEDIA_CAPABILITY_ID, REA_CAPABILITY_ID
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Harness-governed, read-only reverse engineering")
+    parser.add_argument("--authorization-id", required=True, help="Existing persisted Harness authorization ID")
+    parser.add_argument("--mode", required=True, choices=["media", "rea-js"])
+    parser.add_argument("--input", required=True, help="Existing local artifact within approved auth lineage root")
+    parser.add_argument("--rights", choices=["owned", "licensed", "observation_only"], required=True)
+    parser.add_argument("--transcript")
+    parser.add_argument("--detect-scenes", action="store_true")
+    parser.add_argument("--output", required=True, help="New private JSON result file")
+    args = parser.parse_args(argv)
+
+    source = Path(args.input).expanduser()
+    target = Path(args.output).expanduser()
+    if target.exists() or target.is_symlink() or not target.is_absolute() or not target.parent.is_dir():
+        raise PermissionError("REVERSE_ENGINEERING_OUTPUT_PATH_NOT_FRESH")
+    if args.mode == "rea-js" and (args.transcript or args.detect_scenes):
+        raise PermissionError("REA_JS_MEDIA_FLAGS_FORBIDDEN")
+    capability_id = MEDIA_CAPABILITY_ID if args.mode == "media" else REA_CAPABILITY_ID
+    domain = "audiovisual-analysis" if args.mode == "media" else "software-investigation"
+    decision = route_harness_request(HarnessRoutingRequest(
+        intent=f"read-only {domain} evidence",
+        authorized_action="RESEARCH",
+        required_capability_id=capability_id,
+        domain=domain,
+        fallback_allowed=False, provider_required=False,
+        learning_required=False,
+    ))
+    payload = {"source_path": str(source), "rights": args.rights}
+    if args.mode == "media":
+        if args.transcript:
+            payload["transcript_path"] = args.transcript
+        if args.detect_scenes:
+            payload["include_scene_cuts"] = True
+    result = CapabilityAdapter().execute(
+        authorization=args.authorization_id,
+        task_envelope=TaskEnvelope(
+            task_id=f"rea-evidence-{os.getpid()}",
+            capability_id=capability_id,
+            action="RESEARCH",
+            objective="Observe authorized source only",
+            allowed_tools=("ffmpeg", "ffprobe") if args.mode == "media" else ("rea",),
+            cost_budget=0.0,
+            retry_budget=0,
+        ),
+        routing_decision=decision,
+        payload=payload,
+    )
+    content = json.dumps(result.to_dict(), sort_keys=True, ensure_ascii=False, indent=2) + "\n"
+    fd = os.open(str(target), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        stream.write(content)
+    print("BR_REVERSE_ENGINEERING_HARNESS_RESULT=MEASURED")
+    print("BR_REVERSE_ENGINEERING_PUBLISHING=FORBIDDEN")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
