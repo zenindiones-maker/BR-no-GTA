@@ -252,7 +252,9 @@ jobs:
           )
           expected = sorted(lock["audit_review"]["allowed_high_packages"])
           critical=int(audit["metadata"]["vulnerabilities"]["critical"])
+          critical_packages=sorted(name for name,item in audit["vulnerabilities"].items() if item.get("severity")=="critical")
           print("UPSTREAM_NON_RUNTIME_CRITICAL_COUNT="+str(critical),flush=True)
+          print("UPSTREAM_NON_RUNTIME_CRITICAL_PACKAGES="+",".join(critical_packages),flush=True)
           print("UPSTREAM_NON_RUNTIME_HIGH_PACKAGES="+",".join(observed),flush=True)
           print("UPSTREAM_REVIEWED_HIGH_PACKAGES="+",".join(expected),flush=True)
           if critical:
