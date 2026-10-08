@@ -3025,3 +3025,39 @@ _REGISTRY._records = tuple(sorted(
     (*_REGISTRY._records,REA_GHIDRA_NATIVE_RECORD),
     key=lambda item:item.capability_id,
 ))
+
+
+# Real FFprobe/FFmpeg media inspection is advisory only; no voice or release approval.
+BR_PRODUCTION_FORENSIC_QA_V10 = CapabilityRecord(
+    capability_id="production.technical-media-forensics",
+    capability_type="TOOL",domain="production-media-quality",
+    implementation="FFprobe stream metadata and bounded FFmpeg video/audio decoding and signal heuristics",
+    input_contract="Persisted Harness RESEARCH authorization, owned local MP4 under allowed_media_roots and strict master/canary profile",
+    output_contract="BRHarnessReverseEngineeringResult/v1 with BRProductionMediaForensicQA/v1",
+    requirements=("ffprobe","ffmpeg","owned-local-render","human-review-separate"),
+    maturity=FUNCTIONAL,availability=AVAILABLE,allowed_actions=("RESEARCH",),
+    policy_tags=("production","audiovisual","technical-qa","reverse-engineering",
+                 "video","audio","ffmpeg","read-only","no-publication"),
+    security_boundary="Read-only owned local MP4; sampled technical inspection only. Does not certify speaker identity, third-party sources, overlays, editorial truth, rendering completeness or license. No writing to canonical media or approval systems.",
+    cost_class="FREE_NO_BILLING",quota_class="BOUNDED_LOCAL_FFMPEG_CPU",
+    latency_class="BOUNDED_ASYNC",quality_class="TECHNICAL_QA_NOT_PUBLICATION",
+    evidence_contract="BRHarnessReverseEngineeringResult/v1",
+    fallback_eligibility=False,
+    executor_binding="app.services.reverse_engineering_harness_service.execute_authorized_production_forensics",
+    version="1",provider_id="ffprobe-ffmpeg-local",
+    agent_id="harness-reverse-engineering-specialist",
+    authority="NONE",memory_write="NONE",routing_authority="NONE",
+    editorial_authority="NONE",publication_authority="NONE",
+    supports_parallelism=False,supports_retry=False,supports_resume=False,
+    supports_review=False,side_effect_class="READ_ONLY",
+    default_read_scope=(),default_write_scope=(),allowed_tools=("ffprobe","ffmpeg"),
+    health_policy="DEFAULT",execution_kind="DETERMINISTIC_ANALYSIS_AGENT",
+    functional_roles=("REAL_RENDER_MEDIA_QA","PREPUBLICATION_BLOCKER_CLASSIFICATION"),
+)
+if _REGISTRY._by_id.get(BR_PRODUCTION_FORENSIC_QA_V10.capability_id) is not None:
+    raise ValueError("Duplicate media QA capability")
+_REGISTRY._by_id[BR_PRODUCTION_FORENSIC_QA_V10.capability_id]=BR_PRODUCTION_FORENSIC_QA_V10
+_REGISTRY._records=tuple(sorted(
+    (*_REGISTRY._records,BR_PRODUCTION_FORENSIC_QA_V10),
+    key=lambda item:item.capability_id,
+))
