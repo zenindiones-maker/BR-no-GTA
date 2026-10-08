@@ -116,11 +116,11 @@ def capture_owned_static_page(
         raise ObservationError("IRIS_SELECTOR_UNSUPPORTED")
     source = _source(source_path, allowed_suffixes=(".html",))
     _owned_static_html(source)
-    iris = _iris_path(iris_binary)
     out = Path(output_path)
     if (not out.is_absolute() or out.suffix != ".png" or out.exists()
         or out.is_symlink() or not out.parent.is_dir() or out.parent.is_symlink()):
         raise ObservationError("IRIS_OUTPUT_NOT_NEW_PRIVATE_PNG")
+    iris = _iris_path(iris_binary)
     # The ephemeral Iris-produced file is not trusted as evidence. Re-read and
     # validate before atomically creating the final private output in owner scope.
     with tempfile.TemporaryDirectory(prefix="br-iris-camera-") as temporary:
