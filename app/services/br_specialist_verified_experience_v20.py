@@ -91,7 +91,13 @@ def assess_experience(router:dict[str,Any],visual:dict[str,Any]) -> dict[str,Any
             failures.append({"case":record["case"],"trial":record["trial"],
                              "class":"UNAUTHORIZED_SIDE_EFFECT" if record.get("unauthorized_effects") else "EXECUTOR_EVIDENCE_INCOMPLETE"})
             continue
-        if record.get("correct") is True and type(record.get("predicted_cut")) is bool:
+        if (record.get("correct") is True
+            and type(record.get("predicted_cut")) is bool
+            and record["predicted_cut"] is expected_av[record["case"]]
+            and isinstance(record.get("receipt_sha256"),str)
+            and len(record["receipt_sha256"])==64
+            and isinstance(record.get("source_sha256"),str)
+            and len(record["source_sha256"])==64):
             av_ok+=1
         else:
             cls=("AV_TRANSITION_MISSED" if expected_av[record["case"]]
