@@ -1,0 +1,3 @@
+[submodule "integrations/rea"]
+	path = integrations/rea
+	url = https://github.com/morluto/rea.git
