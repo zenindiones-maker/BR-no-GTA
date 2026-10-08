@@ -108,3 +108,15 @@ binaries or auto-generate trusted code. Independently verify reconstructed
 behavior with predeclared positive/negative input cases and reject claims of
 perfect reconstruction from limited tests. No autonomous native MCP, memory
 promotion, paid fallback or access to BR_OWNER_V1.
+
+
+## BR-no-GTA production forensic readiness (V10 isolated candidate)
+
+Use docs/architecture/br-production-readiness-v10.md. The Harness may
+inspect only a scoped owned MP4 and record deterministic technical evidence,
+never substitute a sampled FFmpeg PASS for a full-length creative, owner voice,
+licensed provenance, or human release approval. Synthetic CI canary <=10s
+is NOT a 20–25 minute deliverable. All BR_OWNER_V1 private Telegram voice
+identity/accent/pronunciation approvals remain independent, single-human,
+without fallback. Diagnose failure codes before rerunning and do not auto-
+resume, publish or modify production artifacts on V10 evidence alone.
