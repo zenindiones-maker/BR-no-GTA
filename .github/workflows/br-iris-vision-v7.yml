@@ -237,3 +237,35 @@ jobs:
           print("BR_HARNESS_ENTIRE_REGISTRY_INVENTORY=PASS")
           print("BR_REA_NATIVE_FALSE_PASS=BLOCKED")
           PY
+      - name: Inspect real REA JavaScript Evidence envelope shape without leaking code
+        env:
+          BR_REA_INSTALL_PREFIX: ${{ runner.temp }}/rea-install
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/rea-owned-js"
+          printf '{"name":"owned-research-fixture","version":"1.0.0","type":"module"}\n' > "$RUNNER_TEMP/rea-owned-js/package.json"
+          printf 'export function safeCalc(x){return 2*x;}\n' > "$RUNNER_TEMP/rea-owned-js/index.js"
+          python - <<'PY'
+          import json,os,subprocess
+          from pathlib import Path
+          p=Path(os.environ["RUNNER_TEMP"])/"rea-owned-js"
+          binary=Path(os.environ["BR_REA_INSTALL_PREFIX"])/"node_modules/.bin/rea"
+          process=subprocess.run(
+              [str(binary),"analyze-javascript-application",str(p),"--json"],
+              cwd=p,capture_output=True,text=True,timeout=120,check=False,
+          )
+          assert process.returncode==0,"REA_JS_FIXTURE_EXECUTION_FAILED"
+          assert len(process.stdout)<=2_000_000
+          evidence=json.loads(process.stdout)
+          assert isinstance(evidence,dict)
+          def structure(obj, depth=0):
+              if depth>2:return "<nested>"
+              if isinstance(obj,dict):
+                  return {str(k):structure(v,depth+1) for k,v in list(obj.items())[:30]}
+              if isinstance(obj,list):
+                  return {"type":"list","count":len(obj),
+                          "first_shape":structure(obj[0],depth+1) if obj else None}
+              return type(obj).__name__
+          print("BR_REA_OWNED_JS_EVIDENCE_SCHEMA_SHAPE="+json.dumps(structure(evidence),sort_keys=True))
+          print("BR_REA_REAL_SCOPED_JAVASCRIPT_INVESTIGATION=PASS")
+          PY
