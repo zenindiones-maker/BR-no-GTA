@@ -78,8 +78,14 @@ def test_provider_doctor_and_native_evidence_without_forwarding_code(tmp_path,mo
     p=_elf(tmp_path)
     prefix,gh,java=_env(tmp_path)
     calls=[]
+    monkeypatch.setenv("GITHUB_TOKEN","mock-secret-never-to-ghidra")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY","mock-secret-never-to-ghidra")
     def fake_run(args,**kwargs):
         calls.append(args)
+        supplied=kwargs["environment"]
+        assert "GITHUB_TOKEN" not in supplied
+        assert "AWS_SECRET_ACCESS_KEY" not in supplied
+        assert supplied["REA_ANALYSIS_PROVIDER"]=="ghidra"
         if args[1:]==["--version"]:
             return SimpleNamespace(returncode=0,stdout="6.0.0\n")
         if args[1:4]==["doctor","--provider","ghidra"]:
