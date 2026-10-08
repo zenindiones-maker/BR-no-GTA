@@ -31,9 +31,9 @@ def test_three_owner_segments_real_private_wav_checkpoints_and_single_candidate(
     calls=[]
     def generate(**kwargs):
         calls.append(kwargs)
-        return [np.ones(4800,dtype=np.float32)*0.15],48000
+        return [np.ones(4800,dtype=np.float32)*0.15],24000
     wavs,rate,elapsed,receipts=_run(tmp_path,generate)
-    assert len(wavs)==len(receipts)==3 and rate==48000
+    assert len(wavs)==len(receipts)==3 and rate==24000
     assert len(calls)==3
     assert all(len(c["text"])==len(c["language"])==len(c["voice_clone_prompt"])==1 for c in calls)
     assert [c["text"][0] for c in calls]==_input()["segment_texts"]
@@ -48,7 +48,7 @@ def test_three_owner_segments_real_private_wav_checkpoints_and_single_candidate(
         assert stat.S_IMODE(json_path.stat().st_mode)==0o600
         with wave.open(str(path),"rb") as wav:
             assert wav.getnchannels()==1
-            assert wav.getframerate()==48000
+            assert wav.getframerate()==24000
             assert wav.getnframes()==4800
         payload=json.loads(json_path.read_text())
         assert payload["wav_sha256"]==hashlib.sha256(path.read_bytes()).hexdigest()
@@ -60,7 +60,7 @@ def test_three_owner_segments_real_private_wav_checkpoints_and_single_candidate(
 
 
 def test_candidate_checkpoint_cannot_be_reused_in_second_attempt(tmp_path):
-    generator=lambda **_kw:([np.ones(4800,dtype=np.float32)*0.2],48000)
+    generator=lambda **_kw:([np.ones(4800,dtype=np.float32)*0.2],24000)
     _run(tmp_path,generator)
     with pytest.raises(RuntimeError,match="REUSE_OF_EXISTING_CHECKPOINT"):
         _run(tmp_path,generator)
@@ -71,7 +71,7 @@ def test_sample_rate_drift_fails_closed_without_creating_second_checkpoint(tmp_p
     def generator(**kwargs):
         nonlocal index
         index+=1
-        return [np.ones(4800,dtype=np.float32)*0.2],48000 if index==1 else 22050
+        return [np.ones(4800,dtype=np.float32)*0.2],24000 if index==1 else 22050
     with pytest.raises(RuntimeError,match="SAMPLE_RATE_DRIFT"):
         _run(tmp_path,generator)
     assert (tmp_path/"private-qwen-segment-01.wav").exists()
@@ -85,7 +85,7 @@ def test_sample_rate_drift_fails_closed_without_creating_second_checkpoint(tmp_p
 ])
 def test_corrupt_or_empty_audio_cannot_be_checkpointed(tmp_path,samples):
     with pytest.raises(RuntimeError,match="GENERATED_AUDIO_INVALID"):
-        _run(tmp_path,lambda **_kw:([samples],48000))
+        _run(tmp_path,lambda **_kw:([samples],24000))
     assert not list(tmp_path.glob("private-qwen-segment-*.wav"))
 
 
