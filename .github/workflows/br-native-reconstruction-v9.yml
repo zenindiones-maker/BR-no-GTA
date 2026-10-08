@@ -109,6 +109,7 @@ jobs:
       - name: Execute genuine REA/Ghidra function analysis through persisted Harness
         run: |
           set -euo pipefail
+          python -m pip install --disable-pip-version-check -q "python-dotenv==1.2.3"
           python - <<'PY'
           import os
           from pathlib import Path
