@@ -103,8 +103,8 @@ def _validate_dataset(dataset: Any) -> tuple[dict, dict[str, str]]:
         raise ExperimentEvidenceError("EXPERIMENT_TARGET_UNEXPECTED")
     if not 0 <= _real(rubric["tolerance"], "tolerance") <= 100:
         raise ExperimentEvidenceError("EXPERIMENT_TOLERANCE_INVALID")
-    if type(rubric["zero_cost"]) is not bool:
-        raise ExperimentEvidenceError("EXPERIMENT_COST_POLICY_INVALID")
+    if rubric["zero_cost"] is not True:
+        raise ExperimentEvidenceError("EXPERIMENT_ZERO_COST_REQUIRED")
     cases = dataset["cases"]
     if not isinstance(cases, list) or not 1 <= len(cases) <= MAX_CASES:
         raise ExperimentEvidenceError("EXPERIMENT_CASES_BOUNDS_INVALID")
