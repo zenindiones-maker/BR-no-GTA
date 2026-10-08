@@ -5,6 +5,7 @@ on:
       - work/br-extreme-reverse-engineering-v1
       - work/br-reverse-engineering-evidence-v3
       - work/br-reverse-engineering-experiment-intelligence-v4
+      - work/br-reconstruction-fidelity-v5
     paths:
       - "app/services/reverse_engineering_media_service.py"
       - "app/services/reverse_engineering_forensics_service.py"
@@ -13,6 +14,9 @@ on:
       - "app/services/reverse_engineering_web_har_service.py"
       - "app/services/reverse_engineering_longform_coverage_service.py"
       - "app/services/reverse_engineering_experiment_intelligence_v4.py"
+      - "app/services/reverse_engineering_fidelity_v5_service.py"
+      - "tests/test_reverse_engineering_fidelity_v5.py"
+      - "tests/test_reverse_engineering_fidelity_harness_v5.py"
       - "docs/architecture/br-reverse-engineering-experiment-intelligence-v4.md"
       - "AGENTS.md"
       - "tests/test_reverse_engineering_experiment_intelligence_v4.py"
@@ -60,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check -q pytest "python-dotenv==1.2.3" "scenedetect==0.7.1" "opencv-python-headless==4.12.0.88"
-          python -m pytest -q tests/test_reverse_engineering_media_service.py tests/test_reverse_engineering_harness_v2.py tests/test_reverse_engineering_story_v1.py tests/test_reverse_engineering_learning_proposal_v1.py tests/test_reverse_engineering_multimodal_v3.py tests/test_reverse_engineering_web_har_v3.py tests/test_reverse_engineering_longform_coverage.py tests/test_reverse_engineering_experiment_intelligence_v4.py tests/test_reverse_engineering_experiment_harness_v4.py tests/test_global_capability_registry.py
+          python -m pytest -q tests/test_reverse_engineering_media_service.py tests/test_reverse_engineering_harness_v2.py tests/test_reverse_engineering_story_v1.py tests/test_reverse_engineering_learning_proposal_v1.py tests/test_reverse_engineering_multimodal_v3.py tests/test_reverse_engineering_web_har_v3.py tests/test_reverse_engineering_longform_coverage.py tests/test_reverse_engineering_experiment_intelligence_v4.py tests/test_reverse_engineering_experiment_harness_v4.py tests/test_reverse_engineering_fidelity_v5.py tests/test_reverse_engineering_fidelity_harness_v5.py tests/test_global_capability_registry.py
       - name: Install required FFmpeg observation runtime
         run: |
           set -euo pipefail
@@ -119,9 +123,9 @@ jobs:
           import os
           from app.database.schema import initialize_schema
           from app.services.harness_authorization_service import issue_harness_authorization
-          from app.services.reverse_engineering_harness_service import MEDIA_CAPABILITY_ID, REA_CAPABILITY_ID, WEB_HAR_CAPABILITY_ID
+          from app.services.reverse_engineering_harness_service import MEDIA_CAPABILITY_ID, REA_CAPABILITY_ID, WEB_HAR_CAPABILITY_ID, FIDELITY_CAPABILITY_ID
           initialize_schema()
-          for label,cid in (("MEDIA",MEDIA_CAPABILITY_ID),("REA",REA_CAPABILITY_ID),("HAR",WEB_HAR_CAPABILITY_ID)):
+          for label,cid in (("MEDIA",MEDIA_CAPABILITY_ID),("REA",REA_CAPABILITY_ID),("HAR",WEB_HAR_CAPABILITY_ID),("FIDELITY",FIDELITY_CAPABILITY_ID)):
               a=issue_harness_authorization(
                   authorized_action="RESEARCH", subject=f"capability:{cid}",
                   lineage={"allowed_media_roots":[os.path.join(os.environ["RUNNER_TEMP"],"authorized")]},
@@ -294,4 +298,44 @@ jobs:
           assert result["production_mutation"] is False
           print("BR_V4_REAL_FFMPEG_HARNESS_ASSESSMENT=PASS")
           print("BR_V4_EVIDENCE_STILL_INSUFFICIENT=PASS")
+          PY
+      - name: Prove reconstruction fidelity on actual FFmpeg originals and derived versions
+        env:
+          BR_TEST_DATABASE: ${{ runner.temp }}/reverse-harness-ci.db
+        run: |
+          set -euo pipefail
+          python scripts/br_reverse_engineering_harness.py \
+            --authorization-id "$BR_FIDELITY_HARNESS_AUTH_ID" \
+            --mode fidelity --input "$RUNNER_TEMP/authorized/owned-sample.mp4" \
+            --rights owned --candidate "$RUNNER_TEMP/authorized/owned-candidate.mp4" \
+            --candidate-rights owned --window-seconds 1.0 \
+            --output "$RUNNER_TEMP/fidelity-edited.json"
+          cp "$RUNNER_TEMP/authorized/owned-sample.mp4" "$RUNNER_TEMP/authorized/owned-copy.mp4"
+          python scripts/br_reverse_engineering_harness.py \
+            --authorization-id "$BR_FIDELITY_HARNESS_AUTH_ID" \
+            --mode fidelity --input "$RUNNER_TEMP/authorized/owned-sample.mp4" \
+            --rights owned --candidate "$RUNNER_TEMP/authorized/owned-copy.mp4" \
+            --candidate-rights owned --window-seconds 1.0 \
+            --output "$RUNNER_TEMP/fidelity-exact.json"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          base=Path(os.environ["RUNNER_TEMP"])
+          changed=json.loads((base/"fidelity-edited.json").read_text())["result"]["evidence"]
+          same=json.loads((base/"fidelity-exact.json").read_text())["result"]["evidence"]
+          assert same["video"]["status"]=="MEASURED",same
+          assert same["video"]["mean_frame_ssim"]==1.0,same
+          assert same["video"]["lossless_pixel_match"] is True,same
+          assert same["audio"]["waveform_bit_equivalent_after_decode"] is True,same
+          assert changed["video"]["lossless_pixel_match"] is True,changed
+          assert changed["audio"]["waveform_bit_equivalent_after_decode"] is False,changed
+          assert changed["audio"]["unadjusted_difference_rmse_linear"] > 0.01,changed
+          assert changed["audio"]["normalized_correlation"] > 0.99,changed
+          assert 0.40 < changed["audio"]["candidate_to_reference_rms_ratio"] < 0.60,changed
+          assert changed["quality_approved"] is False
+          assert changed["identity_verified"] is False
+          assert changed["publication_authorized"] is False
+          assert changed["harness_learning_write"]=="NOT_ATTEMPTED"
+          print("BR_V5_REAL_RECONSTRUCTION_FIDELITY=PASS")
+          print("BR_V5_CORRELATION_CANNOT_HIDE_GAIN_DIFFERENCE=PASS")
           PY
