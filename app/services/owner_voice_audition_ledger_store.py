@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import os
+import re
 import shlex
 from pathlib import Path
 import subprocess
@@ -15,6 +16,9 @@ PRODUCT_REPOSITORY="zenindiones-maker/BR-no-GTA"
 ALLOWED_LEDGER_REPOSITORY="zenindiones-maker/BR-no-GTA-audition-ledger"
 ALLOWED_LEDGER_BRANCH="owner-voice-audition-state"
 ALLOWED_LEDGER_REF="refs/heads/owner-voice-audition-state"
+_MISSION_ID=re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$")
+_EVENT_NAME=re.compile(r"^v[0-9]{6,9}\\.json$")
+_GIT_OID=re.compile(r"^[a-f0-9]{40}$")
 
 
 @dataclass(frozen=True)
@@ -85,6 +89,8 @@ class OwnerVoiceAuditionGitLedgerStore:
         return value
 
     def snapshot(self,mission_id:str)->GitSnapshot:
+        if not isinstance(mission_id,str) or not _MISSION_ID.fullmatch(mission_id):
+            raise ValueError("OWNER_LEDGER_MISSION_ID_UNSAFE")
         oid=self._remote_oid()
         if oid is None:
             raise RuntimeError("AUDITION_LEDGER_REF_MISSING")
@@ -108,6 +114,27 @@ class OwnerVoiceAuditionGitLedgerStore:
         mission_head:dict[str,Any],
         immutable_objects:dict[str,dict[str,Any]]|None=None,
     )->str:
+        # Exact mission namespace and monotonic version are mandatory. An
+        # accidental object path must never overwrite another mission's
+        # immutable history or its approval head.
+        if not isinstance(mission_id,str) or not _MISSION_ID.fullmatch(mission_id):
+            raise ValueError("OWNER_LEDGER_MISSION_ID_UNSAFE")
+        if not isinstance(mission_head,dict) or type(mission_head.get("state_version")) is not int:
+            raise ValueError("OWNER_LEDGER_STATE_VERSION_INVALID")
+        next_version=0 if expected_state_version is None else expected_state_version+1
+        if (type(expected_state_version) not in (int,type(None))
+            or (expected_state_version is not None and expected_state_version<0)
+            or mission_head["state_version"]!=next_version):
+            raise ValueError("OWNER_LEDGER_NON_MONOTONIC_VERSION")
+        if not isinstance(immutable_objects,(dict,type(None))):
+            raise ValueError("OWNER_LEDGER_EVENT_COLLECTION_INVALID")
+        prefix=f"missions/{mission_id}/events/"
+        for path,payload in (immutable_objects or {}).items():
+            if (not isinstance(path,str) or not path.startswith(prefix)
+                or not _EVENT_NAME.fullmatch(path[len(prefix):])
+                or path!=f"{prefix}v{next_version:06d}.json"
+                or not isinstance(payload,dict)):
+                raise ValueError("OWNER_LEDGER_IMMUTABLE_EVENT_SCOPE_INVALID")
         current=self.snapshot(mission_id)
         if current.head_sha!=expected_head_sha:
             raise CasConflict("CAS_CONFLICT:STATE_REF_MOVED")
