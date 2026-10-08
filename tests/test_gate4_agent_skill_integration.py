@@ -97,55 +97,35 @@ def test_selected_addy_prompt_names_only_selected_skill_and_forbids_other_skills
     assert "@test-driven-development" not in prompt
 
 
-def test_harness_boundary_routes_before_issuing_authorization(monkeypatch):
-    calls = []
-    real_route = server.route_harness_request
-    real_issue = server.issue_harness_authorization
+def test_public_mcp_addy_refuses_before_routing_or_authorization(monkeypatch):
+    calls=[]
 
-    def routed(request):
+    def unexpected_route(request):
         calls.append("route")
-        return real_route(request)
+        raise AssertionError("External MCP must not route semantic Addy")
 
-    def issued(**kwargs):
+    def unexpected_issue(**kwargs):
         calls.append("authorize")
-        return real_issue(**kwargs)
+        raise AssertionError("External MCP must not mint Addy authorization")
 
-    monkeypatch.setattr(server, "route_harness_request", routed)
-    monkeypatch.setattr(server, "issue_harness_authorization", issued)
-    def fake_addy(*, authorization, routing_decision, payload):
-        return CapabilityEvidence(
-            capability_id=routing_decision.selected_capability_id,
-            provider="addy-agent-skills",
-            status="EXECUTED",
-            active=True,
-            authority=authorization.authority,
-            authorized_action=authorization.authorized_action,
-            harness_decision_id=authorization.harness_decision_id,
-            execution_id=authorization.execution_id,
-            result={
-                "skill": routing_decision.selected_capability_id,
-                "ok": True,
-            },
-        )
+    def unexpected_skill(**kwargs):
+        calls.append("execute")
+        raise AssertionError("External MCP must not execute Addy")
 
-    monkeypatch.setattr(
-        mcp_execution,
-        "execute_authorized_addy_skill",
-        fake_addy,
-    )
-
-    result = json.loads(
-        server.br_capability_execute(
-            capability_id="addy:code-review-and-quality",
-            authorized_action="DEVELOPMENT",
-            payload_json='{"task":"review"}',
-        )
-    )["result"]
-    assert calls[:2] == ["route", "authorize"]
-    assert result["status"] == "EXECUTED"
-    assert result["authorization_id"]
-    assert result["harness_routing"]["selected_implementation"]["skill_id"] == "code-review-and-quality"
-    assert result["harness_routing"]["fallback_occurred"] is False
+    monkeypatch.setattr(server, "route_harness_request", unexpected_route)
+    monkeypatch.setattr(server, "issue_harness_authorization", unexpected_issue)
+    monkeypatch.setattr(mcp_execution, "execute_authorized_addy_skill", unexpected_skill)
+    result=json.loads(server.br_capability_execute(
+        capability_id="addy:code-review-and-quality",
+        authorized_action="DEVELOPMENT",
+        payload_json='{"task":"review"}',
+    ))["result"]
+    assert calls==[]
+    assert result["status"]=="BLOCKED"
+    assert result["active"] is False
+    assert result["authorization_id"] is None
+    assert result["result"]["stage"]=="authentication"
+    assert "no model turn started" in result["boundary"]
 
 
 def test_fabricated_authorization_is_rejected_even_with_valid_route():
