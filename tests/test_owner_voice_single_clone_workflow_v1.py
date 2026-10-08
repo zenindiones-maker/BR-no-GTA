@@ -638,4 +638,3 @@ def test_qwen_generation_emits_periodic_heartbeat_without_changing_audio_contrac
     assert "segment_texts=segment_texts" in generation
     assert "segment_languages=segment_languages" in generation
     assert "segment_prompts=segment_prompts" in generation
-
