@@ -107,7 +107,18 @@ def reconcile_delivery_snapshot(snapshot:GitSnapshot,*,mission_id:str)->dict[str
     return report
 
 
-def observe_remote_ledger(*,store:OwnerVoiceAuditionGitLedgerStore,mission_id:str)->dict[str,Any]:
+def observe_remote_ledger(
+    *,authorization:Any,store:OwnerVoiceAuditionGitLedgerStore,mission_id:str,
+)->dict[str,Any]:
+    # Only an existing, persisted Harness authorization can admit remote
+    # private-ledger reads. No model may choose its own subject or scope.
+    from app.services.harness_authorization_service import validate_harness_authorization
+    auth=validate_harness_authorization(
+        authorization,expected_action="RESEARCH",
+        expected_subject="capability:owner-voice.ledger-readonly-v18",
+    )
+    if auth.lineage.get("allow_remote_ledger_read") is not True:
+        raise PermissionError("DELIVERY_SPECIALIST_REMOTE_READ_NOT_GRANTED")
     if not isinstance(store,OwnerVoiceAuditionGitLedgerStore):
         raise TypeError("DELIVERY_SPECIALIST_EXISTING_AUTHENTICATED_STORE_REQUIRED")
     if not isinstance(mission_id,str) or not _MISSION.fullmatch(mission_id):
