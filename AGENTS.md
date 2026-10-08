@@ -56,3 +56,13 @@ An agent must not interpret a positive sign test as permission to change
 canonical routing, train a model, modify Owner Voice identity or write memory.
 Independent evidence, heldout integrity and Human + Harness approval remain
 mandatory. Research sensors cannot initiate additional jobs or change billing.
+
+## Licensed reconstruction fidelity research (V5 development candidate)
+
+For rebuilding user-owned or expressly licensed audio/video, use the strict aligned
+reference/candidate comparison, Harness authorization, SHA provenance and V4 bridge
+in docs/architecture/br-reconstruction-fidelity-laboratory-v5.md. Do not treat
+SSIM=1, equal PCM, high voice correlation or a one-case trial as human identity,
+artistic-quality approval or publication permission. Never examine BR_OWNER_V1
+private reference audio outside its own separately authorized pipeline. All
+reconstruction, copyright, learning and promotion guards remain in force.
