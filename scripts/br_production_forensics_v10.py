@@ -22,6 +22,7 @@ def main(argv=None) -> int:
     p.add_argument("--owned-mp4",required=True)
     p.add_argument("--profile",choices=["synthetic_ci_canary","br_no_gta_1080p_master"],required=True)
     p.add_argument("--output",required=True)
+    p.add_argument("--full-decode",action="store_true",help="Decode whole authorized MP4, bounded CPU-heavy research")
     args=p.parse_args(argv)
     output=Path(args.output)
     if (not output.is_absolute() or output.exists() or output.is_symlink()
@@ -42,7 +43,7 @@ def main(argv=None) -> int:
             allowed_tools=("ffprobe","ffmpeg"),cost_budget=0.0,retry_budget=0,
         ),
         routing_decision=route,
-        payload={"source_path":args.owned_mp4,"profile":args.profile,"rights":"owned"},
+        payload={"source_path":args.owned_mp4,"profile":args.profile,"rights":"owned","full_decode":args.full_decode},
     )
     fd=os.open(output,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)
     with os.fdopen(fd,"w",encoding="utf-8") as out:
@@ -52,6 +53,12 @@ def main(argv=None) -> int:
     print("BR_V10_REAL_MP4_QA="+result["technical_status"])
     print("BR_V10_OWNER_VOICE_IDENTITY=NOT_VERIFIED")
     print("BR_V10_PUBLICATION_AUTHORIZED=FALSE")
+    if args.full_decode:
+        full=result.get("full_decode_evidence")
+        if full is None or not full["status"].startswith("FULL_") or full["status"]=="FULL_DECODE_BLOCKED":
+            print("BR_V10B_FULL_DECODE=BLOCKED")
+            return 3
+        print("BR_V10B_FULL_DECODE="+full["status"])
     return 0 if result["technical_status"]=="TECHNICAL_SAMPLED_QA_PASS" else 3
 
 
