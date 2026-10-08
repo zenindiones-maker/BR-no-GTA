@@ -225,9 +225,10 @@ jobs:
       - name: Verify pin and disabled autonomy policy
         run: python scripts/agent_office_preflight.py --upstream-dir "${UPSTREAM_DIR}"
 
-      - name: Install pinned upstream without Electron native scripts
-        working-directory: .agent-office-upstream
-        run: npm ci --ignore-scripts
+      - name: Security-patch ephemeral upstream and install no native scripts
+        run: |
+          set -euo pipefail
+          bash integrations/munder_difflin/agent_office_ephemeral_proxy_patch_v13.sh "${UPSTREAM_DIR}"
 
       - name: Typecheck pinned upstream core
         working-directory: .agent-office-upstream
