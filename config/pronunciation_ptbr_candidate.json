@@ -1,6 +1,6 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.09.20.12-brazilian-narrator-targets",
+  "version": "2026.10.08.1-owner-vaicy-siti-pending-audition",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "human-review candidate only",
@@ -27,10 +27,10 @@
       "category": "PLACE",
       "locale": "pt-BR",
       "strategy": "alias",
-      "synthesis_text": "Váis Síti",
+      "synthesis_text": "vaicy siti",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "previously approved target sound rendered in pt-BR lane",
+      "source": "owner-explicit pronunciation vaicy siti; fresh BR_OWNER_V1 acoustic review pending (previous Váis Síti is historical)",
       "canonical_identity": "vice-city",
       "surface_role": "CANONICAL",
       "target_locale": "pt-BR",
