@@ -40,7 +40,14 @@ def _parse_overall(log: str) -> dict[str, float | None]:
             continue
         name, _, raw_value = suffix.partition(":")
         if name in FIELDS:
-            overall[FIELDS[name]] = _finite(raw_value.strip())
+            if name == "DC offset":
+                try:
+                    exact = float(raw_value.strip())
+                except (ValueError, TypeError):
+                    exact = float("nan")
+                overall[FIELDS[name]] = round(exact, 8) if math.isfinite(exact) else None
+            else:
+                overall[FIELDS[name]] = _finite(raw_value.strip())
     if not all(field in overall for field in FIELDS.values()):
         raise ObservationError("AUDIO_ASTATS_OVERALL_MISSING")
     return overall
