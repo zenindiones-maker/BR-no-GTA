@@ -2839,3 +2839,39 @@ _REGISTRY._records = tuple(sorted(
     (*_REGISTRY._records, WEB_REVERSE_ENGINEERING_RECORD),
     key=lambda item: item.capability_id,
 ))
+
+
+# Experiment intelligence is a subordinate evidence assessor, not a policy learner.
+REVERSE_ENGINEERING_EXPERIMENT_RECORD = CapabilityRecord(
+    capability_id="reverse-engineering.experiment.assess",
+    capability_type="TOOL", domain="experiment-intelligence",
+    implementation="Exact-bound paired development/holdout comparison with sign-test and failure taxonomy",
+    input_contract="Harness persisted RESEARCH authorization pinned to dataset digest/domain/task and an exact technique ID allowlist; numeric evidence cases only",
+    output_contract="BRHarnessReverseEngineeringResult/v1 + BRTechniqueExperimentAssessment/v1",
+    requirements=("pre-registered paired dataset", "complete technique case coverage",
+                  "provenance hashes", "pre-registered tolerances and hard cost/safety gates"),
+    maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("RESEARCH",),
+    policy_tags=("reverse-engineering", "evals", "paired", "heldout", "experiment",
+                 "measurement", "statistical", "readonly", "harness-subordinate"),
+    security_boundary="Only DeepSeek Harness can issue persisted dataset-scoped authorization. Evaluation makes review proposals only; no routing changes, memory writes, model training, publication, spend, unreviewed policy update or owner voice access.",
+    cost_class="FREE_NO_BILLING", quota_class="LOCAL_PYTHON_CPU",
+    latency_class="LOCAL", quality_class="EVIDENCE_PROPOSAL_NOT_INDEPENDENT_ATTESTATION",
+    evidence_contract="BRHarnessReverseEngineeringResult/v1",
+    fallback_eligibility=False,
+    executor_binding="app.services.reverse_engineering_harness_service.execute_authorized_experiment_assessment",
+    version="1", provider_id="internal", agent_id="harness-reverse-engineering-specialist",
+    authority="NONE", memory_write="NONE", routing_authority="NONE",
+    editorial_authority="NONE", publication_authority="NONE",
+    supports_parallelism=False, supports_retry=False, supports_resume=False,
+    supports_review=False, side_effect_class="READ_ONLY",
+    default_read_scope=(), default_write_scope=(), allowed_tools=(),
+    health_policy="DEFAULT", execution_kind="VALIDATOR",
+    functional_roles=("EXPERIMENT_ASSESSMENT_EVIDENCE",),
+)
+if _REGISTRY._by_id.get(REVERSE_ENGINEERING_EXPERIMENT_RECORD.capability_id) is not None:
+    raise ValueError("Duplicate experiment-intelligence capability")
+_REGISTRY._by_id[REVERSE_ENGINEERING_EXPERIMENT_RECORD.capability_id] = REVERSE_ENGINEERING_EXPERIMENT_RECORD
+_REGISTRY._records = tuple(sorted(
+    (*_REGISTRY._records, REVERSE_ENGINEERING_EXPERIMENT_RECORD),
+    key=lambda item: item.capability_id,
+))
