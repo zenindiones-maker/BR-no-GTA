@@ -35,6 +35,7 @@ _ALLOWED_TAGS = frozenset({
 _ALLOWED_ATTRS = frozenset({"class", "id", "lang", "dir", "role", "aria-label", "title", "charset"})
 _SELECTOR = re.compile(r"^[#.A-Za-z0-9_ \->:+*,\[\]=\"']{1,100}$")
 _BANNED_CSS = re.compile(r"(?i)\\|@|url\s*\(|image-set\s*\(|src\s*:|expression\s*\(|behavior\s*:")
+_ALLOWED_MEDIA_QUERY = re.compile(r"(?i)@media\s*\(\s*prefers-color-scheme\s*:\s*(?:dark|light)\s*\)")
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 
@@ -64,7 +65,8 @@ class _StaticMarkupGuard(HTMLParser):
             self.in_style = False
 
     def handle_data(self, data: str) -> None:
-        if self.in_style and _BANNED_CSS.search(data):
+        css = _ALLOWED_MEDIA_QUERY.sub("", data) if self.in_style else data
+        if self.in_style and _BANNED_CSS.search(css):
             raise ObservationError("IRIS_LOCAL_HTML_EXTERNAL_STYLES_FORBIDDEN")
 
     def handle_entityref(self, name: str) -> None:
