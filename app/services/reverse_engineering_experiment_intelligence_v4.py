@@ -141,6 +141,8 @@ def assess_technique_experiments(*, dataset: dict, observations: list[dict],
         not 1 <= len(observations) <= MAX_CASES * MAX_TECHNIQUES):
         raise ExperimentEvidenceError("EXPERIMENT_OBSERVATIONS_BOUNDS_INVALID")
     groups: dict[str, dict[str, dict]] = {}
+    fixed_baselines: dict[str, tuple] = {}
+    case_sha_by_id = {row["case_id"]: row["reference_sha256"] for row in dataset["cases"]}
     for row in observations:
         keys = {"technique_id", "case_id", "baseline_metric", "candidate_metric",
                 "baseline_artifact_sha256", "candidate_artifact_sha256",
@@ -163,6 +165,12 @@ def assess_technique_experiments(*, dataset: dict, observations: list[dict],
             raise ExperimentEvidenceError("EXPERIMENT_REGRESSION_FLAG_INVALID")
         if not 0 <= _real(row["cost_usd"], "cost_usd") <= 1000:
             raise ExperimentEvidenceError("EXPERIMENT_COST_INVALID")
+        if row["baseline_artifact_sha256"] != case_sha_by_id[case_id]:
+            raise ExperimentEvidenceError("EXPERIMENT_BASELINE_REFERENCE_MISMATCH")
+        if row["baseline_artifact_sha256"] == row["candidate_artifact_sha256"] and row["baseline_metric"] != row["candidate_metric"]:
+            raise ExperimentEvidenceError("EXPERIMENT_ARTIFACT_METRIC_CONTRADICTION")
+        if row["baseline_evidence_sha256"] == row["candidate_evidence_sha256"] and row["baseline_metric"] != row["candidate_metric"]:
+            raise ExperimentEvidenceError("EXPERIMENT_EVIDENCE_METRIC_CONTRADICTION")
         if row["execution_status"] == "MEASURED":
             _real(row["baseline_metric"], "baseline_metric")
             _real(row["candidate_metric"], "candidate_metric")
@@ -171,6 +179,10 @@ def assess_technique_experiments(*, dataset: dict, observations: list[dict],
         if _sha(row["observation_sha256"], "observation_sha256") != _hash(
                 {k: v for k, v in row.items() if k != "observation_sha256"}):
             raise ExperimentEvidenceError("EXPERIMENT_OBSERVATION_HASH_MISMATCH")
+        baseline = (row["baseline_metric"], row["baseline_artifact_sha256"], row["baseline_evidence_sha256"])
+        if case_id in fixed_baselines and fixed_baselines[case_id] != baseline:
+            raise ExperimentEvidenceError("EXPERIMENT_INCONSISTENT_BASELINE_ACROSS_TECHNIQUES")
+        fixed_baselines[case_id] = baseline
         prior = groups.setdefault(technique_id, {})
         if case_id in prior:
             raise ExperimentEvidenceError("EXPERIMENT_DUPLICATE_TRIAL")
