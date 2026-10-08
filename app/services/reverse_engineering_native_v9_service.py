@@ -74,10 +74,14 @@ def inspect_native_function(
     if not java_home.is_absolute() or not (java_home/"bin"/"javac").is_file():
         raise ObservationError("REA_NATIVE_JDK_MISSING")
     # REA setup should not alter host registrations; explicit env bind only.
-    env={
-        **os.environ, "GHIDRA_INSTALL_DIR":str(ghidra_install),
-        "JAVA_HOME":str(java_home), "REA_ANALYSIS_PROVIDER":"ghidra",
-    }
+    allowed = ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "USER",
+               "XDG_CACHE_HOME", "XDG_CONFIG_HOME")
+    env = {key: os.environ[key] for key in allowed if key in os.environ}
+    env.update({
+        "GHIDRA_INSTALL_DIR": str(ghidra_install),
+        "JAVA_HOME": str(java_home),
+        "REA_ANALYSIS_PROVIDER": "ghidra",
+    })
     version=_call([str(rea),"--version"],timeout=15,environment=env)
     if version.returncode or version.stdout.strip()!=EXACT_REA_VERSION:
         raise ObservationError("REA_NATIVE_VERSION_PIN_INVALID")
