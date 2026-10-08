@@ -2913,3 +2913,42 @@ _REGISTRY._records = tuple(sorted(
     (*_REGISTRY._records, RECONSTRUCTION_FIDELITY_RECORD),
     key=lambda item: item.capability_id,
 ))
+
+
+# Professional zero-cost studio evidence: a single governed specialist with strict modes.
+STUDIO_REVERSE_ENGINEERING_RECORD = CapabilityRecord(
+    capability_id="reverse-engineering.studio.forensics",
+    capability_type="TOOL", domain="studio-forensics",
+    implementation="Read-only FFmpeg stems, PT-BR external alignment QA, OpenCV motion and native OTIO original-timeline verification",
+    input_contract="Persisted exact RESEARCH capability authorization, allowed_media_roots, declared ownership/licensing and strict per-mode options",
+    output_contract="BRHarnessReverseEngineeringResult/v1 containing versioned independent studio receipts",
+    requirements=("ffmpeg/ffprobe", "numpy", "opencv-python-headless", "optional pinned opentimelineio==0.18.1",
+                  "source permissions", "no owner_voice private paths"),
+    maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("RESEARCH",),
+    policy_tags=("reverse-engineering","reaper","mix-master","stems","dubbing","pt-br",
+                 "animation","optical-flow","otio","timeline","readonly","zero-cost"),
+    security_boundary="DeepSeek Harness sole authority. Not an owner-voice worker; no biometric references, model download, external calls, creative cloning, DAW execution, private session access, memory mutation, paid fallback or publication.",
+    cost_class="FREE_NO_BILLING", quota_class="LOCAL_BOUNDED_STUDIO_CPU",
+    latency_class="BOUNDED_ASYNC", quality_class="FORENSICS_ONLY_NOT_ARTISTIC_APPROVAL",
+    evidence_contract="BRHarnessReverseEngineeringResult/v1",
+    fallback_eligibility=False,
+    executor_binding="app.services.reverse_engineering_harness_service.execute_authorized_studio_observation",
+    version="1", provider_id="ffmpeg-opencv-otio-local",
+    agent_id="harness-reverse-engineering-specialist",
+    authority="NONE", memory_write="NONE", routing_authority="NONE",
+    editorial_authority="NONE", publication_authority="NONE",
+    supports_parallelism=False, supports_retry=False, supports_resume=False,
+    supports_review=False, side_effect_class="READ_ONLY",
+    default_read_scope=(), default_write_scope=(),
+    allowed_tools=("ffmpeg","ffprobe"), health_policy="DEFAULT",
+    execution_kind="DETERMINISTIC_ANALYSIS_AGENT",
+    functional_roles=("AUDIO_STEM_SIGNAL_EVIDENCE","PTBR_ALIGNMENT_MANIFEST_QA",
+                      "ANIMATION_MOTION_EVIDENCE","EDITORIAL_TIMELINE_SCHEMA_QA"),
+)
+if _REGISTRY._by_id.get(STUDIO_REVERSE_ENGINEERING_RECORD.capability_id) is not None:
+    raise ValueError("Duplicate reverse engineering studio capability")
+_REGISTRY._by_id[STUDIO_REVERSE_ENGINEERING_RECORD.capability_id] = STUDIO_REVERSE_ENGINEERING_RECORD
+_REGISTRY._records = tuple(sorted(
+    (*_REGISTRY._records, STUDIO_REVERSE_ENGINEERING_RECORD),
+    key=lambda item:item.capability_id,
+))
