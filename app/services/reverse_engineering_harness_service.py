@@ -26,6 +26,7 @@ EXPERIMENT_CAPABILITY_ID = "reverse-engineering.experiment.assess"
 FIDELITY_CAPABILITY_ID = "reverse-engineering.reconstruction.fidelity"
 STUDIO_CAPABILITY_ID = "reverse-engineering.studio.forensics"
 IRIS_CAPABILITY_ID = "reverse-engineering.web.iris-vision"
+NATIVE_CAPABILITY_ID = "reverse-engineering.software.rea-native-ghidra"
 MEDIA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_media_observation"
 REA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_software_observation"
 WEB_HAR_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_web_har_observation"
@@ -485,4 +486,40 @@ def execute_authorized_iris_capture(
         "owner_voice_access": "FORBIDDEN", "network_site_capture": "NOT_ATTEMPTED",
         "memory_write": "NOT_ATTEMPTED", "production_mutation": False,
         "publication": "FORBIDDEN", "authority": "DEEPSEEK_HARNESS",
+    }
+
+
+def execute_authorized_native_rea_function(
+    *, authorization: Any, routing_decision: Any, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Only Harness may inspect an owned local native ELF via pinned Ghidra."""
+    auth = _authorized_context(
+        authorization=authorization, routing_decision=routing_decision,
+        capability_id=NATIVE_CAPABILITY_ID,
+    )
+    if not isinstance(payload, dict) or set(payload) != {"source_path","rights","function"}:
+        raise PermissionError("REA_NATIVE_HARNESS_PAYLOAD_INVALID")
+    if payload["rights"] != "owned":
+        raise PermissionError("REA_NATIVE_HARNESS_OWNED_SOURCE_ONLY")
+    source=_scope(auth,payload["source_path"])
+    from app.services.reverse_engineering_native_v9_service import inspect_native_function
+    result=inspect_native_function(
+        source=source,function=payload["function"],
+        rea_prefix=Path(os.getenv("BR_REA_INSTALL_PREFIX","")),
+        ghidra_install=Path(os.getenv("GHIDRA_INSTALL_DIR","")),
+        java_home=Path(os.getenv("JAVA_HOME","")),
+    )
+    return {
+        "schema_version":"BRHarnessReverseEngineeringResult/v1",
+        "capability_id":NATIVE_CAPABILITY_ID,
+        "authorization_id":auth.authorization_id,
+        "harness_decision_id":auth.harness_decision_id,
+        "execution_id":auth.execution_id,
+        "status":"NATIVE_ANALYSIS_EVIDENCE_ONLY",
+        "evidence":result,
+        "learning_write":"NOT_ATTEMPTED",
+        "production_mutation":False,
+        "publication":"FORBIDDEN",
+        "application_executed":False,
+        "authority":"DEEPSEEK_HARNESS",
     }
