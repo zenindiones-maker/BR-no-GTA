@@ -38,3 +38,11 @@ The detailed GTA6 research/editorial/production guidance is versioned in the
 referenced domain document rather than duplicated here. Repository contracts
 and versioned policy override stale prose. Fail closed on conflicting authority
 instructions or broken mandatory references.
+
+## Evidence-first creative research (candidate only)
+
+For reverse-engineering investigations of scripts, audio, video or applications, route
+through the Harness-controlled capability IDs and the measured-evidence protocol in
+`docs/agent-execution/reverse-engineering-specialist-v2.md`. The policy is a research
+method, not permission to copy expression, issue new authorizations, access owner
+voice material, publish, or change canonical learning without explicit review.
