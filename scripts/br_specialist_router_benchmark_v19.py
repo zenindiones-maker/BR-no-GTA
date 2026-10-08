@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse,json,os,statistics,time
 from pathlib import Path
 from hashlib import sha256
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from app.services.br_specialist_policy_router_v19 import select,policy_inventory
 
 CASES=(
