@@ -2,10 +2,6 @@ name: BR_OWNER_V1 Human Audition Pack
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - recovery/dev/br-owner-v1-human-audition-v2
-
 concurrency:
   group: br-owner-v1-human-audition-${{ github.sha }}
   cancel-in-progress: false

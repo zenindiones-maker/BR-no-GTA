@@ -2802,3 +2802,105 @@ _REGISTRY._records = tuple(sorted(
      ),
     key=lambda item: item.capability_id,
 ))
+
+
+# V12 deliberately LIMITED to actual decoded-pixel observation, not semantic AI
+# "eyes" readiness or access to biometrics. No public or private media export.
+BR_SENSORY_PIXEL_V12_RECORD=CapabilityRecord(
+    capability_id="reverse-engineering.multimodal.sensory-pixels-v12",
+    capability_type="TOOL",
+    domain="production-multimodal-observation",
+    implementation="Owner-supplied PNG pixels or FFmpeg-extracted owner MP4 sample frames; Pillow pixel metrics",
+    input_contract="Harness persisted RESEARCH permission; scoped owned PNG/MP4; private 0700 workspace",
+    output_contract="BRHarnessSensoryObservationExecution/v1 + BRHarnessSensoryPixelObservation/v1",
+    requirements=("python-pillow","ffmpeg for MP4","ffprobe for MP4","scoped original files","private workspace"),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("RESEARCH",),
+    policy_tags=("real-pixels","reverse-engineering","sensory-evidence","vision","video","original-owned","read-only","no-biometric-voice","zero-cost"),
+    security_boundary="No unscoped paths, links, private voice files, OCR, generic MCP, web navigation, raw frame export, semantic interpretation, model/agent memory promotion or publication. Captured pixels are private to the owner job and never automatically provided to other agents.",
+    cost_class="FREE_NO_BILLING",
+    quota_class="BOUNDED_LOCAL_CPU",
+    latency_class="BOUNDED_ASYNC",
+    quality_class="PIXELS_MEASURED_NOT_SEMANTIC_UNDERSTANDING",
+    evidence_contract="BRHarnessSensoryObservationExecution/v1",
+    fallback_eligibility=False,
+    executor_binding="app.services.br_harness_sensory_authorization_v12.execute_authorized_pixel_observation",
+    version="1",
+    provider_id="ffmpeg-pillow-local",
+    agent_id="harness-reverse-engineering-specialist",
+    authority="NONE",
+    memory_write="NONE",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+    supports_parallelism=False,
+    supports_retry=False,
+    supports_resume=False,
+    supports_review=False,
+    side_effect_class="LOCAL_PRIVATE_ARTIFACT",
+    default_read_scope=(),
+    default_write_scope=(),
+    allowed_tools=("ffmpeg","ffprobe","pillow"),
+    health_policy="DEFAULT",
+    execution_kind="DETERMINISTIC_ANALYSIS_AGENT",
+    functional_roles=("DECODE_REAL_OWNER_VIDEO_FRAMES","MEASURE_IMAGE_PIXEL_EVIDENCE"),
+)
+if _REGISTRY._by_id.get(BR_SENSORY_PIXEL_V12_RECORD.capability_id) is not None:
+    raise ValueError("Duplicate sensory observation capability")
+_REGISTRY._by_id[BR_SENSORY_PIXEL_V12_RECORD.capability_id]=BR_SENSORY_PIXEL_V12_RECORD
+_REGISTRY._records=tuple(sorted(
+    (*_REGISTRY._records,BR_SENSORY_PIXEL_V12_RECORD),
+    key=lambda item:item.capability_id,
+))
+
+
+
+# V12 common branch integrates the pre-release FFmpeg diagnostics of V10/V10b.
+BR_INTEGRATED_PRODUCTION_QA_V12_RECORD=CapabilityRecord(
+    capability_id="production.technical-media-forensics",
+    capability_type="TOOL",
+    domain="production-media-quality",
+    implementation="FFprobe/FFmpeg sampled frame/audio QA plus optionally complete independently decoded video and audio tracks",
+    input_contract="Persisted Harness RESEARCH authorization for one owned local MP4 and strict canary/master profile",
+    output_contract="BRHarnessProductionForensicsExecution/v12",
+    requirements=("ffmpeg","ffprobe","owned-private-MP4","independent-human-review"),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("RESEARCH",),
+    policy_tags=("production","video","audio","real-render","ffmpeg","full-decode","research-only","zero-cost"),
+    security_boundary="Owner media under scoped roots only; audiovisual decoder evidence cannot certify timbre, human speaker identity, editorial truth, licensed content, graphics or publishing permission.",
+    cost_class="FREE_NO_BILLING",
+    quota_class="BOUNDED_LOCAL_FFMPEG_CPU",
+    latency_class="LONG_BOUNDED_ASYNC",
+    quality_class="TECHNICAL_QA_NOT_PRODUCTION_APPROVAL",
+    evidence_contract="BRHarnessProductionForensicsExecution/v12",
+    fallback_eligibility=False,
+    executor_binding="app.services.br_harness_sensory_authorization_v12.execute_authorized_production_media_qa",
+    version="1",
+    provider_id="ffprobe-ffmpeg-owner-local",
+    agent_id="harness-reverse-engineering-specialist",
+    authority="NONE",
+    memory_write="NONE",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+    supports_parallelism=False,
+    supports_retry=False,
+    supports_resume=False,
+    supports_review=False,
+    side_effect_class="READ_ONLY",
+    default_read_scope=(),
+    default_write_scope=(),
+    allowed_tools=("ffprobe","ffmpeg"),
+    health_policy="DEFAULT",
+    execution_kind="DETERMINISTIC_ANALYSIS_AGENT",
+    functional_roles=("OWNED_FULL_RENDER_FFMPEG_QA","NEXT_CORRECTIVE_EXPERIMENT"),
+)
+if _REGISTRY._by_id.get(BR_INTEGRATED_PRODUCTION_QA_V12_RECORD.capability_id) is not None:
+    raise ValueError("Duplicate integrated production QA capability")
+_REGISTRY._by_id[BR_INTEGRATED_PRODUCTION_QA_V12_RECORD.capability_id]=BR_INTEGRATED_PRODUCTION_QA_V12_RECORD
+_REGISTRY._records=tuple(sorted(
+    (*_REGISTRY._records,BR_INTEGRATED_PRODUCTION_QA_V12_RECORD),
+    key=lambda item:item.capability_id,
+))

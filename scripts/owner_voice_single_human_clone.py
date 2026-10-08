@@ -1002,7 +1002,7 @@ def main()->int:
 
     import torch
     import soundfile as sf
-    from qwen_tts import Qwen3TTSModel, VoiceClonePromptItem
+    from qwen_tts import Qwen3TTSModel
 
     torch.set_num_threads(4)
     qwen_snapshot=_prepare_qwen_model(cache_root/"qwen3-tts")
@@ -1032,13 +1032,11 @@ def main()->int:
         if not pronunciation_prompt_items:
             raise RuntimeError("QWEN3_TTS_PRONUNCIATION_PROMPT_REQUIRED")
         pronunciation_prompt=pronunciation_prompt_items[0]
-        pronunciation_hybrid_prompt=VoiceClonePromptItem(
-            ref_code=pronunciation_prompt.ref_code,
-            ref_spk_embedding=anchor_prompt.ref_spk_embedding,
-            x_vector_only_mode=False,
-            icl_mode=True,
-            ref_text=pronunciation_ref_text,
-        )
+        # REA forensic correction: do not pair a reference speech token
+        # sequence with a speaker embedding extracted from another recording.
+        # Keep the code, transcript and embedding produced by the model from
+        # the same consented BR_OWNER_V1 Telegram reference.
+        pronunciation_hybrid_prompt=pronunciation_prompt
 
         if vice_city_selected is None:
             raise RuntimeError("OWNER_VICE_CITY_PRONUNCIATION_REFERENCE_REQUIRED")
@@ -1060,19 +1058,15 @@ def main()->int:
         if not vice_prompt_items:
             raise RuntimeError("QWEN3_TTS_VICE_CITY_PROMPT_REQUIRED")
         vice_raw_prompt=vice_prompt_items[0]
-        vice_city_prompt=VoiceClonePromptItem(
-            ref_code=vice_raw_prompt.ref_code,
-            ref_spk_embedding=anchor_prompt.ref_spk_embedding,
-            x_vector_only_mode=False,
-            icl_mode=True,
-            ref_text=vice_ref_text,
-        )
+        # The owner's pronunciation reference is a coherent ICL prompt;
+        # never splice its token codes into another reference's embedding.
+        vice_city_prompt=vice_raw_prompt
         print("OWNER_VICE_CITY_REFERENCE_TELEGRAM_INPUT_ID="+str(vice_input_id))
         print(
             "OWNER_VICE_CITY_REFERENCE_EVIDENCE_SCORE="
             +str(float(vice_row.get("vice_city_evidence_score",0.0)))
         )
-        print("QWEN_PROMPT_COMPONENT_AUTHORITY=ANCHOR_SPK_PLUS_PRONUNCIATION_CODE")
+        print("QWEN_PROMPT_COMPONENT_AUTHORITY=OWNER_COHERENT_REFERENCE_ITEMS")
         print("QWEN_TARGETED_PROMPT_AUTHORITY=VICE_CITY_FRESH_OWNER_REFERENCE")
     else:
         print("QWEN_PROMPT_COMPONENT_AUTHORITY=ANCHOR_ONLY")
@@ -1388,8 +1382,8 @@ def main()->int:
     print("QWEN3_TTS_CLONE_MODE=TRANSCRIPT_CONDITIONED_ICL")
     print("QWEN3_TTS_LANGUAGE_MODE=EXPLICIT_SEGMENTED_MULTILINGUAL")
     print("QWEN3_TTS_X_VECTOR_ONLY_MODE=FALSE")
-    print("QWEN3_TTS_GENERATE_CALL_TARGET=1")
-    print("QWEN3_TTS_GENERATE_CALL_COUNT=1")
+    print("QWEN3_TTS_GENERATE_CALL_TARGET="+str(len(pronunciation_segments)))
+    print("QWEN3_TTS_GENERATE_CALL_COUNT="+str(len(segment_timing_receipts)))
     print("QWEN3_TTS_IDENTITY_MATCH="+identity_gate)
     print("HUMAN_REVIEW=PENDING")
     print("BR_OWNER_V1_RUNTIME_ACTIVATION=BLOCKED_PENDING_HUMAN_REVIEW")

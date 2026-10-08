@@ -170,17 +170,17 @@ def test_pronunciation_refs_do_not_replace_global_identity_anchor():
     assert '"pronunciation_reference_count":len(pronunciation_refs)' in source
 
 
-def test_pronunciation_clone_uses_hybrid_qwen_prompt_components():
+def test_pronunciation_clone_uses_coherent_qwen_reference_components():
     source=ORCHESTRATOR.read_text(encoding="utf-8")
     assert "OWNER_IDENTITY_ANCHOR_TELEGRAM_INPUT_ID=" in source
     assert "OWNER_PRONUNCIATION_REFERENCE_TELEGRAM_INPUT_ID=" in source
-    assert "VoiceClonePromptItem" in source
-    assert "ref_code=pronunciation_prompt.ref_code" in source
-    assert "ref_spk_embedding=anchor_prompt.ref_spk_embedding" in source
-    assert "ref_text=pronunciation_ref_text" in source
-    assert "QWEN_PROMPT_COMPONENT_AUTHORITY=ANCHOR_SPK_PLUS_PRONUNCIATION_CODE" in source
+    assert "pronunciation_hybrid_prompt=pronunciation_prompt" in source
+    assert "vice_city_prompt=vice_raw_prompt" in source
+    assert "ref_spk_embedding=anchor_prompt.ref_spk_embedding" not in source
+    assert "QWEN_PROMPT_COMPONENT_AUTHORITY=OWNER_COHERENT_REFERENCE_ITEMS" in source
     assert "composite-owner-reference-24k.wav" not in source
     assert "segment_languages=segment_languages" in source
+    assert 'print("QWEN3_TTS_GENERATE_CALL_COUNT="+str(len(segment_timing_receipts)))' in source
 
 
 def test_pronunciation_asr_uses_official_name_hotwords():
@@ -638,4 +638,3 @@ def test_qwen_generation_emits_periodic_heartbeat_without_changing_audio_contrac
     assert "segment_texts=segment_texts" in generation
     assert "segment_languages=segment_languages" in generation
     assert "segment_prompts=segment_prompts" in generation
-

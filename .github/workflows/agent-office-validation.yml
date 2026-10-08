@@ -251,8 +251,20 @@ jobs:
               if item["severity"] in {"high", "critical"}
           )
           expected = sorted(lock["audit_review"]["allowed_high_packages"])
-          assert audit["metadata"]["vulnerabilities"]["critical"] == 0
-          assert observed == expected, (observed, expected)
+          critical=int(audit["metadata"]["vulnerabilities"]["critical"])
+          critical_packages=sorted(name for name,item in audit["vulnerabilities"].items() if item.get("severity")=="critical")
+          print("UPSTREAM_NON_RUNTIME_CRITICAL_COUNT="+str(critical),flush=True)
+          print("UPSTREAM_NON_RUNTIME_CRITICAL_PACKAGES="+",".join(critical_packages),flush=True)
+          print("UPSTREAM_NON_RUNTIME_HIGH_PACKAGES="+",".join(observed),flush=True)
+          print("UPSTREAM_REVIEWED_HIGH_PACKAGES="+",".join(expected),flush=True)
+          if critical:
+              raise AssertionError("UPSTREAM_NEW_CRITICAL_REVIEW_REQUIRED")
+          if observed != expected:
+              new=sorted(set(observed)-set(expected))
+              gone=sorted(set(expected)-set(observed))
+              print("UPSTREAM_AUDIT_NEW_HIGH="+",".join(new),flush=True)
+              print("UPSTREAM_AUDIT_RESOLVED_HIGH="+",".join(gone),flush=True)
+              raise AssertionError("UPSTREAM_AUDIT_ALLOWLIST_DRIFT_REVIEW_REQUIRED")
           print("UPSTREAM_AUDIT_BOUNDARY=PASS")
           PY
 

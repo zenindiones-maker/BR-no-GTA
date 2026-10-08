@@ -62,7 +62,7 @@ def test_gta6_segment_plan_forces_portuguese_letter_names_and_english_proper_nou
 
     assert "Gê Tê A seis" in spoken
     assert any(row["spoken_text"]=="Rockstar Games" and row["language"]=="English" for row in segments)
-    assert any(row["spoken_text"]=="Vice City" and row["language"]=="English" for row in segments)
+    assert any(row["spoken_text"]=="vaicy siti" and row["language"]=="Portuguese" for row in segments)
     assert any(row["spoken_text"]=="Jason Duval" and row["language"]=="English" for row in segments)
     assert any(row["spoken_text"]=="Lucia Caminos" and row["language"]=="English" for row in segments)
     assert "Auto" not in languages
@@ -73,7 +73,7 @@ def test_gta6_segment_plan_keeps_portuguese_context_separate_from_foreign_terms(
         "Hoje vamos para Vice City no estado de Leonida e depois Mount Kalaga."
     )
     assert segments[0]["language"]=="Portuguese"
-    assert any(row["spoken_text"]=="Vice City" and row["language"]=="English" for row in segments)
+    assert any(row["spoken_text"]=="vaicy siti" and row["language"]=="Portuguese" for row in segments)
     assert any(row["spoken_text"]=="Leonida" and row["language"]=="English" for row in segments)
     assert any(row["spoken_text"]=="Mount Kalaga" and row["language"]=="English" for row in segments)
 
@@ -82,4 +82,5 @@ def test_gta6_segment_plan_covers_full_official_proper_noun_set():
     text=" | ".join(GTA6_CANONICAL_PRONUNCIATION_TERMS)
     segments=build_gta6_pronunciation_segments(text)
     english_targets={row["spoken_text"] for row in segments if row["language"]=="English"}
-    assert set(GTA6_CANONICAL_PRONUNCIATION_TERMS).issubset(english_targets)
+    assert set(GTA6_CANONICAL_PRONUNCIATION_TERMS)-{"Vice City"} <= english_targets
+    assert any(row["canonical_text"]=="Vice City" and row["spoken_text"]=="vaicy siti" and row["language"]=="Portuguese" for row in segments)

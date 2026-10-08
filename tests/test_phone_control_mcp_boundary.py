@@ -75,40 +75,29 @@ def test_br_capability_execute_accepts_authorized_phone_executor(monkeypatch):
     assert payload["evidence"]["routing_id"]
 
 
-def test_existing_skill_path_still_executes(monkeypatch):
+def test_public_addy_skill_mcp_does_not_bypass_harness_auth(monkeypatch):
     calls = []
 
     def fake_skill(*, authorization, routing_decision, payload):
-        calls.append(
-            (routing_decision.selected_capability_id, payload)
-        )
-        return CapabilityEvidence(
-            capability_id=routing_decision.selected_capability_id,
-            provider="addy-agent-skills",
-            status="EXECUTED",
-            active=True,
-            authority=authorization.authority,
-            authorized_action=authorization.authorized_action,
-            harness_decision_id=authorization.harness_decision_id,
-            execution_id=authorization.execution_id,
-            result={"ok": True},
-        )
+        calls.append((routing_decision.selected_capability_id,payload))
+        raise AssertionError("unauthenticated MCP must not execute Addy")
 
     monkeypatch.setattr(
         mcp_execution,
         "execute_authorized_addy_skill",
         fake_skill,
     )
-    payload = json.loads(
-        server.br_capability_execute(
-            capability_id="addy:code-review-and-quality",
-            authorized_action="DEVELOPMENT",
-            payload_json='{"task":"review"}',
-        )
-    )
-    assert calls == [("addy:code-review-and-quality", {"task": "review"})]
-    assert payload["result"]["status"] == "EXECUTED"
-    assert payload["evidence"]["success"] is True
+    payload=json.loads(server.br_capability_execute(
+        capability_id="addy:code-review-and-quality",
+        authorized_action="DEVELOPMENT",
+        payload_json='{"task":"review"}',
+    ))
+    assert calls==[]
+    assert payload["result"]["status"]=="BLOCKED"
+    assert payload["result"]["active"] is False
+    assert payload["result"]["result"]["stage"]=="authentication"
+    assert "no model turn started" in payload["result"]["boundary"]
+    assert payload["evidence"]["success"] is False
 
 
 def test_arbitrary_executor_remains_blocked(monkeypatch):
