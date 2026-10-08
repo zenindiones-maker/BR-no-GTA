@@ -155,3 +155,14 @@ def test_iris_full_page_dark_and_selector_padding_translate_to_upstream_cli(tmp_
     assert full["image_height"]==1500
     assert element["padding"]==24
     assert full["live_website_capture"] is False
+
+
+
+def test_safe_dark_mode_media_query_is_allowed_without_enabling_imports(tmp_path):
+    page=_html(tmp_path,OWNED_HTML.replace(
+        "</style>","@media (prefers-color-scheme: dark){h1{color:white;background:black}}</style>"
+    ))
+    iris._owned_static_html(page)
+    attacked=OWNED_HTML.replace("</style>","@import url(https://evil.test/file.css);</style>")
+    with pytest.raises(ObservationError,match="IRIS_LOCAL_HTML_EXTERNAL_STYLES_FORBIDDEN"):
+        iris._owned_static_html(_html(tmp_path,attacked))
