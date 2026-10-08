@@ -23,6 +23,7 @@ REA_CAPABILITY_ID = "reverse-engineering.software.rea-static"
 WEB_HAR_CAPABILITY_ID = "reverse-engineering.web.har-observe"
 EXPERIMENT_CAPABILITY_ID = "reverse-engineering.experiment.assess"
 FIDELITY_CAPABILITY_ID = "reverse-engineering.reconstruction.fidelity"
+STUDIO_CAPABILITY_ID = "reverse-engineering.studio.forensics"
 MEDIA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_media_observation"
 REA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_software_observation"
 WEB_HAR_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_web_har_observation"
@@ -350,4 +351,66 @@ def execute_authorized_fidelity_assessment(
         "production_mutation": False,
         "memory_write": "NOT_ATTEMPTED",
         "authority": "DEEPSEEK_HARNESS",
+    }
+
+
+def execute_authorized_studio_observation(
+    *, authorization: Any, routing_decision: Any, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """A single scoped entrypoint for four independently testable studio probes.
+
+    Domain workers never access the owner voice sample directory or generate
+    synthetic/cloned media. Only user-owned or licensed local inputs are accepted.
+    """
+    auth = _authorized_context(
+        authorization=authorization, routing_decision=routing_decision,
+        capability_id=STUDIO_CAPABILITY_ID,
+    )
+    if not isinstance(payload,dict) or set(payload) != {"mode","rights","inputs","options"}:
+        raise PermissionError("STUDIO_HARNESS_PAYLOAD_SCHEMA_INVALID")
+    if payload["rights"] not in ("owned","licensed") or not isinstance(payload["options"],dict):
+        raise PermissionError("STUDIO_HARNESS_RIGHTS_OR_OPTIONS_INVALID")
+    mode=payload["mode"]
+    allowed={
+        "stems":({"window_seconds"},2,4),
+        "motion":({"max_frames"},1,1),
+        "alignment":(set(),1,1),
+        "timeline":(set(),1,1),
+    }
+    if mode not in allowed:
+        raise PermissionError("STUDIO_HARNESS_MODE_INVALID")
+    accepted,min_inputs,max_inputs=allowed[mode]
+    inp=payload["inputs"]
+    if not isinstance(inp,list) or not min_inputs<=len(inp)<=max_inputs or not set(payload["options"]).issubset(accepted):
+        raise PermissionError("STUDIO_HARNESS_INPUTS_OR_OPTIONS_INVALID")
+    if not all(isinstance(p,str) and p for p in inp):
+        raise PermissionError("STUDIO_HARNESS_INPUT_PATH_INVALID")
+    if mode in ("stems","motion") and payload["rights"]=="licensed":
+        # All licensed materials must be explicitly authorized in the persisted roots;
+        # documentary license checks still occur outside this service.
+        pass
+    sources=[_scope(auth,p) for p in inp]
+    from app.services import reverse_engineering_studio_v6_service as studio
+    if mode=="stems":
+        output=studio.analyze_stems(sources,**payload["options"])
+    elif mode=="motion":
+        output=studio.analyze_animation_motion(sources[0],**payload["options"])
+    elif mode=="alignment":
+        output=studio.audit_external_word_alignment(sources[0])
+    else:
+        output=studio.compile_original_timeline(sources[0])
+    return {
+        "schema_version":"BRHarnessReverseEngineeringResult/v1",
+        "capability_id":STUDIO_CAPABILITY_ID,
+        "authorization_id":auth.authorization_id,
+        "harness_decision_id":auth.harness_decision_id,
+        "execution_id":auth.execution_id,
+        "status":"EVIDENCE_ONLY",
+        "mode":mode,
+        "evidence":output,
+        "approval":"NOT_REQUESTED",
+        "publication":"FORBIDDEN",
+        "production_mutation":False,
+        "memory_write":"NOT_ATTEMPTED",
+        "authority":"DEEPSEEK_HARNESS",
     }
