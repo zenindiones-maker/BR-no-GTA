@@ -97,3 +97,14 @@ readiness. IRIS extended image modes require owned local static HTML; REA native
 and web/MCP modes require a separate provider and network security gate.
 No tool, skill, agent or MCP server supersedes DeepSeek Harness authority,
 or changes BR_OWNER_V1, Telegram, billing or canonical learning.
+
+
+## REA/Ghidra native benchmark (V9 candidate)
+
+Follow docs/architecture/br-native-reconstruction-v9.md: only owned ELF64
+fixtures, Ghidra 12.1.4 pinned and REA 6.0.0 checked per provider.
+Native function decompilation Evidence does not authorize execution of unknown
+binaries or auto-generate trusted code. Independently verify reconstructed
+behavior with predeclared positive/negative input cases and reject claims of
+perfect reconstruction from limited tests. No autonomous native MCP, memory
+promotion, paid fallback or access to BR_OWNER_V1.
