@@ -94,3 +94,31 @@ def test_malformed_or_extra_large_discovery_never_generates_capability_claims(tm
     assert all(x["readiness"]=="DIAGNOSTIC_INCOMPLETE_OR_UNAVAILABLE" for x in probe["catalog"].values())
     with pytest.raises(ValueError,match="REA_DISCOVERY_RECEIPT_SCHEMA_INVALID"):
         capability_utilization_report(registry=Registry(),rea_probe={"schema_version":"fake"})
+
+
+
+def test_planner_never_authorizes_risky_rea_native_or_iris_network():
+    from app.services.harness_capability_utilization_v8 import propose_next_utilization_probe
+    report=capability_utilization_report(registry=Registry())
+    for tool,operation,action in [
+        ("rea","native_ghidra","ATTEST_PROVIDER_DOCTOR"),
+        ("iris","live_public_pages","AUDIT_NETWORK_ISOLATION"),
+        ("iris","persistent_mcp_server","REQUIRE_NEW_OWNER_POLICY_APPROVAL"),
+        ("iris","full_page_capture","RUN_LOCAL_SCOPED_FIXTURE"),
+    ]:
+        proposed=propose_next_utilization_probe(report=report,tool=tool,operation=operation)
+        assert proposed["next_action"]==action
+        assert proposed["execution_authorized"] is False
+        assert proposed["routing_changed"] is False
+        assert proposed["memory_written"] is False
+        assert proposed["harness_authorization_required"] is True
+
+
+def test_proposal_refuses_modified_report_and_unknown_operation():
+    from app.services.harness_capability_utilization_v8 import propose_next_utilization_probe
+    report=capability_utilization_report(registry=Registry())
+    altered=json.loads(json.dumps(report))
+    altered["runtime_verified_count"]=170
+    with pytest.raises(ValueError,match="TAMPERED"):
+        propose_next_utilization_probe(report=altered,tool="rea",operation="native_ghidra")
+    assert propose_next_utilization_probe(report=report,tool="rea",operation="rootkit_launch")["status"]=="BLOCKED_UNKNOWN_OPERATION"
