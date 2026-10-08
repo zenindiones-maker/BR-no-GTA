@@ -42,6 +42,11 @@ jobs:
           echo "BR_V13_PREVIOUS_SEVEN_FAILURES_RETESTED=PASS"
           echo "BR_V13_OWNER_VOICE_IDENTITY_GATE_NOT_RELAXED=PASS"
           echo "BR_V13_FINE_TUNE_PUSH_AUTORUN=FORBIDDEN"
+      - name: Full application regression suite on exact V13 head
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/
+          echo "BR_V13_ROOT_SUITE=PASS"
 
   llama-source-install:
     name: Install exact official LlamaFactory source metadata in disposable environment
