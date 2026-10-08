@@ -141,6 +141,8 @@ def analyze_forensics(
     transcript: str | Path | None = None,
     include_scene_cuts: bool = False,
     timeout_per_pass_seconds: int = 300,
+    include_audio_dynamics: bool = False,
+    adaptive_shot_window_seconds: float | None = None,
 ) -> dict[str, Any]:
     """Closed-form evidence: errors never create synthetic PASS measurements."""
     if rights not in {"owned", "licensed", "observation_only"}:
@@ -158,14 +160,31 @@ def analyze_forensics(
     has_video = any(stream["codec_type"] == "video" for stream in streams)
     if not has_audio and not has_video:
         raise ObservationError("FORENSICS_NO_SUPPORTED_STREAMS")
+    if type(include_audio_dynamics) is not bool:
+        raise ObservationError("FORENSICS_AUDIO_DYNAMICS_FLAG_INVALID")
+    if adaptive_shot_window_seconds is not None and (not isinstance(adaptive_shot_window_seconds, (int, float)) or type(adaptive_shot_window_seconds) is bool):
+        raise ObservationError("FORENSICS_SHOT_WINDOW_FLAG_INVALID")
     audio = {
         "status": "MEASURED",
         "loudness": _loudness(source, timeout=timeout_per_pass_seconds),
         "silence": _silences(source, timeout=timeout_per_pass_seconds),
     } if has_audio else {"status": "NOT_APPLICABLE", "reason": "NO_AUDIO_STREAM"}
+    if has_audio:
+        if include_audio_dynamics:
+            from app.services.reverse_engineering_audio_v3_service import analyze_audio_dynamics
+            audio["dynamics"] = analyze_audio_dynamics(source, timeout_seconds=timeout_per_pass_seconds)
+        else:
+            audio["dynamics"] = {"status": "NOT_RUN"}
     video = _video_events(source, timeout=timeout_per_pass_seconds) if has_video else {
         "status": "NOT_APPLICABLE", "reason": "NO_VIDEO_STREAM",
     }
+    if adaptive_shot_window_seconds is not None:
+        if not has_video:
+            raise ObservationError("FORENSICS_SHOT_VIDEO_REQUIRED")
+        from app.services.reverse_engineering_scene_v3_service import analyze_shots
+        video["adaptive_shots"] = analyze_shots(source, window_seconds=adaptive_shot_window_seconds)
+    elif has_video:
+        video["adaptive_shots"] = {"status": "NOT_RUN"}
     if include_scene_cuts and has_video:
         from app.services.reverse_engineering_media_service import detect_scene_cuts
         cut_times = detect_scene_cuts(source)
