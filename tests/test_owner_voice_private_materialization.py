@@ -155,11 +155,13 @@ def test_sanitize_reference_index_quarantines_incomplete_lineage_and_keeps_fresh
 
 
 def test_sanitize_reference_index_fails_closed_when_no_fresh_reference_exists():
+    reference=_index()
+    cutoff=int(reference["references"][0]["telegram_message_id"])
     with pytest.raises(
         OwnerVoicePrivateMaterializationError,
         match="OWNER_PRONUNCIATION_REFERENCE_NOT_MATERIALIZED",
     ):
         sanitize_owner_reference_index(
-            _index(),
-            min_message_id_exclusive=637,
+            reference,
+            min_message_id_exclusive=cutoff,
         )
