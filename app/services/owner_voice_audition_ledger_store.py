@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import os
+import shlex
 from pathlib import Path
 import subprocess
 import tempfile
@@ -50,7 +51,7 @@ class OwnerVoiceAuditionGitLedgerStore:
     def _env(self)->dict[str,str]:
         env=os.environ.copy()
         env["GIT_SSH_COMMAND"]=(
-            f"ssh -i {self.key_path} -o IdentitiesOnly=yes "
+            f"ssh -i {shlex.quote(str(self.key_path))} -o IdentitiesOnly=yes "
             "-o StrictHostKeyChecking=accept-new -o BatchMode=yes"
         )
         return env
@@ -156,16 +157,24 @@ class OwnerVoiceAuditionGitLedgerStore:
                 raise RuntimeError((cp.stderr or cp.stdout or "").strip()[:1500])
             candidate=cp.stdout.strip()
 
+        return self._push_candidate_bounded(expected_head_sha=expected_head_sha,candidate=candidate)
+
+    def _push_candidate_bounded(self,*,expected_head_sha:str,candidate:str)->str:
+        """Retry once only for GitHub commit_refs 52 after exact remote readback.
+
+        This is a ledger Git push only. It cannot retry or authorize Telegram
+        media sends and cannot force-push a changed branch.
+        """
         observed_before=self._remote_oid()
         if observed_before!=expected_head_sha:
             raise CasConflict(
                 f"CAS_CONFLICT:EXPECTED_OLD_OID:{expected_head_sha}!={observed_before}"
             )
-        cp=subprocess.run(
-            ["git","push",self.repository_ssh,f"{candidate}:{ALLOWED_LEDGER_REF}"],
-            cwd=self.repo,env=self._env(),text=True,capture_output=True,check=False,
-        )
-        if cp.returncode!=0:
+        for attempt in range(2):
+            cp=subprocess.run(
+                ["git","push",self.repository_ssh,f"{candidate}:{ALLOWED_LEDGER_REF}"],
+                cwd=self.repo,env=self._env(),text=True,capture_output=True,check=False,
+            )
             observed_after=self._remote_oid()
             if observed_after==candidate:
                 return candidate
@@ -173,16 +182,20 @@ class OwnerVoiceAuditionGitLedgerStore:
                 raise CasConflict(
                     f"CAS_CONFLICT:REMOTE_MOVED:{expected_head_sha}->{observed_after}"
                 )
-            raise RuntimeError(
-                "LEDGER_FAST_FORWARD_PUSH_REJECTED:"+
-                (cp.stderr or cp.stdout or "").strip()[:1000]
+            stderr=(cp.stderr or cp.stdout or "").strip()
+            transient_commit_refs=(
+                cp.returncode==52 and "fatal error in commit_refs" in stderr.lower()
             )
-        readback=self._remote_oid()
-        if readback!=candidate:
-            raise RuntimeError(
-                f"LEDGER_REMOTE_READBACK_MISMATCH:{candidate}!={readback}"
-            )
-        return candidate
+            if attempt==0 and transient_commit_refs:
+                # No force, no new commit, no blind Telegram operation.
+                continue
+            if transient_commit_refs:
+                raise RuntimeError("LEDGER_TRANSIENT_COMMIT_REFS_EXHAUSTED")
+            if cp.returncode==0:
+                raise RuntimeError("LEDGER_REMOTE_READBACK_MISMATCH")
+            raise RuntimeError("LEDGER_FAST_FORWARD_PUSH_REJECTED:"+stderr[:1000])
+        raise RuntimeError("LEDGER_PUSH_LOOP_UNREACHABLE")
+
 
 
 def store_from_environment(*,repo_root:str|Path,workspace:str|Path)->OwnerVoiceAuditionGitLedgerStore:
