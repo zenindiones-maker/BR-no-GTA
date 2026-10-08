@@ -47,3 +47,22 @@ private per-segment metrics and no reuse of rejected audio. Scratch
 checkpoints are NOT cross-run durable. Real owner-certified voice then complete
 20–25 minute professional render then private Telegram/YouTube owner approval.
 No fallback voice, unattended delivery, canonical promotion, or invented PASS.
+
+
+## V13 LLaMA-Factory controlled training-admission plane
+
+Follow docs/architecture/br-llamafactory-harness-v13.md. LLaMA-Factory
+(hiyouga/LlamaFactory, SHA ce9dc9e072f80fa3abe0989d4ab90da25f083438)
+is an isolated research specialist for authorized original LLM/VLM textual
+training datasets. Its source package/CLI metadata install does not prove
+a complete operational ML training environment, GPU capacity, model quality
+or canonical deployment. Only the DeepSeek Harness persisted RESEARCH route
+can admit bounded owner-authored Alpaca datasets. GPU train, model downloads,
+fallback cost, publication, untrusted datasets and cross-agent authority
+remain forbidden without separate independent evidence and approval.
+
+BR_OWNER_V1 human voice is explicitly OUT OF SCOPE for LLaMA-Factory:
+Qwen3-TTS Base has its own official single-speaker training and private
+identity/pronunciation gates. Never claim that a LLaMA-Factory dataset receipt
+fixes voice identity or Telegram delivery. User-facing GPT-6 rich UI is a
+ChatGPT feature and does not automatically mutate the repository.
