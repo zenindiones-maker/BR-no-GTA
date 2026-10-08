@@ -425,9 +425,9 @@ def execute_authorized_iris_capture(
         authorization=authorization, routing_decision=routing_decision,
         capability_id=IRIS_CAPABILITY_ID,
     )
-    if not isinstance(payload, dict) or set(payload) != {
-        "source_path", "output_path", "rights", "viewport", "selector"
-    }:
+    required = {"source_path", "output_path", "rights", "viewport", "selector"}
+    optional = {"full_page", "dark", "padding", "wait_for"}
+    if not isinstance(payload, dict) or not required.issubset(payload) or not set(payload).issubset(required | optional):
         raise PermissionError("IRIS_HARNESS_PAYLOAD_SCHEMA_INVALID")
     if payload["rights"] != "owned":
         raise PermissionError("IRIS_HARNESS_ONLY_OWNED_STATIC_PAGES")
@@ -467,6 +467,8 @@ def execute_authorized_iris_capture(
     evidence = capture_owned_static_page(
         source_path=src, output_path=out, iris_binary=binary_path,
         size=payload["viewport"], selector=payload["selector"],
+        full_page=payload.get("full_page", False), dark=payload.get("dark", False),
+        padding=payload.get("padding", 0), wait_for=payload.get("wait_for"),
     )
     return {
         "schema_version": "BRHarnessReverseEngineeringResult/v1",
