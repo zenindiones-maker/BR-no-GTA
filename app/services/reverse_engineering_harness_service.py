@@ -207,6 +207,8 @@ def execute_authorized_software_observation(
         raise ObservationError("REA_STATIC_EVIDENCE_INVALID")
     # No source text, decompilation or untrusted model instructions are surfaced
     # to the downstream agent. The full Evidence remains transient in memory.
+    from app.services.reverse_engineering_rea_evidence_v8 import summarize_rea_javascript_envelope
+    safe_structure = summarize_rea_javascript_envelope(envelope)
     return {
         "schema_version": "BRHarnessReverseEngineeringResult/v1",
         "capability_id": REA_CAPABILITY_ID,
@@ -221,6 +223,7 @@ def execute_authorized_software_observation(
             "source_basename": source.name,
             "result_sha256": hashlib.sha256(output.encode("utf-8")).hexdigest(),
             "result_top_level_keys": sorted(str(key) for key in envelope)[:50],
+            "structural_metrics": safe_structure,
             "limitations": "result digest only; no claim of runtime behavior or original source",
         },
         "approval": "NOT_REQUESTED",
