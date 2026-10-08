@@ -2738,3 +2738,69 @@ _REGISTRY._records = tuple(sorted(
      ),
     key=lambda item: item.capability_id,
 ))
+
+
+# BR reverse-engineering capabilities are specialist sensors, never a new authority.
+# The sole invocation path remains persisted Harness authorization + routing.
+REVERSE_ENGINEERING_RECORDS = (
+    CapabilityRecord(
+        capability_id="reverse-engineering.media.observe",
+        capability_type="TOOL",
+        domain="audiovisual-analysis",
+        implementation="Harness-scoped deterministic audio/video/script forensic measurement",
+        input_contract="fresh Harness RESEARCH authorization with allowed_media_roots lineage; absolute authorized media path and declared usage rights",
+        output_contract="BRHarnessReverseEngineeringResult/v1 with BRAudiovisualForensics/v2 source hashes and measured metrics",
+        requirements=("ffprobe and ffmpeg installed", "local owned/licensed or observation-only source", "persisted authorization and routing", "read-only workspace"),
+        maturity=FUNCTIONAL, availability=AVAILABLE,
+        allowed_actions=("RESEARCH",),
+        policy_tags=("reverse-engineering", "audio", "video", "narrative", "forensics", "deterministic", "evidence", "readonly", "zero-cost"),
+        security_boundary="DeepSeek Harness sole authority. Local source must be within persisted root scope. No private owner-voice inputs, no cloud upload, publication, memory writes, synthesis, DRM circumvention, or authority grants.",
+        cost_class="FREE_NO_BILLING", quota_class="LOCAL_FFMPEG_CPU",
+        latency_class="BOUNDED_ASYNC", quality_class="ACTUAL_MEASUREMENT_ONLY",
+        evidence_contract="BRHarnessReverseEngineeringResult/v1",
+        fallback_eligibility=False,
+        executor_binding="app.services.reverse_engineering_harness_service.execute_authorized_media_observation",
+        version="2", provider_id="ffmpeg-local", agent_id="harness-reverse-engineering-specialist",
+        authority="NONE", memory_write="NONE", routing_authority="NONE",
+        editorial_authority="NONE", publication_authority="NONE",
+        supports_parallelism=False, supports_retry=False, supports_resume=False,
+        supports_review=False, side_effect_class="READ_ONLY",
+        default_read_scope=(), default_write_scope=(),
+        allowed_tools=("ffmpeg", "ffprobe"), health_policy="DEFAULT",
+        execution_kind="DETERMINISTIC_ANALYSIS_AGENT", functional_roles=("MEDIA_FORENSIC_EVIDENCE",),
+    ),
+    CapabilityRecord(
+        capability_id="reverse-engineering.software.rea-static",
+        capability_type="TOOL",
+        domain="software-investigation",
+        implementation="Harness-scoped REA 6.0.0 static JS application evidence-digest inspection",
+        input_contract="fresh Harness RESEARCH authorization, absolute JS directory in allowed_media_roots, owned/licensed or observation-only",
+        output_contract="BRHarnessReverseEngineeringResult/v1 with provenance, REA version and sanitized evidence digest",
+        requirements=("rea-agents@6.0.0 installed into private BR_REA_INSTALL_PREFIX", "Node 24.11+", "static JS target", "persisted Harness read scope"),
+        maturity=FUNCTIONAL, availability=AVAILABLE,
+        allowed_actions=("RESEARCH",),
+        policy_tags=("reverse-engineering", "rea", "javascript", "software", "static-analysis", "deterministic", "readonly", "zero-cost"),
+        security_boundary="DeepSeek Harness sole authority. Static JS only; no debugger, native decompiler, network discovery, process launch, browser, agent registration, secrets, media publication or persistent runtime modification.",
+        cost_class="FREE_NO_BILLING", quota_class="LOCAL_NODE_CPU",
+        latency_class="BOUNDED_ASYNC", quality_class="STATIC_DIGEST_NOT_ORIGINAL_SOURCE",
+        evidence_contract="BRHarnessReverseEngineeringResult/v1",
+        fallback_eligibility=False,
+        executor_binding="app.services.reverse_engineering_harness_service.execute_authorized_software_observation",
+        version="1", provider_id="rea-pinned", agent_id="harness-reverse-engineering-specialist",
+        authority="NONE", memory_write="NONE", routing_authority="NONE",
+        editorial_authority="NONE", publication_authority="NONE",
+        supports_parallelism=False, supports_retry=False, supports_resume=False,
+        supports_review=False, side_effect_class="READ_ONLY",
+        default_read_scope=(), default_write_scope=(),
+        allowed_tools=("rea",), health_policy="DEFAULT",
+        execution_kind="DETERMINISTIC_ANALYSIS_AGENT", functional_roles=("SOFTWARE_FORENSIC_EVIDENCE",),
+    ),
+)
+for _reverse_engineering_record in REVERSE_ENGINEERING_RECORDS:
+    if _REGISTRY._by_id.get(_reverse_engineering_record.capability_id) is not None:
+        raise ValueError("Duplicate reverse-engineering capability")
+    _REGISTRY._by_id[_reverse_engineering_record.capability_id] = _reverse_engineering_record
+_REGISTRY._records = tuple(sorted(
+    (*_REGISTRY._records, *REVERSE_ENGINEERING_RECORDS),
+    key=lambda item: item.capability_id,
+))
