@@ -143,6 +143,7 @@ def analyze_forensics(
     timeout_per_pass_seconds: int = 300,
     include_audio_dynamics: bool = False,
     adaptive_shot_window_seconds: float | None = None,
+    adaptive_shot_start_seconds: float = 0.0,
 ) -> dict[str, Any]:
     """Closed-form evidence: errors never create synthetic PASS measurements."""
     if rights not in {"owned", "licensed", "observation_only"}:
@@ -162,6 +163,8 @@ def analyze_forensics(
         raise ObservationError("FORENSICS_NO_SUPPORTED_STREAMS")
     if type(include_audio_dynamics) is not bool:
         raise ObservationError("FORENSICS_AUDIO_DYNAMICS_FLAG_INVALID")
+    if not isinstance(adaptive_shot_start_seconds, (int, float)) or type(adaptive_shot_start_seconds) is bool or not math.isfinite(adaptive_shot_start_seconds) or adaptive_shot_start_seconds < 0:
+        raise ObservationError("FORENSICS_SHOT_START_INVALID")
     if adaptive_shot_window_seconds is not None and (not isinstance(adaptive_shot_window_seconds, (int, float)) or type(adaptive_shot_window_seconds) is bool):
         raise ObservationError("FORENSICS_SHOT_WINDOW_FLAG_INVALID")
     audio = {
@@ -182,7 +185,9 @@ def analyze_forensics(
         if not has_video:
             raise ObservationError("FORENSICS_SHOT_VIDEO_REQUIRED")
         from app.services.reverse_engineering_scene_v3_service import analyze_shots
-        video["adaptive_shots"] = analyze_shots(source, window_seconds=adaptive_shot_window_seconds)
+        video["adaptive_shots"] = analyze_shots(source, start_seconds=adaptive_shot_start_seconds, window_seconds=adaptive_shot_window_seconds)
+        from app.services.reverse_engineering_longform_coverage_service import plan_shot_windows
+        video["longform_shot_plan"] = plan_shot_windows(duration, window_seconds=60.0, overlap_seconds=1.0)
     elif has_video:
         video["adaptive_shots"] = {"status": "NOT_RUN"}
     if include_scene_cuts and has_video:
