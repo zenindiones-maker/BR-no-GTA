@@ -6,6 +6,7 @@ on:
     branches:
       - recovery/dev/br-owner-v1-human-audition-v2
       - work/br-owner-voice-serial-audition-v11
+      - work/br-owner-coherent-audition-v12
     paths:
       - .run/br-owner-v1-single-human-clone.request.json
 
