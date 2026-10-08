@@ -99,7 +99,11 @@ def select(*,operation:str,rights:str,file_extension:str,
            remote_ledger_grant:bool=False,uncertainty:float=0.0,
            consequence:str="LOW")->dict[str,Any]:
     """No natural language may redefine an operation or grant permission."""
-    if (type(uncertainty) not in (int,float) or not 0<=uncertainty<=1
+    if (not isinstance(operation,str) or not 1<=len(operation)<=128
+        or not isinstance(rights,str) or not 1<=len(rights)<=32
+        or not isinstance(file_extension,str) or not 1<=len(file_extension)<=24
+        or type(uncertainty) not in (int,float) or not 0<=uncertainty<=1
+        or not isinstance(consequence,str)
         or consequence not in ("LOW","MEDIUM","HIGH","CRITICAL")
         or type(provider_ready) is not bool
         or type(resource_admitted) is not bool
