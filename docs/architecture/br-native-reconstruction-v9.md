@@ -25,3 +25,10 @@ Any provider failure, missing receipt, rights violation or mismatch blocks the n
 ## Remaining professional work
 
 Expand to blinded and multi-version original fixtures, typed call graphs and xrefs, negative controls, fuzz/property tests, security-reviewed runtime instrumentation, original audiovisual file format tooling, and real REAPER/animation/voice benchmarks. Local Ghidra installation alone does not make optional native debuggers, REA MCP, or unrelated binaries safe or ready. A successful 3205-case synthetic proof is not proof of perfect cloning of real proprietary multimedia.
+
+
+## Security-boundary follow-up (post functional CI)
+
+The GitHub Actions host downloads required release assets and has not been tested as a network-egress-denied sandbox. Therefore, **do not treat this as safe to analyze untrusted native binaries or files containing secrets**. Current executable admission remains restricted to reviewed, synthetic, owner-compiled x86-64 ELF fixtures on ephemeral runners. In the native REA/Ghidra Python adapter, the subprocess receives a minimal environment whitelist rather than inherited cloud/GitHub credential variables, with a separate regression test. This reduces ambient-secret risk but does NOT prove process/network containment.
+
+Before agent-access expansion or production promotion: conduct an independent Ghidra bridge security review; test network and process isolation, time/memory/child-process ownership, unsafe file paths and subprocess lifetime; attest source licenses and code provenance; verify runtime provider health on the exact dedicated workstation; measure randomized/blinded behavioral cases beyond the synthetic deterministic 3,205 case set. No auto-promotion, untrusted ELF execution, or generic agent access is allowed in V9.
