@@ -17,13 +17,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.services.harness_capability_adapter import CapabilityAdapter
 from app.services.harness_collaboration_service import TaskEnvelope
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
-from app.services.reverse_engineering_harness_service import MEDIA_CAPABILITY_ID, REA_CAPABILITY_ID
+from app.services.reverse_engineering_harness_service import MEDIA_CAPABILITY_ID, REA_CAPABILITY_ID, WEB_HAR_CAPABILITY_ID
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Harness-governed, read-only reverse engineering")
     parser.add_argument("--authorization-id", required=True, help="Existing persisted Harness authorization ID")
-    parser.add_argument("--mode", required=True, choices=["media", "rea-js"])
+    parser.add_argument("--mode", required=True, choices=["media", "rea-js", "web-har"])
     parser.add_argument("--input", required=True, help="Existing local artifact within approved auth lineage root")
     parser.add_argument("--rights", choices=["owned", "licensed", "observation_only"], required=True)
     parser.add_argument("--transcript")
@@ -40,10 +40,10 @@ def main(argv: list[str] | None = None) -> int:
     target = Path(args.output).expanduser()
     if target.exists() or target.is_symlink() or not target.is_absolute() or not target.parent.is_dir():
         raise PermissionError("REVERSE_ENGINEERING_OUTPUT_PATH_NOT_FRESH")
-    if args.mode == "rea-js" and (args.transcript or args.detect_scenes or args.goal or args.candidate or args.audio_dynamics or args.adaptive_shot_window is not None):
+    if args.mode in {"rea-js", "web-har"} and (args.transcript or args.detect_scenes or args.goal or args.candidate or args.audio_dynamics or args.adaptive_shot_window is not None):
         raise PermissionError("REA_JS_MEDIA_FLAGS_FORBIDDEN")
-    capability_id = MEDIA_CAPABILITY_ID if args.mode == "media" else REA_CAPABILITY_ID
-    domain = "audiovisual-analysis" if args.mode == "media" else "software-investigation"
+    capability_id = {"media": MEDIA_CAPABILITY_ID, "rea-js": REA_CAPABILITY_ID, "web-har": WEB_HAR_CAPABILITY_ID}[args.mode]
+    domain = {"media": "audiovisual-analysis", "rea-js": "software-investigation", "web-har": "website-observation"}[args.mode]
     decision = route_harness_request(HarnessRoutingRequest(
         intent=f"read-only {domain} evidence",
         authorized_action="RESEARCH",
@@ -74,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
             capability_id=capability_id,
             action="RESEARCH",
             objective="Observe authorized source only",
-            allowed_tools=("ffmpeg", "ffprobe") if args.mode == "media" else ("rea",),
+            allowed_tools=("ffmpeg", "ffprobe") if args.mode == "media" else (("rea",) if args.mode == "rea-js" else ()),
             cost_budget=0.0,
             retry_budget=0,
         ),
