@@ -2,18 +2,6 @@ name: BR_OWNER_V1 Qwen3-TTS 1.7B Fine Tune
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - recovery/dev/br-owner-v1-human-audition-v2
-    paths:
-      - ".github/workflows/owner-voice-qwen3-tts-finetune.yml"
-      - "config/owner_voice_qwen3_tts_finetune_v1.json"
-      - "scripts/owner_voice_qwen3_tts_finetune_dataset.py"
-      - "scripts/owner_voice_qwen3_tts_ms_swift_prepare_data.py"
-      - "scripts/owner_voice_ms_swift_qwen3_tts_patch.py"
-      - "scripts/owner_voice_qwen3_tts_finetune_evaluate.py"
-      - "tests/test_owner_voice_qwen3_tts_finetune_contract.py"
-      - ".run/br-owner-v1-qwen3-tts-finetune.request.json"
 
 permissions:
   contents: read
