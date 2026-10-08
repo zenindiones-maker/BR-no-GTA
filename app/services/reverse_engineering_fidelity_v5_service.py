@@ -77,8 +77,10 @@ def _video(reference: Path, candidate: Path, *, refprobe: dict,
            canprobe: dict, seconds: float) -> dict:
     r = _stream(refprobe, "video")
     c = _stream(canprobe, "video")
-    if r is None or c is None:
-        return {"status": "NOT_APPLICABLE", "reason": "BOTH_VIDEO_STREAMS_REQUIRED"}
+    if (r is None) != (c is None):
+        raise ObservationError("FIDELITY_VIDEO_STREAM_TOPOLOGY_MISMATCH")
+    if r is None and c is None:
+        return {"status": "NOT_APPLICABLE", "reason": "BOTH_VIDEO_STREAMS_ABSENT"}
     if not all(isinstance(s.get("width"), int) and isinstance(s.get("height"), int) for s in (r, c)):
         raise ObservationError("FIDELITY_DIMENSIONS_UNKNOWN")
     if (r["width"], r["height"]) != (c["width"], c["height"]):
@@ -201,8 +203,12 @@ def _alignment_and_spectrum(x, y) -> dict[str, Any]:
 def _audio(reference: Path, candidate: Path, *, refprobe: dict,
            canprobe: dict, seconds: float) -> dict:
     ra, ca = _stream(refprobe, "audio"), _stream(canprobe, "audio")
-    if ra is None or ca is None:
-        return {"status": "NOT_APPLICABLE", "reason": "BOTH_AUDIO_STREAMS_REQUIRED"}
+    if (ra is None) != (ca is None):
+        raise ObservationError("FIDELITY_AUDIO_STREAM_TOPOLOGY_MISMATCH")
+    if ra is None and ca is None:
+        return {"status": "NOT_APPLICABLE", "reason": "BOTH_AUDIO_STREAMS_ABSENT"}
+    if ra.get("channels") != ca.get("channels") or ra.get("sample_rate") != ca.get("sample_rate"):
+        raise ObservationError("FIDELITY_AUDIO_CHANNEL_OR_SAMPLE_RATE_MISMATCH")
     import numpy as np
     x, y = _pcm(reference, seconds), _pcm(candidate, seconds)
     expected = int(seconds * PCM_HZ)
