@@ -21,7 +21,7 @@ MEDIA_CAPABILITY_ID = "reverse-engineering.media.observe"
 REA_CAPABILITY_ID = "reverse-engineering.software.rea-static"
 MEDIA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_media_observation"
 REA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_software_observation"
-_ALLOWED_MEDIA_PAYLOAD = frozenset({"source_path", "rights", "transcript_path", "include_scene_cuts", "owner_goal", "candidate_path", "candidate_rights"})
+_ALLOWED_MEDIA_PAYLOAD = frozenset({"source_path", "rights", "transcript_path", "include_scene_cuts", "include_audio_dynamics", "adaptive_shot_window_seconds", "owner_goal", "candidate_path", "candidate_rights"})
 _ALLOWED_SOFTWARE_PAYLOAD = frozenset({"source_path", "rights"})
 _SOFTWARE_RIGHTS = frozenset({"owned", "licensed", "observation_only"})
 _SENSITIVE_PATH_MARKERS = frozenset({".ssh", ".aws", ".env", ".run", ".git", "credentials", "tokens", "private_material", "owner_voice", "audition-ledger"})
@@ -106,9 +106,17 @@ def execute_authorized_media_observation(
     transcript = _scope(auth, transcript_path) if transcript_path is not None else None
     if type(args.get("include_scene_cuts", False)) is not bool:
         raise PermissionError("REVERSE_ENGINEERING_SCENE_FLAG_INVALID")
+    if type(args.get("include_audio_dynamics", False)) is not bool:
+        raise PermissionError("REVERSE_ENGINEERING_DYNAMICS_FLAG_INVALID")
+    if args.get("adaptive_shot_window_seconds") is not None:
+        shot = args["adaptive_shot_window_seconds"]
+        if type(shot) not in (float, int) or not 0 < shot <= 90:
+            raise PermissionError("REVERSE_ENGINEERING_SHOT_WINDOW_INVALID")
     observation = analyze_forensics(
         source, rights=args["rights"], transcript=transcript,
         include_scene_cuts=args.get("include_scene_cuts", False),
+        include_audio_dynamics=args.get("include_audio_dynamics", False),
+        adaptive_shot_window_seconds=args.get("adaptive_shot_window_seconds"),
     )
     candidate = None
     if args.get("candidate_path") is not None:
