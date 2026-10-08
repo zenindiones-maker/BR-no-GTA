@@ -8,5 +8,7 @@
   "recover_pending_telegram_updates": true,
   "owner_asserted_pronunciation_targets": [
     "Vice City"
-  ]
+  ],
+  "experiment_id": "V12_COHERENT_OWNED_REFERENCE_PROMPT_ONE_CANDIDATE",
+  "evidence_goal": "measure_owner_speaker_identity_no_automatic_approval"
 }
