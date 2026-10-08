@@ -15,10 +15,10 @@
     {
       "identity": "vice-city",
       "term": "Vice City",
-      "status": "REFERENCE_SOUND_APPROVED_NEW_PTBR_RENDER_PENDING",
+      "status": "OWNER_EXPLICIT_TARGET_ACOUSTIC_AUDITION_PENDING",
       "source_type": "HUMAN_REVIEW",
-      "source_ref": "Human previously approved the target sound, but global dubbing was later rejected; new pt-BR-lane rendering requires fresh review",
-      "synthesis": "Váis Síti",
+      "source_ref": "Owner explicitly set vaicy siti; previous Váis Síti was superseded. Fresh BR_OWNER_V1 render and human ear approval still required",
+      "synthesis": "vaicy siti",
       "locale": "pt-BR",
       "target_ipa": "vaɪs ˈsɪti"
     },
