@@ -187,7 +187,7 @@ class OwnerVoiceAuditionGitLedgerStore:
         return self._push_candidate_bounded(expected_head_sha=expected_head_sha,candidate=candidate)
 
     def _push_candidate_bounded(self,*,expected_head_sha:str,candidate:str)->str:
-        """Retry once only for GitHub commit_refs 52 after exact remote readback.
+        """Retry once only for GitHub commit_refs failures after exact remote readback.
 
         This is a ledger Git push only. It cannot retry or authorize Telegram
         media sends and cannot force-push a changed branch.
@@ -215,7 +215,7 @@ class OwnerVoiceAuditionGitLedgerStore:
                 )
             stderr=(cp.stderr or cp.stdout or "").strip()
             transient_commit_refs=(
-                cp.returncode==52 and "fatal error in commit_refs" in stderr.lower()
+                cp.returncode!=0 and "fatal error in commit_refs" in stderr.lower()
             )
             if attempt==0 and transient_commit_refs:
                 # No force, no new commit, no blind Telegram operation.
