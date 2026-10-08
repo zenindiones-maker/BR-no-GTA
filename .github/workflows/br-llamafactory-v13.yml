@@ -11,6 +11,7 @@ on:
       - "tests/test_br_llamafactory_training_admission_v13.py"
       - ".github/workflows/br-llamafactory-v13.yml"
       - "docs/architecture/br-llamafactory-harness-v13.md"
+      - "AGENTS.md"
   workflow_dispatch:
 
 permissions:
