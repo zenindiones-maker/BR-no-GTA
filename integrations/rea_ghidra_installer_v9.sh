@@ -9,10 +9,12 @@ PREFIX="${BR_GHIDRA_PRIVATE_PREFIX:?Set newly allocated private prefix}"
 [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]] || { echo "GHIDRA_HOST_NOT_SUPPORTED"; exit 2; }
 [[ "$PREFIX" = /* && ! -e "$PREFIX" && ! -L "$PREFIX" ]] || { echo "GHIDRA_PREFIX_UNSAFE"; exit 2; }
 command -v curl >/dev/null && command -v unzip >/dev/null && command -v sha256sum >/dev/null
-java -version 2>&1 | grep -E 'version "21|version "2[2-9]' >/dev/null || {
+test -x "${JAVA_HOME:?JDK21_JAVA_HOME_REQUIRED}/bin/java"
+test -x "$JAVA_HOME/bin/javac"
+"$JAVA_HOME/bin/java" -version 2>&1 | grep -E 'version "21|version "2[2-9]' >/dev/null || {
   echo "GHIDRA_JDK_TOO_OLD_OR_MISSING"; exit 2;
 }
-javac -version 2>&1 | grep -E 'javac (21|2[2-9])' >/dev/null || {
+"$JAVA_HOME/bin/javac" -version 2>&1 | grep -E 'javac (21|2[2-9])' >/dev/null || {
   echo "GHIDRA_JDK_COMPILER_MISSING"; exit 2;
 }
 mkdir -m 700 "$PREFIX"
