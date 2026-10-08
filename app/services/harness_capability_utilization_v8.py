@@ -185,3 +185,67 @@ def capability_utilization_report(*, registry: Any, rea_probe: dict | None = Non
     }
     result["evidence_sha256"] = _hash(result)
     return result
+
+
+
+def propose_next_utilization_probe(
+    *, report: dict[str, Any], tool: str, operation: str,
+) -> dict[str, Any]:
+    """Return a deterministic *test suggestion*, never live routing.
+
+    Surface states are read from this module's static security inventory;
+    report contents are informational and cannot authorize a new operation.
+    """
+    if (not isinstance(report, dict) or report.get("schema_version") != SCHEMA
+        or report.get("evidence_sha256") != _hash(
+            {k: v for k, v in report.items() if k != "evidence_sha256"}
+        )):
+        raise ValueError("HARNESS_UTILIZATION_REPORT_TAMPERED_OR_INVALID")
+    defined = {"iris": dict(IRIS_SURFACES), "rea": dict(REA_SURFACES)}
+    if tool not in defined or operation not in defined[tool]:
+        return {
+            "status": "BLOCKED_UNKNOWN_OPERATION",
+            "execution_authorized": False, "routing_changed": False,
+        }
+    policy = defined[tool][operation]
+    next_actions = {
+        "LOCAL_MEASURED": ("REPEAT_ON_NEW_OWNED_BENCHMARK", "EVIDENCE_REVIEW"),
+        "E2E_REQUIRED": ("RUN_LOCAL_SCOPED_FIXTURE", "TEST_CI"),
+        "POLICY_BOUNDED": ("REVIEW_EXACT_REQUESTED_VIEWPORT", "SECURITY_REVIEW"),
+        "NOT_ENABLED": ("REQUIRE_NEW_OWNER_POLICY_APPROVAL", "NO_EXECUTION"),
+        "NETWORK_CONTAINMENT_REQUIRED": ("AUDIT_NETWORK_ISOLATION", "NO_EXECUTION"),
+        "CONTROLLED_MCP_GATE_REQUIRED": ("BUILD_HARNESS_MEDIATED_MCP_GATE", "NO_EXECUTION"),
+        "NATIVE_PROVIDER_REQUIRED": ("ATTEST_PROVIDER_DOCTOR", "NO_EXECUTION"),
+        "CONTAINED_RUNTIME_REQUIRED": ("AUDIT_PROCESS_SANDBOX", "NO_EXECUTION"),
+        "INTEGRATION_REQUIRED": ("BUILD_EXACT_SCOPE_ADAPTER", "TEST_CI"),
+    }
+    action, boundary = next_actions[policy]
+    # A successful discovery only changes planning priorities, never execution.
+    if tool == "rea" and operation in {
+        "capability_inventory", "provider_doctor", "provider_inventory"
+    }:
+        probe_states = {
+            "capability_inventory": "capabilities",
+            "provider_doctor": "doctor",
+            "provider_inventory": "providers",
+        }
+        observed = report.get("rea_discovery")
+        if observed and observed.get("catalog", {}).get(
+            probe_states[operation], {}
+        ).get("readiness") == "DISCOVERY_SUCCEEDED":
+            action, boundary = ("AUDIT_PROBED_CATALOG_FOR_NEXT_APPROVED_FIXTURE",
+                                "REVIEW_REQUIRED")
+    return {
+        "status": "PROPOSAL_ONLY",
+        "tool": tool,
+        "operation": operation,
+        "policy_state": policy,
+        "next_action": action,
+        "boundary": boundary,
+        "harness_authorization_required": True,
+        "runtime_readiness_attested": False,
+        "execution_authorized": False,
+        "routing_changed": False,
+        "memory_written": False,
+        "production_approved": False,
+    }
