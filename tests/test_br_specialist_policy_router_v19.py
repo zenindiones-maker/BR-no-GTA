@@ -78,6 +78,11 @@ def test_ledger_never_receives_automatic_private_authority():
     {"resource_admitted":"yes"},
     {"remote_ledger_grant":"yes"},
     {"consequence":"URGENT"},
+    {"operation":["reconcile_private_delivery"]},
+    {"operation":"a"*200},
+    {"rights":["owned"]},
+    {"file_extension":[".mp4"]},
+    {"uncertainty":True},
 ])
 def test_invalid_router_arguments_fail_closed(changed):
     with pytest.raises(ValueError,match="ARGUMENTS_INVALID"):
