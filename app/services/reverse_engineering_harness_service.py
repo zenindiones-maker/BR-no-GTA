@@ -21,6 +21,7 @@ from app.services.reverse_engineering_learning_proposal_service import plan_orig
 MEDIA_CAPABILITY_ID = "reverse-engineering.media.observe"
 REA_CAPABILITY_ID = "reverse-engineering.software.rea-static"
 WEB_HAR_CAPABILITY_ID = "reverse-engineering.web.har-observe"
+EXPERIMENT_CAPABILITY_ID = "reverse-engineering.experiment.assess"
 MEDIA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_media_observation"
 REA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_software_observation"
 WEB_HAR_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_web_har_observation"
@@ -246,6 +247,61 @@ def execute_authorized_web_har_observation(
         "status": "MEASURED",
         "evidence": observation,
         "approval": "NOT_REQUESTED",
+        "production_mutation": False,
+        "authority": "DEEPSEEK_HARNESS",
+    }
+
+
+def execute_authorized_experiment_assessment(
+    *, authorization: Any, routing_decision: Any, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Gate statistical evaluation on persisted exact-dataset Harness authority.
+
+    Does not read a source, run a media processor, schedule, learn, or change
+    routing. Only hashes and scalar outcomes may cross this evaluation boundary.
+    """
+    auth = _authorized_context(
+        authorization=authorization, routing_decision=routing_decision,
+        capability_id=EXPERIMENT_CAPABILITY_ID,
+    )
+    if not isinstance(payload, dict) or set(payload) != {
+        "dataset", "observations", "allowed_technique_ids",
+    }:
+        raise PermissionError("EXPERIMENT_PAYLOAD_SCHEMA_FORBIDDEN")
+    allowed = auth.lineage.get("allowed_technique_ids")
+    if (not isinstance(allowed, list) or len(allowed) > 8 or
+        not allowed or payload["allowed_technique_ids"] != allowed):
+        raise PermissionError("EXPERIMENT_TECHNIQUE_AUTHORIZATION_MISMATCH")
+    pinned_hash = auth.lineage.get("experiment_dataset_sha256")
+    dataset = payload["dataset"]
+    if (not isinstance(dataset, dict) or not isinstance(pinned_hash, str) or
+        dataset.get("dataset_sha256") != pinned_hash):
+        raise PermissionError("EXPERIMENT_DATASET_AUTHORIZATION_MISMATCH")
+    if (auth.lineage.get("experiment_domain") != dataset.get("domain") or
+        auth.lineage.get("experiment_task_class") != dataset.get("task_class")):
+        raise PermissionError("EXPERIMENT_DOMAIN_AUTHORIZATION_MISMATCH")
+    from app.services.reverse_engineering_experiment_intelligence_v4 import (
+        assess_technique_experiments, choose_next_benchmark,
+    )
+    report = assess_technique_experiments(
+        dataset=dataset,
+        observations=payload["observations"],
+        allowed_technique_ids=allowed,
+    )
+    followup = choose_next_benchmark(
+        assessment=report, eligible_technique_ids=allowed,
+    )
+    return {
+        "schema_version": "BRHarnessReverseEngineeringResult/v1",
+        "capability_id": EXPERIMENT_CAPABILITY_ID,
+        "authorization_id": auth.authorization_id,
+        "harness_decision_id": auth.harness_decision_id,
+        "execution_id": auth.execution_id,
+        "status": "ASSESSED_NOT_LEARNED",
+        "evidence": report,
+        "next_benchmark_proposal": followup,
+        "approval": "NOT_REQUESTED",
+        "memory_write": "NOT_ATTEMPTED",
         "production_mutation": False,
         "authority": "DEEPSEEK_HARNESS",
     }
