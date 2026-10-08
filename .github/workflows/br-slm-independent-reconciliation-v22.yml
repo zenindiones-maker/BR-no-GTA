@@ -1,0 +1,95 @@
+name: BR V22 Independent SLM Evidence and Fresh Holdout
+on:
+  push:
+    branches:
+      - work/br-slm-independent-reconciliation-v22
+    paths:
+      - "app/services/br_slm_evidence_verifier_v22.py"
+      - "scripts/br_slm_heldout_probe_v22.py"
+      - "tests/test_br_slm_evidence_verifier_v22.py"
+      - ".github/workflows/br-slm-independent-reconciliation-v22.yml"
+      - "docs/architecture/br-slm-independent-reconciliation-v22.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-v22-frozen-shadow
+  cancel-in-progress: false
+
+jobs:
+  independent-evidence-policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Prove no-authority reconciliation catches tampering
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set -euo pipefail
+          python -m pip install -q --disable-pip-version-check pytest==8.4.2
+          python -m pytest -q tests/test_br_slm_evidence_verifier_v22.py
+          echo "V22_INDEPENDENT_POLICY_TESTS=PASS"
+
+  pinned-onnx-reproduce-and-new-cases:
+    needs: independent-evidence-policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+      HF_HUB_DISABLE_XET: "1"
+      TOKENIZERS_PARALLELISM: "false"
+      OMP_NUM_THREADS: "2"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Install same proven CPU-only ONNX dependencies as V21
+        run: |
+          set -euo pipefail
+          python -m pip install -q --disable-pip-version-check \
+            numpy==2.2.6 onnxruntime==1.23.2 tokenizers==0.22.1 \
+            huggingface-hub==0.36.0
+      - name: Re-run unchanged V21 baseline and independent V22 frozen holdout
+        run: |
+          set -euo pipefail
+          export HF_HOME="$RUNNER_TEMP/hf-v22-cache"
+          mkdir -m 700 "$RUNNER_TEMP/mini-onnx-v22"
+          python scripts/br_slm_heldout_probe_v22.py \
+            --private-model-dir "$RUNNER_TEMP/mini-onnx-v22" \
+            --private-baseline-output "$RUNNER_TEMP/slm-v21-reproduced.json" \
+            --private-review-output "$RUNNER_TEMP/slm-v22-reviewed.json"
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          report=json.loads((Path(os.environ["RUNNER_TEMP"])/"slm-v22-reviewed.json").read_text())
+          digest=hashlib.sha256(json.dumps(
+              {k:v for k,v in report.items() if k!="receipt_sha256"},
+              sort_keys=True, separators=(",",":"), ensure_ascii=False, allow_nan=False
+          ).encode()).hexdigest()
+          assert report["receipt_sha256"]==digest
+          assert report["holdout_case_count"]==28
+          assert report["holdout_domain_count"]==16
+          assert report["holdout_ood_count"]==12
+          assert len(report["v21_mismatches"]) + report["baseline_review"]["domain_correct"] + report["baseline_review"]["ood_correct"] == 20
+          assert report["model_promoted"] is False
+          assert report["model_policy_authority"] is False
+          assert report["model_fine_tune"] is False
+          assert report["telegram_send"] is False
+          assert report["paid_calls"] == 0
+          print("V22_RECONCILIATION_RECEIPT_INTEGRITY=PASS")
+          print("V22_MODEL_PROMOTED=FALSE")
+          print("V22_REPORTED_QUALITY_NOT_A_CI_SUCCESS_CLAIM=TRUE")
+          PY
