@@ -38,3 +38,12 @@ The detailed GTA6 research/editorial/production guidance is versioned in the
 referenced domain document rather than duplicated here. Repository contracts
 and versioned policy override stale prose. Fail closed on conflicting authority
 instructions or broken mandatory references.
+
+## Single-human voice/release gates V11 (isolated candidate)
+
+Follow docs/architecture/br-owner-voice-and-production-gates-v11.md. Single
+BR_OWNER_V1 human reference from Telegram only; Qwen 1.7B Base serial calls,
+private per-segment metrics and no reuse of rejected audio. Scratch
+checkpoints are NOT cross-run durable. Real owner-certified voice then complete
+20–25 minute professional render then private Telegram/YouTube owner approval.
+No fallback voice, unattended delivery, canonical promotion, or invented PASS.
