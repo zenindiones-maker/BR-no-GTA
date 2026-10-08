@@ -105,10 +105,20 @@ def _iris_path(explicit: str | Path) -> Path:
 def capture_owned_static_page(
     *, source_path: str | Path, output_path: str | Path, iris_binary: str | Path,
     size: str = "960x600", selector: str | None = None,
+    full_page: bool = False, dark: bool = False, padding: int = 0,
+    wait_for: str | None = None,
 ) -> dict[str, Any]:
     """Store a screenshot privately, and issue a bounded nonapproval evidence receipt."""
     if size not in ("960x600", "390x844"):
         raise ObservationError("IRIS_VIEWPORT_UNSUPPORTED")
+    if type(full_page) is not bool or type(dark) is not bool:
+        raise ObservationError("IRIS_MODE_FLAGS_INVALID")
+    if full_page and selector is not None:
+        raise ObservationError("IRIS_FULL_PAGE_SELECTOR_CONFLICT")
+    if type(padding) is not int or not 0 <= padding <= 48 or (padding and selector is None):
+        raise ObservationError("IRIS_PADDING_UNSUPPORTED")
+    if wait_for is not None and (not isinstance(wait_for,str) or not _SELECTOR.fullmatch(wait_for)):
+        raise ObservationError("IRIS_WAIT_FOR_UNSUPPORTED")
     if selector is not None and (
         not isinstance(selector, str) or not _SELECTOR.fullmatch(selector)
         or len(selector) > MAX_SELECTOR_CHARS
@@ -131,6 +141,14 @@ def capture_owned_static_page(
         ]
         if selector:
             cmd.extend(["--selector", selector])
+            if padding:
+                cmd.extend(["--padding", str(padding)])
+        if full_page:
+            cmd.append("--full")
+        if dark:
+            cmd.append("--dark")
+        if wait_for:
+            cmd.extend(["--wait-for", wait_for])
         cmd.append(source.as_uri())
         try:
             run = subprocess.run(cmd, capture_output=True, text=True,
@@ -148,7 +166,9 @@ def capture_owned_static_page(
             raise ObservationError("IRIS_CAPTURE_JSON_INVALID") from exc
         if (info.get("status") != "ok" or info.get("url") != source.as_uri()
             or info.get("format") != "png" or info.get("output") != str(stage)
-            or info.get("mode") != ("element" if selector else "viewport")):
+            or info.get("mode") != ("element" if selector else "full_page" if full_page else "viewport")
+            or (selector is not None and info.get("selector") != selector)
+            or (selector is not None and padding and info.get("padding") != padding)):
             raise ObservationError("IRIS_CAPTURE_METADATA_MISMATCH")
         if not stage.is_file() or stage.is_symlink() or not 24 <= stage.stat().st_size <= MAX_PNG_BYTES:
             raise ObservationError("IRIS_CAPTURE_PNG_MISSING_OR_OVERSIZED")
@@ -158,7 +178,7 @@ def capture_owned_static_page(
             raise ObservationError("IRIS_CAPTURE_PNG_CORRUPT")
         width = int.from_bytes(data[16:20], "big")
         height = int.from_bytes(data[20:24], "big")
-        if (width <= 0 or height <= 0 or width * height > 1_500_000
+        if (width <= 0 or height <= 0 or width * height > 6_000_000
             or width != info.get("css_width") or height != info.get("css_height")):
             raise ObservationError("IRIS_CAPTURE_DIMENSIONS_INVALID")
         fd = os.open(out, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -174,7 +194,9 @@ def capture_owned_static_page(
         "image_sha256": hashlib.sha256(data).hexdigest(),
         "image_bytes": len(data), "image_width": width, "image_height": height,
         "private_output_path": str(out),
-        "capture_mode": "local_static_element" if selector else "local_static_viewport",
+        "capture_mode": "local_static_element" if selector else "local_static_full_page" if full_page else "local_static_viewport",
+        "dark": dark, "padding": padding, "wait_for_used": wait_for is not None,
+        "full_page": full_page,
         "iris_version": IRIS_VERSION, "iris_binary_sha256": _sha256(iris),
         "browser_rendered": True, "external_network_egress_verified_blocked": False,
         "live_website_capture": False, "mcp_registered": False,
