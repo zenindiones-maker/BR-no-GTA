@@ -19,8 +19,10 @@ from app.services.reverse_engineering_learning_proposal_service import plan_orig
 
 MEDIA_CAPABILITY_ID = "reverse-engineering.media.observe"
 REA_CAPABILITY_ID = "reverse-engineering.software.rea-static"
+WEB_HAR_CAPABILITY_ID = "reverse-engineering.web.har-observe"
 MEDIA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_media_observation"
 REA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_software_observation"
+WEB_HAR_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_web_har_observation"
 _ALLOWED_MEDIA_PAYLOAD = frozenset({"source_path", "rights", "transcript_path", "include_scene_cuts", "include_audio_dynamics", "adaptive_shot_window_seconds", "owner_goal", "candidate_path", "candidate_rights"})
 _ALLOWED_SOFTWARE_PAYLOAD = frozenset({"source_path", "rights"})
 _SOFTWARE_RIGHTS = frozenset({"owned", "licensed", "observation_only"})
@@ -212,6 +214,32 @@ def execute_authorized_software_observation(
             "result_top_level_keys": sorted(str(key) for key in envelope)[:50],
             "limitations": "result digest only; no claim of runtime behavior or original source",
         },
+        "approval": "NOT_REQUESTED",
+        "production_mutation": False,
+        "authority": "DEEPSEEK_HARNESS",
+    }
+
+
+def execute_authorized_web_har_observation(
+    *, authorization: Any, routing_decision: Any, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Inspect a stored HAR without any network or browser execution."""
+    auth = _authorized_context(
+        authorization=authorization, routing_decision=routing_decision,
+        capability_id=WEB_HAR_CAPABILITY_ID,
+    )
+    args = _payload(payload, frozenset({"source_path", "rights"}))
+    source = _scope(auth, args["source_path"])
+    from app.services.reverse_engineering_web_har_service import analyze_web_har
+    observation = analyze_web_har(source, rights=args["rights"])
+    return {
+        "schema_version": "BRHarnessReverseEngineeringResult/v1",
+        "capability_id": WEB_HAR_CAPABILITY_ID,
+        "authorization_id": auth.authorization_id,
+        "harness_decision_id": auth.harness_decision_id,
+        "execution_id": auth.execution_id,
+        "status": "MEASURED",
+        "evidence": observation,
         "approval": "NOT_REQUESTED",
         "production_mutation": False,
         "authority": "DEEPSEEK_HARNESS",
