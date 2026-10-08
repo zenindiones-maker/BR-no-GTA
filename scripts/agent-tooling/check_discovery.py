@@ -8,6 +8,13 @@ import subprocess
 import sys
 import time
 
+# Direct script invocation sets sys.path[0] to scripts/agent-tooling, not
+# repository root. Resolve only this script's tracked parent; no PYTHONPATH
+# inheritance from untrusted environments or alternate plugin paths.
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0,str(_REPOSITORY_ROOT))
+
 from app.services.global_capability_registry_base import ADDY_SKILLS
 
 PLUGIN_ID = "agent-skills@agent-skills"
