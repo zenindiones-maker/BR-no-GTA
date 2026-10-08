@@ -522,7 +522,8 @@ def br_capability_execute(
             },
             "boundary": (
                 "Public MCP cannot issue Addy execution authority; "
-                "use persisted internal Harness authorization and routing"
+                "no model turn started; use persisted internal Harness "
+                "authorization and routing"
             ),
         }
         receipt = canonical_execution_result(
