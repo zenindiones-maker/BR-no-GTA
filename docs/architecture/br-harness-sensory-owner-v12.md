@@ -31,7 +31,7 @@ For browser state, Playwright guidance distinguishes screenshot inspection from 
 1. Real BR_OWNER_V1 audition: coherent prompt design still needs measured voice identity, Brazilian pronunciation, fluency and explicit owner approval; candidate 666 was not approved.
 2. Full 20–25 minute program: a synthetic MP4 test does not establish real editorial content, no overlays, asset rights or accurate scene timing. Integrate V10b into a reviewed common base before claiming production readiness.
 3. Telegram and YouTube: need confirmed new audition message plus owner ACCEPT and actual private HD full-video upload before final publishing approval.
-4. Worktree coherence: REA/Iris/V10b and Voice V11/V12 live on separate branches. CI PASS in each is not proof of integrated canonical runtime. Preserve all work and require deterministic conflict resolution and independent security review before promotion.
+4. Worktree coherence: V12 now imports the V10 sampled media QA, V10b independent full-audio/full-video decode and remediation board into the same isolated branch as Voice V11b and the pixel observation adapter. Real end-to-end CI on that combined branch must pass before calling the integration tested. REA and Iris native/browser implementations remain on their own research branches, and NOTHING is promoted to canonical until exact-bound security review and deliberate consolidation.
 5. Durable TTS inference across GitHub runner shutdown is not implemented; local per-segment temporary WAVs disappear after job loss. Private encrypted storage, authenticated lineage and recovery need a separately approved design.
 6. Semantic 'eyes' need an authorized multimodal model that actually consumes decoded frames with grounded citations, controlled prompts and tests on failure cases. The present V12 observes pixels but does not interpret subject identity or visual meaning.
 
@@ -40,3 +40,7 @@ For browser state, Playwright guidance distinguishes screenshot inspection from 
 Observe -> measure -> compare with original/negative controls -> explain confidence and failed boundary -> independently review -> authorize specific next step. No endless rerun, no trusting raw pseudocode or external visual text as an instruction, no auto-canonical promotion and no changes to BR_OWNER_V1 security boundaries.
 
 Sources: https://ffmpeg.org/ffprobe.html ; https://ffmpeg.org/ffmpeg-filters.html ; https://github.com/QwenLM/Qwen3-TTS ; https://playwright.dev/docs/screenshots
+
+## V12 production QA convergence
+
+In the same development branch, the Harness now has two distinct persisted RESEARCH tools: reverse-engineering.multimodal.sensory-pixels-v12 (bounded private pixel observation) and production.technical-media-forensics (FFprobe/FFmpeg evidence from the V10/V10b suite). For the latter, sample-level QA is followed by optional independent full video and full audio decoding, then a deterministic board of next technical actions. Both explicitly return publication=FORBIDDEN, production_ready=false or semantic understanding=false, and neither may approve the owner voice. This is a research-plane integration, not a replacement for the original production controller.
