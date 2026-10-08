@@ -81,9 +81,11 @@ jobs:
           python - <<'PY'
           import os
           from pathlib import Path
+          from app.database.schema import initialize_schema
           from app.services.harness_authorization_service import issue_harness_authorization
           from app.services.reverse_engineering_harness_service import IRIS_CAPABILITY_ID
           root=Path(os.environ["RUNNER_TEMP"])
+          initialize_schema()
           a=issue_harness_authorization(
               authorized_action="RESEARCH",
               subject=f"capability:{IRIS_CAPABILITY_ID}",
