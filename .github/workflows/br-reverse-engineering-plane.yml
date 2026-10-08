@@ -4,6 +4,7 @@ on:
     branches:
       - work/br-extreme-reverse-engineering-v1
       - work/br-reverse-engineering-evidence-v3
+      - work/br-reverse-engineering-experiment-intelligence-v4
     paths:
       - "app/services/reverse_engineering_media_service.py"
       - "app/services/reverse_engineering_forensics_service.py"
@@ -11,6 +12,9 @@ on:
       - "app/services/reverse_engineering_audio_v3_service.py"
       - "app/services/reverse_engineering_web_har_service.py"
       - "app/services/reverse_engineering_longform_coverage_service.py"
+      - "app/services/reverse_engineering_experiment_intelligence_v4.py"
+      - "tests/test_reverse_engineering_experiment_intelligence_v4.py"
+      - "tests/test_reverse_engineering_experiment_harness_v4.py"
       - "tests/test_reverse_engineering_longform_coverage.py"
       - "tests/test_reverse_engineering_web_har_v3.py"
       - "tests/test_reverse_engineering_multimodal_v3.py"
@@ -54,7 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check -q pytest "python-dotenv==1.2.3" "scenedetect==0.7.1" "opencv-python-headless==4.12.0.88"
-          python -m pytest -q tests/test_reverse_engineering_media_service.py tests/test_reverse_engineering_harness_v2.py tests/test_reverse_engineering_story_v1.py tests/test_reverse_engineering_learning_proposal_v1.py tests/test_reverse_engineering_multimodal_v3.py tests/test_reverse_engineering_web_har_v3.py tests/test_reverse_engineering_longform_coverage.py tests/test_global_capability_registry.py
+          python -m pytest -q tests/test_reverse_engineering_media_service.py tests/test_reverse_engineering_harness_v2.py tests/test_reverse_engineering_story_v1.py tests/test_reverse_engineering_learning_proposal_v1.py tests/test_reverse_engineering_multimodal_v3.py tests/test_reverse_engineering_web_har_v3.py tests/test_reverse_engineering_longform_coverage.py tests/test_reverse_engineering_experiment_intelligence_v4.py tests/test_reverse_engineering_experiment_harness_v4.py tests/test_global_capability_registry.py
       - name: Install required FFmpeg observation runtime
         run: |
           set -euo pipefail
