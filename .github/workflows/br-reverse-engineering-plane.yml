@@ -456,6 +456,7 @@ jobs:
             --authorization-id "$BR_STUDIO_HARNESS_AUTH_ID" \
             --mode alignment --rights owned \
             --input "$RUNNER_TEMP/v6-owned/alignment-fixture.json" \
+            --input "$RUNNER_TEMP/v6-owned/stem-one.wav" \
             --output "$RUNNER_TEMP/studio-alignment.json"
           python scripts/br_studio_forensics_v6.py \
             --authorization-id "$BR_STUDIO_HARNESS_AUTH_ID" \
