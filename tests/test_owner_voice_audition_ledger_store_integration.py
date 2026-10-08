@@ -64,3 +64,73 @@ def test_real_local_git_store_is_fast_forward_cas_and_stale_writer_fails(tmp_pat
             mission_head={"state_version":0,"value":"stale"},
             immutable_objects={},
         )
+
+
+
+@pytest.mark.parametrize("malicious_id", [
+    "../another-mission", "owner/voice", ".git", "mission\\name", "mission a",
+])
+def test_no_cross_mission_snapshot_path_escape(tmp_path,malicious_id):
+    key=tmp_path/"key"
+    key.write_text("synthetic")
+    store=OwnerVoiceAuditionGitLedgerStore(
+        repo_root=tmp_path,repository_ssh=str(tmp_path/"unused.git"),
+        ssh_private_key_path=key,
+    )
+    with pytest.raises(ValueError,match="MISSION_ID_UNSAFE"):
+        store.snapshot(malicious_id)
+
+
+@pytest.mark.parametrize("bad_events",[
+    {"missions/other/events/v000000.json":{"event":"evil"}},
+    {"missions/mission-a/head.json":{"state_version":999}},
+    {"missions/mission-a/events/../../secrets.json":{"event":"evil"}},
+    {"missions/mission-a/events/v000001.json":{"event":"skip"}},
+])
+def test_invalid_or_cross_mission_event_path_blocks_before_git(tmp_path,monkeypatch,bad_events):
+    key=tmp_path/"key"
+    key.write_text("synthetic")
+    store=OwnerVoiceAuditionGitLedgerStore(
+        repo_root=tmp_path,repository_ssh=str(tmp_path/"unused.git"),
+        ssh_private_key_path=key,
+    )
+    def forbidden(*_args,**_kwargs):
+        raise AssertionError("No remote Git access should be attempted")
+    monkeypatch.setattr(store,"snapshot",forbidden)
+    with pytest.raises(ValueError,match="IMMUTABLE_EVENT_SCOPE_INVALID"):
+        store.transact(
+            mission_id="mission-a",expected_head_sha="1"*40,
+            expected_state_version=None,mission_head={"state_version":0},
+            immutable_objects=bad_events,
+        )
+
+
+def test_non_monotonic_mission_state_rejected_before_remote(tmp_path,monkeypatch):
+    key=tmp_path/"key"
+    key.write_text("synthetic")
+    store=OwnerVoiceAuditionGitLedgerStore(
+        repo_root=tmp_path,repository_ssh=str(tmp_path/"unused.git"),
+        ssh_private_key_path=key,
+    )
+    monkeypatch.setattr(store,"snapshot",lambda *_:(_ for _ in ()).throw(
+        AssertionError("Git should never be read")))
+    with pytest.raises(ValueError,match="NON_MONOTONIC_VERSION"):
+        store.transact(
+            mission_id="mission-a",expected_head_sha="1"*40,
+            expected_state_version=7,
+            mission_head={"state_version":7},
+            immutable_objects={},
+        )
+
+
+def test_invalid_git_push_oid_blocks_even_remote_reads(tmp_path,monkeypatch):
+    key=tmp_path/"key"
+    key.write_text("synthetic")
+    store=OwnerVoiceAuditionGitLedgerStore(
+        repo_root=tmp_path,repository_ssh=str(tmp_path/"unused.git"),
+        ssh_private_key_path=key,
+    )
+    monkeypatch.setattr(store,"_remote_oid",lambda:(_ for _ in ()).throw(
+        AssertionError("Git must not even be queried")))
+    with pytest.raises(ValueError,match="COMMIT_OID_INVALID"):
+        store._push_candidate_bounded(expected_head_sha="a"*40,candidate="--force")
