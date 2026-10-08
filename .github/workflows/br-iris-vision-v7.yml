@@ -156,7 +156,7 @@ jobs:
           <body><main><h1 id="hero">OWNED VISUAL RESEARCH</h1>
           <p>This local document is deliberately taller than the viewport.</p></main></body></html>
           HTML
-          export BR_IRIS_AUTH_ID="$(grep '^BR_IRIS_AUTH_ID=' "$GITHUB_ENV" | tail -n 1 | cut -d= -f2-)"
+          test -n "${BR_IRIS_AUTH_ID:-}"
           python scripts/br_iris_visual_observe_v7.py \
             --authorization-id "$BR_IRIS_AUTH_ID" \
             --input "$RUNNER_TEMP/approved-iris-pages/tall-fixture.html" \
