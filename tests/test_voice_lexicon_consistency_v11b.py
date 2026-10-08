@@ -24,7 +24,8 @@ def test_owner_spoken_vice_city_is_same_in_runtime_editorial_and_evidence():
     assert evidence["status"]=="OWNER_EXPLICIT_TARGET_ACOUSTIC_AUDITION_PENDING"
     assert "Váis Síti" in evidence["source_ref"]
     assert "Váis Síti" in candidate["source"]
-    assert _entry("pronunciation_lexicon.json")[1]["policy"]["automatic_promotion"] is False
+    assert _entry("pronunciation_ptbr_candidate.json")[1]["policy"]["automatic_promotion"] is False
+    assert _entry("pronunciation_lexicon.json")[1]["policy"]["same_owner_voice_required"] is True
 
 
 def test_canonical_vice_city_is_not_wrongly_replaced_in_script():
