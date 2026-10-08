@@ -33,6 +33,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--detect-scenes", action="store_true")
     parser.add_argument("--audio-dynamics", action="store_true", help="Run FFmpeg overall signal stats")
     parser.add_argument("--adaptive-shot-window", type=float, help="Opt in to 0-90s adaptive scene observation")
+    parser.add_argument("--adaptive-shot-start", type=float, default=0.0, help="Authorized shot observation start time")
     parser.add_argument("--output", required=True, help="New private JSON result file")
     args = parser.parse_args(argv)
 
@@ -40,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     target = Path(args.output).expanduser()
     if target.exists() or target.is_symlink() or not target.is_absolute() or not target.parent.is_dir():
         raise PermissionError("REVERSE_ENGINEERING_OUTPUT_PATH_NOT_FRESH")
-    if args.mode in {"rea-js", "web-har"} and (args.transcript or args.detect_scenes or args.goal or args.candidate or args.audio_dynamics or args.adaptive_shot_window is not None):
+    if args.mode in {"rea-js", "web-har"} and (args.transcript or args.detect_scenes or args.goal or args.candidate or args.audio_dynamics or args.adaptive_shot_window is not None or args.adaptive_shot_start != 0.0):
         raise PermissionError("REA_JS_MEDIA_FLAGS_FORBIDDEN")
     capability_id = {"media": MEDIA_CAPABILITY_ID, "rea-js": REA_CAPABILITY_ID, "web-har": WEB_HAR_CAPABILITY_ID}[args.mode]
     domain = {"media": "audiovisual-analysis", "rea-js": "software-investigation", "web-har": "website-observation"}[args.mode]
@@ -62,6 +63,9 @@ def main(argv: list[str] | None = None) -> int:
             payload["include_audio_dynamics"] = True
         if args.adaptive_shot_window is not None:
             payload["adaptive_shot_window_seconds"] = args.adaptive_shot_window
+            payload["adaptive_shot_start_seconds"] = args.adaptive_shot_start
+        elif args.adaptive_shot_start != 0.0:
+            parser.error("--adaptive-shot-start requires --adaptive-shot-window")
         if args.goal:
             payload["owner_goal"] = args.goal
         if args.candidate:
