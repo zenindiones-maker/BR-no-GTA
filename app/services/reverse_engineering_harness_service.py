@@ -27,6 +27,7 @@ FIDELITY_CAPABILITY_ID = "reverse-engineering.reconstruction.fidelity"
 STUDIO_CAPABILITY_ID = "reverse-engineering.studio.forensics"
 IRIS_CAPABILITY_ID = "reverse-engineering.web.iris-vision"
 NATIVE_CAPABILITY_ID = "reverse-engineering.software.rea-native-ghidra"
+PRODUCTION_QA_CAPABILITY_ID = "production.technical-media-forensics"
 MEDIA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_media_observation"
 REA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_software_observation"
 WEB_HAR_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_web_har_observation"
@@ -521,5 +522,40 @@ def execute_authorized_native_rea_function(
         "production_mutation":False,
         "publication":"FORBIDDEN",
         "application_executed":False,
+        "authority":"DEEPSEEK_HARNESS",
+    }
+
+
+
+def execute_authorized_production_forensics(
+    *, authorization: Any, routing_decision: Any, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Pre-release media research only, never a production go/no-go authority."""
+    auth=_authorized_context(
+        authorization=authorization,routing_decision=routing_decision,
+        capability_id=PRODUCTION_QA_CAPABILITY_ID,
+    )
+    if not isinstance(payload,dict) or set(payload)!={"source_path","profile","rights"}:
+        raise PermissionError("MEDIA_QA_HARNESS_PAYLOAD_INVALID")
+    if payload["rights"]!="owned":
+        raise PermissionError("MEDIA_QA_OWNED_ORIGINAL_REQUIRED")
+    source=_scope(auth,payload["source_path"])
+    from app.services.br_production_forensic_qa_v10 import analyze_render
+    evidence=analyze_render(source,profile=payload["profile"])
+    return {
+        "schema_version":"BRHarnessReverseEngineeringResult/v1",
+        "capability_id":PRODUCTION_QA_CAPABILITY_ID,
+        "authorization_id":auth.authorization_id,
+        "harness_decision_id":auth.harness_decision_id,
+        "execution_id":auth.execution_id,
+        "status":"TECHNICAL_EVIDENCE_ONLY",
+        "technical_status":evidence["status"],
+        "evidence":evidence,
+        "private_owner_voice_approval":"NOT_VERIFIED",
+        "human_editorial_approval":"NOT_VERIFIED",
+        "publication":"FORBIDDEN",
+        "production_ready":False,
+        "production_mutation":False,
+        "memory_write":"NOT_ATTEMPTED",
         "authority":"DEEPSEEK_HARNESS",
     }
