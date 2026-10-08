@@ -43,3 +43,9 @@ LlamaFactory may later be admitted for owner-authorized text/multimodal agent fi
 ## Regarding GPT-6 rich responses
 
 Charts, diagrams, buttons and inline rich controls in ChatGPT are a client capability, not an open-source GitHub package to install. The assistant can use supported rich response controls when appropriate; ChatGPT does not expose an API to grant this UI behavior to unrelated external systems or accounts by changing the BR-no-GTA repository. For the Harness, an independent safe approval interface would need to be implemented and reviewed (authenticated status, explicit opt-in actions, no UI button triggers publication alone).
+
+## Delivery-ledger fail-closed repair
+
+The 2026-10-08 voice run 37808729277 reported `LEDGER_FAST_FORWARD_PUSH_REJECTED` with GitHub `fatal error in commit_refs` code 52. V13 adds one bounded *ledger Git push* retry only when (1) the error is exactly the known transient commit_refs 52, (2) remote readback still equals the expected old SHA, and (3) the same content-addressed candidate commit is replayed. A changed remote SHA raises CAS_CONFLICT. A second failure, different return code, or ambiguous readback fails closed. No `--force`, no regenerated commit, no Telegram post or media resend, no synthetic message ID. SSH key paths are shell-quoted. New tests reproduce success, persistent error, unrelated rejection and remote SHA drift. This fix requires a real private-run readback before the delivery system can be declared operational.
+
+This change does NOT resolve BR_OWNER_V1 identity quality (last seven checks failed); never send/approve a new audition until the voice artifact and ledger state pass independent checks.
