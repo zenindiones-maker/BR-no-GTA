@@ -202,3 +202,94 @@ jobs:
           print("BR_LONGFORM_SHOT_COVERAGE_REAL_VIDEO=PASS")
           print("BR_ADAPTIVE_SHOT_REAL_VIDEO=PASS")
           PY
+
+      - name: Verify V4 Harness evaluator on genuinely measured paired FFmpeg audio
+        env:
+          BR_TEST_DATABASE: ${{ runner.temp }}/reverse-harness-ci.db
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from app.services.reverse_engineering_experiment_intelligence_v4 import _hash
+          from app.services.harness_authorization_service import issue_harness_authorization
+          from app.services.harness_capability_adapter import CapabilityAdapter
+          from app.services.harness_collaboration_service import TaskEnvelope
+          from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
+          from app.services.reverse_engineering_harness_service import EXPERIMENT_CAPABILITY_ID
+          from app.services.reverse_engineering_media_service import _sha256
+
+          base=Path(os.environ["RUNNER_TEMP"])
+          earlier=json.loads((base/"harness-media.json").read_text())["result"]
+          real_ref=earlier["evidence"]
+          learning=earlier["learning_proposal"]
+          baseline=real_ref["audio"]["loudness"]["metrics"]["input_i"]["value"]
+          delta=learning["differential"]["metric_deltas_candidate_minus_reference"]["input_i"]
+          candidate=round(baseline+delta,3)
+          baseline_artifact=real_ref["source"]["sha256"]
+          candidate_artifact=_sha256(base/"authorized"/"owned-candidate.mp4")
+          assert candidate_artifact != baseline_artifact
+          dataset={
+              "schema_version":"BRTechniqueExperimentDataset/v1",
+              "dataset_id":"ci-original-audio-one-pair-only",
+              "domain":"audio", "task_class":"mix-master",
+              "rubric":{
+                  "metric":"integrated_lufs", "direction":"target",
+                  "target":-30.0, "tolerance":0.1,
+                  "measurement_method":"FFmpeg_loudnorm_input_analysis_ITU_BS1770_EBU_R128",
+                  "zero_cost":True,
+              },
+              "cases":[{"case_id":"real-ci-001","split":"development",
+                        "reference_sha256":baseline_artifact}],
+          }
+          dataset["dataset_sha256"]=_hash(dataset)
+          observation={
+              "technique_id":"owned-volume-change", "case_id":"real-ci-001",
+              "baseline_metric":baseline, "candidate_metric":candidate,
+              "baseline_artifact_sha256":baseline_artifact,
+              "candidate_artifact_sha256":candidate_artifact,
+              "baseline_evidence_sha256":real_ref["evidence_sha256"],
+              "candidate_evidence_sha256":learning["candidate_evidence_sha256"],
+              "measurement_method":"FFmpeg_loudnorm_input_analysis_ITU_BS1770_EBU_R128",
+              "execution_status":"MEASURED", "cost_usd":0.0,
+              "critical_regression":False,
+          }
+          observation["observation_sha256"]=_hash(observation)
+          auth=issue_harness_authorization(
+              authorized_action="RESEARCH",
+              subject=f"capability:{EXPERIMENT_CAPABILITY_ID}",
+              lineage={
+                  "experiment_dataset_sha256":dataset["dataset_sha256"],
+                  "experiment_domain":"audio",
+                  "experiment_task_class":"mix-master",
+                  "allowed_technique_ids":["owned-volume-change"],
+              },
+          )
+          route=route_harness_request(HarnessRoutingRequest(
+              intent="Evaluate original audio technique using real measured evidence",
+              authorized_action="RESEARCH",
+              domain="experiment-intelligence",
+              required_capability_id=EXPERIMENT_CAPABILITY_ID,
+              fallback_allowed=False,provider_required=False,learning_required=False,
+          ))
+          result=CapabilityAdapter().execute(
+              authorization=auth,
+              task_envelope=TaskEnvelope(
+                  task_id="ci-real-v4-one-pair",capability_id=EXPERIMENT_CAPABILITY_ID,
+                  action="RESEARCH",objective="Evaluate a genuine FFmpeg pair without promotion",
+              ),
+              routing_decision=route,
+              payload={
+                  "dataset":dataset,"observations":[observation],
+                  "allowed_technique_ids":["owned-volume-change"],
+              },
+          ).result
+          assert result["status"]=="ASSESSED_NOT_LEARNED"
+          assert result["evidence"]["results"][0]["status"]=="INSUFFICIENT_EVIDENCE"
+          assert result["evidence"]["recommended_for_independent_review"]==[]
+          assert result["memory_write"]=="NOT_ATTEMPTED"
+          assert result["next_benchmark_proposal"]["routing_changed"] is False
+          assert result["production_mutation"] is False
+          print("BR_V4_REAL_FFMPEG_HARNESS_ASSESSMENT=PASS")
+          print("BR_V4_EVIDENCE_STILL_INSUFFICIENT=PASS")
+          PY
