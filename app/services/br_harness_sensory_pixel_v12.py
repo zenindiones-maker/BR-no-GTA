@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA="BRHarnessSensoryPixelObservation/v1"
-MAX_SOURCE_BYTES=300_000_000
+MAX_SOURCE_BYTES=4*1024*1024*1024  # 4 GiB: admit actual 20–25 min H.264 masters
 MAX_PIXELS=12_000_000
 MAX_FRAMES=4
 _ALLOWED_KINDS=frozenset({"owner_screenshot_png","owner_video_mp4"})
