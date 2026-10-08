@@ -103,8 +103,36 @@ def test_existing_remote_store_is_read_only_through_specialist(tmp_path,monkeypa
         return _snapshot()
     monkeypatch.setattr(store,"snapshot",fake_snapshot)
     monkeypatch.setattr(store,"transact",lambda **kw:pytest.fail("WRITER_FORBIDDEN"))
-    result=observe_remote_ledger(store=store,mission_id="audit-only-v18")
+    from app.services.harness_authorization_service import (
+        issue_harness_authorization, revoke_harness_authorization,
+    )
+    auth=issue_harness_authorization(
+        authorized_action="RESEARCH",
+        subject="capability:owner-voice.ledger-readonly-v18",
+        lineage={"allow_remote_ledger_read":True},
+    )
+    result=observe_remote_ledger(
+        authorization=auth,store=store,mission_id="audit-only-v18",
+    )
     assert result["delivery_confirmed"] is True
     assert calls==[("snapshot","audit-only-v18")]
     assert result["git_write_attempted"] is False
     assert result["telegram_send_attempted"] is False
+    revoke_harness_authorization(auth)
+    with pytest.raises(PermissionError):
+        observe_remote_ledger(
+            authorization=auth,store=store,mission_id="audit-only-v18",
+        )
+
+
+def test_remote_read_disallowed_without_explicit_harness_lineage(tmp_path):
+    from app.services.harness_authorization_service import issue_harness_authorization
+    auth=issue_harness_authorization(
+        authorized_action="RESEARCH",
+        subject="capability:owner-voice.ledger-readonly-v18",
+        lineage={"allow_remote_ledger_read":False},
+    )
+    with pytest.raises(PermissionError,match="REMOTE_READ_NOT_GRANTED"):
+        observe_remote_ledger(
+            authorization=auth,store=None,mission_id="audit-only-v18",
+        )
