@@ -47,3 +47,21 @@ private per-segment metrics and no reuse of rejected audio. Scratch
 checkpoints are NOT cross-run durable. Real owner-certified voice then complete
 20–25 minute professional render then private Telegram/YouTube owner approval.
 No fallback voice, unattended delivery, canonical promotion, or invented PASS.
+
+## BR-no-GTA V13 release boundaries (isolated candidate)
+
+Read docs/architecture/br-production-gates-v13.md. Pinned LlamaFactory
+v0.9.5 is admitted for source/package metadata validation ONLY: never assume
+a GPU, model weights, training, WebUI or TTS support. ModelScope/ms-swift
+remains the separate, private, explicitly authorized owner Qwen3-TTS trainer.
+Neither Agent Office nor LlamaFactory has authority over DeepSeek Harness.
+
+The audited Munder upstream must use ephemeral proxy-addr 2.0.8 and must not
+run as an authorized runtime while newly discovered high-severity advisories
+remain unresolved. Never add vulnerabilities to an allowlist to silence CI.
+
+Keep BR_OWNER_V1 single-human voice thresholds untouched; canonical script
+names remain unchanged with controlled spoken "vaicy siti". No recovery push
+may trigger owner fine-tuning. Production begins only after a new, delivered
+human-approved audition, actual 20–25min fully decoded original render,
+rights/factual review and explicit PRIVATE HD owner approval. No auto-publish.
