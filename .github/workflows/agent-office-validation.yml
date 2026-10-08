@@ -5,6 +5,7 @@ on:
     branches:
       - work/munder-difflin-agent-office
       - work/gate6f-analytics-learning
+      - work/br-production-gates-v13
     paths:
       - "app/services/agent_office/**"
       - "tests/test_delegated_agent_autonomy.py"
