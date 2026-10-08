@@ -9,6 +9,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -222,7 +223,7 @@ def execute_authorized_software_observation(
             "mode": "STATIC_JAVASCRIPT",
             "source_basename": source.name,
             "result_sha256": hashlib.sha256(output.encode("utf-8")).hexdigest(),
-            "result_top_level_keys": sorted(str(key) for key in envelope)[:50],
+            "result_top_level_keys": sorted(str(key) for key in envelope if isinstance(key, str) and re.fullmatch(r"[A-Za-z0-9_]{1,60}", key))[:50],
             "structural_metrics": safe_structure,
             "limitations": "result digest only; no claim of runtime behavior or original source",
         },
