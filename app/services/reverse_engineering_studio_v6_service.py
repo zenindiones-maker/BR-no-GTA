@@ -94,15 +94,16 @@ def analyze_stems(paths: list[str | Path], *, window_seconds: int = 2) -> dict[s
         left, right = x[:,0], x[:,1]
         lsd, rsd = float(np.std(left)), float(np.std(right))
         correlation = float(np.corrcoef(left, right)[0,1]) if lsd > 1e-9 and rsd > 1e-9 else None
+        original_channels=next(s["channels"] for s in probe["streams"] if s["codec_type"]=="audio")
         result_stems.append({
             "sha256": _sha256(src),
-            "input_channels": next(s["channels"] for s in probe["streams"] if s["codec_type"]=="audio"),
+            "input_channels": original_channels,
             "sample_peak_dbfs": round(20*math.log10(peak),3) if peak>0 else None,
             "rms_dbfs": round(20*math.log10(rms),3) if rms>0 else None,
-            "stereo_correlation": round(correlation,5) if correlation is not None else None,
+            "stereo_correlation": round(correlation,5) if correlation is not None and original_channels==2 else None,
             "mono_compatibility_proxy": round(
                 float(np.sqrt(np.mean(((left+right)/2)**2))) / rms, 5
-            ) if rms>0 else None,
+            ) if rms>0 and original_channels==2 else None,
         })
     summed = np.sum([x[:n] for x in samples], axis=0)
     peak_sum = float(np.max(np.abs(summed)))
