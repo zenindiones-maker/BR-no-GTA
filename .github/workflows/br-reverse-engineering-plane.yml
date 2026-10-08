@@ -9,6 +9,8 @@ on:
       - "app/services/reverse_engineering_forensics_service.py"
       - "app/services/reverse_engineering_scene_v3_service.py"
       - "app/services/reverse_engineering_audio_v3_service.py"
+      - "app/services/reverse_engineering_web_har_service.py"
+      - "tests/test_reverse_engineering_web_har_v3.py"
       - "tests/test_reverse_engineering_multimodal_v3.py"
       - "app/services/reverse_engineering_story_service.py"
       - "app/services/reverse_engineering_learning_proposal_service.py"
@@ -50,7 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check -q pytest "python-dotenv==1.2.3" "scenedetect==0.7.1" "opencv-python-headless==4.12.0.88"
-          python -m pytest -q tests/test_reverse_engineering_media_service.py tests/test_reverse_engineering_harness_v2.py tests/test_reverse_engineering_story_v1.py tests/test_reverse_engineering_learning_proposal_v1.py tests/test_reverse_engineering_multimodal_v3.py tests/test_global_capability_registry.py
+          python -m pytest -q tests/test_reverse_engineering_media_service.py tests/test_reverse_engineering_harness_v2.py tests/test_reverse_engineering_story_v1.py tests/test_reverse_engineering_learning_proposal_v1.py tests/test_reverse_engineering_multimodal_v3.py tests/test_reverse_engineering_web_har_v3.py tests/test_global_capability_registry.py
       - name: Install required FFmpeg observation runtime
         run: |
           set -euo pipefail
@@ -103,14 +105,15 @@ jobs:
           printf '{"name":"owned-jsapp","type":"module","version":"1.0.0"}\n' > "$RUNNER_TEMP/authorized/owned-jsapp/package.json"
           printf 'export function reverseEvidence(value){return value * 2;}\n' > "$RUNNER_TEMP/authorized/owned-jsapp/index.js"
           cp "$RUNNER_TEMP/owned-sample.mp4" "$RUNNER_TEMP/authorized/owned-sample.mp4"
+          printf '{"log":{"version":"1.2","entries":[{"request":{"method":"GET","url":"https://example.test/assets/secret?token=private"},"response":{"status":200,"content":{"mimeType":"text/javascript","text":"private"}},"time":35.5}]}}\n' > "$RUNNER_TEMP/authorized/owned-observation.har"
           ffmpeg -nostdin -hide_banner -v error -i "$RUNNER_TEMP/authorized/owned-sample.mp4" -af "volume=0.5" -c:v copy "$RUNNER_TEMP/authorized/owned-candidate.mp4"
           python - <<'PY'
           import os
           from app.database.schema import initialize_schema
           from app.services.harness_authorization_service import issue_harness_authorization
-          from app.services.reverse_engineering_harness_service import MEDIA_CAPABILITY_ID, REA_CAPABILITY_ID
+          from app.services.reverse_engineering_harness_service import MEDIA_CAPABILITY_ID, REA_CAPABILITY_ID, WEB_HAR_CAPABILITY_ID
           initialize_schema()
-          for label,cid in (("MEDIA",MEDIA_CAPABILITY_ID),("REA",REA_CAPABILITY_ID)):
+          for label,cid in (("MEDIA",MEDIA_CAPABILITY_ID),("REA",REA_CAPABILITY_ID),("HAR",WEB_HAR_CAPABILITY_ID)):
               a=issue_harness_authorization(
                   authorized_action="RESEARCH", subject=f"capability:{cid}",
                   lineage={"allowed_media_roots":[os.path.join(os.environ["RUNNER_TEMP"],"authorized")]},
@@ -134,12 +137,17 @@ jobs:
             --authorization-id "$BR_REA_HARNESS_AUTH_ID" \
             --mode rea-js --input "$RUNNER_TEMP/authorized/owned-jsapp" \
             --rights owned --output "$RUNNER_TEMP/harness-rea.json"
+          python scripts/br_reverse_engineering_harness.py \
+            --authorization-id "$BR_HAR_HARNESS_AUTH_ID" \
+            --mode web-har --input "$RUNNER_TEMP/authorized/owned-observation.har" \
+            --rights owned --output "$RUNNER_TEMP/harness-har.json"
           python - <<'PY'
           import json,os
           from pathlib import Path
           base=Path(os.environ["RUNNER_TEMP"])
           a=json.loads((base/"harness-media.json").read_text())["result"]
           b=json.loads((base/"harness-rea.json").read_text())["result"]
+          w=json.loads((base/"harness-har.json").read_text())["result"]
           assert a["status"]=="MEASURED"
           assert a["evidence"]["audio"]["loudness"]["status"]=="MEASURED"
           assert a["evidence"]["video"]["status"]=="MEASURED"
@@ -152,6 +160,9 @@ jobs:
           assert a["learning_proposal"]["publication"]=="FORBIDDEN"
           assert b["status"]=="MEASURED"
           assert b["evidence"]["rea_version"]=="6.0.0"
+          assert w["evidence"]["request_count"]==1
+          assert w["evidence"]["network_access"]=="NONE"
+          assert "example.test" not in json.dumps(w)
           assert a["approval"]==b["approval"]=="NOT_REQUESTED"
           assert a["production_mutation"] is b["production_mutation"] is False
           print("BR_EXTREME_REVERSE_ENGINEERING_HARNESS_E2E=PASS")
