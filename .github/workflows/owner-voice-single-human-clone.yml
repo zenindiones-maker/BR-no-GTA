@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - recovery/dev/br-owner-v1-human-audition-v2
+      - work/br-owner-voice-serial-audition-v11
+    paths:
+      - .run/br-owner-v1-single-human-clone.request.json
 
 concurrency:
   group: br-owner-v1-single-human-clone-${{ github.sha }}
