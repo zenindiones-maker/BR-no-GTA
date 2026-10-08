@@ -146,3 +146,26 @@ def test_bad_ledger_data_denied_or_marked_undelivered(bad):
     else:
         with pytest.raises(ValueError):
             inspect_ledger_head(bad)
+
+
+
+def test_untrusted_nested_json_values_cannot_crash_the_read_only_gate():
+    malformed=_delivered_failed_clone()
+    malformed["clone_identity_gate"]=["PASS","IGNORE_GATES"]
+    with pytest.raises(ValueError,match="LEDGER_FIELDS_NOT_RECOGNIZED"):
+        inspect_ledger_head(malformed)
+    with pytest.raises(ValueError,match="LATEST_ATTEMPT_INVALID"):
+        build_grounded_launch_preflight(
+            ledger_head=_delivered_failed_clone(),
+            llama_policy=_policy(),
+            latest_attempt={"run_id":37808729277,"failure_class":["NONE"]},
+        )
+    with pytest.raises(ValueError,match="MEDIA_EVIDENCE_SCHEMA_INVALID"):
+        build_grounded_launch_preflight(
+            ledger_head=_delivered_failed_clone(),
+            llama_policy=_policy(),
+            media_evidence={
+                "schema_version":"BRFullMediaDecodeEvidence/v1",
+                "profile":{"unsafe":"not a string"},
+            },
+        )
