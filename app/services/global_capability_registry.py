@@ -2904,3 +2904,41 @@ _REGISTRY._records=tuple(sorted(
     (*_REGISTRY._records,BR_INTEGRATED_PRODUCTION_QA_V12_RECORD),
     key=lambda item:item.capability_id,
 ))
+
+
+# V13: LLaMA-Factory owner-dataset admission only, NOT general GPU training.
+BR_LLAMAFAC_DATASET_V13_RECORD=CapabilityRecord(
+    capability_id="learning.llamafactory.dataset-admission-v13",
+    capability_type="TOOL",
+    domain="model-training-readiness",
+    implementation="LLaMA-Factory official upstream pinned source plus bounded original Qwen3 textual SFT dataset admission",
+    input_contract="Persisted Harness RESEARCH action; scoped owner-authored Alpaca JSONL and Qwen3-0.6B model ID",
+    output_contract="BRHarnessLlamaFactoryAdmissionExecution/v1",
+    requirements=("official-hiyouga-LlamaFactory-pinned-source","owner-licensed-JSONL","human-approval-for-training","GPU-and-cost-gate-not-yet-pass"),
+    maturity=FUNCTIONAL, availability=AVAILABLE,allowed_actions=("RESEARCH",),
+    policy_tags=("llamafactory","qwen3","fine-tuning","dataset-admission","sft","lora","no-training","no-biometrics","zero-cost"),
+    security_boundary="Dataset schema inspection only, with no model loading, network retrieval, GPU use, CLI launch, TTS fine-tuning, publisher authority or arbitrary training; training remains blocked until independently authorized.",
+    cost_class="FREE_NO_BILLING",
+    quota_class="BOUNDED_TEXT_CPU",
+    latency_class="SHORT",
+    quality_class="DATA_ADMISSION_NOT_MODEL_QUALITY",
+    evidence_contract="BRHarnessLlamaFactoryAdmissionExecution/v1",
+    fallback_eligibility=False,
+    executor_binding="app.services.br_llamafactory_harness_gate_v13.execute_authorized_llamafactory_admission",
+    version="1",provider_id="hiyouga-llamafactory-pinned-source",
+    agent_id="harness-learning-research-specialist",
+    authority="NONE",memory_write="NONE",routing_authority="NONE",
+    editorial_authority="NONE",publication_authority="NONE",
+    supports_parallelism=False,supports_retry=False,supports_resume=False,
+    supports_review=False,side_effect_class="READ_ONLY",
+    default_read_scope=(),default_write_scope=(),allowed_tools=(),
+    health_policy="DEFAULT",execution_kind="DETERMINISTIC_ANALYSIS_AGENT",
+    functional_roles=("INSPECT_OWNER_TEXT_TRAINING_DATA","BLOCK_UNAPPROVED_TTS_TRAINING"),
+)
+if _REGISTRY._by_id.get(BR_LLAMAFAC_DATASET_V13_RECORD.capability_id) is not None:
+    raise ValueError("Duplicate LLaMA-Factory data admission capability")
+_REGISTRY._by_id[BR_LLAMAFAC_DATASET_V13_RECORD.capability_id]=BR_LLAMAFAC_DATASET_V13_RECORD
+_REGISTRY._records=tuple(sorted(
+    (*_REGISTRY._records,BR_LLAMAFAC_DATASET_V13_RECORD),
+    key=lambda item:item.capability_id,
+))
