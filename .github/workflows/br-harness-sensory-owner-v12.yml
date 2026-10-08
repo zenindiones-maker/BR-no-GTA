@@ -23,7 +23,7 @@ permissions:
   contents: read
 concurrency:
   group: br-v12-sensory-owner-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   contracts:
     name: Verify owner Qwen conditioning and Harness authority
@@ -78,8 +78,12 @@ jobs:
       - name: Install original video/Pillow tools
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends ffmpeg
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            timeout 180s sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 update -qq
+            timeout 180s sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 install -y -qq --no-install-recommends ffmpeg
+          fi
+          command -v ffmpeg
+          command -v ffprobe
           python -m pip install -q --disable-pip-version-check pytest==8.4.2 pillow==11.3.0 python-dotenv==1.2.3
       - name: Decode real changing frames rather than inspect a catalog
         run: |
