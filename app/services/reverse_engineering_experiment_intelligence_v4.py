@@ -290,11 +290,24 @@ def choose_next_benchmark(*, assessment: dict, eligible_technique_ids: list[str]
         x = results[tid]
         return sum(x[s].get(k, 0) for s in ("development", "holdout")
                    for k in ("win", "tie", "loss"))
-    chosen = min(valid, key=lambda tid: (amount(tid), tid))
+    priority = {
+        "REVIEW_CANDIDATE": 0, "INSUFFICIENT_EVIDENCE": 1,
+        "NO_DEMONSTRATED_IMPROVEMENT": 2,
+    }
+    chosen = min(valid, key=lambda tid: (
+        priority.get(results[tid]["status"], 9), amount(tid), tid))
+    state = results[chosen]["status"]
+    focus = {
+        "REVIEW_CANDIDATE": "INDEPENDENT_BLIND_REVIEW_AND_FRESH_HOLDOUT",
+        "INSUFFICIENT_EVIDENCE": "COLLECT_FRESH_PREREGISTERED_PAIRED_CASES",
+        "NO_DEMONSTRATED_IMPROVEMENT": "REVISE_TECHNIQUE_AND_TEST_ON_NEW_DATA",
+    }.get(state, "REVIEW_BEFORE_NEXT_BENCHMARK")
     return {
         "status": "BENCHMARK_PROPOSED", "proposal": {
             "technique_id": chosen,
-            "purpose": "REPEAT_WITH_NEW_PRE_REGISTERED_CASES_AND_HUMAN_REVIEW",
+            "purpose": focus,
+            "current_evaluation": state,
+            "failure_classes": results[chosen]["diagnoses"],
             "not_an_execution_order": True,
         }, "routing_changed": False, "memory_written": False,
     }
