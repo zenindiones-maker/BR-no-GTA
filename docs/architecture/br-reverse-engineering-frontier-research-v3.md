@@ -88,3 +88,11 @@
 (D) Independent reviewer checks upstream provenance/license, cost guards and no unauthorized authority in code.
 (E) One full authorized production benchmark plus owner approval.
 All five are necessary for canonical promotion. Branch success alone means development capability has been demonstrated, not deployment readiness.
+
+
+## Long-form coverage (added V3 candidate)
+
+- The plan_shot_windows(1500) utility returns a deterministic list of bounded, overlapping video windows for a 25-minute episode. Planning **does not** dispatch agents or decode media.
+- Each window requires an independent Harness-issued, scoped RESEARCH task with the --adaptive-shot-start and --adaptive-shot-window flags (maximum 90 seconds per invocation). Workstation scheduling governs CPU, cache and checkpoint load.
+- merge_shot_receipts validates self-consistent receipt hashes, source SHA agreement, method, duration and uncovered gaps. full_duration_covered_by_receipts means window bookkeeping, **not** independent execution attestation, artistic quality or owner approval.
+- Overlapping windows reduce boundary blind spots but do not prove frame-perfect cut recall. A hand-labelled original 20–25 minute benchmark is still required.
