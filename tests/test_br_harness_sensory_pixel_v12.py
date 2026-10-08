@@ -177,3 +177,19 @@ def test_real_video_extracts_distinct_pixels_and_audio_metadata(tmp_path):
     assert receipt["semantic_scene_understood"] is False
     print("BR_V12_REAL_FFMPEG_VIDEO_PIXELS_OBSERVED=PASS")
     print("BR_V12_UNPROVEN_SEMANTIC_VISION=DECLARED")
+
+
+
+def test_real_episode_size_boundary_allows_gigabyte_class_original(tmp_path):
+    # Sparse files exercise admission only; no audio/video content is fabricated.
+    owner=tmp_path/"owned-large"
+    owner.mkdir(mode=0o700)
+    candidate=owner/"episode.mp4"
+    with candidate.open("wb") as out:
+        out.truncate(400_000_001)
+    assert candidate.stat().st_size>300_000_000
+    pixels._checked_source(candidate,"owner_video_mp4")
+    with candidate.open("wb") as out:
+        out.truncate(pixels.MAX_SOURCE_BYTES+1)
+    with pytest.raises(ValueError,match="BOUNDED_OWNER_MEDIA"):
+        pixels._checked_source(candidate,"owner_video_mp4")
