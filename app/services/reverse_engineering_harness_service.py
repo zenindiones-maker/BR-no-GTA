@@ -137,8 +137,10 @@ def execute_authorized_software_observation(
     if not prefix.is_absolute() or prefix.is_symlink():
         raise ObservationError("REA_INSTALL_PREFIX_NOT_PROVEN")
     binary = prefix / "node_modules" / ".bin" / "rea"
-    if not binary.is_file() or binary.is_symlink():
+    if not binary.is_file():
         raise ObservationError("REA_EXACT_BINARY_MISSING")
+    if binary.is_symlink() and (prefix.resolve() / "node_modules") not in binary.resolve().parents:
+        raise ObservationError("REA_BINARY_OUTSIDE_PINNED_PREFIX")
     try:
         version = subprocess.run(
             [str(binary), "--version"], capture_output=True, text=True,
