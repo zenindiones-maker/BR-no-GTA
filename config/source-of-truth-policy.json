@@ -1,0 +1,15 @@
+{
+  "schema": "BRSourceOfTruthPolicy/v1",
+  "authority_doc": "docs/governance/source-of-truth.md",
+  "required_paths": [
+    "AGENTS.md",
+    "docs/governance/source-of-truth.md",
+    "app/services/harness_authorization_service.py",
+    "app/services/global_capability_registry.py",
+    "app/services/task_execution_foundation_service.py",
+    "docs/architecture/development-continuity-recovery-plane-v1.md"
+  ],
+  "retired_branches": [],
+  "tombstones": [],
+  "evidence_files": []
+}
