@@ -161,3 +161,28 @@ def test_spectrum_reports_gain_change_not_fake_voice_quality(tmp_path, monkeypat
         assert abs(value + 6.0206) < 0.01
     assert result["normalized_correlation"] == 1.0
     assert result["waveform_bit_equivalent_after_decode"] is False
+
+
+
+def test_missing_track_on_one_side_is_rejected_instead_of_called_not_applicable(tmp_path):
+    a,b = _files(tmp_path)
+    p=_probe()
+    audio_only={"duration_seconds":2.0,"streams":[p["streams"][1]]}
+    video_only={"duration_seconds":2.0,"streams":[p["streams"][0]]}
+    with pytest.raises(ObservationError,match="FIDELITY_VIDEO_STREAM_TOPOLOGY_MISMATCH"):
+        fidelity._video(a,b,refprobe=p,canprobe=audio_only,seconds=2)
+    with pytest.raises(ObservationError,match="FIDELITY_AUDIO_STREAM_TOPOLOGY_MISMATCH"):
+        fidelity._audio(a,b,refprobe=p,canprobe=video_only,seconds=2)
+
+
+def test_audio_channel_or_sample_rate_change_requires_explicit_conform(tmp_path):
+    a,b = _files(tmp_path)
+    original=_probe()
+    candidate=_probe()
+    candidate["streams"][1]["channels"]=2
+    with pytest.raises(ObservationError,match="FIDELITY_AUDIO_CHANNEL_OR_SAMPLE_RATE_MISMATCH"):
+        fidelity._audio(a,b,refprobe=original,canprobe=candidate,seconds=2)
+    candidate=_probe()
+    candidate["streams"][1]["sample_rate"]="44100"
+    with pytest.raises(ObservationError,match="FIDELITY_AUDIO_CHANNEL_OR_SAMPLE_RATE_MISMATCH"):
+        fidelity._audio(a,b,refprobe=original,canprobe=candidate,seconds=2)
