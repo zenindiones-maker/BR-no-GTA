@@ -374,7 +374,7 @@ def execute_authorized_studio_observation(
     allowed={
         "stems":({"window_seconds"},2,4),
         "motion":({"max_frames"},1,1),
-        "alignment":(set(),1,1),
+        "alignment":(set(),2,2),
         "timeline":(set(),1,1),
     }
     if mode not in allowed:
@@ -396,7 +396,7 @@ def execute_authorized_studio_observation(
     elif mode=="motion":
         output=studio.analyze_animation_motion(sources[0],**payload["options"])
     elif mode=="alignment":
-        output=studio.audit_external_word_alignment(sources[0])
+        output=studio.audit_external_word_alignment(sources[0],sources[1])
     else:
         output=studio.compile_original_timeline(sources[0])
     return {
