@@ -535,13 +535,20 @@ def execute_authorized_production_forensics(
         authorization=authorization,routing_decision=routing_decision,
         capability_id=PRODUCTION_QA_CAPABILITY_ID,
     )
-    if not isinstance(payload,dict) or set(payload)!={"source_path","profile","rights"}:
+    required={"source_path","profile","rights"}
+    if (not isinstance(payload,dict) or not required.issubset(payload)
+        or not set(payload).issubset(required | {"full_decode"})
+        or type(payload.get("full_decode",False)) is not bool):
         raise PermissionError("MEDIA_QA_HARNESS_PAYLOAD_INVALID")
     if payload["rights"]!="owned":
         raise PermissionError("MEDIA_QA_OWNED_ORIGINAL_REQUIRED")
     source=_scope(auth,payload["source_path"])
     from app.services.br_production_forensic_qa_v10 import analyze_render
     evidence=analyze_render(source,profile=payload["profile"])
+    full_decode=None
+    if payload.get("full_decode",False) and evidence["status"]=="TECHNICAL_SAMPLED_QA_PASS":
+        from app.services.br_full_media_decode_v10b import verify_full_decode
+        full_decode=verify_full_decode(source,evidence)
     return {
         "schema_version":"BRHarnessReverseEngineeringResult/v1",
         "capability_id":PRODUCTION_QA_CAPABILITY_ID,
@@ -551,6 +558,7 @@ def execute_authorized_production_forensics(
         "status":"TECHNICAL_EVIDENCE_ONLY",
         "technical_status":evidence["status"],
         "evidence":evidence,
+        "full_decode_evidence":full_decode,
         "private_owner_voice_approval":"NOT_VERIFIED",
         "human_editorial_approval":"NOT_VERIFIED",
         "publication":"FORBIDDEN",
