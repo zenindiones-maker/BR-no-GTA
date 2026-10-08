@@ -7,6 +7,8 @@ on:
       - "app/services/reverse_engineering_media_service.py"
       - "app/services/reverse_engineering_forensics_service.py"
       - "app/services/reverse_engineering_story_service.py"
+      - "app/services/reverse_engineering_learning_proposal_service.py"
+      - "tests/test_reverse_engineering_learning_proposal_v1.py"
       - "tests/test_reverse_engineering_story_v1.py"
       - "app/services/reverse_engineering_harness_service.py"
       - "app/services/global_capability_registry.py"
@@ -44,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check -q pytest "python-dotenv==1.2.3"
-          python -m pytest -q tests/test_reverse_engineering_media_service.py tests/test_reverse_engineering_harness_v2.py tests/test_reverse_engineering_story_v1.py tests/test_global_capability_registry.py
+          python -m pytest -q tests/test_reverse_engineering_media_service.py tests/test_reverse_engineering_harness_v2.py tests/test_reverse_engineering_story_v1.py tests/test_reverse_engineering_learning_proposal_v1.py tests/test_global_capability_registry.py
       - name: Install required FFmpeg observation runtime
         run: |
           set -euo pipefail
@@ -97,6 +99,7 @@ jobs:
           printf '{"name":"owned-jsapp","type":"module","version":"1.0.0"}\n' > "$RUNNER_TEMP/authorized/owned-jsapp/package.json"
           printf 'export function reverseEvidence(value){return value * 2;}\n' > "$RUNNER_TEMP/authorized/owned-jsapp/index.js"
           cp "$RUNNER_TEMP/owned-sample.mp4" "$RUNNER_TEMP/authorized/owned-sample.mp4"
+          ffmpeg -nostdin -hide_banner -v error -i "$RUNNER_TEMP/authorized/owned-sample.mp4" -af "volume=0.5" -c:v copy "$RUNNER_TEMP/authorized/owned-candidate.mp4"
           python - <<'PY'
           import os
           from app.database.schema import initialize_schema
@@ -120,7 +123,9 @@ jobs:
           python scripts/br_reverse_engineering_harness.py \
             --authorization-id "$BR_MEDIA_HARNESS_AUTH_ID" \
             --mode media --input "$RUNNER_TEMP/authorized/owned-sample.mp4" \
-            --rights owned --output "$RUNNER_TEMP/harness-media.json"
+            --rights owned --goal "Create an independent voice and video mastering experiment" \
+            --candidate "$RUNNER_TEMP/authorized/owned-candidate.mp4" --candidate-rights owned \
+            --output "$RUNNER_TEMP/harness-media.json"
           python scripts/br_reverse_engineering_harness.py \
             --authorization-id "$BR_REA_HARNESS_AUTH_ID" \
             --mode rea-js --input "$RUNNER_TEMP/authorized/owned-jsapp" \
@@ -135,6 +140,9 @@ jobs:
           assert a["evidence"]["audio"]["loudness"]["status"]=="MEASURED"
           assert a["evidence"]["video"]["status"]=="MEASURED"
           assert a["evidence"]["interpretation"]["speaker_identity_verified"] is False
+          assert a["learning_proposal"]["gate"]["quality_approved"] is False
+          assert a["learning_proposal"]["differential"]["quality_pass"] is None
+          assert a["learning_proposal"]["publication"]=="FORBIDDEN"
           assert b["status"]=="MEASURED"
           assert b["evidence"]["rea_version"]=="6.0.0"
           assert a["approval"]==b["approval"]=="NOT_REQUESTED"
