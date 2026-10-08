@@ -1,0 +1,90 @@
+name: BR V17 Verified Audiovisual Specialist
+on:
+  push:
+    branches:
+      - work/br-specialist-intelligence-v17
+    paths:
+      - "app/services/br_specialist_intelligence_v17.py"
+      - "tests/test_br_specialist_intelligence_v17.py"
+      - "scripts/br_specialist_benchmark_v17.py"
+      - ".github/workflows/br-specialist-intelligence-v17.yml"
+      - "docs/architecture/br-specialist-intelligence-v17.md"
+      - "AGENTS.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-v17-specialist-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  actual-specialist:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          submodules: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Prepare deterministic zero-cost research workstation
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends ffmpeg
+          python -m pip install -q --disable-pip-version-check -r requirements.txt \
+            pytest==8.4.2 python-dotenv==1.2.3 pillow==12.3.0
+          echo "BR_TEST_DATABASE=$RUNNER_TEMP/br-v17-specialist-auth.db" >> "$GITHUB_ENV"
+          ffmpeg -version | head -n 1
+          echo "BR_V17_NEW_MODEL_DOWNLOADS=0"
+          echo "BR_V17_LLAMAFATORY_TRAINING_ATTEMPTED=FALSE"
+      - name: Verify pre-existing V16 baseline and new specialist security contracts
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from app.database.schema import initialize_schema
+          initialize_schema()
+          PY
+          python -m pytest -q \
+            tests/test_br_specialist_intelligence_v17.py \
+            tests/test_br_harness_visual_timeline_v16.py \
+            tests/test_br_harness_sensory_pixel_v12.py \
+            tests/test_br_grounded_launch_preflight_v15.py \
+            tests/test_owner_voice_ledger_transient_v13.py \
+            tests/test_br_llamafactory_admission_v13.py
+          echo "BR_V17_INTEGRATION_AND_SECURITY_CONTRACT=PASS"
+      - name: Repeat the authorized real FFmpeg workflow 20 times
+        run: |
+          set -euo pipefail
+          python scripts/br_specialist_benchmark_v17.py \
+            --root "$RUNNER_TEMP" \
+            --output "$RUNNER_TEMP/br-v17-private-benchmark.json"
+          python - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          p=Path(os.environ["RUNNER_TEMP"])/"br-v17-private-benchmark.json"
+          data=json.loads(p.read_text())
+          assert data["status"]=="REPEATED_ORIGINAL_TOOL_EVIDENCE_PASS"
+          assert data["trial_count"]==data["trial_count_predeclared"]==20
+          assert data["positive_passes"]==data["negative_passes"]==10
+          assert data["reliability_pass_power_10"] is True
+          assert data["tool_call_validity"] is True
+          assert data["unauthorized_side_effects"]==0
+          assert data["api_paid_calls"]==0
+          assert data["true_owner_20min_episode_tested"] is False
+          assert data["human_voice_similarity_verified"] is False
+          digest=hashlib.sha256(json.dumps({
+              k:v for k,v in data.items() if k!="report_sha256"
+          },sort_keys=True,separators=(",",":"),ensure_ascii=False,allow_nan=False).encode()).hexdigest()
+          assert digest==data["report_sha256"]
+          print("BR_V17_TERMINAL_STATE_VERIFIED=PASS")
+          print("BR_V17_EVIDENCE_SHA256="+digest)
+          print("BR_V17_PRIVATE_OWNER_VOICE_READ=FALSE")
+          print("BR_V17_CANONICAL_PROMOTION_ATTEMPTED=FALSE")
+          PY
