@@ -264,7 +264,7 @@ def test_final_gta_pronunciation_generation_uses_explicit_multilingual_segments(
     assert "segment_texts=" in source
     assert "segment_languages=" in source
     assert "language=segment_languages" in source
-    assert 'language="Auto"' not in source.split("generation_t0=",1)[1]
+    assert 'language="Auto"' not in source.split("from app.services.owner_voice_serial_generation_v11",1)[1]
     assert "Gê Tê A seis" in Path("app/services/gta6_pronunciation_lexicon_service.py").read_text(encoding="utf-8")
 
 
@@ -605,7 +605,7 @@ def test_vice_city_brazilian_owner_pronunciation_overrides_english_language_rout
         "is_pronunciation_target":True,
     },)
     source=ORCHESTRATOR.read_text(encoding="utf-8")
-    routing=source.split("segment_prompts=[]",1)[1].split("generation_t0=",1)[0]
+    routing=source.split("segment_prompts=[]",1)[1].split("from app.services.owner_voice_serial_generation_v11",1)[0]
     assert 'if VICE_CITY_TERM in canonical_text:' in routing
     assert routing.index('if VICE_CITY_TERM in canonical_text:') < routing.index('if language=="Portuguese":')
 
@@ -617,7 +617,7 @@ def test_vice_city_owner_ptbr_reading_is_explicit_and_keeps_targeted_prompt():
     assert vice["language"]=="Portuguese"
 
     source=ORCHESTRATOR.read_text(encoding="utf-8")
-    prompt_block=source.split("segment_prompts=[]",1)[1].split("generation_t0=",1)[0]
+    prompt_block=source.split("segment_prompts=[]",1)[1].split("from app.services.owner_voice_serial_generation_v11",1)[0]
     assert 'if VICE_CITY_TERM in canonical_text:' in prompt_block
     assert prompt_block.index('if VICE_CITY_TERM in canonical_text:') < prompt_block.index('if language=="Portuguese":')
 
@@ -631,8 +631,9 @@ def test_qwen_generation_emits_periodic_heartbeat_without_changing_audio_contrac
     assert "QWEN3_TTS_GENERATION_HEARTBEAT" in helper
     assert "flush=True" in helper
     assert "finally:" in helper
-    generation=source.split("generation_t0=time.monotonic()",1)[1].split("generation_seconds=",1)[0]
-    assert "_run_with_generation_heartbeat(" in generation
+    generation=source.split("from app.services.owner_voice_serial_generation_v11",1)[1].split("stitched=",1)[0]
+    assert "heartbeat=_run_with_generation_heartbeat" in generation
+    assert "generate_one_private_audition(" in generation
     assert "model.generate_voice_clone" in generation
     assert "text=segment_texts" in generation
     assert "language=segment_languages" in generation
