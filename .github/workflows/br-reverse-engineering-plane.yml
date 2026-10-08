@@ -389,3 +389,98 @@ jobs:
           print("BR_V5_FIDELITY_TO_LEARNING_BRIDGE=PASS")
           print("BR_V5_ZERO_FALSE_PROMOTION=PASS")
           PY
+      - name: Exercise four real bounded studio modes through persisted Harness authorization
+        env:
+          BR_TEST_DATABASE: ${{ runner.temp }}/reverse-harness-ci.db
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/v6-owned"
+          ffmpeg -nostdin -hide_banner -v error \
+            -f lavfi -i 'sine=frequency=440:sample_rate=16000:duration=2' \
+            -af 'volume=8' -c:a pcm_f32le "$RUNNER_TEMP/v6-owned/stem-one.wav"
+          cp "$RUNNER_TEMP/v6-owned/stem-one.wav" "$RUNNER_TEMP/v6-owned/stem-two.wav"
+          ffmpeg -nostdin -hide_banner -v error \
+            -f lavfi -i 'testsrc2=size=160x90:rate=12:duration=2' \
+            -an -c:v mpeg4 "$RUNNER_TEMP/v6-owned/moving-test.mp4"
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          from app.services.harness_authorization_service import issue_harness_authorization
+          from app.services.reverse_engineering_harness_service import STUDIO_CAPABILITY_ID
+          from app.services.reverse_engineering_media_service import _sha256
+          base=Path(os.environ["RUNNER_TEMP"])/"v6-owned"
+          auth=issue_harness_authorization(
+              authorized_action="RESEARCH",
+              subject=f"capability:{STUDIO_CAPABILITY_ID}",
+              lineage={"allowed_media_roots":[str(base)]},
+          )
+          with open(os.environ["GITHUB_ENV"],"a",encoding="utf-8") as env:
+              env.write(f"BR_STUDIO_HARNESS_AUTH_ID={auth.authorization_id}\n")
+          alignment={
+              "language":"pt", "model_id":"external-timestamp-fixture",
+              "audio_sha256":_sha256(base/"stem-one.wav"),"duration_seconds":2.0,
+              "expected_tokens":["vaicy","siti"],
+              "aligned_words":[
+                  {"word":"vaicy","start":0.1,"end":0.4,"score":0.94},
+                  {"word":"siti","start":0.5,"end":0.8,"score":0.92},
+              ],
+          }
+          (base/"alignment-fixture.json").write_text(json.dumps(alignment))
+          timeline={
+              "timeline_id":"original-synthetic-storyboard",
+              "fps_num":30000, "fps_den":1001,
+              "tracks":[
+                  {"track_id":"V1","kind":"video","clips":[
+                      {"asset_id":"owned-shot-a","at_frame":0,"source_in_frame":0,"duration_frames":30},
+                      {"asset_id":"owned-shot-b","at_frame":60,"source_in_frame":0,"duration_frames":30},
+                  ]},
+                  {"track_id":"A1","kind":"audio","clips":[
+                      {"asset_id":"owned-bed","at_frame":0,"source_in_frame":0,"duration_frames":90},
+                  ]},
+              ],
+          }
+          (base/"original-timeline.json").write_text(json.dumps(timeline))
+          PY
+          python scripts/br_studio_forensics_v6.py \
+            --authorization-id "$BR_STUDIO_HARNESS_AUTH_ID" \
+            --mode stems --rights owned \
+            --input "$RUNNER_TEMP/v6-owned/stem-one.wav" \
+            --input "$RUNNER_TEMP/v6-owned/stem-two.wav" \
+            --window-seconds 2 --output "$RUNNER_TEMP/studio-stems.json"
+          python scripts/br_studio_forensics_v6.py \
+            --authorization-id "$BR_STUDIO_HARNESS_AUTH_ID" \
+            --mode motion --rights owned --max-frames 24 \
+            --input "$RUNNER_TEMP/v6-owned/moving-test.mp4" \
+            --output "$RUNNER_TEMP/studio-motion.json"
+          python scripts/br_studio_forensics_v6.py \
+            --authorization-id "$BR_STUDIO_HARNESS_AUTH_ID" \
+            --mode alignment --rights owned \
+            --input "$RUNNER_TEMP/v6-owned/alignment-fixture.json" \
+            --output "$RUNNER_TEMP/studio-alignment.json"
+          python scripts/br_studio_forensics_v6.py \
+            --authorization-id "$BR_STUDIO_HARNESS_AUTH_ID" \
+            --mode timeline --rights owned \
+            --input "$RUNNER_TEMP/v6-owned/original-timeline.json" \
+            --output "$RUNNER_TEMP/studio-timeline.json"
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          base=Path(os.environ["RUNNER_TEMP"])
+          load=lambda mode: json.loads((base/f"studio-{mode}.json").read_text())["result"]
+          stems,motion,alignment,timeline=(load(k) for k in ("stems","motion","alignment","timeline"))
+          assert stems["evidence"]["unity_sum_exceeds_0dbfs"] is True
+          assert stems["evidence"]["stems"][0]["input_channels"]==1
+          assert motion["evidence"]["status"]=="MEASURED"
+          assert motion["evidence"]["frames_analyzed"]>=5
+          assert alignment["evidence"]["counts"]["matched_text"]==2
+          assert alignment["evidence"]["phoneme_pronunciation_verified"] is False
+          assert alignment["evidence"]["speaker_identity_verified"] is False
+          assert timeline["evidence"]["status"]=="OTIO_SERIALIZED_AND_ROUNDTRIPPED"
+          assert timeline["evidence"]["rendered"] is False
+          for item in (stems,motion,alignment,timeline):
+              assert item["production_mutation"] is False
+              assert item["memory_write"]=="NOT_ATTEMPTED"
+              assert item["publication"]=="FORBIDDEN"
+              assert len(item["evidence"]["evidence_sha256"])==64
+          print("BR_V6_FOUR_STUDIO_MODES_REAL_E2E=PASS")
+          PY
