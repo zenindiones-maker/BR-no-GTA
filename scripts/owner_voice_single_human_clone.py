@@ -5,6 +5,7 @@ import json
 import math
 import os
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,7 @@ from app.services.owner_voice_speaker_identity_service import (
     select_canonical_reference,
 )
 from app.services.owner_voice_telegram_handoff_service import parse_reference_envelope_b64
+QWEN_GENERATION_HEARTBEAT_SECONDS=30
 VOICE_IDENTITY_ID="BR_OWNER_V1"
 QWEN_MODEL_ID="Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 QWEN_MODEL_REVISION="fd4b254389122332181a7c3db7f27e918eec64e3"
@@ -71,6 +73,36 @@ VOICE_SEGMENT_CROSSFADE_MS=30
 VOICE_SEGMENT_LEVEL_MATCH_DB_LIMIT=1.5
 SPEECHBRAIN_VERSION="1.1.1"
 SPEAKER_MODEL_EMBEDDING_SHA256="0575cb64845e6b9a10db9bcb74d5ac32b326b8dc90352671d345e2ee3d0126a2"
+
+
+def _run_with_generation_heartbeat(generate, **kwargs):
+    """Keep CI logs observable while a synchronous Qwen generation is in flight.
+
+    The generation itself stays on the calling thread. This is a liveness
+    signal, not a retry, timeout extension, or evidence of runner health.
+    """
+    stop_event=threading.Event()
+    started=time.monotonic()
+
+    def _heartbeat()->None:
+        while not stop_event.wait(QWEN_GENERATION_HEARTBEAT_SECONDS):
+            elapsed=int(time.monotonic()-started)
+            print(
+                f"QWEN3_TTS_GENERATION_HEARTBEAT elapsed_seconds={elapsed}",
+                flush=True,
+            )
+
+    worker=threading.Thread(
+        target=_heartbeat,
+        daemon=True,
+        name="qwen-generation-heartbeat",
+    )
+    worker.start()
+    try:
+        return generate(**kwargs)
+    finally:
+        stop_event.set()
+        worker.join(timeout=1.0)
 
 
 def _sha256(path: Path) -> str:
@@ -1070,7 +1102,8 @@ def main()->int:
             segment_prompts.append(anchor_prompt)
 
     generation_t0=time.monotonic()
-    wavs,sample_rate=model.generate_voice_clone(
+    wavs,sample_rate=_run_with_generation_heartbeat(
+        model.generate_voice_clone,
         text=segment_texts,
         language=segment_languages,
         voice_clone_prompt=segment_prompts,
