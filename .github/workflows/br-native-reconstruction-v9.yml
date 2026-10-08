@@ -52,11 +52,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
-      BR_REA_INSTALL_PREFIX: ${{ runner.temp }}/rea-v9
-      BR_GHIDRA_PRIVATE_PREFIX: ${{ runner.temp }}/ghidra-v9
-      GHIDRA_INSTALL_DIR: ${{ runner.temp }}/ghidra-v9/ghidra_12.1.4_PUBLIC
       JAVA_HOME: /usr/lib/jvm/java-21-openjdk-amd64
-      BR_TEST_DATABASE: ${{ runner.temp }}/native-v9-harness.db
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -67,6 +63,13 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: "24.11.0"
+      - name: Bind private hosted runner paths
+        run: |
+          set -euo pipefail
+          echo "BR_REA_INSTALL_PREFIX=$RUNNER_TEMP/rea-v9" >> "$GITHUB_ENV"
+          echo "BR_GHIDRA_PRIVATE_PREFIX=$RUNNER_TEMP/ghidra-v9" >> "$GITHUB_ENV"
+          echo "GHIDRA_INSTALL_DIR=$RUNNER_TEMP/ghidra-v9/ghidra_12.1.4_PUBLIC" >> "$GITHUB_ENV"
+          echo "BR_TEST_DATABASE=$RUNNER_TEMP/native-v9-harness.db" >> "$GITHUB_ENV"
       - name: Install isolated Java 21 compiler and Ghidra support
         run: |
           set -euo pipefail
