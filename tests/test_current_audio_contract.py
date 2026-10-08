@@ -23,7 +23,8 @@ def test_current_audio_contract_is_owner_only_and_fail_closed_until_private_refe
     assert c["OWNER_REFERENCE_READY"] is False
     assert c["DEFAULT_NARRATION_LOCALE"] == "pt-BR"
     assert c["ONLY_FORCED_EN_US_TERM"] is None
-    assert c["GTA_6_SYNTHESIS"] == "gê tê á seis"
+    assert c["GTA_6_SYNTHESIS"] == "Gê Tê A seis"
+    assert c["OFFICIAL_VOICE"] == "BR_OWNER_V1"
     assert c["VICE_CITY_LOCALE"] == "pt-BR"
     assert c["VICE_CITY_TARGET_IPA"] == "vaɪs ˈsɪti"
     assert c["LUCIA_SYNTHESIS_ALIAS"] == "Lucía"
