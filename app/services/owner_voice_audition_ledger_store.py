@@ -17,7 +17,7 @@ ALLOWED_LEDGER_REPOSITORY="zenindiones-maker/BR-no-GTA-audition-ledger"
 ALLOWED_LEDGER_BRANCH="owner-voice-audition-state"
 ALLOWED_LEDGER_REF="refs/heads/owner-voice-audition-state"
 _MISSION_ID=re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$")
-_EVENT_NAME=re.compile(r"^v[0-9]{6,9}\\.json$")
+_EVENT_NAME=re.compile(r"^v[0-9]{6,9}\.json$")
 _GIT_OID=re.compile(r"^[a-f0-9]{40}$")
 
 
