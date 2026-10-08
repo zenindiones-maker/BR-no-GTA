@@ -158,3 +158,18 @@ def test_ptbr_alignment_claiming_another_audio_hash_fails_closed(tmp_path,monkey
     monkeypatch.setattr(studio,"probe_media",lambda _:{"duration_seconds":2.0,"streams":[{"codec_type":"audio"}]})
     with pytest.raises(ObservationError,match="STUDIO_ALIGNMENT_AUDIO_HASH_MISMATCH"):
         studio.audit_external_word_alignment(p,audio)
+
+
+
+def test_decoded_mono_cannot_be_misreported_as_true_stereo(tmp_path,monkeypatch):
+    a,b=_sample(tmp_path,"mono-a.wav"),_sample(tmp_path,"mono-b.wav")
+    monkeypatch.setattr(studio,"probe_media",lambda _:{
+        "duration_seconds":2.0,"streams":[{"codec_type":"audio","channels":1}],
+    })
+    x=np.sin(2*np.pi*440*np.arange(32000)/16000)
+    duplicated=np.stack([x,x],axis=1)
+    monkeypatch.setattr(studio,"_f32_stereo",lambda *_: duplicated)
+    report=studio.analyze_stems([a,b],window_seconds=2)
+    assert report["stems"][0]["input_channels"]==1
+    assert report["stems"][0]["stereo_correlation"] is None
+    assert report["stems"][0]["mono_compatibility_proxy"] is None
