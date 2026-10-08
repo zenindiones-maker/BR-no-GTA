@@ -22,6 +22,7 @@ MEDIA_CAPABILITY_ID = "reverse-engineering.media.observe"
 REA_CAPABILITY_ID = "reverse-engineering.software.rea-static"
 WEB_HAR_CAPABILITY_ID = "reverse-engineering.web.har-observe"
 EXPERIMENT_CAPABILITY_ID = "reverse-engineering.experiment.assess"
+FIDELITY_CAPABILITY_ID = "reverse-engineering.reconstruction.fidelity"
 MEDIA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_media_observation"
 REA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_software_observation"
 WEB_HAR_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_web_har_observation"
@@ -303,5 +304,50 @@ def execute_authorized_experiment_assessment(
         "approval": "NOT_REQUESTED",
         "memory_write": "NOT_ATTEMPTED",
         "production_mutation": False,
+        "authority": "DEEPSEEK_HARNESS",
+    }
+
+
+def execute_authorized_fidelity_assessment(
+    *, authorization: Any, routing_decision: Any, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Compare a licensed reconstruction against its matching authorized source.
+
+    Trusted Harness authorization and exact local allowed roots must precede
+    every media decode. This never writes results into canonical learning.
+    """
+    auth = _authorized_context(
+        authorization=authorization, routing_decision=routing_decision,
+        capability_id=FIDELITY_CAPABILITY_ID,
+    )
+    if not isinstance(payload, dict) or set(payload) != {
+        "reference_path", "candidate_path", "reference_rights", "candidate_rights",
+        "window_seconds",
+    }:
+        raise PermissionError("FIDELITY_PAYLOAD_SCHEMA_INVALID")
+    if payload["reference_rights"] not in {"owned", "licensed"} or payload["candidate_rights"] not in {"owned", "licensed"}:
+        raise PermissionError("FIDELITY_EXPRESSION_RIGHTS_UNVERIFIED")
+    ref = _scope(auth, payload["reference_path"])
+    can = _scope(auth, payload["candidate_path"])
+    if ref == can:
+        raise PermissionError("FIDELITY_RECONSTRUCTION_MUST_BE_DISTINCT")
+    from app.services.reverse_engineering_fidelity_v5_service import compare_reconstruction
+    report = compare_reconstruction(
+        ref, can,
+        rights=payload["reference_rights"],
+        candidate_rights=payload["candidate_rights"],
+        window_seconds=payload["window_seconds"],
+    )
+    return {
+        "schema_version": "BRHarnessReverseEngineeringResult/v1",
+        "capability_id": FIDELITY_CAPABILITY_ID,
+        "authorization_id": auth.authorization_id,
+        "harness_decision_id": auth.harness_decision_id,
+        "execution_id": auth.execution_id,
+        "status": "TECHNICAL_MEASUREMENTS_ONLY",
+        "evidence": report,
+        "approval": "NOT_REQUESTED",
+        "production_mutation": False,
+        "memory_write": "NOT_ATTEMPTED",
         "authority": "DEEPSEEK_HARNESS",
     }
