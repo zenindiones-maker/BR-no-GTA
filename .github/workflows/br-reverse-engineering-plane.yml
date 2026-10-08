@@ -13,6 +13,8 @@ on:
       - "app/services/reverse_engineering_web_har_service.py"
       - "app/services/reverse_engineering_longform_coverage_service.py"
       - "app/services/reverse_engineering_experiment_intelligence_v4.py"
+      - "docs/architecture/br-reverse-engineering-experiment-intelligence-v4.md"
+      - "AGENTS.md"
       - "tests/test_reverse_engineering_experiment_intelligence_v4.py"
       - "tests/test_reverse_engineering_experiment_harness_v4.py"
       - "tests/test_reverse_engineering_longform_coverage.py"
