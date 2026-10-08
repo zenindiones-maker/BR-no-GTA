@@ -77,11 +77,12 @@ def test_incorrect_video_prediction_detected_even_when_agent_claims_correct():
 def test_privilege_violation_outranks_success_claim():
     r,v=_receipts()
     v["records"][0]["unauthorized_effects"]=1
+    v["unauthorized_side_effects"]=1
     _resign(r,v)
-    with pytest.raises(ValueError,match="AGGREGATE_INCONSISTENT"):
-        # Aggregate must also be changed before reading an incident receipt.
-        v["unauthorized_side_effects"]=1
-        assess_experience(*_resign(r,v))
+    evidence=assess_experience(r,v)
+    assert evidence["status"]=="SPECIALIST_REVIEW_REQUIRED"
+    assert "UNAUTHORIZED_SIDE_EFFECT" in evidence["failure_classes"]
+    assert evidence["new_privileges"] is False
 
 
 def test_security_incident_blocks_even_when_aggregates_are_consistent():
