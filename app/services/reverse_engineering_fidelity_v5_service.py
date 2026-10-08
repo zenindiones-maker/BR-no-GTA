@@ -157,6 +157,47 @@ def _pcm(path: Path, seconds: float):
     return samples
 
 
+
+def _alignment_and_spectrum(x, y) -> dict[str, Any]:
+    """Explain measurable delay and coarse spectral change without changing samples."""
+    import numpy as np
+    length = len(x)
+    fft_length = 1 << (2 * length - 1).bit_length()
+    correlated = np.fft.irfft(
+        np.fft.rfft(y, n=fft_length) * np.conjugate(np.fft.rfft(x, n=fft_length)),
+        n=fft_length,
+    )
+    max_lag = min(int(0.05 * PCM_HZ), length - 1)
+    offsets = list(range(0, max_lag + 1)) + list(range(-max_lag, 0))
+    observed = np.array([correlated[k % fft_length] for k in offsets])
+    if np.sum(x * x) <= 1e-12 or np.sum(y * y) <= 1e-12:
+        lag = None
+    else:
+        lag = round(1000.0 * offsets[int(np.argmax(np.abs(observed)))] / PCM_HZ, 3)
+    hann = np.hanning(length)
+    x_spectrum = np.abs(np.fft.rfft(x * hann)) ** 2
+    y_spectrum = np.abs(np.fft.rfft(y * hann)) ** 2
+    frequencies = np.fft.rfftfreq(length, 1.0 / PCM_HZ)
+    floor = 1e-8 * max(float(x_spectrum.sum()), float(y_spectrum.sum()), 1e-18)
+    deltas = {}
+    for low, high in ((0, 200), (200, 1000), (1000, 4000), (4000, 8000)):
+        mask = (frequencies >= low) & (frequencies < high if high < PCM_HZ // 2 else frequencies <= high)
+        a = float(x_spectrum[mask].sum())
+        b = float(y_spectrum[mask].sum())
+        if max(a, b) < floor or a <= 1e-18 or b <= 1e-18:
+            delta = None
+        else:
+            delta = round(10.0 * math.log10(b / a), 3)
+        deltas[f"{low}_{high}_hz"] = delta
+    return {
+        "candidate_minus_reference_lag_ms": lag,
+        "lag_search_window_ms": 50,
+        "lag_interpretation": "UNVERIFIED_CORRELATION_PEAK_PERIODIC_AUDIO_CAN_BE_AMBIGUOUS",
+        "candidate_minus_reference_band_energy_db": deltas,
+        "band_energy_method": "Hann_window_FFT_summed_power_16k_mono",
+        "band_interpretation": "COARSE_SPECTRAL_MEASUREMENT_NOT_VOICE_OR_MASTERING_QUALITY",
+    }
+
 def _audio(reference: Path, candidate: Path, *, refprobe: dict,
            canprobe: dict, seconds: float) -> dict:
     ra, ca = _stream(refprobe, "audio"), _stream(canprobe, "audio")
@@ -189,6 +230,7 @@ def _audio(reference: Path, candidate: Path, *, refprobe: dict,
         "unadjusted_difference_rmse_linear": round(raw_rmse, 9),
         "waveform_bit_equivalent_after_decode": bool(np.array_equal(x, y)),
         "diagnostic": diagnostic,
+        "alignment_and_spectrum": _alignment_and_spectrum(x, y),
         "limitations": "Stereo downmix hides phase and spatial changes; no speaker, prosody, emotion, intelligibility, lip sync or pronunciation certification",
     }
 
