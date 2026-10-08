@@ -1101,17 +1101,22 @@ def main()->int:
         else:
             segment_prompts.append(anchor_prompt)
 
-    generation_t0=time.monotonic()
-    wavs,sample_rate=_run_with_generation_heartbeat(
-        model.generate_voice_clone,
-        text=segment_texts,
-        language=segment_languages,
-        voice_clone_prompt=segment_prompts,
-        non_streaming_mode=True,
+    # Qwen official API accepts single-item batches. Avoid one unobservable,
+    # long multi-segment generation call, and keep each output as a private
+    # scratch checkpoint; never reuse older rejected audition segments.
+    from app.services.owner_voice_serial_generation_v11 import generate_one_private_audition
+
+    wavs,sample_rate,generation_seconds,segment_timing_receipts=generate_one_private_audition(
+        generate=model.generate_voice_clone,
+        heartbeat=_run_with_generation_heartbeat,
+        segment_texts=segment_texts,
+        segment_languages=segment_languages,
+        segment_prompts=segment_prompts,
+        workspace=workspace,
     )
-    generation_seconds=time.monotonic()-generation_t0
     if len(wavs)!=len(segment_texts) or int(sample_rate)<=0:
         raise RuntimeError("QWEN3_TTS_SEGMENT_BATCH_OUTPUT_INVALID")
+    print("OWNER_QWEN_SEGMENT_MEASURED_COUNT="+str(len(segment_timing_receipts)))
     stitched=_stitch_generated_segments(wavs,int(sample_rate))
     clone_path=workspace/"CLONE.wav"
     sf.write(str(clone_path),stitched,int(sample_rate),subtype="PCM_16")
