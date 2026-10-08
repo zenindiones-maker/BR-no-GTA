@@ -620,3 +620,21 @@ def test_vice_city_owner_ptbr_reading_is_explicit_and_keeps_targeted_prompt():
     prompt_block=source.split("segment_prompts=[]",1)[1].split("generation_t0=",1)[0]
     assert 'if VICE_CITY_TERM in canonical_text:' in prompt_block
     assert prompt_block.index('if VICE_CITY_TERM in canonical_text:') < prompt_block.index('if language=="Portuguese":')
+
+def test_qwen_generation_emits_periodic_heartbeat_without_changing_audio_contract():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert "QWEN_GENERATION_HEARTBEAT_SECONDS=30" in source
+    assert "def _run_with_generation_heartbeat(" in source
+    helper=source.split("def _run_with_generation_heartbeat(",1)[1].split("\ndef ",1)[0]
+    assert "threading.Event()" in helper
+    assert "daemon=True" in helper
+    assert "QWEN3_TTS_GENERATION_HEARTBEAT" in helper
+    assert "flush=True" in helper
+    assert "finally:" in helper
+    generation=source.split("generation_t0=time.monotonic()",1)[1].split("generation_seconds=",1)[0]
+    assert "_run_with_generation_heartbeat(" in generation
+    assert "model.generate_voice_clone" in generation
+    assert "text=segment_texts" in generation
+    assert "language=segment_languages" in generation
+    assert "voice_clone_prompt=segment_prompts" in generation
+
