@@ -87,7 +87,11 @@ jobs:
           python -m pytest -q tests/test_br_harness_sensory_pixel_v12.py -k real_video
           echo "BR_V12_VIDEO_FRAME_FFMPEG_OBSERVATION=PASS"
           python -m pip install -q --disable-pip-version-check numpy==2.2.6 packaging==25.0
-          echo "BR_TEST_DATABASE=$RUNNER_TEMP/br-v12-integrated-render.db" >> "$GITHUB_ENV"
+          export BR_TEST_DATABASE="$RUNNER_TEMP/br-v12-integrated-render.db"
+          python - <<'PY'
+          from app.database.schema import initialize_schema
+          initialize_schema()
+          PY
           python -m pytest -q tests/test_br_harness_integrated_production_v12.py
           echo "BR_V12_REAL_MP4_AND_PRIVATE_OWNER_GATE_INTEGRATED=PASS"
           echo "BR_V12_SEMANTIC_EYES_REQUIRE_SEPARATE_PROVIDER_PROOF=TRUE"
