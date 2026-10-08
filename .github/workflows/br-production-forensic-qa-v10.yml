@@ -5,6 +5,8 @@ on:
       - work/br-production-forensics-readiness-v10
     paths:
       - "app/services/br_production_forensic_qa_v10.py"
+      - "app/services/br_production_readiness_board_v10.py"
+      - "tests/test_br_production_readiness_board_v10.py"
       - "app/services/reverse_engineering_harness_service.py"
       - "app/services/global_capability_registry.py"
       - "scripts/br_production_forensics_v10.py"
@@ -47,7 +49,7 @@ jobs:
           from app.database.schema import initialize_schema
           initialize_schema()
           PY
-          python -m pytest -q tests/test_br_production_forensic_qa_v10.py
+          python -m pytest -q tests/test_br_production_forensic_qa_v10.py tests/test_br_production_readiness_board_v10.py
           echo "BR_V10_HARNESS_PRODUCTION_GUARDS=PASS"
       - name: Encode real synthetic original good, mute and missing-audio variants
         run: |
@@ -134,6 +136,16 @@ jobs:
           root=Path(os.environ["RUNNER_TEMP"])/"private-v10-evidence"
           reads={p.stem:json.loads(p.read_text())["result"] for p in root.glob("*.json")}
           assert len(reads)==4
+          from app.services.br_production_readiness_board_v10 import diagnose_technical_readiness
+          for key,value in reads.items():
+              board=diagnose_technical_readiness(value["evidence"])
+              assert board["status"]=="PRODUCTION_RELEASE_BLOCKED"
+              assert board["can_start_publication"] is False
+              assert board["task_execution_attempted"] is False
+              if key=="accepted":
+                  assert board["technical_status"]=="TECHNICAL_SAMPLED_QA_PASS"
+              else:
+                  assert board["blocked_reasons"]
           good=reads["accepted"]
           assert good["technical_status"]=="TECHNICAL_SAMPLED_QA_PASS"
           assert good["evidence"]["metadata"]["video_codec"]=="h264"
@@ -160,4 +172,5 @@ jobs:
           print("BR_V10_MUTED_AND_MISSING_AUDIO_REJECTED=PASS")
           print("BR_V10_FAKE_LONGFORM_REJECTED=PASS")
           print("BR_V10_FALSE_PRODUCTION_READY_BLOCKED=PASS")
+          print("BR_V10_CASE_SPECIFIC_NEXT_EXPERIMENTS=PASS")
           PY
