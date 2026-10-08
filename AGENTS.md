@@ -84,3 +84,16 @@ only. Never add the unrestricted Iris MCP server to an agent directly, browse
 untrusted/authenticated or public sites before an audited egress sandbox, copy
 third-party design, or treat pixels as independent professional quality approval.
 No changes to BR_OWNER_V1, Telegram, publication or canonical learning.
+
+
+## Capacity utilization discipline (V8 isolated candidate)
+
+Use docs/architecture/br-harness-utilization-v8.md for all agents, tools and
+skills: discovery != installed != provider-ready != executed != quality verified.
+Always check exact Harness scope, zero-cost admission, current runtime health,
+measurable case-specific output, failure evidence, and independent review before
+capability selection or learning. A registry entry cannot attest external
+readiness. IRIS extended image modes require owned local static HTML; REA native
+and web/MCP modes require a separate provider and network security gate.
+No tool, skill, agent or MCP server supersedes DeepSeek Harness authority,
+or changes BR_OWNER_V1, Telegram, billing or canonical learning.
