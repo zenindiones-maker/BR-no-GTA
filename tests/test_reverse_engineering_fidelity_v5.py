@@ -131,3 +131,33 @@ def test_invalid_window_and_duration_are_fail_closed(tmp_path, monkeypatch):
     monkeypatch.setattr(fidelity, "probe_media", lambda *_: bad)
     with pytest.raises(ObservationError, match="INCOMPLETE_SOURCE_WINDOW"):
         fidelity.compare_reconstruction(a, b, rights="owned", candidate_rights="owned", window_seconds=2)
+
+
+
+def test_audio_fft_detects_shift_but_does_not_adjust_original(tmp_path, monkeypatch):
+    a, b = _files(tmp_path)
+    rng = np.random.default_rng(2026)
+    reference = rng.normal(size=32_000).astype("float64") * 0.1
+    delayed = np.zeros_like(reference)
+    delayed[320:] = reference[:-320]
+    monkeypatch.setattr(fidelity, "_pcm", lambda path, seconds: reference if path == a else delayed)
+    result = fidelity._audio(a, b, refprobe=_probe(), canprobe=_probe(), seconds=2)
+    measurements = result["alignment_and_spectrum"]
+    assert abs(measurements["candidate_minus_reference_lag_ms"] - 20.0) <= 0.063
+    assert result["waveform_bit_equivalent_after_decode"] is False
+    assert result["unadjusted_difference_rmse_linear"] > 0.05
+    assert "UNVERIFIED" in measurements["lag_interpretation"]
+
+
+def test_spectrum_reports_gain_change_not_fake_voice_quality(tmp_path, monkeypatch):
+    a, b = _files(tmp_path)
+    rng = np.random.default_rng(2027)
+    samples = rng.normal(size=32_000) * 0.04
+    monkeypatch.setattr(fidelity, "_pcm", lambda path, seconds: samples if path == a else samples / 2)
+    result = fidelity._audio(a, b, refprobe=_probe(), canprobe=_probe(), seconds=2)
+    spectral = result["alignment_and_spectrum"]
+    for value in spectral["candidate_minus_reference_band_energy_db"].values():
+        assert value is not None
+        assert abs(value + 6.0206) < 0.01
+    assert result["normalized_correlation"] == 1.0
+    assert result["waveform_bit_equivalent_after_decode"] is False
