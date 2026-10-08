@@ -16,6 +16,8 @@ on:
       - "app/services/reverse_engineering_experiment_intelligence_v4.py"
       - "app/services/reverse_engineering_fidelity_v5_service.py"
       - "app/services/reverse_engineering_fidelity_trial_bridge_v5.py"
+      - "docs/architecture/br-reconstruction-fidelity-laboratory-v5.md"
+      - "AGENTS.md"
       - "tests/test_reverse_engineering_fidelity_trial_bridge_v5.py"
       - "tests/test_reverse_engineering_fidelity_v5.py"
       - "tests/test_reverse_engineering_fidelity_harness_v5.py"
