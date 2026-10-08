@@ -15,12 +15,13 @@ from typing import Any
 from app.services.harness_authorization_service import validate_harness_authorization
 from app.services.reverse_engineering_media_service import ObservationError, _source
 from app.services.reverse_engineering_forensics_service import analyze_forensics
+from app.services.reverse_engineering_learning_proposal_service import plan_original_experiment
 
 MEDIA_CAPABILITY_ID = "reverse-engineering.media.observe"
 REA_CAPABILITY_ID = "reverse-engineering.software.rea-static"
 MEDIA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_media_observation"
 REA_EXECUTOR_BINDING = "app.services.reverse_engineering_harness_service.execute_authorized_software_observation"
-_ALLOWED_MEDIA_PAYLOAD = frozenset({"source_path", "rights", "transcript_path", "include_scene_cuts"})
+_ALLOWED_MEDIA_PAYLOAD = frozenset({"source_path", "rights", "transcript_path", "include_scene_cuts", "owner_goal", "candidate_path", "candidate_rights"})
 _ALLOWED_SOFTWARE_PAYLOAD = frozenset({"source_path", "rights"})
 _SOFTWARE_RIGHTS = frozenset({"owned", "licensed", "observation_only"})
 _SENSITIVE_PATH_MARKERS = frozenset({".ssh", ".aws", ".env", ".run", ".git", "credentials", "tokens", "private_material", "owner_voice", "audition-ledger"})
@@ -109,6 +110,21 @@ def execute_authorized_media_observation(
         source, rights=args["rights"], transcript=transcript,
         include_scene_cuts=args.get("include_scene_cuts", False),
     )
+    candidate = None
+    if args.get("candidate_path") is not None:
+        if not isinstance(args["candidate_path"], str) or args.get("candidate_rights") not in {"owned", "licensed"}:
+            raise PermissionError("REVERSE_ENGINEERING_ORIGINAL_CANDIDATE_REQUIRED")
+        candidate_source = _scope(auth, args["candidate_path"])
+        candidate = analyze_forensics(candidate_source, rights=args["candidate_rights"])
+    if (args.get("owner_goal") is None) != (args.get("candidate_path") is None):
+        # Goal-only study is permitted; a candidate requires an explicit owner goal.
+        if args.get("candidate_path") is not None:
+            raise PermissionError("REVERSE_ENGINEERING_OWNER_GOAL_REQUIRED")
+    proposal = plan_original_experiment(
+        reference=observation,
+        owner_goal=args["owner_goal"],
+        candidate=candidate,
+    ) if args.get("owner_goal") is not None else None
     return {
         "schema_version": "BRHarnessReverseEngineeringResult/v1",
         "capability_id": MEDIA_CAPABILITY_ID,
@@ -117,6 +133,7 @@ def execute_authorized_media_observation(
         "execution_id": auth.execution_id,
         "status": "MEASURED",
         "evidence": observation,
+        "learning_proposal": proposal,
         "approval": "NOT_REQUESTED",
         "production_mutation": False,
         "authority": "DEEPSEEK_HARNESS",
