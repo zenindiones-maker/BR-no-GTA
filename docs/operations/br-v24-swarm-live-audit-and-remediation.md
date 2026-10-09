@@ -203,3 +203,92 @@ Run `37881471066` (após aplicar em lock efêmero o patch BR já existente `prox
 6. **YouTube:** completar leitura OAuth oficial e analytics apenas com escopos mínimos quando houver autenticação; impedir acesso externo, upload, publicação ou learning-promotion a partir de um SLM sem gate original.
 
 **Nenhum resultado acima autoriza promover V24, gastar além de franquia autorizada, enviar mensagens, gerar voz BR_OWNER_V1 ou executar no A15.**
+
+## 6. V24 2026-10-09 — Hermes missão completa e Agent Office sem túneis
+
+**Estado:** desenvolvido, analisado e testado somente na branch experimental
+`work/br-slm-agent-reconstruction-v24`, **sem promoção**, sem runtime upstream
+Munder autorizado, sem custos novos autorizados, sem A15 como executor e sem
+uso de projeto externo.
+
+### Hermes: retomada *completa* entre runners reais — PASS
+
+- Run `37888701220`:
+  https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/37888701220
+- `runner-a`: executou tarefa primária via **Harness BR original**, emitiu o
+  TaskResultEnvelope, salvou board/checkpoint e parou com missão incompleta.
+- `runner-b`: realizou novo checkout/instalação, restaurou a mesma missão,
+  reconheceu primária como concluída sem repetir execução, entregou
+  evidência ao dependente e **completou a tarefa dependente**.
+- Gates: `DURABLE_MISSION_RESUME=PASS`,
+  `DUPLICATE_AGENT_EXECUTION_AVOIDED=PASS`,
+  `CROSS_RUNNER_TYPED_HANDOFF=PASS`,
+  `BR_V24_REAL_HERMES_TWO_JOB_COMPLETE_MISSION=PASS`.
+- **Escopo:** duas tarefas de recuperação/retrieval read-only no Harness,
+  usando Hermes já integrado. Não prova todos os executores Hermes, SLM,
+  treinamento, execução autônoma contínua nem produção final.
+
+### Agent Office/Munder: engenharia reversa da cadeia vulnerável
+
+Pin original: `6248293a7cd9dfdbf9633d12bbe857831ccfee88`,
+referenciado em `integrations/munder_difflin/UPSTREAM.lock`.
+**Não foi alterado.**
+
+- Run `37888772322`: somente `npm audit fix --package-lock-only`,
+  sem `--force`, no runner descartável, reduziu `HIGH: 10 → 9`.
+  MCP upstream permaneceu bloqueado.
+- Run `37888947949`: análise de ancestrais de dependências mostrou
+  nove HIGH alcançáveis por arestas declaradas de dependências de produção:
+  a partir de `localtunnel` (ex.: `axios`) e `tunnelmole`
+  (ex.: `toml`, `@types/jest`, `expect`, `jest-message-util`,
+  `micromatch`, `braces`). O grafo estático **não prova explorabilidade**.
+  O workflow recebeu correção posterior para salvar o JSON sem bytes
+  escapados extra no final; não reutilizar artefatos antigos como JSON canônico.
+- Runs `37889090586` e `37889195522`: retirar somente
+  `localtunnel`/`tunnelmole` do manifest temporário e atualizar o lockfile
+  resultou em **0 HIGH / 0 CRITICAL** no `npm audit --omit=dev`.
+  **Não removeu** pacotes do repositório BR nem do upstream canônico.
+- Engenharia reversa do código original localizou
+  `src/main/slack.ts` (`SlackWebhookServer`) e
+  `src/main/webhook.ts` (`WebhookServer`): seus `start()` invocam
+  `listen()` **antes** de `openTunnel()`. O `listen()` faz
+  `server.listen(this.port)` sem limitar endereço a loopback. Logo,
+  dependência removida **sozinha não elimina o listener**.
+- Run `37889406316`: o patch **temporário** em
+  `scripts/br_v24_agent_office_no_ingress_patch.py` inseriu guardas
+  fail-closed nos dois `start()` e substituiu imports dinâmicos de túnel por
+  stubs de erro; **5 testes adversariais e typecheck Node TypeScript PASS**;
+  npm audit manteve `0 HIGH / 0 CRITICAL`.
+  `BR_V24_OFFICE_RUNTIME_STARTED=FALSE`:
+  https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/37889406316
+
+**Escopo da correção:** viabilidade de isolamento da integração pública de
+túneis Slack/webhook. A implementação do upstream nunca foi autorizada como
+executor real, listener, MCP server ou autoridade do Harness. Antes de
+admitir *qualquer* runtime Agent Office de terceiros, são obrigatórios:
+(1) revisão de segurança independente do patch e dependências;
+(2) validação de endpoints, imports dinâmicos e chamadas indiretas;
+(3) ensaios reais com rede isolada, sem segredo, fora de produção;
+(4) prova que funcionalidades essenciais não dependem dos túneis;
+(5) autorização exata do Harness sem promover capacidades obsoletas.
+
+### Recibos ainda bloqueados
+
+- `V24_AGENT_OFFICE_UPSTREAM_RUNTIME=BLOCKED_PENDING_INDEPENDENT_REVIEW`
+- `V24_SLM_GENERATIVE_AGENT_INFERENCE=NOT_ATTEMPTED`
+- `V24_OWNER_VOICE_QWEN_PRODUCTION=BLOCKED`
+- `V24_YOUTUBE_PUBLISH=HUMAN_APPROVAL_REQUIRED`
+- `V24_NATIVE_REA_PORT_INTO_RUNTIME=NOT_AUTHORIZED`
+- `V24_ALL_44_AGENTS_REAL_EXECUTION=NOT_PROVEN`
+- `A15_COMPUTE=FORBIDDEN`
+
+### Fontes de técnica e alertas consultados
+
+- npm docs: https://docs.npmjs.com/cli/audit.html/
+- npm overrides: https://docs.npmjs.com/cli/v11/configuring-npm/package-json#overrides
+- `braces` unpatched high CVE-2026-93687:
+  https://github.com/advisories/GHSA-vfj7-8cjw-p6xm
+- MCP SDK cross-client fix 1.26.0:
+  https://github.com/advisories/GHSA-345p-7cg4-v4c7
+- GitHub Actions artifact and attestations:
+  https://docs.github.com/en/actions/concepts/security/artifact-attestations
