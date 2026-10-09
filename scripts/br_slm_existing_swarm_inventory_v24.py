@@ -59,6 +59,14 @@ def main() -> int:
         from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
         from app.services.br_slm_swarm_bridge_v24 import audit_existing_swarm
         report = audit_existing_swarm(GLOBAL_CAPABILITY_REGISTRY)
+        from app.services.br_slm_swarm_wiring_v24 import reconcile_existing_wiring
+        from app.services.agent_office.task_owner_registry import executable_agent_task_owner_profiles
+        from app.services.hermes_multiagent.registry_roster import project_registry_to_hermes_roster
+        wiring = reconcile_existing_wiring(
+            registry=GLOBAL_CAPABILITY_REGISTRY,
+            office_profiles=executable_agent_task_owner_profiles(),
+            hermes_roster=project_registry_to_hermes_roster(),
+        )
         report["git_head"] = sha
         # The receipt hash is the fingerprint of the registry-only result,
         # not an authentication signature for the host or a production permit.
@@ -72,6 +80,16 @@ def main() -> int:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
             json.dump(report, stream, ensure_ascii=False, sort_keys=True, indent=2)
             stream.write("\n")
+        wiring_file = receipt_dir / ("br-v24-existing-wiring-" + sha + ".json")
+        wiring_fd = os.open(wiring_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(wiring_fd, "w", encoding="utf-8") as stream:
+            json.dump(wiring, stream, ensure_ascii=False, sort_keys=True, indent=2)
+            stream.write("\n")
+        print("BR_V24_WIRING_METADATA_STATUS=" + wiring["metadata_wiring_status"])
+        print("BR_V24_OFFICE_PROFILE_COUNT=" + str(wiring["agent_office_profile_count"]))
+        print("BR_V24_HERMES_DECLARED_ROSTER_COUNT=" + str(wiring["hermes_projection_count"]))
+        print("BR_V24_WIRING_ANOMALY_COUNT=" + str(len(wiring["anomalies"])))
+        print("BR_V24_WIRING_RECEIPT_SHA256=" + wiring["receipt_sha256"])
         print("BR_V24_SWARM_SOURCE=BR_CANONICAL_GLOBAL_CAPABILITY_REGISTRY")
         print("BR_V24_REGISTERED_CAPABILITIES=" + str(report["registered_capability_count"]))
         print("BR_V24_DISTINCT_AGENT_IDS=" + str(report["distinct_registered_agent_ids"]))
@@ -84,7 +102,7 @@ def main() -> int:
         print("BR_V24_AGENTS_EXECUTED=NONE")
         print("BR_V24_HARNESS_ROUTING_CHANGED=FALSE")
         print("BR_V24_PRODUCTION_PROMOTION=NOT_ATTEMPTED")
-        return 0
+        return 0 if wiring["metadata_wiring_status"] == "PASS" else 2
     except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
         # Print only error class, not paths, secrets or arbitrary exception text.
         print("BR_V24_SWARM=BLOCKED:" + type(exc).__name__, file=sys.stderr)
