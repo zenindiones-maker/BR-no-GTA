@@ -8,6 +8,8 @@ on:
       - ".github/workflows/br-v23-isolated-contracts.yml"
       - "app/services/owner_voice_qwen_ablation_v23.py"
       - "scripts/owner_voice_single_human_clone.py"
+      - "scripts/owner_voice_v23_manual_runner.py"
+      - "tests/test_owner_voice_v23_manual_runner_stdlib.py"
       - "tests/test_owner_voice_qwen_ablation_v23_stdlib.py"
       - "tests/test_owner_voice_ledger_commit_refs_v23_stdlib.py"
 
@@ -49,6 +51,8 @@ jobs:
               "scripts/owner_voice_single_human_clone.py",
               "tests/test_owner_voice_qwen_ablation_v23_stdlib.py",
               "tests/test_owner_voice_ledger_commit_refs_v23_stdlib.py",
+              "scripts/owner_voice_v23_manual_runner.py",
+              "tests/test_owner_voice_v23_manual_runner_stdlib.py",
           ):
               ast.parse(Path(path).read_text(encoding="utf-8"), filename=path)
           source = Path("app/services/owner_voice_qwen_ablation_v23.py").read_text(encoding="utf-8")
@@ -61,6 +65,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m unittest discover -s tests -p 'test_owner_voice_*v23_stdlib.py' -v
+          python -m unittest discover -s tests -p 'test_owner_voice_v23_manual_runner_stdlib.py' -v
           echo "V23_VERSIONED_UNIT_CONTRACTS=PASS"
           echo "PRIVATE_OWNER_REFERENCE_MATERIALIZED=FALSE"
           echo "QWEN_REAL_INFERENCE=NOT_ATTEMPTED"
