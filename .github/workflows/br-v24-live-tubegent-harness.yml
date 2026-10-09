@@ -1,0 +1,65 @@
+name: BR V24 Live TUBEGENT Harness Execution
+
+on:
+  push:
+    branches:
+      - work/br-slm-agent-reconstruction-v24
+    paths:
+      - ".github/workflows/br-v24-live-tubegent-harness.yml"
+      - "scripts/br_v24_youtube_native_live_canary.py"
+      - "tests/test_br_v24_youtube_native_live_canary_stdlib.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-v24-live-tubegent-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  run-existing-nine-specialists:
+    name: Nine existing BR YouTube roles through DeepSeek Harness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      PYTHONDONTWRITEBYTECODE: "1"
+      ZERO_COST_OPERATION: "TRUE"
+      GH_PROMOTION_DISABLED: "true"
+    steps:
+      - name: Immutable checkout without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Check exact branch and install BR runtime only on ephemeral runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "work/br-slm-agent-reconstruction-v24"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "BR_TEST_DATABASE=$RUNNER_TEMP/br-v24-existing-tubegent.sqlite3" >> "$GITHUB_ENV"
+          python -m pip install -q --disable-pip-version-check -r requirements.txt
+      - name: Negative boundary tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_br_v24_youtube_native_live_canary_stdlib.py' -v
+      - name: Execute all nine original TUBEGENT roles and verify persisted receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/br_v24_youtube_native_live_canary.py
+          echo "BR_V24_ORIGINAL_TUBEGENT_EXECUTION=PASS"
+      - name: Save bounded no-private-audio proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: br-v24-nine-original-tubegent-${{ github.run_id }}
+          path: ${{ runner.temp }}/br-v24-nine-existing-tubegent-*.json
+          if-no-files-found: warn
+          retention-days: 7
