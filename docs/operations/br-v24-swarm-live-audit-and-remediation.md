@@ -337,3 +337,66 @@ procedimento, reconciliação do binding de execução BR e somente então
 canary autorizado de uma operação Agent Office de baixo risco. Em paralelo,
 o SLM V22 mantém `QUALITY_REJECTED` até benchmark real independente em
 carga remota aprovada, sem download ou gastos não autorizados.
+
+## 7. Agent Office ingress surface — 09/10/2026 — remediation candidate, not admission
+
+Independent review tracking: [issue #19](https://github.com/zenindiones-maker/BR-no-GTA/issues/19).
+
+### Source-wide network inventory on original pinned third-party SHA
+
+- Run `37915321255`: https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/37915321255
+- Source pin: `6248293a7cd9dfdbf9633d12bbe857831ccfee88`.
+- **232** TS/JS source files examined by first-party bounded rules; **34**
+  source-pattern occurrences; **12** outside original Slack/webhook guards.
+- Actual source review of those 12 identified:
+  - `src/main/hive.ts:3314,3361` — embedded HTTP proxy binds to
+    `127.0.0.1` (static evidence; review its runtime launch/callers).
+  - `src/main/hooks.ts:95,130` — Unix-domain socket; requires
+    filesystem permissions and symlink/path trust review, not a TCP exposure.
+  - `src/main/integrationBroker.ts:91,103` — HTTP integrationBroker
+    explicitly binds to `127.0.0.1`; token issuance/revocation and
+    caller-origin restrictions still need independent analysis.
+  - `src/main/telemetry.ts:162,247,249,252` — telemetry `opts.host`
+    passed into `server.listen`, allowing a caller to request a routable
+    host despite the default `127.0.0.1`. **Source-level security risk.**
+  - `src/main/tunnelmole.d.ts:1,2` — compile-time type declarations only,
+    not evidence that a tunnel was started.
+- Scanner: `scripts/br_v24_office_ingress_surface_audit.py`, with
+  7 adversarial/negative tests. This is a bounded **source heuristic**, not
+  a complete control-flow/security review. `SOURCE_INVENTORY=PASS` never
+  implies `NETWORK_SECURITY=PASS`.
+
+### Temporary telemetry loopback remediation
+
+- Run `37915678576`: https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/37915678576
+- Branch commit: `233821166835a65b0f49cb0a34ac4a056f75877e`.
+- `scripts/br_v24_office_telemetry_loopback_patch.py` rewrites only the
+  **disposable vendor candidate**: constructor accepts exactly
+  `127.0.0.1` and `::1`, rejects any other `opts.host` before
+  `listen()`. Original upstream commit and BR's canonical lock unchanged.
+- Existing Slack/webhook no-ingress source guards remain active in this
+  disposable candidate; both tunnel dependencies removed from the ephemeral
+  manifest/lock. `npm audit --omit=dev`: 0 HIGH / 0 CRITICAL in the
+  temporary production dependency tree. TypeScript `tsc --noEmit` PASS.
+- **10** Python regression tests passed (5 telemetry/5 original ingress).
+  No runtime started or dynamic ingress/egress probing performed.
+- **Independent security review remains mandatory.** Code compilation and
+  a clean npm advisory report are not sufficient security approval.
+
+### Hard stop and next engineering boundary
+
+`BR_V24_AGENT_OFFICE_UPSTREAM_RUNTIME=BLOCKED`;
+`BR_V24_INDEPENDENT_SECURITY_REVIEW=PENDING`;
+`BR_V24_CANONICAL_PROMOTION=NOT_ATTEMPTED`;
+`BR_V24_A15_COMPUTE=FORBIDDEN`.
+
+The independent reviewer must examine source-entrypoint reachability, Unix
+socket path permissions, loopback broker token/origin protections, telemetry
+host enforcement, no-tunnel lock and original commit identity. Only after an
+approved sandbox procedure may a negative runtime test be attempted with
+blocked external network and no secrets. All Agent Office actions remain
+subordinate to the DeepSeek Harness; no duplicate authority or agent registry.
+
+External technical basis:
+- https://nodejs.org/download/release/v24.15.0/docs/api/net.html
+- https://docs.github.com/en/actions/reference/security/secure-use
