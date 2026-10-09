@@ -8,6 +8,8 @@ on:
       - ".github/workflows/br-v24-agent-office-ingress-isolation-typecheck.yml"
       - "scripts/br_v24_agent_office_no_ingress_patch.py"
       - "tests/test_br_v24_agent_office_no_ingress_patch.py"
+      - "scripts/br_v24_office_review_bundle.py"
+      - "tests/test_br_v24_office_review_bundle.py"
   workflow_dispatch:
 
 permissions:
@@ -50,6 +52,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git -C .br-v24-untrusted-office-code-candidate rev-parse HEAD)" = "6248293a7cd9dfdbf9633d12bbe857831ccfee88"
           python -m unittest discover -s tests -p 'test_br_v24_agent_office_no_ingress_patch.py' -v
+          python -m unittest discover -s tests -p 'test_br_v24_office_review_bundle.py' -v
           python scripts/agent_office_preflight.py --upstream-dir "$GITHUB_WORKSPACE/.br-v24-untrusted-office-code-candidate"
       - name: Apply ONLY original-source pinned Slack/webhook denial in untrusted temporary checkout
         shell: bash
@@ -103,11 +106,24 @@ jobs:
           echo "BR_V24_OFFICE_EXTERNAL_INGRESS=DISABLED_IN_DISPOSABLE_SOURCE_ONLY"
           echo "BR_V24_OFFICE_RUNTIME_STARTED=FALSE"
           echo "BR_V24_OFFICE_SECURITY_ADMISSION=BLOCKED_PENDING_INDEPENDENT_REVIEW"
+      - name: Bind exact upstream diff, production lock and npm evidence for independent review
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/br_v24_office_review_bundle.py \
+            --vendor "$GITHUB_WORKSPACE/.br-v24-untrusted-office-code-candidate" \
+            --patch-receipt "$RUNNER_TEMP/br-v24-office-ingress-candidate.json" \
+            --npm-audit "$RUNNER_TEMP/br-v24-office-code-audit.json" \
+            --output "$RUNNER_TEMP/br-v24-office-review-bundle.json"
+          echo "BR_V24_OFFICE_REVIEW_BUNDLE=PASS"
+          echo "BR_V24_OFFICE_RUNTIME_SECURITY_ADMISSION=BLOCKED"
       - name: Save only bounded source-diff receipt; no code or creds published
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: br-v24-office-no-ingress-typecheck-${{ github.run_id }}
-          path: ${{ runner.temp }}/br-v24-office-ingress-candidate.json
+          path: |
+            ${{ runner.temp }}/br-v24-office-ingress-candidate.json
+            ${{ runner.temp }}/br-v24-office-review-bundle.json
           if-no-files-found: warn
           retention-days: 7
