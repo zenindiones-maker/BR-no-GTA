@@ -442,3 +442,30 @@ continuam intocados.
 `BR_V24_A15_COMPUTE=FORBIDDEN`
 
 **Technical reference:** [GitHub Actions docs, job-to-job immutable artifacts](https://docs.github.com/pt/actions/tutorials/store-and-share-data); [GitHub artifact digest is a *warning* on mismatch, not by itself a fail-closed gate](https://github.blog/changelog/2025-03-18-github-actions-now-supports-a-digest-for-validating-your-artifacts-at-runtime/).
+
+## 10. YouTube Intelligence — 19 papéis originais executados pelo Harness (09/10/2026)
+
+Run [37939506468](https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/37939506468), commit `51adc75a38fcf76142c4b131a1463031f1925819`: **SUCCESS**, seis testes negativos/funcionais PASS, **19/19** execuções do executor `app.services.youtube_intelligence_capability_bridge.execute_youtube_intelligence_role_capability` através de `harness_capability_service.execute_capability`.
+
+**Defeitos corrigidos no BR V24:**
+- O `CAPABILITY_CATALOG` omitia os papéis `youtube-intelligence` apesar de já estarem no `GLOBAL_CAPABILITY_REGISTRY`. Foi incluído apenas o binding **exato**, read-only, desses papéis no catálogo do Harness; nenhum executor de mutação/YouTube API foi adicionado.
+- O adaptador exigia `EXECUTION` mesmo quando os papéis originais admitiam `RESEARCH`, `EDITORIAL` e `DECISION`. Agora o serviço resolve a autorização persistida do **DeepSeek Harness**, valida o subject e exige uma ação contida simultaneamente no contrato do papel e na allowlist fixa. Os executores de plataforma permanecem **EXECUTION-only**, e publicação/upload continuam sob seus gates específicos.
+- `evidence_refs` não aceitava com segurança o contrato tipado; agora rejeita string simples, entrada vazia, excesso de referências e identificadores de comprimento excessivo.
+
+**Verificação de execução:**
+- Para cada papel: rota com `required_capability_id` exato; `selected_executor_binding` conferido; emissão e consumo de autorização persistida; retorno `CapabilityEvidence(status=EXECUTED)`; recibo com `schema=YouTubeIntelligenceRoleResult/v1`, `authority=DEEPSEEK_HARNESS`, referências de evidência e ausência de autoridade editorial de publicação.
+- Os seis testes incluem `RESEARCH` e `EDITORIAL` legítimos, `PUBLICATION`/`DEVELOPMENT` rejeitados, subject/token incorretos, evidências malformadas e proibição de execução no A15.
+- Nenhum modelo baixado; nenhum áudio privado; nenhuma chamada YouTube externa; nenhum agente permanente novo; **papéis funcionalmente executados, competência semântica ainda NÃO COMPROVADA**.
+- Recibo SHA-256: `3a237da629b132f2d0f2cb9fff89afab4f71e91359a2f35b93439613b301fc50`.
+
+**Permanecem separados:** as **17 identidades** com execução observada continuam sendo 17. Estes **19 papéis** não têm `agent_id` permanente e não devem inflar a contagem de agentes operacionais.
+
+### Atualização da pesquisa de segurança
+
+A documentação oficial do Node.js v24 deixa claro que `node:vm` **não é uma barreira de segurança para código não confiável**. Portanto o gate anterior do Agent Office (run `37932088666`) é apenas um teste do fragmento BR previamente conferido byte a byte — não um sandbox robusto ou aprovação para iniciar o runtime do Munder. A revisão independente no [issue #19](https://github.com/zenindiones-maker/BR-no-GTA/issues/19) continua obrigatória.
+
+- https://r2.nodejs.org/docs/latest-v24.x/api/vm.html
+- https://docs.github.com/en/actions/concepts/workflows-and-actions/concurrency
+- https://docs.github.com/en/billing/concepts/product-billing/github-actions
+
+**Continuam bloqueados:** `AGENT_OFFICE_UPSTREAM_RUNTIME`, `SLM_PRODUCTION`, publicações e `CANONICAL_PROMOTION`; `A15_COMPUTE=FORBIDDEN`. A próxima fase é executar benchmark *real* de SLM generativo em ambiente remoto e com cota conhecida, comparando tarefas inéditas e abstenção sem ampliar autoridade.
