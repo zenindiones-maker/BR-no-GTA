@@ -419,3 +419,26 @@ External technical basis:
 não enviar Telegram, não publicar, não aumentar cota e não promover branch.
 O Harness BR, os 17 executores já comprovados e as regras do proprietário
 continuam intocados.
+
+## 9. Telemetry exact-source guard: isolated negative VM gate — 2026-10-09
+
+**Gate completed:** [CI 37932088666](https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/37932088666) — `SUCCESS`; branch `work/br-slm-agent-reconstruction-v24`, source commit `9a9603631f0e7af640cde7911bf95b1a88cda29b`.
+
+- Original Munder pinned `6248293a7cd9dfdbf9633d12bbe857831ccfee88` checked out without persisted credentials; original upstream untouched.
+- First-party source-hardening applied only in a disposable `src/main/telemetry.ts`. The complete new constructor guard was verified **byte-for-byte** against the known BR patch before executing it.
+- `7/7` Python regressions passed (including patch drift and invalid input).
+- A restricted Node VM executed **only the exact BR-authored host-check fragment**, not the full Munder/Agent Office module: `4` allowed conditions (including default loopback) and `11` blocked non-allowlisted values passed.
+- `BR_V24_OFFICE_NEGATIVE_VM_GUARD=PASS`, `BR_V24_OFFICE_NEGATIVE_VM_LISTENERS=0`.
+- Receipt SHA256 `670faf5733020b68f997aa68fdd9a2804efdba27e2fcd6a8181a566bb13e8cfb`.
+- Source/workflow: `scripts/br_v24_office_telemetry_negative_vm.py`, `.github/workflows/br-v24-office-telemetry-negative-vm.yml`, `tests/test_br_v24_office_telemetry_negative_vm.py`.
+
+**Important security boundary:** this proves the isolated constructor guard's behavior only. It does **not** start `server.listen`, audit caller reachability, prove no hidden listeners, enforce token/Origin/Host checks, or constitute an authenticated *independent* review. The current issue [#19](https://github.com/zenindiones-maker/BR-no-GTA/issues/19) remains the review gate. Source-level telemetry behavior is better measured; third-party runtime admission is unchanged.
+
+`BR_V24_OFFICE_TELEMETRY_NEGATIVE_VM=PASS`
+`BR_V24_OFFICE_NETWORK_RUNTIME_TEST=NOT_ATTEMPTED`
+`BR_V24_OFFICE_INDEPENDENT_REVIEW=PENDING`
+`BR_V24_AGENT_OFFICE_RUNTIME=BLOCKED`
+`BR_V24_SLM_PRODUCTION=BLOCKED`
+`BR_V24_A15_COMPUTE=FORBIDDEN`
+
+**Technical reference:** [GitHub Actions docs, job-to-job immutable artifacts](https://docs.github.com/pt/actions/tutorials/store-and-share-data); [GitHub artifact digest is a *warning* on mismatch, not by itself a fail-closed gate](https://github.blog/changelog/2025-03-18-github-actions-now-supports-a-digest-for-validating-your-artifacts-at-runtime/).
