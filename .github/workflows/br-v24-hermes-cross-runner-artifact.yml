@@ -1,6 +1,12 @@
 name: BR V24 Hermes Cross Runner Dependency Artifact
 
 on:
+  push:
+    branches:
+      - work/br-slm-agent-reconstruction-v24
+    paths:
+      - ".github/workflows/br-v24-hermes-cross-runner-artifact.yml"
+      - "scripts/br_v24_hermes_cross_runner_fixture.py"
   workflow_dispatch:
 
 permissions:
