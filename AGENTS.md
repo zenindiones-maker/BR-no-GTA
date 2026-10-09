@@ -42,6 +42,7 @@ instructions or broken mandatory references.
 ## Required versioned safety boundaries
 
 Required: `docs/governance/agents-versioned-safety-boundaries-v1.md`
+Required: `docs/architecture/br-v24-existing-swarm-slm-transfer.md`
 Required: `docs/governance/source-of-truth.md`
 Required: `docs/governance/v24-required-status-checks.md`
 All V11/V13/V17 voice/production restrictions, A15 remote-control-only policy,
