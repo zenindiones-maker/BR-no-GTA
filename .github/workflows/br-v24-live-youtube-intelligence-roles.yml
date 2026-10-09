@@ -1,0 +1,66 @@
+name: BR V24 Live Existing YouTube Intelligence Roles
+
+on:
+  push:
+    branches:
+      - work/br-slm-agent-reconstruction-v24
+    paths:
+      - ".github/workflows/br-v24-live-youtube-intelligence-roles.yml"
+      - "scripts/br_v24_youtube_intelligence_live.py"
+      - "tests/test_br_v24_youtube_intelligence_live.py"
+      - "app/services/youtube_intelligence_capability_bridge.py"
+      - "app/services/harness_capability_service.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-v24-intelligence-roles-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  original-existing-nineteen:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      PYTHONDONTWRITEBYTECODE: "1"
+      ZERO_COST_OPERATION: "TRUE"
+      GH_PROMOTION_DISABLED: "true"
+    steps:
+      - name: Checkout exact first-party branch without retaining write credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Prepare Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Validate git identity and install only existing BR dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "work/br-slm-agent-reconstruction-v24"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "BR_TEST_DATABASE=$RUNNER_TEMP/br-v24-youtube-intelligence.sqlite3" >> "$GITHUB_ENV"
+          python -m pip install -q --disable-pip-version-check -r requirements.txt
+      - name: Run adversarial authorization and read-only role tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p "test_br_v24_youtube_intelligence_live.py" -v
+      - name: Execute all nineteen original roles through persisted Harness authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/br_v24_youtube_intelligence_live.py
+          echo "BR_V24_YOUTUBE_INTELLIGENCE_HARNESS_INTEGRATION=PASS"
+      - name: Retain sanitized exact-SHA receipts without private voice or credentials
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: br-v24-youtube-intelligence-${{ github.run_id }}
+          path: ${{ runner.temp }}/br-v24-intelligence-*.json
+          if-no-files-found: warn
+          retention-days: 7
