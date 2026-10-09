@@ -51,6 +51,9 @@ def main() -> int:
         if (branch != EXPECTED_BRANCH or remote not in valid_remotes
                 or env.get("GITHUB_SHA", sha) != sha):
             raise ValueError("BR_V24_SWARM_GIT_IDENTITY_CHANGED")
+        # Entry from scripts/ uses scripts as sys.path[0]; add the verified
+        # checkout root locally, without importing any external project.
+        sys.path.insert(0, str(root))
         # Import only BR's existing read-only registry; no dynamic importing of
         # executor bindings, no external tool calls, no model weights.
         from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
