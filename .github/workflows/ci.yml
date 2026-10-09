@@ -492,17 +492,29 @@ jobs:
               "pytest_wall_clock_seconds": None,
               "collected": None,
           }
-          match = re.search(
-              r"(?P<passed>\d+) passed(?:, (?P<failed>\d+) failed)?(?:, (?P<skipped>\d+) skipped)?(?:, \d+ warnings?)?(?:, (?P<subtests>\d+) subtests passed)?.*? in (?P<seconds>\d+(?:\.\d+)?)s",
-              log,
-          )
-          if match:
+          # Pytest lists FAILURES before PASSES on a failed run. Never
+          # fabricate "failed=0" when the summary has a different order.
+          summary_line = next((
+              line for line in reversed(log.splitlines())
+              if re.search(r"\\bin (\\d+(?:\\.\\d+)?)s\\b", line)
+              and re.search(r"\\d+\\s+(?:passed|failed|errors)\\b", line)
+          ), "")
+          elapsed = re.search(r"\\bin (\\d+(?:\\.\\d+)?)s\\b", summary_line)
+          if elapsed:
+              counters = {
+                  name: int(value)
+                  for value, name in re.findall(
+                      r"(\\d+)\\s+(subtests passed|passed|failed|skipped|errors)\\b",
+                      summary_line,
+                  )
+              }
               summary.update({
-                  "passed": int(match.group("passed")),
-                  "failed": int(match.group("failed") or 0),
-                  "skipped": int(match.group("skipped") or 0),
-                  "subtests_passed": int(match.group("subtests") or 0),
-                  "pytest_wall_clock_seconds": float(match.group("seconds")),
+                  "passed": counters.get("passed", 0),
+                  "failed": counters.get("failed", 0),
+                  "skipped": counters.get("skipped", 0),
+                  "errors": counters.get("errors", 0),
+                  "subtests_passed": counters.get("subtests passed", 0),
+                  "pytest_wall_clock_seconds": float(elapsed.group(1)),
               })
           collected = re.search(r"(\d+) tests? collected", collection)
           if collected:
@@ -518,7 +530,12 @@ jobs:
                   "skipped": sum(int(item.attrib.get("skipped", 0)) for item in suites),
                   "time_seconds": sum(float(item.attrib.get("time", 0.0)) for item in suites),
               }
+              summary["failed"] = summary["junit"]["failures"]
               summary["errors"] = summary["junit"]["errors"]
+              summary["skipped"] = summary["junit"]["skipped"]
+              # Parsed counters are diagnostic; the XML report is authoritative.
+              if summary["junit"]["tests"] <= 0:
+                  raise SystemExit("PYTEST_JUNIT_EMPTY_FAIL_CLOSED")
           summary["slow_test_profile_available"] = (
               "slowest 50 durations" in log.lower()
               or "50 slowest durations" in log.lower()
