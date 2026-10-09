@@ -89,3 +89,70 @@ Run `37877257058` — https://github.com/zenindiones-maker/BR-no-GTA/actions/run
 - AgentTube upstream (somente proveniência, não autoridade): https://github.com/darkzOGx/youtube-automation-agent
 
 **Nota:** este ledger é uma fotografia de evidências verificadas e dos bloqueios. Atualizá-lo após novos recibos reais, sem substituir o Harness ou afirmar cobertura não demonstrada.
+
+## 5. Atualização verificada 2026-10-09 — evidência pós-auditoria
+
+### Seis agentes AgentTube adaptados ao próprio BR: PASS (sem SLM)
+
+Run `37877764539`:
+https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/37877764539
+
+Os **seis** agentes `content-strategy-agent`, `script-writer-agent`,
+`thumbnail-designer-agent`, `seo-optimizer-agent`,
+`production-management-agent` e `analytics-optimization-agent` foram
+executados no runner remoto usando as implementações **existentes do BR**,
+`TaskExecutionEnvelope/v1`, `TypedTaskRequirement/v1`, autorização real do
+Harness e `execute_capability`. Prova `BR_V24_AGENTTUBE_NATIVE_EXECUTED=6`,
+`BR_V24_AGENTTUBE_ORIGINAL_EXECUTION=PASS`; sem calls externas, modelo, upload,
+geração de vídeo, SLM ou promoção. O sétimo agente `publishing-scheduling-agent`
+continua **HUMAN_GATE**, não foi executado.
+
+A falha inicial na V24 era no próprio canary: `product_contract_digest`
+foi incorretamente construído com um SHA de commit de 40 caracteres. O contrato
+exige SHA-256 hex de 64 caracteres. A entrada foi corrigida; **não** se mudou
+o validador ou a autoridade do Harness.
+
+**Total de identidades com execução comprovada no Harness pela V24: 17**:
+2 de análise/melhoria + 9 TUBEGENT + 6 AgentTube. Este número não inclui
+24 skills Addy como agentes distintos, 19 funções YouTube Intelligence
+sem `agent_id`, ou agentes sem execução observada.
+
+### Hermes durability: causa raiz corrigida, regressão PASS
+
+Run `37878130719`:
+https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/37878130719
+
+Histórico `37159581274`: `runner-b` falhou ao tentar abrir
+`task-results/retrieve-primary-1.json`, que o exporter do checkpoint
+ignorava (copiava apenas `capability-results`). A V24 agora exporta e
+restaura `task-results/*.json` com nomes e hashes exatos no manifesto.
+**4** regressões PASS: cópia/restauração, arquivo ausente, alteração e
+arquivo extra. `FULL_TWO_RUNNER_END_TO_END=NOT_ATTEMPTED` após a correção;
+não declarar recuperabilidade durável comprovada em dois runners até execução.
+
+### Agent Office: HIGH dependencies review PENDING
+
+Run histórico `37822742513`:
+https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/37822742513
+
+Falha `UPSTREAM_AUDIT_ALLOWLIST_DRIFT_REVIEW_REQUIRED`, novos pacotes HIGH
+`@modelcontextprotocol/sdk`, `@types/jest`, `braces`, `expect`,
+`jest-message-util`, `micromatch`. **Não adicionar à allowlist**
+automaticamente: exige auditoria independente e avaliação de caminho de
+exploração/impacto, licenças e versões exatas. CI histórico não representa
+o estado operacional do checkout V24 sem nova prova.
+
+### Próximo gate SLM real
+
+A documentação de Qwen3-0.6B declara licença Apache-2.0, modo não-thinking
+e suporte a integração de ferramentas. Candidato de baixo recurso,
+**ainda não baixado, testado ou admitido no BR V24**. O benchmark ONNX V22
+permanece REJECTED. Sem confirmação da franquia gratuita remanescente do
+repositório privado, não baixar modelos pesados nem agendar sessões longas.
+Modelos não ganham autoridade para executar/clicar/publicar; o Harness mantém
+validações por capability e requer holdout independente por tarefa.
+
+Fontes:
+- https://huggingface.co/Qwen/Qwen3-0.6B
+- https://docs.github.com/en/billing/concepts/product-billing/github-actions
+- https://docs.github.com/en/actions/concepts/workflows-and-actions/workflow-artifacts
