@@ -145,6 +145,17 @@ CAPABILITY_CATALOG = tuple(
         or record.capability_id == "human.presentation.action-first"
         or record.capability_id == "narration.generate.pt-BR"
         or record.capability_id.startswith("youtube.department.")
+        # Bind BR's existing 19 evidence-only YouTube roles to the original
+        # Harness executor. Never admit platform mutation, uploads or a new agent.
+        or (
+            record.domain == "youtube-intelligence"
+            and record.executor_binding == (
+                "app.services.youtube_intelligence_capability_bridge."
+                "execute_youtube_intelligence_role_capability"
+            )
+            and record.side_effect_class == "READ_ONLY"
+            and not record.side_effects
+        )
         or record.capability_id == "youtube.package.persist"
         or record.capability_id == "youtube.monetization.observe"
         or record.capability_id == "system.improvement.propose"
