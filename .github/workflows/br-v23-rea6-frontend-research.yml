@@ -69,8 +69,12 @@ jobs:
           import hashlib,json,os,re
           from pathlib import Path
           path=Path(os.environ["RUNNER_TEMP"])/"rea6-frontend-raw.json"
-          if path.is_symlink() or not path.is_file() or path.stat().st_size > 8*1024*1024:
-              raise SystemExit("BR_REA6_EVIDENCE_INVALID_SIZE_OR_TYPE")
+          if path.is_symlink() or not path.is_file():
+              raise SystemExit("BR_REA6_EVIDENCE_INVALID_TYPE")
+          size=path.stat().st_size
+          print("BR_REA6_EVIDENCE_BYTES="+str(size))
+          if size == 0 or size > 64*1024*1024:
+              raise SystemExit("BR_REA6_EVIDENCE_TOO_LARGE_OR_EMPTY")
           raw=path.read_bytes()
           obj=json.loads(raw)
           record=obj.get("result") if isinstance(obj,dict) and isinstance(obj.get("result"),dict) else obj
