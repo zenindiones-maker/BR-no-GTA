@@ -76,6 +76,35 @@ jobs:
           print("BR_V24_TUNNEL_SOURCE_IMPORT_FILE_COUNT="+str(len(paths)))
           print("BR_V24_TUNNEL_SOURCE_IMPORT_FILES="+json.dumps(paths))
           PY
+      - name: Inspect upstream tunnel touchpoints and local import callers (source-only)
+        shell: bash
+        working-directory: .br-v24-untrusted-office-no-tunnel-candidate
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          for name in ("src/main/slack.ts","src/main/webhook.ts"):
+              p=Path(name)
+              if not p.is_file() or p.is_symlink() or p.stat().st_size>250000:
+                  raise SystemExit("BR_V24_TUNNEL_SOURCE_MISSING_OR_UNTRUSTED")
+              rows=p.read_text().splitlines()
+              matched=[(i+1,row.strip()[:160]) for i,row in enumerate(rows)
+                       if re.search(r"(?:localtunnel|tunnelmole|^export (?:async )?(?:function|class|const)|^function |^async function )",row)]
+              print("BR_V24_TUNNEL_SOURCE_SYMBOLS="+name+":"+str(matched[:55]))
+          root=Path("src")
+          references=[]
+          for path in sorted(root.rglob("*.ts")):
+              if not path.is_file() or path.is_symlink() or path.stat().st_size>250000:
+                  continue
+              for i,row in enumerate(path.read_text(errors="replace").splitlines()):
+                  if re.search(r"(?:from|require|import).{0,60}(?:/slack|/webhook|tunnelmole|localtunnel)",row):
+                      references.append((str(path),i+1,row.strip()[:150]))
+          if len(references)>300:
+              raise SystemExit("BR_V24_TUNNEL_IMPORT_SCOPE_TOO_LARGE")
+          print("BR_V24_TUNNEL_CALLER_REFERENCES="+str(references[:80]))
+          print("BR_V24_TUNNEL_SOURCE_EXECUTION=NOT_ATTEMPTED")
+          PY
       - name: Remove only two tunnel dependencies from disposable vendor manifest and refresh ephemeral lock
         shell: bash
         working-directory: .br-v24-untrusted-office-no-tunnel-candidate
