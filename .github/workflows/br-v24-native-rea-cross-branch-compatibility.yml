@@ -63,7 +63,7 @@ jobs:
           python -m pip install -q --disable-pip-version-check pytest==8.4.2
           (
             cd .br-native-rea-v4-source
-            PYTHONPATH=. python -m pytest -q --confcutdir=tests -o addopts="" tests/test_reverse_engineering_experiment_intelligence_v4.py
+            PYTHONPATH=. python -m pytest -q --noconftest -o addopts="" tests/test_reverse_engineering_experiment_intelligence_v4.py
           )
           echo "BR_NATIVE_REA_V4_ORIGINAL_EXPERIMENT_ASSESSOR_TESTS=PASS"
           echo "BR_NATIVE_REA_EXECUTION_SCOPE=FIRST_PARTY_SYNTHETIC_READONLY_TESTS"
