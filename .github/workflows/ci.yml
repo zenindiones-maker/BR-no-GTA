@@ -236,6 +236,52 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  governance-policy:
+    name: Governance Policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout reviewed candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Verify mandatory AGENTS and versioned policies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          from app.services.agents_policy_validation_service import validate_agents_policy
+
+          root = Path.cwd()
+          policy_file = root / 'docs/governance/agents-versioned-safety-boundaries-v1.md'
+          for document in (root / 'AGENTS.md', policy_file):
+              result = validate_agents_policy(root, agents_path=document)
+              assert result.status == 'PASS', {
+                  'document': str(document.relative_to(root)),
+                  'broken': result.broken_references,
+                  'stale': result.stale_mandatory_references,
+                  'conflicts': result.authority_conflicts,
+                  'lines': result.line_count,
+              }
+          for match in re.finditer(
+              r'\*\*Required:\*\*\s*`([^`]+)`',
+              policy_file.read_text(encoding='utf-8'),
+          ):
+              candidate = (root / match.group(1)).resolve()
+              assert candidate.is_relative_to(root.resolve()), 'REFERENCE_OUTSIDE_REPOSITORY'
+              assert candidate.is_file(), f'BROKEN_EXTENDED_POLICY_REF={match.group(1)}'
+          for path in (
+              'docs/governance/source-of-truth.md',
+              'docs/governance/v24-required-status-checks.md',
+          ):
+              assert (root / path).is_file(), f'MISSING_REQUIRED_GOVERNANCE={path}'
+          assert len((root / 'AGENTS.md').read_text(encoding='utf-8').splitlines()) <= 80
+          print('GOVERNANCE_POLICY=PASS')
+          PY
   bootstrap:
     name: Test Environment
     needs: impact
@@ -345,7 +391,7 @@ jobs:
   fast-feedback:
     name: Fast Feedback
     runs-on: ubuntu-latest
-    needs: [impact, bootstrap, gate6f, system-synergy, canary, frontend-build]
+    needs: [impact, governance-policy, bootstrap, gate6f, system-synergy, canary, frontend-build]
     if: always()
     concurrency:
       group: br-no-gta-fast-feedback-${{ github.ref }}-${{ needs.impact.outputs.checkpoint }}
@@ -354,6 +400,7 @@ jobs:
       - name: Derive applicable focused gate status
         env:
           ANY_TESTS: ${{ needs.impact.outputs.any_tests }}
+          GOVERNANCE_RESULT: ${{ needs.governance-policy.result }}
           BOOTSTRAP: ${{ needs.bootstrap.result }}
           GATE6F_REQUIRED: ${{ needs.impact.outputs.gate6f }}
           GATE6F_RESULT: ${{ needs.gate6f.result }}
@@ -369,7 +416,7 @@ jobs:
           import os
           from pathlib import Path
 
-          checks = {}
+          checks = {"governance_policy": os.environ["GOVERNANCE_RESULT"] == "success"}
           if os.environ["ANY_TESTS"] == "true":
               checks["bootstrap"] = os.environ["BOOTSTRAP"] == "success"
           for name, required_key, result_key in (
@@ -393,6 +440,7 @@ jobs:
               "checks": checks,
               "results": {
                   "bootstrap": os.environ["BOOTSTRAP"],
+                  "governance_policy": os.environ["GOVERNANCE_RESULT"],
                   "gate6f": os.environ["GATE6F_RESULT"],
                   "system_synergy": os.environ["SYNERGY_RESULT"],
                   "canary": os.environ["CANARY_RESULT"],
