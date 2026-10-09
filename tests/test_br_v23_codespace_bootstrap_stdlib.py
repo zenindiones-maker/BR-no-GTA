@@ -87,9 +87,10 @@ class CodespaceBootstrapTests(unittest.TestCase):
 
     def test_main_doctor_refuses_missing_codespace_before_any_setup(self):
         with patch.dict(os.environ, {}, clear=True):
-            # Python version or codespace identity can fail first; either
-            # must fail closed with a nonzero result, before any provisioning.
-            self.assertEqual(1, main(["--doctor"]))
+            # The module entry point translates this fail-closed exception
+            # into a nonzero shell exit. Unit code must assert the exception.
+            with self.assertRaisesRegex(RuntimeError, "CODESPACE_REQUIRED"):
+                main(["--doctor"])
 
 
 if __name__ == "__main__":
