@@ -69,7 +69,7 @@ class SLMExistingSwarmTests(unittest.TestCase):
             requested_action="RESEARCH", benchmark_approved=True,
         )
         self.assertEqual("PROPOSAL_ONLY", out["decision"])
-        self.assertEqual("NONE", out["authority"].split("_", 1)[0] if False else "NONE")
+        self.assertEqual("NO_EXECUTION_SHADOW_ONLY", out["authority"])
         self.assertFalse(out["agent_dispatched"])
         self.assertFalse(out["production_promotion"])
 
