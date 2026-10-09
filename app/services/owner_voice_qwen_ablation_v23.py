@@ -49,16 +49,40 @@ def build_paired_prompts(anchor:Any, pronunciation:Any, prompt_factory:Any)->tup
 
 
 def select_verdict(rows:list[dict[str,Any]])->dict[str,Any]:
-    a=[row for row in rows if row.get("configuration")=="A"]
-    b=[row for row in rows if row.get("configuration")=="B"]
-    if not a or not b or len(a)!=len(b):
+    """Reject unmatched, duplicated, substituted or incomplete A/B evidence.
+
+    This is a structural verification, not a voice-identity or human approval.
+    The same exact case and seed must appear once per A and B configuration.
+    """
+    if not isinstance(rows, list):
         raise ValueError("QWEN_ABLATION_INCOMPLETE_PAIRED_COMPARISON")
+    expected = {
+        (label, case["id"], case["seed"])
+        for case in canonical_ptbr_cases()
+        for label in ("A", "B")
+    }
+    observed = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("QWEN_ABLATION_INCOMPLETE_PAIRED_COMPARISON")
+        key = (row.get("configuration"), row.get("case_id"), row.get("seed"))
+        if (key[0] not in ("A", "B")
+                or not isinstance(key[1], str)
+                or type(key[2]) is not int
+                or key not in expected
+                or key in observed):
+            raise ValueError("QWEN_ABLATION_INCOMPLETE_PAIRED_COMPARISON")
+        observed.add(key)
+    if observed != expected:
+        raise ValueError("QWEN_ABLATION_INCOMPLETE_PAIRED_COMPARISON")
+    a = [row for row in rows if row["configuration"] == "A"]
+    b = [row for row in rows if row["configuration"] == "B"]
     return {
-        "status":"HUMAN_PERCEPTUAL_REVIEW_REQUIRED",
-        "voice_activated":False,
-        "delivery_authorized":False,
-        "all_a_identity_pass":all(x.get("identity_passed") is True for x in a),
-        "all_b_identity_pass":all(x.get("identity_passed") is True for x in b),
+        "status": "HUMAN_PERCEPTUAL_REVIEW_REQUIRED",
+        "voice_activated": False,
+        "delivery_authorized": False,
+        "all_a_identity_pass": all(x.get("identity_passed") is True for x in a),
+        "all_b_identity_pass": all(x.get("identity_passed") is True for x in b),
     }
 
 
