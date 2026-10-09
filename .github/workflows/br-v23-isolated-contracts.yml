@@ -16,6 +16,8 @@ on:
       - "docs/governance/a15-control-plane-only.md"
       - "AGENTS.md"
       - "tests/test_a15_control_plane_policy_stdlib.py"
+      - "scripts/audits/br_v23_source_sweep.py"
+      - "tests/test_br_v23_source_sweep_stdlib.py"
       - "tests/test_owner_voice_qwen_ablation_v23_stdlib.py"
       - "tests/test_owner_voice_ledger_commit_refs_v23_stdlib.py"
 
@@ -62,6 +64,8 @@ jobs:
               "scripts/workstations/br_v23_codespace_bootstrap.py",
               "tests/test_br_v23_codespace_bootstrap_stdlib.py",
               "tests/test_a15_control_plane_policy_stdlib.py",
+              "scripts/audits/br_v23_source_sweep.py",
+              "tests/test_br_v23_source_sweep_stdlib.py",
           ):
               ast.parse(Path(path).read_text(encoding="utf-8"), filename=path)
           source = Path("app/services/owner_voice_qwen_ablation_v23.py").read_text(encoding="utf-8")
@@ -77,6 +81,8 @@ jobs:
           python -m unittest discover -s tests -p 'test_owner_voice_v23_manual_runner_stdlib.py' -v
           python -m unittest discover -s tests -p 'test_br_v23_codespace_bootstrap_stdlib.py' -v
           python -m unittest discover -s tests -p 'test_a15_control_plane_policy_stdlib.py' -v
+          python -m unittest discover -s tests -p 'test_br_v23_source_sweep_stdlib.py' -v
+          python scripts/audits/br_v23_source_sweep.py --gate-critical
           echo "V23_VERSIONED_UNIT_CONTRACTS=PASS"
           echo "PRIVATE_OWNER_REFERENCE_MATERIALIZED=FALSE"
           echo "QWEN_REAL_INFERENCE=NOT_ATTEMPTED"
