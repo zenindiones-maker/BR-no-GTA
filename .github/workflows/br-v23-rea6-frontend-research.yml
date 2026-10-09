@@ -1,0 +1,100 @@
+name: BR V23 REA6 Readonly Owned Frontend Evidence
+
+on:
+  push:
+    branches:
+      - work/br-v23-actions-contract-recovery-v1
+    paths:
+      - ".github/workflows/br-v23-rea6-frontend-research.yml"
+      - "video-engine/frontend/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-v23-rea6-readonly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  source-owned-javascript-rea6:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CI: "true"
+      npm_config_ignore_scripts: "true"
+      npm_config_audit: "false"
+      npm_config_fund: "false"
+      NODE_OPTIONS: "--max-old-space-size=1536"
+    steps:
+      - name: Read exact repository HEAD without persisting write credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Set up Node 24 for official pinned REA6
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+      - name: Verify bounded owner-controlled frontend study
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "work/br-v23-actions-contract-recovery-v1"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -f video-engine/frontend/package.json
+          test -f video-engine/frontend/src/App.jsx
+          test ! -e video-engine/frontend/node_modules
+          test "$(uname -m)" = x86_64
+          test "$(uname -s)" = Linux
+          echo "BR_REA6_TARGET=OWNED_VIDEO_ENGINE_FRONTEND_ONLY"
+          echo "BR_REA6_EXPLICIT_OWNER_VOICE_SCOPE=DENIED"
+          echo "BR_REA6_A15_COMPUTE=DENIED"
+      - name: Install only rea-agents version 6.0.0 in ephemeral GitHub runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/rea6" --no-audit --no-fund --ignore-scripts rea-agents@6.0.0
+          REA="$RUNNER_TEMP/rea6/node_modules/.bin/rea"
+          test -x "$REA"
+          "$REA" --version | grep -F '6.0.0'
+          echo "REA_BIN=$REA" >> "$GITHUB_ENV"
+          echo "BR_REA6_PIN=6.0.0"
+      - name: Actual REA6 JavaScript graph analysis of repository-owned frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          "$REA_BIN" analyze-javascript-application "$GITHUB_WORKSPACE/video-engine/frontend" --json > "$RUNNER_TEMP/rea6-frontend-raw.json"
+          python3 - <<'PY'
+          import hashlib,json,os,re
+          from pathlib import Path
+          path=Path(os.environ["RUNNER_TEMP"])/"rea6-frontend-raw.json"
+          if path.is_symlink() or not path.is_file() or path.stat().st_size > 8*1024*1024:
+              raise SystemExit("BR_REA6_EVIDENCE_INVALID_SIZE_OR_TYPE")
+          raw=path.read_bytes()
+          obj=json.loads(raw)
+          record=obj.get("result") if isinstance(obj,dict) and isinstance(obj.get("result"),dict) else obj
+          if not isinstance(record,dict):
+              raise SystemExit("BR_REA6_EVIDENCE_NOT_OBJECT")
+          eid=record.get("evidence_id")
+          if not isinstance(eid,str) or not re.fullmatch(r"ev_[a-f0-9]{64}",eid):
+              raise SystemExit("BR_REA6_EVIDENCE_ID_NOT_VALID")
+          norm=record.get("normalized_result")
+          graph=norm.get("graph") if isinstance(norm,dict) else None
+          nodes=graph.get("nodes") if isinstance(graph,dict) else None
+          if not isinstance(nodes,list) or not nodes:
+              raise SystemExit("BR_REA6_SOURCE_GRAPH_EMPTY")
+          modules=sum(isinstance(n,dict) and n.get("kind")=="javascript-module" for n in nodes)
+          if not modules:
+              raise SystemExit("BR_REA6_JS_MODULE_NOT_OBSERVED")
+          print("BR_REA6_REAL_CLI_INVOCATION=PASS")
+          print("BR_REA6_JS_EVIDENCE_GRAPH=PASS")
+          print("BR_REA6_FRONTEND_MODULE_NODES="+str(modules))
+          print("BR_REA6_GRAPH_NODES="+str(len(nodes)))
+          print("BR_REA6_RAW_EVIDENCE_SHA256="+hashlib.sha256(raw).hexdigest())
+          print("BR_REA6_GHIDRA_NATIVE=NOT_ATTEMPTED")
+          print("BR_REA6_MCP_AGENT_CONNECTED=NOT_PROVEN")
+          print("BR_REA6_QWEN_INFERENCE=NOT_ATTEMPTED")
+          print("BR_REA6_CODE_CORRECTNESS=NOT_PROVEN")
+          print("BR_REA6_PRODUCTION=BLOCKED")
+          PY
