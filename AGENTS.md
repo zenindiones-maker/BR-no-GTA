@@ -88,3 +88,17 @@ those tasks. Preserve existing lightweight A15 control services. A task
 that cannot run within approved remote resources must fail closed,
 not fall back to A15. This restriction does not change Harness authority,
 owner-voice approvals, spending prohibitions or promotion gates.
+
+## BR-native REA historical continuity (owner directive)
+
+**Required:** `docs/operations/br-v23-rea-native-provenance.md`.
+The BR-no-GTA repository already owns a reverse-engineering Harness and REA
+integration on `work/br-extreme-reverse-engineering-v1`,
+`work/br-reverse-engineering-evidence-v3` and
+`work/br-reverse-engineering-experiment-intelligence-v4`.
+Do not invent a replacement REA or import another project's software,
+agent/skill catalog, runtime, prompts or authority into BR. Distinguish
+historically verified BR-native REA from what is actually present and
+authorized on V23; reconcile only by exact-SHA, bounded read-only evidence
+first. Original REA is a subordinate research sensor, not a replacement
+for DeepSeek Harness or BR_OWNER_V1 quality and human-approval gates.
