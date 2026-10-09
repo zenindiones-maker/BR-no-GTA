@@ -496,15 +496,15 @@ jobs:
           # fabricate "failed=0" when the summary has a different order.
           summary_line = next((
               line for line in reversed(log.splitlines())
-              if re.search(r"\\bin (\\d+(?:\\.\\d+)?)s\\b", line)
-              and re.search(r"\\d+\\s+(?:passed|failed|errors)\\b", line)
+              if re.search(r"\bin (\d+(?:\.\d+)?)s\b", line)
+              and re.search(r"\d+\s+(?:passed|failed|errors)\b", line)
           ), "")
-          elapsed = re.search(r"\\bin (\\d+(?:\\.\\d+)?)s\\b", summary_line)
+          elapsed = re.search(r"\bin (\d+(?:\.\d+)?)s\b", summary_line)
           if elapsed:
               counters = {
                   name: int(value)
                   for value, name in re.findall(
-                      r"(\\d+)\\s+(subtests passed|passed|failed|skipped|errors)\\b",
+                      r"(\d+)\s+(subtests passed|passed|failed|skipped|errors)\b",
                       summary_line,
                   )
               }
