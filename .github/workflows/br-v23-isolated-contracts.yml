@@ -1,0 +1,69 @@
+name: BR V23 Isolated Owner Voice Contracts
+
+on:
+  push:
+    branches:
+      - work/br-v23-actions-contract-recovery-v1
+    paths:
+      - ".github/workflows/br-v23-isolated-contracts.yml"
+      - "app/services/owner_voice_qwen_ablation_v23.py"
+      - "scripts/owner_voice_single_human_clone.py"
+      - "tests/test_owner_voice_qwen_ablation_v23_stdlib.py"
+      - "tests/test_owner_voice_ledger_commit_refs_v23_stdlib.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-v23-isolated-contracts-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  v23-stdlib-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: "."
+      HF_HUB_OFFLINE: "1"
+      HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+    steps:
+      - name: Check out exact branch without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Set up pinned test interpreter
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Verify checkout and static gate boundaries
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "work/br-v23-actions-contract-recovery-v1"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+          for path in (
+              "app/services/owner_voice_qwen_ablation_v23.py",
+              "scripts/owner_voice_single_human_clone.py",
+              "tests/test_owner_voice_qwen_ablation_v23_stdlib.py",
+              "tests/test_owner_voice_ledger_commit_refs_v23_stdlib.py",
+          ):
+              ast.parse(Path(path).read_text(encoding="utf-8"), filename=path)
+          source = Path("app/services/owner_voice_qwen_ablation_v23.py").read_text(encoding="utf-8")
+          assert '"telegram_send":False' in source
+          assert '"model_finetune":False' in source
+          assert '"voice_activated":False' in source
+          print("V23_STATIC_CONTRACTS=PASS")
+          PY
+      - name: Run existing V23 unit contracts, without private assets or model
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_owner_voice_*v23_stdlib.py' -v
+          echo "V23_VERSIONED_UNIT_CONTRACTS=PASS"
+          echo "PRIVATE_OWNER_REFERENCE_MATERIALIZED=FALSE"
+          echo "QWEN_REAL_INFERENCE=NOT_ATTEMPTED"
+          echo "TELEGRAM_SEND=NOT_ATTEMPTED"
+          echo "HUMAN_REVIEW=PENDING"
+          echo "PRODUCTION_GATE=BLOCKED"
