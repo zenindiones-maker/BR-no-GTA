@@ -527,6 +527,7 @@ jobs:
           import re
           import xml.etree.ElementTree as ET
           from pathlib import Path
+          from scripts.ci_full_suite_metrics import parse_pytest_summary
 
           root = Path("ci-artifacts")
           log = (root / "pytest-full.log").read_text(encoding="utf-8", errors="replace") if (root / "pytest-full.log").exists() else ""
@@ -540,30 +541,9 @@ jobs:
               "pytest_wall_clock_seconds": None,
               "collected": None,
           }
-          # Pytest lists FAILURES before PASSES on a failed run. Never
-          # fabricate "failed=0" when the summary has a different order.
-          summary_line = next((
-              line for line in reversed(log.splitlines())
-              if re.search(r"\bin (\d+(?:\.\d+)?)s\b", line)
-              and re.search(r"\d+\s+(?:passed|failed|errors)\b", line)
-          ), "")
-          elapsed = re.search(r"\bin (\d+(?:\.\d+)?)s\b", summary_line)
-          if elapsed:
-              counters = {
-                  name: int(value)
-                  for value, name in re.findall(
-                      r"(\d+)\s+(subtests passed|passed|failed|skipped|errors)\b",
-                      summary_line,
-                  )
-              }
-              summary.update({
-                  "passed": counters.get("passed", 0),
-                  "failed": counters.get("failed", 0),
-                  "skipped": counters.get("skipped", 0),
-                  "errors": counters.get("errors", 0),
-                  "subtests_passed": counters.get("subtests passed", 0),
-                  "pytest_wall_clock_seconds": float(elapsed.group(1)),
-              })
+          parsed = parse_pytest_summary(log)
+          if parsed is not None:
+              summary.update(parsed)
           collected = re.search(r"(\d+) tests? collected", collection)
           if collected:
               summary["collected"] = int(collected.group(1))

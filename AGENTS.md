@@ -43,8 +43,12 @@ instructions or broken mandatory references.
 
 Required: `docs/governance/agents-versioned-safety-boundaries-v1.md`
 Required: `docs/architecture/br-v24-existing-swarm-slm-transfer.md`
+Required: `docs/governance/a15-control-plane-only.md`
+Required: `docs/operations/br-v23-rea-native-provenance.md`
 Required: `docs/governance/source-of-truth.md`
 Required: `docs/governance/v24-required-status-checks.md`
+The A15 is control plane only; do not use it for compute or fallback.
+Do not import another project's agents, skills or REA architecture into BR.
 All V11/V13/V17 voice/production restrictions, A15 remote-control-only policy,
 BR-native REA continuity and V24 existing-swarm gates remain mandatory through
 this versioned document. No promotion, auto-training or release by implication.
