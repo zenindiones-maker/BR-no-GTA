@@ -400,3 +400,22 @@ subordinate to the DeepSeek Harness; no duplicate authority or agent registry.
 External technical basis:
 - https://nodejs.org/download/release/v24.15.0/docs/api/net.html
 - https://docs.github.com/en/actions/reference/security/secure-use
+
+## 8. Gate de fronteiras de rede do Agent Office — 2026-10-09
+
+**Status: SOURCE_EVIDENCE=PASS; INDEPENDENT_SECURITY_REVIEW=PENDING; THIRD_PARTY_RUNTIME=BLOCKED.**
+
+- Run `37917267884`: https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/37917267884 — CI `SUCCESS` com **sete testes adversariais**.
+- Commit BR da prova: `07d60c98ee536f4ce84c1f04b08e767bc7158602`.
+- Upstream original e intacto: `chaitanyagiri/munder-difflin@6248293a7cd9dfdbf9633d12bbe857831ccfee88`.
+- Auditor `scripts/br_v24_office_network_boundary_review.py` examina os quatro arquivos `hive.ts`, `hooks.ts`, `integrationBroker.ts`, `telemetry.ts` e salva somente metadados de padrões, linhas e SHA256 de cada arquivo.
+- Recibo: `94c9b9d3576888e635e75999d72abe63c7d62320812e6867e6febc7b300b8b49`.
+- Caminho: GitHub Actions Ubuntu efêmero. `CODE_EXECUTED_FROM_UPSTREAM=FALSE`, `NETWORK_NEGATIVE_TEST=NOT_ATTEMPTED`, `A15_COMPUTE=FORBIDDEN`.
+- Lista de riscos ainda **não comprovadamente mitigados**: cabeçalhos Host/Origin e DNS rebinding, autenticação/escopo/expiração de tokens do integrationBroker, diretório/permissões/symlink/unlink do socket Unix hooks, cadeia de chamadas do proxy hive, host mutável e callers do telemetry.
+- Documento de revisão oficial: [issue #19](https://github.com/zenindiones-maker/BR-no-GTA/issues/19), **aberta**. Revisor independente deve examinar patch, lock, entrada/saída de rede, autenticação e fornecer veredito vinculado a SHA. Não reutilizar assinatura recomputável como revisão independente.
+- Estudos técnicos: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/GHSA-w48q-cv73-mx4w e https://nodejs.org/download/release/v24.15.0/docs/api/net.html.
+
+**Decisão de autoridade:** não ativar Agent Office upstream, não abrir listener,
+não enviar Telegram, não publicar, não aumentar cota e não promover branch.
+O Harness BR, os 17 executores já comprovados e as regras do proprietário
+continuam intocados.
