@@ -156,3 +156,50 @@ Fontes:
 - https://huggingface.co/Qwen/Qwen3-0.6B
 - https://docs.github.com/en/billing/concepts/product-billing/github-actions
 - https://docs.github.com/en/actions/concepts/workflows-and-actions/workflow-artifacts
+
+## 6. Pesquisa externa + engenharia reversa V24 (09/10/2026)
+
+### BR-native REA recuperado em checkout isolado — revisão V4 real
+
+- Auditoria `37881030519` PASS: https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/37881030519
+- Auditoria e **14/14 testes reais** do avaliador experimental V4 `37881628576` PASS: https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/37881628576
+- Fonte V4 fixada: `ad00c215ecd33ee74703cfeb0d72694220b666f0`, mesma origem Git do BR.
+- **21** fontes, scripts e testes REA presentes na V4 e ausentes na V24. Estoque histórico preservado em outra branch, não deletado do repositório. Não é prova de sua adequação a uma API V24.
+- Somente o **avaliador de experimentos V4** foi carregado dinamicamente, com dados sintéticos e pytest isolado; 14 testes passaram, incluindo holdout, drift, adulteração, custos e proibição de promoção.
+- `REA_V24_RUNTIME_INTEGRATED=NOT_PROVEN`, `REA_V4_EXPERIMENT_COMPONENT_REUSABLE_CANDIDATE=TRUE`, `REA_SOURCE_REINTRODUCED=FALSE`, `REVIEW_REQUIRED=TRUE`.
+- A reconciliação e quaisquer portes precisam respeitar `AGENTS.md`, rastrear origem por SHA, diffs semânticos, versões e autorização Harness. Nunca importar a arquitetura/Harness de outro projeto.
+- Documentação pública REA v6: https://github.com/morluto/rea — grafos estáticos e pseudocódigo **não** são equivalência comportamental de aplicativos.
+
+### Hermes — transferência real entre GitHub-hosted runners agora PASS
+
+Run `37881244213`: https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/37881244213
+
+- Runner A gerou `TaskResultEnvelope` pelo serviço original do BR, persistiu sob `task-results`, e exportou checkpoint usando `export_hermes_mission_checkpoint`.
+- Runner B, limpo, recebeu via `actions/upload-artifact`/`download-artifact`, validou manifesto/hash, restaurou com `restore_hermes_mission_checkpoint` e conferiu byte-a-byte mais `load_task_result_envelope`.
+- `BR_HERMES_REAL_GITHUB_TWO_JOB_ARTIFACT_HANDOFF=PASS`.
+- Evidência usa tarefa fixture sintética, **não** uma missão completa multiagente/SLM; `COMPLETE_HERMES_MISSION_RESUME=NOT_PROVEN`.
+- Docs: https://docs.github.com/en/actions/tutorials/store-and-share-data
+
+### Agent Office — risco externo medido e promoção bloqueada
+
+Run `37881402970` (pinned upstream antes de patch): `11` high/critical.
+Run `37881471066` (após aplicar em lock efêmero o patch BR já existente `proxy-addr@2.0.8`): `10` pacotes HIGH remanescentes.
+
+- Resultado **intencionalmente FAIL-CLOSED**: `BLOCKED_UNRESOLVED_HIGH`, com recibo JSON e as dependências remanescentes.
+- Permanecem `@modelcontextprotocol/sdk`, `@types/jest`, `axios`, `braces`, `expect`, `jest-message-util`, `localtunnel`, `micromatch`, `toml`, `tunnelmole`. **Não** presumir todas exploráveis em produção; analisar `nodes`, severidade, caminho de execução e remediações exatas por SHA.
+- `proxy-addr` tinha risco crítico em versões anteriores a 2.0.8: https://github.com/jshttp/proxy-addr/security/advisories/GHSA-jqcg-44mw-7w3h
+- `braces<=3.0.3` possui aviso HIGH sem release corrigida reportada até 09/10/2026: https://github.com/advisories/GHSA-vfj7-8cjw-p6xm
+- Para MCP TypeScript SDK, avisos sobre cross-client leakage e DNS rebinding: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/GHSA-345p-7cg4-v4c7 e https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/GHSA-w48q-cv73-mx4w
+- `integrations/munder_difflin/UPSTREAM.lock` tem allowlist histórica, mas **NÃO** é permissão para executar; `scripts/br_v24_agent_office_untrusted_npm_gate.py` ignora qualquer dispensa histórica como fonte de admissão.
+- Sem falsificar PASS nem atualizar dependências arbitrariamente. Até resolver advisories por pacote, runtime externo permanece **BLOCKED**. Executores determinísticos internos do BR comprovados por outros runs não dependem dessa readmissão.
+
+### Próximos gates de engenharia, por ordem de retorno
+
+1. **REA própria V4 → V24:** matriz de dependências/transitividade + diff de API + revisão por componente; começar pelo avaliador puro com autorização de pesquisa, sem restaurar 21 arquivos em massa. Depois investigar FFmpeg, web HAR, binários/Ghidra mediante provas independentes.
+2. **Agent Office:** revisar exact nodes + advisories + impacto runtime, substituir componentes vulneráveis por versões corrigidas quando existirem e provar `npm audit --omit=dev` + testes originais; para `braces` sem patch não criar waiver automático; manter isolado/bloqueado até correção segura.
+3. **Hermes:** usar a prova de dois runners como regressão; executar missão completa somente com checkpoint, autorização e recursos admitidos. Impedir redispatch cego da tarefa primária.
+4. **SLM:** modelo pequeno generativo fora do A15, admissibilidade de custo, hash de pesos e licença; usar tarefas reais/holdout do BR e avaliar tool selection/arguments/abstention/latency/memory antes de ligar um agente original. Os modelos de embedding ONNX V22 continuam reprovados.
+5. **WhisperX:** seu `executor_binding` aponta ao módulo `app.services.speech.whisperx_provider`, não a um callable; conciliar semântica de PROVIDER com loader atual, sem trocar binding sem analisar contrato. Nenhuma identidade vocal clonada ou áudio privado foi acessado.
+6. **YouTube:** completar leitura OAuth oficial e analytics apenas com escopos mínimos quando houver autenticação; impedir acesso externo, upload, publicação ou learning-promotion a partir de um SLM sem gate original.
+
+**Nenhum resultado acima autoriza promover V24, gastar além de franquia autorizada, enviar mensagens, gerar voz BR_OWNER_V1 ou executar no A15.**
