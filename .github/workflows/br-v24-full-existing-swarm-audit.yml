@@ -1,0 +1,63 @@
+name: BR V24 Full Existing Swarm Audit
+
+on:
+  push:
+    branches:
+      - work/br-slm-agent-reconstruction-v24
+    paths:
+      - ".github/workflows/br-v24-full-existing-swarm-audit.yml"
+      - "scripts/br_v24_full_swarm_audit.py"
+      - "tests/test_br_v24_full_swarm_audit_stdlib.py"
+      - "app/services/global_capability_registry.py"
+      - "app/services/global_capability_registry_base.py"
+      - "app/services/youtube_department_service.py"
+      - "app/services/youtube_intelligence_capability_bridge.py"
+      - ".dsh/skills/**"
+      - "AGENTS.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-v24-full-swarm-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  full-source-native-agents-and-skills-audit:
+    name: Registry + TUBEGENT + YouTube + 24 Addy + local BR skill coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      BR_AGENT_RUNTIME_NETWORK: "NOT_AUTHORIZED"
+    steps:
+      - name: Checkout actual BR V24 SHA without write credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Regression and zero-model audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_br_v24_full_swarm_audit_stdlib.py' -v
+          python -m py_compile scripts/br_v24_full_swarm_audit.py
+      - name: Read actual BR registry and all YouTube/Addy entries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q --disable-pip-version-check python-dotenv==1.2.3
+          python scripts/br_v24_full_swarm_audit.py
+          echo "BR_V24_FULL_AGENT_AND_SKILL_AUDIT=PASS"
+      - name: Preserve complete exact-SHA machine-readable inventory
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: br-v24-full-swarm-inventory-${{ github.run_id }}
+          path: ${{ runner.temp }}/br-v24-full-existing-swarm-*.json
+          if-no-files-found: warn
+          retention-days: 14
