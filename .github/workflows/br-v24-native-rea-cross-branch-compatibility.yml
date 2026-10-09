@@ -55,6 +55,19 @@ jobs:
             --source-root "$GITHUB_WORKSPACE/.br-native-rea-v4-source" \
             --current-root "$GITHUB_WORKSPACE" \
             --output "$RUNNER_TEMP/br-v24-rea-compat-${GITHUB_SHA}.json"
+      - name: Execute ORIGINAL BR V4 REA experiment-assessor regression in isolated checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C .br-native-rea-v4-source rev-parse HEAD)" = "ad00c215ecd33ee74703cfeb0d72694220b666f0"
+          python -m pip install -q --disable-pip-version-check pytest==8.4.2
+          (
+            cd .br-native-rea-v4-source
+            PYTHONPATH=. python -m pytest -q tests/test_reverse_engineering_experiment_intelligence_v4.py
+          )
+          echo "BR_NATIVE_REA_V4_ORIGINAL_EXPERIMENT_ASSESSOR_TESTS=PASS"
+          echo "BR_NATIVE_REA_EXECUTION_SCOPE=FIRST_PARTY_SYNTHETIC_READONLY_TESTS"
+          echo "BR_NATIVE_REA_CANONICAL_REGISTRY_CHANGED=FALSE"
       - name: Preserve source hashes, symbol/dependency signatures and exact heads
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
