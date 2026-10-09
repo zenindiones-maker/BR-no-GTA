@@ -292,3 +292,48 @@ admitir *qualquer* runtime Agent Office de terceiros, são obrigatórios:
   https://github.com/advisories/GHSA-345p-7cg4-v4c7
 - GitHub Actions artifact and attestations:
   https://docs.github.com/en/actions/concepts/security/artifact-attestations
+
+
+## 6. Agent Office — exact-bound reproducible review package
+
+**Resultado verificado em 09/10/2026:** run
+[37890059574](https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/37890059574)
+no workflow `BR V24 Agent Office Ingress Isolation Typecheck`, commit
+`3d14ee568ea486e1bfe75b9467ecaa6683c010b9`:
+`SUCCESS`. Os 5 testes originais de contenção e 10 novos testes
+adversariais passaram, assim como o TypeScript static typecheck.
+
+Foi introduzido o verificador
+`scripts/br_v24_office_review_bundle.py` e testes
+`tests/test_br_v24_office_review_bundle.py`. As provas do candidato
+descartável vinculado ao upstream `6248293a7cd9dfdbf9633d12bbe857831ccfee88`
+incluem:
+- `BR_V24_OFFICE_EXACT_SOURCE_REPRODUCIBLE=PASS` (reconstrução exata dos
+  dois arquivos `src/main/slack.ts` e `src/main/webhook.ts`, inclusive
+  hashes originais/candidatos);
+- conjunto permitido de alterações limitado aos dois arquivos acima,
+  `package.json` e `package-lock.json`;
+- remoção de `localtunnel` e `tunnelmole` da árvore de produção do
+  candidato e validação de `npm audit --omit=dev`:
+  `BR_V24_OFFICE_CANDIDATE_PROD_HIGH_CRITICAL=0`;
+- compilação TypeScript em runner temporário, lifecycle npm desabilitado,
+  credenciais de escrita não persistidas;
+- recibo de revisão exato:
+  `f0db9b01cbc84606e89ac9d6ec56db046c497ac716f9c2bd5c52d6ec9f6dd33a`;
+- artefato de CI contendo o resumo do patch e o pacote de revisão
+  reproduzível, sem distribuir nem executar código upstream.
+
+**Estado de autorização (não confundir com CI):**
+`AGENT_OFFICE_UPSTREAM_RUNTIME=NOT_STARTED`;
+`AGENT_OFFICE_INDEPENDENT_SECURITY_REVIEW=PENDING`;
+`AGENT_OFFICE_PROMOTION=BLOCKED`.
+Nenhuma configuração canônica, listener, túnel, webhook, credencial, ligação
+de provedor ou autorização do Harness foi alterada. Esta validação **não**
+atesta ausência de ingressos alternativos, nem substitui auditoria independente.
+
+**Próxima prioridade:** revisão de segurança independente do patch/lock exatos,
+teste dinâmico negativo sem rede em sandbox apropriado após aprovação do
+procedimento, reconciliação do binding de execução BR e somente então
+canary autorizado de uma operação Agent Office de baixo risco. Em paralelo,
+o SLM V22 mantém `QUALITY_REJECTED` até benchmark real independente em
+carga remota aprovada, sem download ou gastos não autorizados.
