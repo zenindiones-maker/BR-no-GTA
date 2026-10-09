@@ -73,7 +73,9 @@ jobs:
               raise SystemExit("BR_REA6_EVIDENCE_INVALID_TYPE")
           size=path.stat().st_size
           print("BR_REA6_EVIDENCE_BYTES="+str(size))
-          if size == 0 or size > 64*1024*1024:
+          # Real first-party frontend produced 93,409,719 bytes on the
+          # prior runner. One bounded 128 MiB retry; never expand unboundedly.
+          if size == 0 or size > 128*1024*1024:
               raise SystemExit("BR_REA6_EVIDENCE_TOO_LARGE_OR_EMPTY")
           raw=path.read_bytes()
           obj=json.loads(raw)
