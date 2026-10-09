@@ -1,0 +1,65 @@
+name: BR V24 Native REA Cross Branch Compatibility
+
+on:
+  push:
+    branches:
+      - work/br-slm-agent-reconstruction-v24
+    paths:
+      - ".github/workflows/br-v24-native-rea-cross-branch-compatibility.yml"
+      - "scripts/br_v24_rea_cross_branch_compatibility.py"
+      - "tests/test_br_v24_rea_cross_branch_compatibility.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-v24-native-rea-compat-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  read-only-first-party-source-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Checkout V24 Harness and inspect its exact SHA
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Checkout FIRST-PARTY BR V4 REA at immutable historical commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ad00c215ecd33ee74703cfeb0d72694220b666f0
+          path: .br-native-rea-v4-source
+          persist-credentials: false
+          submodules: false
+      - name: Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Run source-comparison abuse and provenance tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "work/br-slm-agent-reconstruction-v24"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C .br-native-rea-v4-source rev-parse HEAD)" = "ad00c215ecd33ee74703cfeb0d72694220b666f0"
+          python -m unittest discover -s tests -p "test_br_v24_rea_cross_branch_compatibility.py" -v
+      - name: Compare BR's original REA V4 with current V24 without imports or merges
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/br_v24_rea_cross_branch_compatibility.py \
+            --source-root "$GITHUB_WORKSPACE/.br-native-rea-v4-source" \
+            --current-root "$GITHUB_WORKSPACE" \
+            --output "$RUNNER_TEMP/br-v24-rea-compat-${GITHUB_SHA}.json"
+      - name: Preserve source hashes, symbol/dependency signatures and exact heads
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: br-v24-rea-compatibility-${{ github.run_id }}
+          path: ${{ runner.temp }}/br-v24-rea-compat-*.json
+          retention-days: 7
+          if-no-files-found: warn
