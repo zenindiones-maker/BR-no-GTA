@@ -1,0 +1,82 @@
+name: BR V24 Hermes Cross Runner Dependency Artifact
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-v24-hermes-cross-runner-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      PYTHONDONTWRITEBYTECODE: "1"
+      ZERO_COST_OPERATION: "TRUE"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Exact authorized remote runner checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "work/br-slm-agent-reconstruction-v24"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python -m pip install -q --disable-pip-version-check -r requirements.txt
+      - name: Generate real TaskResultEnvelope through Hermes checkpoint exporter
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/br_v24_hermes_cross_runner_fixture.py \
+            --phase a --checkpoint "$RUNNER_TEMP/br-v24-hermes-cross-runner-checkpoint"
+      - name: Transfer exact Hermes artifact to other GitHub job
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: br-v24-hermes-checkpoint-${{ github.run_id }}
+          path: ${{ runner.temp }}/br-v24-hermes-cross-runner-checkpoint/
+          if-no-files-found: error
+          retention-days: 7
+
+  restore:
+    needs: export
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      PYTHONDONTWRITEBYTECODE: "1"
+      ZERO_COST_OPERATION: "TRUE"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Exact authorized remote runner checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "work/br-slm-agent-reconstruction-v24"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python -m pip install -q --disable-pip-version-check -r requirements.txt
+      - name: Download checkpoint from FIRST GitHub runner
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: br-v24-hermes-checkpoint-${{ github.run_id }}
+          path: ${{ runner.temp }}/br-v24-hermes-cross-runner-checkpoint
+      - name: Verify TaskResultEnvelope retained exact identity and SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/br_v24_hermes_cross_runner_fixture.py \
+            --phase b --checkpoint "$RUNNER_TEMP/br-v24-hermes-cross-runner-checkpoint"
+          echo "BR_HERMES_REAL_GITHUB_TWO_JOB_ARTIFACT_HANDOFF=PASS"
