@@ -30,6 +30,12 @@ def inspect_binding(root: Path, binding: str):
     parts = binding.split(".")
     if parts[0] != "app" or parts[1] != "services":
         return "NON_SERVICE_OR_NONPYTHON_BINDING"
+    # A registry entry may point to an existing module rather than a
+    # callable function/class. Do not misclassify that as a deleted file.
+    # It is still NOT directly invocable and requires contract reconciliation.
+    module_only = root.joinpath(*parts).with_suffix(".py")
+    if module_only.is_file() and not module_only.is_symlink():
+        return "SOURCE_MODULE_ONLY_NOT_CALLABLE"
     # Find longest existing Python module prefix; remaining segments refer
     # to functions/classes/members. No import hooks or remote calls.
     found = None
