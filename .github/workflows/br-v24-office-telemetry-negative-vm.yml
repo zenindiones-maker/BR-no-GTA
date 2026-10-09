@@ -73,7 +73,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/br_v24_office_telemetry_negative_vm.py \
+          python -m scripts.br_v24_office_telemetry_negative_vm \
             --vendor "$GITHUB_WORKSPACE/.br-v24-office-telemetry-negative-vm" \
             --output "$RUNNER_TEMP/br-v24-office-negative-vm.json"
           echo "BR_V24_AGENT_OFFICE_TELEMETRY_BEHAVIOR_GATE=PASS"
