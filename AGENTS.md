@@ -76,3 +76,15 @@ unknown requests, protected owner voice, publication or unproven provider.
 Do not confuse synthetic task verification with professional real-episode or
 SLM competence. No paid model, self-training, unreviewed MCP or canonical
 promotion is authorized by this milestone.
+
+## A15 / Termux — control plane only (owner directive)
+
+**Required:** `docs/governance/a15-control-plane-only.md`.
+The A15/Termux phone is a remote-command and monitoring terminal **only**.
+Do not install, process, render, infer, train, stage private material,
+store datasets/models/checkpoints or run computational fallback on the phone.
+Use only separately authorized remote workstations, Codespaces or CI for
+those tasks. Preserve existing lightweight A15 control services. A task
+that cannot run within approved remote resources must fail closed,
+not fall back to A15. This restriction does not change Harness authority,
+owner-voice approvals, spending prohibitions or promotion gates.
