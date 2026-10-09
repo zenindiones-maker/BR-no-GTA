@@ -141,11 +141,29 @@ def inventory(root: Path, *, strict_critical: bool = True) -> dict:
     }
 
 
+def permitted_execution_host(environment: dict[str, str], *, root: Path) -> bool:
+    """Keep even source scanning off the owner's Termux control device."""
+    if (
+        environment.get("PREFIX", "").startswith("/data/data/com.termux/")
+        or str(root).startswith("/data/data/com.termux/")
+    ):
+        return False
+    if environment.get("GITHUB_ACTIONS") == "true":
+        return environment.get("GITHUB_WORKFLOW") == "BR V23 Isolated Owner Voice Contracts"
+    return (
+        environment.get("CODESPACES") == "true"
+        and environment.get("CODESPACE_NAME") == "br-v23-recovery-gxp67g5g7wphwxjw"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--gate-critical", action="store_true")
     args = parser.parse_args(argv)
     root = Path(__file__).resolve().parents[2]
+    if not permitted_execution_host(dict(os.environ), root=root):
+        print("BR_V23_SOURCE_SWEEP=BLOCKED:CONTROL_DEVICE_OR_UNAUTHORIZED_HOST", file=sys.stderr)
+        return 2
     try:
         result = inventory(root)
         print(json.dumps(result, sort_keys=True, separators=(",", ":")))
