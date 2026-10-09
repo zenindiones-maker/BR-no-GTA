@@ -1,0 +1,148 @@
+name: BR V24 Agent Office No Tunnels Candidate Research
+
+on:
+  push:
+    branches:
+      - work/br-slm-agent-reconstruction-v24
+    paths:
+      - ".github/workflows/br-v24-agent-office-no-tunnels-candidate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-v24-agent-office-no-tunnels-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  zero-authority-isolated-tunneling-removal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    env:
+      CI: "true"
+      npm_config_ignore_scripts: "true"
+    steps:
+      - name: Checkout authorized BR V24 source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Checkout exact untrusted upstream source without submodules
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: chaitanyagiri/munder-difflin
+          ref: 6248293a7cd9dfdbf9633d12bbe857831ccfee88
+          path: .br-v24-untrusted-office-no-tunnel-candidate
+          submodules: false
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Verify BR authority and vendor exact commit before source inspection
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "work/br-slm-agent-reconstruction-v24"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C .br-v24-untrusted-office-no-tunnel-candidate rev-parse HEAD)" = "6248293a7cd9dfdbf9633d12bbe857831ccfee88"
+          python scripts/agent_office_preflight.py --upstream-dir "$GITHUB_WORKSPACE/.br-v24-untrusted-office-no-tunnel-candidate"
+      - name: Read exact upstream imports without running electron, tunnels or other vendor JavaScript
+        shell: bash
+        working-directory: .br-v24-untrusted-office-no-tunnel-candidate
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,subprocess
+          from pathlib import Path
+          manifest=json.loads(Path("package.json").read_text())
+          deps=manifest.get("dependencies",{})
+          for key in ("tunnelmole","localtunnel"):
+              if key not in deps:
+                  raise SystemExit("BR_V24_TUNNEL_DEPENDENCY_PIN_NOT_FOUND:"+key)
+          matches=subprocess.run(
+              ["git","grep","-IlE","(from [\"'](localtunnel|tunnelmole)|require\\([\"'](localtunnel|tunnelmole)|import\\([\"'](localtunnel|tunnelmole))","--",
+               "src","scripts","electron.vite.config.ts"],
+              text=True,capture_output=True,check=False)
+          if matches.returncode not in (0,1):
+              raise SystemExit("BR_V24_UPSTREAM_SOURCE_IMPORT_SEARCH_FAILED")
+          paths=[s for s in matches.stdout.splitlines() if s]
+          Path(__import__("os").environ["RUNNER_TEMP"],"br-v24-office-tunnel-imports.json").write_text(
+              json.dumps({"source_commit":"6248293a7cd9dfdbf9633d12bbe857831ccfee88",
+                          "candidate_only":True,"tunnel_related_import_file_paths":paths,
+                          "runtime_behavior_verified":False},indent=2))
+          print("BR_V24_TUNNEL_SOURCE_IMPORT_FILE_COUNT="+str(len(paths)))
+          print("BR_V24_TUNNEL_SOURCE_IMPORT_FILES="+json.dumps(paths))
+          PY
+      - name: Remove only two tunnel dependencies from disposable vendor manifest and refresh ephemeral lock
+        shell: bash
+        working-directory: .br-v24-untrusted-office-no-tunnel-candidate
+        run: |
+          set -euo pipefail
+          npm pkg delete dependencies.localtunnel dependencies.tunnelmole
+          npm pkg set 'overrides.proxy-addr=2.0.8'
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          set +e
+          npm audit fix --package-lock-only --omit=dev --ignore-scripts --no-fund --force=false > "$RUNNER_TEMP/br-v24-office-tunnel-fix.log" 2>&1
+          rc=$?
+          set -e
+          echo "BR_V24_NO_TUNNELS_EPHEMERAL_AUDIT_FIX_EXIT=$rc"
+          npm audit --omit=dev --json > "$RUNNER_TEMP/br-v24-office-tunnel-audit.json" || true
+          test -s "$RUNNER_TEMP/br-v24-office-tunnel-audit.json"
+          test "$(git rev-parse HEAD)" = "6248293a7cd9dfdbf9633d12bbe857831ccfee88"
+          test ! -e node_modules
+          unexpected="$(git status --porcelain --untracked-files=all | sed -E 's/^...//' | grep -Ev '^(package.json|package-lock.json)$' || true)"
+          test -z "$unexpected"
+      - name: Produce only sanitized security candidate receipt, NEVER promote
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          temp=Path(os.environ["RUNNER_TEMP"])
+          root=Path(".br-v24-untrusted-office-no-tunnel-candidate")
+          audit=json.loads((temp/"br-v24-office-tunnel-audit.json").read_text())
+          meta=(audit.get("metadata") or {}).get("vulnerabilities") or {}
+          v=audit.get("vulnerabilities")
+          if not isinstance(v,dict) or any(type(meta.get(k)) is not int for k in ("high","critical","moderate","low","info","total")):
+              raise SystemExit("BR_V24_NO_TUNNELS_AUDIT_RESULT_INVALID")
+          high=sorted(name for name,entry in v.items() if entry.get("severity") in ("high","critical"))
+          pkg=json.loads((root/"package.json").read_text())
+          deps=pkg.get("dependencies") or {}
+          if "localtunnel" in deps or "tunnelmole" in deps:
+              raise SystemExit("BR_V24_NO_TUNNELS_DEPENDENCIES_REAPPEARED")
+          report={
+              "schema":"BRV24UntrustedAgentOfficeNoTunnelCandidate/v1",
+              "br_head":os.environ["GITHUB_SHA"],
+              "vendor_head":"6248293a7cd9dfdbf9633d12bbe857831ccfee88",
+              "ephemeral_lock_sha256":hashlib.sha256((root/"package-lock.json").read_bytes()).hexdigest(),
+              "candidate_high":meta["high"],"candidate_critical":meta["critical"],
+              "candidate_high_names":high,
+              "source_files_edited":False,
+              "runtime_validation":"NOT_ATTEMPTED",
+              "tunnel_exposure":"DISABLED_ONLY_IN_EPHEMERAL_MANIFEST",
+              "original_vendor_lock_changed":False,
+              "harness_router_changed":False,
+              "agent_office_execution_authorized":False,
+              "security_review_required":True,
+              "no_android_compute":True,
+          }
+          (temp/"br-v24-office-no-tunnel-report.json").write_text(json.dumps(report,indent=2,sort_keys=True))
+          print("BR_V24_NO_TUNNELS_CANDIDATE_HIGH="+str(meta["high"]))
+          print("BR_V24_NO_TUNNELS_CANDIDATE_CRITICAL="+str(meta["critical"]))
+          print("BR_V24_NO_TUNNELS_CANDIDATE_REMAINING="+",".join(high))
+          print("BR_V24_NO_TUNNELS_UPSTREAM_RUNTIME=BLOCKED_PENDING_REVIEW")
+          PY
+      - name: Preserve sanitized isolated evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: br-v24-agent-office-no-tunnel-research-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/br-v24-office-tunnel-imports.json
+            ${{ runner.temp }}/br-v24-office-no-tunnel-report.json
+          if-no-files-found: warn
+          retention-days: 7
