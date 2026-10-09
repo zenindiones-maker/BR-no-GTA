@@ -48,8 +48,9 @@ def test_cross_runner_checkpoint_restores_dependency_task_result_without_repeat(
         receipt=restore_hermes_mission_checkpoint(
             spec=spec, checkpoint_dir=checkpoint, hermes_home=b_home, artifact_dir=b_artifacts)
         assert receipt["CANONICAL_CHECKPOINT_RESTORED"]=="PASS"
-        assert (b_artifacts/"task-results/retrieve-primary-1.json").read_bytes() == (
-            checkpoint/"task-results/retrieve-primary-1.json").read_bytes()
+        assert (
+            (b_artifacts / "task-results/retrieve-primary-1.json").read_bytes()
+            == (checkpoint / "task-results/retrieve-primary-1.json").read_bytes()
         )
         assert (b_artifacts/"capability-results/retrieve-primary-1.json").is_file()
 
