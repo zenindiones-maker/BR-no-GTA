@@ -1,0 +1,89 @@
+name: BR V24 Agent Office Telemetry Negative VM Gate
+
+on:
+  push:
+    branches:
+      - work/br-slm-agent-reconstruction-v24
+    paths:
+      - ".github/workflows/br-v24-office-telemetry-negative-vm.yml"
+      - "scripts/br_v24_office_telemetry_negative_vm.py"
+      - "tests/test_br_v24_office_telemetry_negative_vm.py"
+      - "scripts/br_v24_office_telemetry_loopback_patch.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-v24-office-telemetry-negative-vm-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bounded-original-source-guard-negative-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      BR_OFFICE_RUNTIME_ADMISSION: "BLOCKED"
+      CI: "true"
+    steps:
+      - name: BR V24 read-only checkout without persisted tokens
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Immutable original Agent Office source, not a runnable app
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: chaitanyagiri/munder-difflin
+          ref: 6248293a7cd9dfdbf9633d12bbe857831ccfee88
+          path: .br-v24-office-telemetry-negative-vm
+          persist-credentials: false
+          submodules: false
+      - name: Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Node 24 only for restricted built-in VM, no npm packages
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+      - name: Test source identity and all first-party adversarial negative cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "work/br-slm-agent-reconstruction-v24"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C .br-v24-office-telemetry-negative-vm rev-parse HEAD)" = "6248293a7cd9dfdbf9633d12bbe857831ccfee88"
+          python -m unittest discover -s tests -p 'test_br_v24_office_telemetry_negative_vm.py' -v
+      - name: Apply original first-party host guard to ONLY disposable telemetry.ts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from scripts.br_v24_office_telemetry_loopback_patch import apply
+          p=Path(".br-v24-office-telemetry-negative-vm")
+          result=apply(p)
+          assert result["network_listener_started"] is False
+          assert result["vendor_code_executed"] is False
+          assert result["production_authorized"] is False
+          print("BR_V24_OFFICE_DISPOSABLE_TELEMETRY_PATCH=PASS")
+          PY
+      - name: Exercise actual byte-exact guarded host logic in isolated Node VM
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/br_v24_office_telemetry_negative_vm.py \
+            --vendor "$GITHUB_WORKSPACE/.br-v24-office-telemetry-negative-vm" \
+            --output "$RUNNER_TEMP/br-v24-office-negative-vm.json"
+          echo "BR_V24_AGENT_OFFICE_TELEMETRY_BEHAVIOR_GATE=PASS"
+          echo "BR_V24_AGENT_OFFICE_INDEPENDENT_REVIEW=PENDING"
+          echo "BR_V24_AGENT_OFFICE_UPSTREAM_RUNTIME=BLOCKED"
+      - name: Preserve narrowly scoped SHA256 receipt, never upstream source or credentials
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: br-v24-office-negative-vm-${{ github.run_id }}
+          path: ${{ runner.temp }}/br-v24-office-negative-vm.json
+          if-no-files-found: warn
+          retention-days: 7
