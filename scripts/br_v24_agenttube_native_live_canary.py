@@ -112,6 +112,8 @@ def main():
     if head != os.environ.get("GITHUB_SHA"):
         raise SystemExit("BR_AGENTTUBE_HEAD_DRIFT")
     sys.path.insert(0, str(root))
+    from app.database.schema import initialize_schema
+    initialize_schema()  # Fresh isolated RUNNER_TEMP DB before issuing authorization.
     from app.services.agenttube_capability_bridge import (
         execute_agenttube_capability, agenttube_capability_specs,
     )
