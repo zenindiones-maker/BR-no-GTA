@@ -170,6 +170,11 @@ def main():
         finally:
             consume_harness_authorization(auth)
         data = value.result if isinstance(value.result, dict) else {}
+        if value.status != "EXECUTED":
+            # The original Harness intentionally redacts exception details.
+            # Print only canonical status and exception *class*, never payload.
+            print("BR_AGENTTUBE_DIAGNOSTIC=" + cid + ":"
+                  + str(value.status) + ":" + str(data.get("error_type") or "UNKNOWN"))
         if (value.status != "EXECUTED"
                 or data.get("schema") != "AgentTubeCapabilityResult/v1"
                 or data.get("returned_to_harness") is not True
