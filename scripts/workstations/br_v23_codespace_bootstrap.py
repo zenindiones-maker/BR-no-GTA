@@ -2,7 +2,8 @@
 
 Default Codespaces image retained intentionally (no devcontainer rebuild).
 Never downloads Qwen weights, reads private samples, writes ledger, sends Telegram
-or runs background workloads. Creates only an external, local Python venv and
+or runs background workloads. Creates only an external, local Python stdlib venv
+without pip/ensurepip, and
 a sanitized local diagnostic receipt. Does not switch/fetch/reset git refs.
 """
 from __future__ import annotations
@@ -71,6 +72,32 @@ def _preflight(repo: Path) -> tuple[str, Path]:
     return sha, Path.home() / ".cache" / "br-no-gta" / "v23-workstation"
 
 
+
+def _create_or_repair_stdlib_venv(venv_path: Path) -> Path:
+    """Rehydrate the owned venv without pip, apt, sudo or network access.
+
+    Ubuntu 24.04 may ship /usr/bin/python3.12 without ensurepip. A previous
+    with_pip=True attempt can leave a partial venv with bin/python already
+    present; rebuilding with clear=False handles that without deleting WIP.
+    """
+    if venv_path.is_symlink() or (venv_path.exists() and not venv_path.is_dir()):
+        raise RuntimeError("V23_VENV_DESTINATION_UNSAFE")
+    venv.EnvBuilder(with_pip=False, clear=False, symlinks=True).create(venv_path)
+    interpreter = venv_path / "bin" / "python"
+    if not interpreter.is_file():
+        raise RuntimeError("V23_STDLIB_VENV_PYTHON_MISSING")
+    check = subprocess.run(
+        [str(interpreter), "-I", "-c",
+         "import sys; assert sys.version_info[:2] == (3, 12); "
+         "assert sys.prefix != sys.base_prefix"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        check=False, timeout=30,
+    )
+    if check.returncode != 0:
+        raise RuntimeError("V23_STDLIB_VENV_INTERPRETER_INVALID")
+    return interpreter
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="BR V23 Codespace zero-spend-first bootstrap")
     parser.add_argument("--doctor", action="store_true", help="read-only preflight")
@@ -88,12 +115,13 @@ def main(argv: list[str] | None = None) -> int:
         print("BR_V23_CODESPACE_DOCTOR=PASS", flush=True)
         return 0
 
+    if state.is_symlink():
+        raise RuntimeError("V23_STATE_DESTINATION_UNSAFE")
     state.mkdir(mode=0o700, parents=True, exist_ok=True)
     state.chmod(0o700)
     venv_path = state / "venv"
-    if not (venv_path / "bin" / "python").exists():
-        venv.EnvBuilder(with_pip=True, clear=False, symlinks=True).create(venv_path)
-    interpreter = venv_path / "bin" / "python"
+    interpreter = _create_or_repair_stdlib_venv(venv_path)
+    print("BR_V23_PYTHON_ISOLATION=STDLIB_VENV_NO_PIP", flush=True)
     controlled_env = dict(os.environ)
     controlled_env.update({
         "PYTHONDONTWRITEBYTECODE": "1",
