@@ -1,0 +1,80 @@
+name: BR V24 Agent Office Ingress Surface Inventory
+
+on:
+  push:
+    branches:
+      - work/br-slm-agent-reconstruction-v24
+    paths:
+      - ".github/workflows/br-v24-agent-office-ingress-surface.yml"
+      - "scripts/br_v24_office_ingress_surface_audit.py"
+      - "tests/test_br_v24_office_ingress_surface_audit.py"
+      - "scripts/br_v24_agent_office_no_ingress_patch.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-v24-office-network-surface-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  first-party-pinned-upstream-attack-surface:
+    name: Exact-SHA upstream ingress surfaces, no runtime or admission
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Checkout BR research branch without credentials persisted
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Checkout exact untrusted Munder source for static inspection only
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: chaitanyagiri/munder-difflin
+          ref: 6248293a7cd9dfdbf9633d12bbe857831ccfee88
+          path: .br-v24-untrusted-office-surface
+          submodules: false
+          persist-credentials: false
+      - name: Prepare Python for original BR source-only inspector
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Verify pinned source, exact HEAD and adversarial regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "work/br-slm-agent-reconstruction-v24"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C .br-v24-untrusted-office-surface rev-parse HEAD)" = "6248293a7cd9dfdbf9633d12bbe857831ccfee88"
+          python scripts/agent_office_preflight.py --upstream-dir "$GITHUB_WORKSPACE/.br-v24-untrusted-office-surface"
+          python -m unittest discover -s tests -p 'test_br_v24_office_ingress_surface_audit.py' -v
+      - name: Construct exact preexisting BR no-ingress source patch in disposable checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/br_v24_agent_office_no_ingress_patch.py \
+            --root "$GITHUB_WORKSPACE/.br-v24-untrusted-office-surface" \
+            --output "$RUNNER_TEMP/br-v24-office-source-only-patch.json"
+      - name: Inventory ALL relevant TypeScript/JavaScript source entrypoints without executing upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$GITHUB_WORKSPACE" python scripts/br_v24_office_ingress_surface_audit.py \
+            --vendor "$GITHUB_WORKSPACE/.br-v24-untrusted-office-surface" \
+            --output "$RUNNER_TEMP/br-v24-office-ingress-surface.json"
+          echo "BR_V24_OFFICE_INGRESS_SOURCE_INVENTORY=PASS"
+          echo "BR_V24_OFFICE_UPSTREAM_RUNNING=FALSE"
+          echo "BR_V24_OFFICE_INDEPENDENT_REVIEW=REQUIRED"
+      - name: Preserve sanitized surface receipt without source or secrets
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: br-v24-office-ingress-surface-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/br-v24-office-source-only-patch.json
+            ${{ runner.temp }}/br-v24-office-ingress-surface.json
+          if-no-files-found: warn
+          retention-days: 7
