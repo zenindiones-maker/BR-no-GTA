@@ -42,6 +42,8 @@ instructions or broken mandatory references.
 ## Required versioned safety boundaries
 
 Required: `docs/governance/agents-versioned-safety-boundaries-v1.md`
+Required: `docs/governance/source-of-truth.md`
+Required: `docs/governance/v24-required-status-checks.md`
 All V11/V13/V17 voice/production restrictions, A15 remote-control-only policy,
 BR-native REA continuity and V24 existing-swarm gates remain mandatory through
 this versioned document. No promotion, auto-training or release by implication.
