@@ -27,7 +27,6 @@ jobs:
       PYTHONDONTWRITEBYTECODE: "1"
       ZERO_COST_OPERATION: "TRUE"
       BR_CODEX_FEDERATION_CONFIGURED: "false"
-      BR_TEST_DATABASE: ${{ runner.temp }}/br-v24-live-agents.sqlite3
       GH_PROMOTION_DISABLED: "true"
     steps:
       - name: Checkout exact V24 branch (no persisted write credentials)
@@ -44,6 +43,7 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REF_NAME" = "work/br-slm-agent-reconstruction-v24"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "BR_TEST_DATABASE=$RUNNER_TEMP/br-v24-live-agents.sqlite3" >> "$GITHUB_ENV"
           python -m pip install --disable-pip-version-check -q -r requirements.txt
       - name: Execute actual registered agents with fresh Harness authorization and real repository evidence
         shell: bash
