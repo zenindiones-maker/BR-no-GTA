@@ -27,6 +27,19 @@ def validate_diagnostic_environment(
     """Fail before importing model/audio modules on any ambiguous execution."""
     if environment.get(ABLAT_ONLY) != "1" or environment.get(AUTHORIZE) != "1":
         raise RuntimeError("V23_DIAGNOSTIC_EXPLICIT_AUTHORIZATION_REQUIRED")
+    # A15/Termux is a control terminal only. Block audio inference before
+    # importing any model/audio module, including a spoofed Codespace marker.
+    if (
+        str(repository_root.resolve()).startswith("/data/data/com.termux/")
+        or environment.get("PREFIX", "").startswith("/data/data/com.termux/")
+    ):
+        raise RuntimeError("V23_DIAGNOSTIC_A15_COMPUTE_FORBIDDEN")
+    if environment.get("GITHUB_ACTIONS") != "true":
+        if (
+            environment.get("CODESPACES") != "true"
+            or environment.get("CODESPACE_NAME") != "br-v23-recovery-gxp67g5g7wphwxjw"
+        ):
+            raise RuntimeError("V23_DIAGNOSTIC_AUTHORIZED_REMOTE_HOST_REQUIRED")
     if environment.get("GITHUB_ACTIONS") == "true" and environment.get("GITHUB_WORKFLOW") != WORKFLOW:
         raise RuntimeError("V23_DIAGNOSTIC_UNTRUSTED_WORKFLOW")
     if not environment.get("TELEGRAM_BOT_TOKEN", "").strip():
