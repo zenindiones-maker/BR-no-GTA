@@ -231,17 +231,30 @@ def youtube_intelligence_capability_records() -> tuple[CapabilityRecord,...]:
     return (*youtube_intelligence_role_records(),*youtube_platform_capability_records())
 
 
-def _validate_authorization(capability: Any,payload: Mapping[str,Any]) -> Any:
-    from app.services.harness_authorization_service import validate_harness_authorization
+def _validate_authorization(
+    capability: Any, payload: Mapping[str,Any],
+    *, allowed_actions: tuple[str,...]=("EXECUTION",),
+) -> Any:
+    from app.services.harness_authorization_service import (
+        resolve_harness_authorization, validate_harness_authorization,
+    )
 
     capability_id=str(getattr(capability,"capability_id","") or "")
     authorization_ref=str(payload.get("authorization_ref") or "").strip()
     task_id=str(payload.get("task_id") or "").strip()
     if not authorization_ref or not task_id:
         raise PermissionError("Harness authorization_ref and task_id are required")
+    # Authenticate the persisted authority first. Caller-supplied payloads
+    # cannot self-declare the action, subject or approval state.
+    original=resolve_harness_authorization(authorization_ref)
+    if (
+        original.authorized_action not in allowed_actions
+        or original.authorized_action not in getattr(capability,"allowed_actions",())
+    ):
+        raise PermissionError("Harness authorization action not admitted by capability")
     auth=validate_harness_authorization(
-        authorization_ref,
-        expected_action="EXECUTION",
+        original,
+        expected_action=original.authorized_action,
         expected_subject=f"capability:{capability_id}",
     )
     lineage=dict(auth.lineage or {})
@@ -257,10 +270,17 @@ def execute_youtube_intelligence_role_capability(
     capability_id=str(getattr(capability,"capability_id","") or "")
     if capability_id not in _ROLE_IDS:
         raise PermissionError("unknown YouTube intelligence role capability")
-    auth=_validate_authorization(capability,payload)
-    evidence_refs=tuple(dict.fromkeys(str(x) for x in (payload.get("evidence_refs") or ()) if str(x)))
-    if not evidence_refs:
-        raise ValueError("YouTube intelligence role requires evidence refs")
+    auth=_validate_authorization(
+        capability,payload,allowed_actions=("RESEARCH","EDITORIAL","EXECUTION","DECISION"),
+    )
+    # Role execution consumes bounded evidence metadata, never strings
+    # interpreted as a character sequence or unbounded private payloads.
+    supplied=payload.get("evidence_refs")
+    if (not isinstance(supplied,(list,tuple)) or not 1 <= len(supplied) <= 12
+            or any(not isinstance(ref,str) or not ref.strip()
+                   or len(ref) > 256 or "\\x00" in ref for ref in supplied)):
+        raise ValueError("YouTube intelligence role requires bounded evidence refs")
+    evidence_refs=tuple(dict.fromkeys(supplied))
     return {
         "schema":ROLE_RESULT_SCHEMA,
         "capability_id":capability_id,
