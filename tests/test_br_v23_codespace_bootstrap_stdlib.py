@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 
 from scripts.workstations.br_v23_codespace_bootstrap import (
     EXPECTED_BRANCH, EXPECTED_CODESPACE, MIN_FREE_BYTES, TEST_PATTERNS,
-    validate_identity, main,
+    validate_identity, main, _create_or_repair_stdlib_venv,
 )
 
 
@@ -84,6 +86,34 @@ class CodespaceBootstrapTests(unittest.TestCase):
     def test_named_test_patterns_are_explicit_and_local(self):
         self.assertEqual(3, len(TEST_PATTERNS))
         self.assertTrue(all(not str(pattern).startswith("/") for pattern in TEST_PATTERNS))
+
+    def test_repair_partially_created_venv_without_ensurepip(self):
+        # Reproduce Ubuntu /usr/bin/python3.12 missing ensurepip.
+        # The first failed setup may leave pyvenv.cfg and bin/ behind.
+        with tempfile.TemporaryDirectory() as root:
+            target = Path(root) / "venv"
+            (target / "bin").mkdir(parents=True)
+            (target / "pyvenv.cfg").write_text("partial broken attempt")
+            python = _create_or_repair_stdlib_venv(target)
+            self.assertTrue(python.is_file())
+            self.assertEqual(python, _create_or_repair_stdlib_venv(target))
+            cp = subprocess.run(
+                [str(python), "-I", "-c",
+                 "import json, sys; print(sys.prefix != sys.base_prefix)"],
+                text=True, capture_output=True, check=True, timeout=20,
+            )
+            self.assertEqual("True", cp.stdout.strip())
+
+    def test_denies_symlinked_venv_destination(self):
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            another = base / "protected"
+            another.mkdir()
+            link = base / "venv"
+            link.symlink_to(another, target_is_directory=True)
+            with self.assertRaisesRegex(RuntimeError, "VENV_DESTINATION_UNSAFE"):
+                _create_or_repair_stdlib_venv(link)
+            self.assertTrue(another.is_dir())
 
     def test_main_doctor_refuses_missing_codespace_before_any_setup(self):
         with patch.dict(os.environ, {}, clear=True):
