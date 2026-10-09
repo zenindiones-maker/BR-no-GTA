@@ -46,7 +46,7 @@ python3.12 scripts/workstations/br_v23_codespace_bootstrap.py --doctor
 python3.12 scripts/workstations/br_v23_codespace_bootstrap.py --setup
 ```
 
-The bootstrap creates `~/.cache/br-no-gta/v23-workstation/venv` and a
+The bootstrap creates or repairs `~/.cache/br-no-gta/v23-workstation/venv` **without pip or ensurepip** and a
 sanitized receipt outside the repository. It installs **no large models**,
 uses standard-library tests with network/HF disabled, and runs no background
 daemon. It refuses the wrong Codespace, branch, git remote, dirty worktree,
@@ -83,3 +83,21 @@ uncommitted worktree v2 was fully recovered.
 For later legitimate model work, first verify runtime memory, storage,
 consented sample provenance and remaining free compute. Run only a separately
 approved, bounded diagnostic, without changing human approval gates.
+
+## Ubuntu 24.04 ensurepip recovery (observed)
+
+The initial Codespace run passed the identity doctor but failed while trying to
+create a pip-enabled venv: `ensurepip is not available`. This is a packaging
+difference in the base Ubuntu Python installation, **not** loss of the Codespace.
+
+The versioned bootstrap was corrected to use `venv.EnvBuilder(with_pip=False,
+clear=False)` on every setup invocation, even if the first attempt left a
+partial `venv/bin/python`. It validates the interpreter is isolated and Python
+3.12, and then executes the stdlib tests. It does **not** install
+`python3.12-venv`, download `get-pip.py`, alter system packages, or delete
+the partial virtual environment. It is safe to retry setup from the Codespace
+after the fast-forward-only Git pull.
+
+`gh codespace stop` should be issued **after exiting SSH, from the Android
+Termux prompt**. Stopping the Codespace from its own SSH session closes that
+connection; this is expected and does not delete stored workspace files.
