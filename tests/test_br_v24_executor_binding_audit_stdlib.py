@@ -25,6 +25,12 @@ class ExecutorBindingASTTests(unittest.TestCase):
     def test_missing_module_is_not_pass(self):
         self.assertEqual("SOURCE_MODULE_NOT_FOUND", inspect_binding(self.root, "app.services.missing.run"))
 
+    def test_module_only_binding_is_not_falsely_reported_missing(self):
+        self.assertEqual(
+            "SOURCE_MODULE_ONLY_NOT_CALLABLE",
+            inspect_binding(self.root, "app.services.existing"),
+        )
+
     def test_missing_symbol_is_not_pass(self):
         self.assertEqual("STATIC_SYMBOL_NOT_FOUND", inspect_binding(self.root, "app.services.existing.missing"))
 
