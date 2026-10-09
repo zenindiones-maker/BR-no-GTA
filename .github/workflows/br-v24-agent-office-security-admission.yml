@@ -53,6 +53,21 @@ jobs:
           test "$(git -C .br-v24-untrusted-agent-office rev-parse HEAD)" = "6248293a7cd9dfdbf9633d12bbe857831ccfee88"
           python -m unittest discover -s tests -p 'test_br_v24_agent_office_untrusted_npm_gate.py' -v
           python scripts/agent_office_preflight.py --upstream-dir "$GITHUB_WORKSPACE/.br-v24-untrusted-agent-office"
+      - name: Apply existing BR-reviewed proxy-addr 2.0.8 patch to EPHEMERAL lock only
+        shell: bash
+        working-directory: .br-v24-untrusted-agent-office
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "6248293a7cd9dfdbf9633d12bbe857831ccfee88"
+          npm pkg set 'overrides.proxy-addr=2.0.8'
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          node - <<'JS'
+          const f=require("fs"),p=JSON.parse(f.readFileSync("package-lock.json","utf8"));
+          const matches=Object.entries(p.packages||{}).filter(([path])=>path==="node_modules/proxy-addr"||path.endsWith("/node_modules/proxy-addr"));
+          if(matches.length===0||matches.some(([,x])=>x.version!=="2.0.8"))throw Error("BR_V24_PROXY_ADDR_PATCH_NOT_APPLIED");
+          process.stdout.write("BR_V24_PROXY_ADDR_EPHEMERAL_2_0_8=PASS\\n");
+          JS
+          echo "BR_V24_UPSTREAM_CANONICAL_LOCK_UNCHANGED=TRUE"
       - name: Request current production dependency advisories without installing upstream
         shell: bash
         working-directory: .br-v24-untrusted-agent-office
