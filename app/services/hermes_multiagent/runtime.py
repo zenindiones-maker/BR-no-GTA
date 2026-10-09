@@ -182,12 +182,16 @@ def export_hermes_mission_checkpoint(
 
     target_home = target / "hermes-home"
     target_results = target / "capability-results"
+    target_task_results = target / "task-results"
     if target_home.exists():
         shutil.rmtree(target_home)
     if target_results.exists():
         shutil.rmtree(target_results)
+    if target_task_results.exists():
+        shutil.rmtree(target_task_results)
     target_home.mkdir(parents=True, exist_ok=True)
     target_results.mkdir(parents=True, exist_ok=True)
+    target_task_results.mkdir(parents=True, exist_ok=True)
 
     if source_home.exists():
         for item in source_home.iterdir():
@@ -202,6 +206,23 @@ def export_hermes_mission_checkpoint(
         for item in source_results.iterdir():
             if item.is_file() and item.suffix == ".json":
                 shutil.copy2(item, target_results / item.name)
+
+    # DependencyArtifactMissing in runner B requires original TaskResultEnvelope
+    # files, not just capability-results. Preserve both across runner boundary.
+    source_task_results = source_artifacts / "task-results"
+    if source_task_results.is_dir():
+        for item in source_task_results.iterdir():
+            if item.is_file() and not item.is_symlink() and item.suffix == ".json":
+                shutil.copy2(item, target_task_results / item.name)
+
+    task_result_files = []
+    for item in sorted(target_task_results.glob("*.json")):
+        raw = item.read_bytes()
+        task_result_files.append({
+            "name": item.name,
+            "sha256": __import__("hashlib").sha256(raw).hexdigest(),
+            "bytes": len(raw),
+        })
 
     result_files = []
     for item in sorted(target_results.glob("*.json")):
@@ -221,6 +242,7 @@ def export_hermes_mission_checkpoint(
         "task_ids": list(spec.allowed_task_ids),
         "capability_ids": list(spec.allowed_capability_ids),
         "result_files": result_files,
+        "task_result_files": task_result_files,
         "authority": "DEEPSEEK_HARNESS",
         "hermes_authority": "DELEGATED_ONLY",
         "canonical_memory_plane": "UNCHANGED",
@@ -267,6 +289,19 @@ def restore_hermes_mission_checkpoint(
         if digest != row.get("sha256"):
             raise PermissionError("Hermes checkpoint result hash mismatch")
 
+    # Fail closed for an incomplete/corrupted task-result handoff.
+    for row in manifest.get("task_result_files") or ():
+        name = str(row.get("name") or "")
+        if not name or Path(name).name != name or not name.endswith(".json"):
+            raise PermissionError("Hermes checkpoint task-result filename invalid")
+        path = source / "task-results" / name
+        if not path.is_file() or path.is_symlink():
+            raise ValueError("Hermes checkpoint TaskResultEnvelope missing")
+        raw = path.read_bytes()
+        if (len(raw) != row.get("bytes")
+                or __import__("hashlib").sha256(raw).hexdigest() != row.get("sha256")):
+            raise PermissionError("Hermes checkpoint TaskResultEnvelope hash mismatch")
+
     target_home = Path(hermes_home).resolve()
     target_artifacts = Path(artifact_dir).resolve()
     if target_home.exists():
@@ -289,6 +324,20 @@ def restore_hermes_mission_checkpoint(
     if source_results.is_dir():
         for item in source_results.glob("*.json"):
             shutil.copy2(item, target_results / item.name)
+
+    target_tasks = target_artifacts / "task-results"
+    target_tasks.mkdir(parents=True, exist_ok=True)
+    for old in target_tasks.glob("*.json"):
+        old.unlink()
+    source_tasks = source / "task-results"
+    if source_tasks.is_dir():
+        expected_names = {str(row["name"]) for row in manifest.get("task_result_files") or ()}
+        actual_names = {item.name for item in source_tasks.glob("*.json")}
+        if actual_names != expected_names:
+            raise PermissionError("Hermes checkpoint TaskResultEnvelope manifest mismatch")
+        for item in source_tasks.glob("*.json"):
+            if not item.is_symlink():
+                shutil.copy2(item, target_tasks / item.name)
 
     return {
         **manifest,
