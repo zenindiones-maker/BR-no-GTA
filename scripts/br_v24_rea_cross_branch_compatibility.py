@@ -139,8 +139,18 @@ def main():
         raise PermissionError("BR_REA_REMOTE_SAME_REPO_ONLY")
     current = args.current_root.resolve(strict=True)
     legacy = args.source_root.resolve(strict=True)
-    if legacy == current or legacy in current.parents or current in legacy.parents:
+    # GitHub checkout places the historical repo beneath the ephemeral workspace,
+    # but .git and HEAD must identify separate checkouts, not one branch swap.
+    if legacy == current:
         raise PermissionError("BR_REA_WORKTREES_NOT_ISOLATED")
+    roots = [
+        Path(subprocess.check_output(
+            ["git", "-C", str(root), "rev-parse", "--show-toplevel"], text=True
+        ).strip()).resolve()
+        for root in (legacy, current)
+    ]
+    if roots != [legacy, current]:
+        raise PermissionError("BR_REA_WORKTREES_NOT_INDEPENDENT")
     if subprocess.check_output(["git","-C",str(legacy),"rev-parse","HEAD"],text=True).strip() != V4_SHA:
         raise PermissionError("BR_REA_HISTORICAL_HEAD_MISMATCH")
     observed = subprocess.check_output(["git","-C",str(current),"rev-parse","HEAD"],text=True).strip()
