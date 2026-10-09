@@ -59,6 +59,35 @@ class V23DiagnosticRunnerContracts(unittest.TestCase):
         self.env.pop("BR_OWNER_TELEGRAM_REFERENCE_INDEX")
         self.fail_with("OWNER_REFERENCE_INDEX_MISSING")
 
+    def test_denies_local_android_control_terminal(self):
+        self.env.pop("GITHUB_ACTIONS")
+        self.env.pop("GITHUB_WORKFLOW")
+        self.fail_with("AUTHORIZED_REMOTE_HOST_REQUIRED")
+
+    def test_denies_other_codespace_even_with_authorization_flags(self):
+        self.env.pop("GITHUB_ACTIONS")
+        self.env.pop("GITHUB_WORKFLOW")
+        self.env["CODESPACES"]="true"
+        self.env["CODESPACE_NAME"]="hazewave-zero-cost-4jxp45676rq6279xx"
+        self.fail_with("AUTHORIZED_REMOTE_HOST_REQUIRED")
+
+    def test_denies_termux_prefix_even_when_codespace_marker_spoofed(self):
+        self.env["CODESPACES"]="true"
+        self.env["CODESPACE_NAME"]="br-v23-recovery-gxp67g5g7wphwxjw"
+        self.env["PREFIX"]="/data/data/com.termux/files/usr"
+        self.fail_with("A15_COMPUTE_FORBIDDEN")
+
+    def test_authorized_br_codespace_boundary_without_actions(self):
+        self.env.pop("GITHUB_ACTIONS")
+        self.env.pop("GITHUB_WORKFLOW")
+        self.env.pop("RUNNER_TEMP")
+        self.env["CODESPACES"]="true"
+        self.env["CODESPACE_NAME"]="br-v23-recovery-gxp67g5g7wphwxjw"
+        self.assertEqual(
+            self.private.resolve(),
+            validate_diagnostic_environment(self.env,repository_root=self.repo),
+        )
+
     def test_denies_insecure_private_directory(self):
         self.private.chmod(0o755)
         self.fail_with("WORKSPACE_PERMISSIONS_INSECURE")
