@@ -12,6 +12,7 @@ on:
       - "tests/test_br_slm_swarm_bridge_v24_stdlib.py"
       - "tests/test_br_slm_swarm_wiring_v24_stdlib.py"
       - "docs/architecture/br-v24-existing-swarm-slm-transfer.md"
+      - "AGENTS.md"
   workflow_dispatch:
 
 permissions:
@@ -44,6 +45,7 @@ jobs:
           set -euo pipefail
           python -m unittest discover -s tests -p 'test_br_slm_swarm_bridge_v24_stdlib.py' -v
           python -m unittest discover -s tests -p 'test_br_slm_swarm_wiring_v24_stdlib.py' -v
+          grep -F 'docs/architecture/br-v24-existing-swarm-slm-transfer.md' AGENTS.md >/dev/null
           python -m py_compile app/services/br_slm_swarm_bridge_v24.py app/services/br_slm_swarm_wiring_v24.py scripts/br_slm_existing_swarm_inventory_v24.py
       - name: Discover actual registered agent records (no inference)
         shell: bash
