@@ -5,6 +5,9 @@ on:
     branches:
       - work/gate6f-analytics-learning
       - "staging/security-*"
+  pull_request:
+    branches:
+      - work/br-slm-agent-reconstruction-v24
   workflow_dispatch:
 
 permissions: {}
