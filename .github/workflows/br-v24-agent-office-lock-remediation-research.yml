@@ -145,7 +145,7 @@ jobs:
           path=Path(os.environ["RUNNER_TEMP"])/"br-v24-office-reachability.json"
           if path.exists() or path.is_symlink():
               raise SystemExit("BR_OFFICE_REACHABILITY_RECEIPT_ALREADY_EXISTS")
-          path.write_text(json.dumps(report,indent=2,sort_keys=True)+"\\n")
+          path.write_text(json.dumps(report,indent=2,sort_keys=True))
           high=report["high"]
           reachable=sum(any(n["reachable_by_static_production_edges"] for n in x["nodes"]) for x in high)
           print("BR_V24_OFFICE_CANDIDATE_HIGH_ISSUE_COUNT="+str(len(high)))
