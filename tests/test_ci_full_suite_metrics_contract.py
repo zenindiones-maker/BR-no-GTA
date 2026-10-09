@@ -1,19 +1,10 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
+from scripts.ci_full_suite_metrics import parse_pytest_summary
+
 CI = Path(".github/workflows/ci.yml")
-
-
-def _summary_regex() -> re.Pattern[str]:
-    text = CI.read_text(encoding="utf-8")
-    marker = 'match = re.search(\n              r"'
-    start = text.index(marker) + len(marker)
-    end = text.index('",\n              log,', start)
-    pattern = text[start:end]
-    pattern = pattern.replace('\\\\', '\\')
-    return re.compile(pattern)
 
 
 def test_full_suite_metrics_parse_warnings_before_subtests():
@@ -21,12 +12,30 @@ def test_full_suite_metrics_parse_warnings_before_subtests():
         "3712 passed, 7 skipped, 8 warnings, 16 subtests passed "
         "in 122.19s"
     )
-    match = _summary_regex().search(log)
-    assert match is not None
-    assert int(match.group("passed")) == 3712
-    assert int(match.group("skipped")) == 7
-    assert int(match.group("subtests")) == 16
-    assert float(match.group("seconds")) == 122.19
+    result = parse_pytest_summary(log)
+    assert result is not None
+    assert result["passed"] == 3712
+    assert result["failed"] == 0
+    assert result["skipped"] == 7
+    assert result["subtests_passed"] == 16
+    assert result["pytest_wall_clock_seconds"] == 122.19
+
+
+def test_full_suite_metrics_detects_failure_first_without_false_pass():
+    log = (
+        "3 failed, 4418 passed, 11 skipped, 1 warning, "
+        "84 subtests passed in 156.99s (0:02:36)"
+    )
+    result = parse_pytest_summary(log)
+    assert result is not None
+    assert result["failed"] == 3
+    assert result["passed"] == 4418
+    assert result["skipped"] == 11
+    assert result["subtests_passed"] == 84
+
+
+def test_full_suite_metrics_missing_summary_abstains():
+    assert parse_pytest_summary("pytest output missing or truncated") is None
 
 
 def test_final_gate_does_not_use_absolute_historical_skip_ceiling():

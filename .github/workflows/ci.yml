@@ -7,9 +7,11 @@ on:
       - work/gate6f-analytics-learning
       - work/gate6f-telegram-total-ingress
       - "staging/security-*"
+      - work/br-slm-agent-reconstruction-v24
   pull_request:
     branches:
       - main
+      - work/br-slm-agent-reconstruction-v24
   workflow_dispatch:
     inputs:
       checkpoint:
@@ -34,6 +36,7 @@ jobs:
       synergy: ${{ steps.classify.outputs.synergy }}
       canary: ${{ steps.classify.outputs.canary }}
       any_tests: ${{ steps.classify.outputs.any_tests }}
+      frontend: ${{ steps.classify.outputs.frontend }}
       checkpoint: ${{ steps.classify.outputs.checkpoint }}
       changed_count: ${{ steps.classify.outputs.changed_count }}
     steps:
@@ -188,12 +191,18 @@ jobs:
               gate6f = synergy = canary = True
 
           any_tests = any((gate6f, synergy, canary))
+          frontend = any(
+              path.startswith(("video-engine/frontend/", "video-engine/backend/vedit/"))
+              or path == ".github/workflows/ci.yml"
+              for path in changed
+          )
           output = Path(os.environ["GITHUB_OUTPUT"])
           values = {
               "gate6f": gate6f,
               "synergy": synergy,
               "canary": canary,
               "any_tests": any_tests,
+              "frontend": frontend,
               "checkpoint": checkpoint,
               "changed_count": len(changed),
           }
@@ -227,6 +236,52 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  governance-policy:
+    name: Governance Policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout reviewed candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Verify mandatory AGENTS and versioned policies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          from app.services.agents_policy_validation_service import validate_agents_policy
+
+          root = Path.cwd()
+          policy_file = root / 'docs/governance/agents-versioned-safety-boundaries-v1.md'
+          for document in (root / 'AGENTS.md', policy_file):
+              result = validate_agents_policy(root, agents_path=document)
+              assert result.status == 'PASS', {
+                  'document': str(document.relative_to(root)),
+                  'broken': result.broken_references,
+                  'stale': result.stale_mandatory_references,
+                  'conflicts': result.authority_conflicts,
+                  'lines': result.line_count,
+              }
+          for match in re.finditer(
+              r'\*\*Required:\*\*\s*`([^`]+)`',
+              policy_file.read_text(encoding='utf-8'),
+          ):
+              candidate = (root / match.group(1)).resolve()
+              assert candidate.is_relative_to(root.resolve()), 'REFERENCE_OUTSIDE_REPOSITORY'
+              assert candidate.is_file(), f'BROKEN_EXTENDED_POLICY_REF={match.group(1)}'
+          for path in (
+              'docs/governance/source-of-truth.md',
+              'docs/governance/v24-required-status-checks.md',
+          ):
+              assert (root / path).is_file(), f'MISSING_REQUIRED_GOVERNANCE={path}'
+          assert len((root / 'AGENTS.md').read_text(encoding='utf-8').splitlines()) <= 80
+          print('GOVERNANCE_POLICY=PASS')
+          PY
   bootstrap:
     name: Test Environment
     needs: impact
@@ -307,10 +362,36 @@ jobs:
       cancel-in-progress: true
     uses: ./.github/workflows/run001-canary-isolation-validation.yml
 
+  frontend-build:
+    name: Frontend Build Check
+    needs: impact
+    if: needs.impact.outputs.frontend == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Setup pinned Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24.21.0'
+          cache: npm
+          cache-dependency-path: video-engine/frontend/package-lock.json
+      - name: Install lockfile dependencies (no lifecycle scripts)
+        working-directory: video-engine/frontend
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify production frontend build (no deployment)
+        working-directory: video-engine/frontend
+        run: npm run build
+
   fast-feedback:
     name: Fast Feedback
     runs-on: ubuntu-latest
-    needs: [impact, bootstrap, gate6f, system-synergy, canary]
+    needs: [impact, governance-policy, bootstrap, gate6f, system-synergy, canary, frontend-build]
     if: always()
     concurrency:
       group: br-no-gta-fast-feedback-${{ github.ref }}-${{ needs.impact.outputs.checkpoint }}
@@ -319,6 +400,7 @@ jobs:
       - name: Derive applicable focused gate status
         env:
           ANY_TESTS: ${{ needs.impact.outputs.any_tests }}
+          GOVERNANCE_RESULT: ${{ needs.governance-policy.result }}
           BOOTSTRAP: ${{ needs.bootstrap.result }}
           GATE6F_REQUIRED: ${{ needs.impact.outputs.gate6f }}
           GATE6F_RESULT: ${{ needs.gate6f.result }}
@@ -326,13 +408,15 @@ jobs:
           SYNERGY_RESULT: ${{ needs.system-synergy.result }}
           CANARY_REQUIRED: ${{ needs.impact.outputs.canary }}
           CANARY_RESULT: ${{ needs.canary.result }}
+          FRONTEND_REQUIRED: ${{ needs.impact.outputs.frontend }}
+          FRONTEND_RESULT: ${{ needs.frontend-build.result }}
         run: |
           python - <<'PY'
           import json
           import os
           from pathlib import Path
 
-          checks = {}
+          checks = {"governance_policy": os.environ["GOVERNANCE_RESULT"] == "success"}
           if os.environ["ANY_TESTS"] == "true":
               checks["bootstrap"] = os.environ["BOOTSTRAP"] == "success"
           for name, required_key, result_key in (
@@ -344,15 +428,23 @@ jobs:
               result = os.environ[result_key]
               checks[name] = (result == "success") if required else (result == "skipped")
 
+          frontend_required = os.environ["FRONTEND_REQUIRED"] == "true"
+          frontend_result = os.environ["FRONTEND_RESULT"]
+          checks["frontend_build"] = (
+              frontend_result == "success"
+              if frontend_required else frontend_result == "skipped"
+          )
           status = "PASS" if all(checks.values()) else "FAIL"
           evidence = {
               "FAST_FEEDBACK": status,
               "checks": checks,
               "results": {
                   "bootstrap": os.environ["BOOTSTRAP"],
+                  "governance_policy": os.environ["GOVERNANCE_RESULT"],
                   "gate6f": os.environ["GATE6F_RESULT"],
                   "system_synergy": os.environ["SYNERGY_RESULT"],
                   "canary": os.environ["CANARY_RESULT"],
+                  "frontend_build": os.environ["FRONTEND_RESULT"],
               },
           }
           Path("fast-feedback.json").write_text(
@@ -435,6 +527,7 @@ jobs:
           import re
           import xml.etree.ElementTree as ET
           from pathlib import Path
+          from scripts.ci_full_suite_metrics import parse_pytest_summary
 
           root = Path("ci-artifacts")
           log = (root / "pytest-full.log").read_text(encoding="utf-8", errors="replace") if (root / "pytest-full.log").exists() else ""
@@ -448,18 +541,9 @@ jobs:
               "pytest_wall_clock_seconds": None,
               "collected": None,
           }
-          match = re.search(
-              r"(?P<passed>\d+) passed(?:, (?P<failed>\d+) failed)?(?:, (?P<skipped>\d+) skipped)?(?:, \d+ warnings?)?(?:, (?P<subtests>\d+) subtests passed)?.*? in (?P<seconds>\d+(?:\.\d+)?)s",
-              log,
-          )
-          if match:
-              summary.update({
-                  "passed": int(match.group("passed")),
-                  "failed": int(match.group("failed") or 0),
-                  "skipped": int(match.group("skipped") or 0),
-                  "subtests_passed": int(match.group("subtests") or 0),
-                  "pytest_wall_clock_seconds": float(match.group("seconds")),
-              })
+          parsed = parse_pytest_summary(log)
+          if parsed is not None:
+              summary.update(parsed)
           collected = re.search(r"(\d+) tests? collected", collection)
           if collected:
               summary["collected"] = int(collected.group(1))
@@ -474,7 +558,12 @@ jobs:
                   "skipped": sum(int(item.attrib.get("skipped", 0)) for item in suites),
                   "time_seconds": sum(float(item.attrib.get("time", 0.0)) for item in suites),
               }
+              summary["failed"] = summary["junit"]["failures"]
               summary["errors"] = summary["junit"]["errors"]
+              summary["skipped"] = summary["junit"]["skipped"]
+              # Parsed counters are diagnostic; the XML report is authoritative.
+              if summary["junit"]["tests"] <= 0:
+                  raise SystemExit("PYTEST_JUNIT_EMPTY_FAIL_CLOSED")
           summary["slow_test_profile_available"] = (
               "slowest 50 durations" in log.lower()
               or "50 slowest durations" in log.lower()

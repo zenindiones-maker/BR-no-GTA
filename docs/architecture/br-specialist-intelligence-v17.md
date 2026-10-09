@@ -10,18 +10,18 @@ The existing owner clone was technically rejected; runner success and a Telegram
 
 ## Practical first specialist
 
-**ID:** br.audiovisual.timeline-forensics / version 17.0.0  
-**Type:** configuration and deterministic tool orchestration (no new model instance).  
-**Domain:** owner-original video timeline forensics.  
-**Task:** inspect only authorized owned MP4, find potential shot transitions with V16 FFmpeg.  
-**Exclusions:** speaker identity, audio dubbing, editorial truth, OCR, unsafe browser, any model training, Telegram and publication.  
-**Model candidates:** existing Harness-authorized small model endpoints only when a verified routing benchmark later justifies them.  
-**Selected model:** NONE_DETERMINISTIC_BASELINE, because an existing deterministic code path is sufficient.  
-**Authority:** RESEARCH through existing HarnessRoutingRequest, TaskEnvelope, CapabilityAdapter and persisted scope; no specialist permission or bypass.  
-**Procedural knowledge:** exact local V16 technical protocol with file hash; not an external retrieval prompt, not memory authority.  
-**Verifier:** independently recomputes both pixel and timeline digest, confirms same source and bounded windows, checks prohibited voice/semantic/publication flags.  
-**Recovery:** fail closed; no blind automatic retry.  
-**Settlement:** in-memory hash-addressed execution receipt, exclusive 0600 private benchmark JSON in clean ephemeral CI; implementation durably committed on branch. This is not a cross-machine execution ledger.  
+**ID:** br.audiovisual.timeline-forensics / version 17.0.0
+**Type:** configuration and deterministic tool orchestration (no new model instance).
+**Domain:** owner-original video timeline forensics.
+**Task:** inspect only authorized owned MP4, find potential shot transitions with V16 FFmpeg.
+**Exclusions:** speaker identity, audio dubbing, editorial truth, OCR, unsafe browser, any model training, Telegram and publication.
+**Model candidates:** existing Harness-authorized small model endpoints only when a verified routing benchmark later justifies them.
+**Selected model:** NONE_DETERMINISTIC_BASELINE, because an existing deterministic code path is sufficient.
+**Authority:** RESEARCH through existing HarnessRoutingRequest, TaskEnvelope, CapabilityAdapter and persisted scope; no specialist permission or bypass.
+**Procedural knowledge:** exact local V16 technical protocol with file hash; not an external retrieval prompt, not memory authority.
+**Verifier:** independently recomputes both pixel and timeline digest, confirms same source and bounded windows, checks prohibited voice/semantic/publication flags.
+**Recovery:** fail closed; no blind automatic retry.
+**Settlement:** in-memory hash-addressed execution receipt, exclusive 0600 private benchmark JSON in clean ephemeral CI; implementation durably committed on branch. This is not a cross-machine execution ledger.
 **Escalation:** abstain to Harness policy review when unsupported.
 
 ## Test and acceptance
