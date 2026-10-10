@@ -33,7 +33,14 @@ def _build_memory_claim(
 ) -> MemoryClaim:
     """Reconstrói o domínio MemoryClaim a partir do SQLite."""
 
+    canonical_key = claim_data.get("canonical_key")
+    if not isinstance(canonical_key, str) or not canonical_key.strip():
+        raise MemoryConsolidationPersistenceError(
+            "CLAIM_CANONICAL_KEY_MISSING_OR_INVALID"
+        )
+
     return MemoryClaim(
+        canonical_key=canonical_key,
         claim=claim_data["claim"],
         claim_type=claim_data["claim_type"],
         confidence=float(claim_data["confidence"]),

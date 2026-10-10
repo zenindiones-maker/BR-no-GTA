@@ -36,6 +36,7 @@ def test_real_scheduler_propagates_monitor_execution_identity_on_success(
         items_ingested=0,
         items_duplicated=0,
         knowledge_ids=[],
+        intelligence=[],
     )
 
     def fake_run_gta6_monitor_once(*, timeout=15.0):
