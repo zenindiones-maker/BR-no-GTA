@@ -94,3 +94,26 @@ def update_harness_authorization_status(authorization_id: str, status: str) -> N
         connection.commit()
     finally:
         connection.close()
+
+
+def consume_active_harness_authorization(authorization_id: str) -> bool:
+    """Atomically claim a one-shot persisted Harness authorization.
+
+    Unlike the general-purpose status updater, this cannot replay an already
+    consumed token or win a second concurrent claim.
+    """
+    if not isinstance(authorization_id, str) or not authorization_id:
+        return False
+    connection = get_connection()
+    try:
+        cursor = connection.execute(
+            """UPDATE harness_authorizations
+               SET status = 'consumed', consumed_at = CURRENT_TIMESTAMP,
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE authorization_id = ? AND status = 'active'""",
+            (authorization_id,),
+        )
+        connection.commit()
+        return cursor.rowcount == 1
+    finally:
+        connection.close()
