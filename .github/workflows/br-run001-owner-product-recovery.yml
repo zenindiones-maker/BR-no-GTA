@@ -8,6 +8,9 @@ on:
       - tests/test_run001_owner_only_product_recovery.py
       - app/services/run001_owner_only_product_recovery.py
       - scripts/run001_final_product_dispatch.py
+      - scripts/run001_product_source_doctor.py
+      - products/run001/video-a-v1.json
+      - products/run001/video-b-v1.json
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,6 +30,17 @@ jobs:
           set -euo pipefail
           python -m unittest discover -s tests -p 'test_run001_owner_only_product_recovery.py' -v
           python -m unittest discover -s tests -p 'test_run001_owner_voice_admission.py' -v
+          python scripts/run001_product_source_doctor.py --output /tmp/run001-source-readiness.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('/tmp/run001-source-readiness.json').read_text())
+          assert d['video_a']['status']=='SCRIPT_READY_APPROVAL_PENDING',d
+          assert d['human_owner_approval']=='NOT_PROVEN'
+          assert d['dispatch_authorized'] is False
+          assert d['youtube_upload']=='BLOCKED'
+          print('RUN001_REAL_SOURCE_INVENTORY=PASS_NO_FAKE_APPROVAL')
+          PY
           echo 'BR_RUN001_SOURCE_RECOVERY_TESTS=PASS'
           echo 'OWNER_APPROVAL=NOT_IMPLIED'
           echo 'RENDERING=NOT_ATTEMPTED'
