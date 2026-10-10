@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from app.services.owner_voice_audition_ledger_store import store_from_environment
+from app.services.owner_voice_clone_step_output_service import reject_critical_scope_for_standard_delivery
 from app.services.owner_voice_single_clone_delivery_service import (
     RECONCILIATION_REQUIRED,
     SingleCloneDeliveryLedger,
@@ -234,6 +235,7 @@ def main()->int:
     if not token or not manifest_env:
         raise RuntimeError("SINGLE_CLONE_DELIVERY_ENV_REQUIRED")
     manifest=_load_manifest(Path(manifest_env).resolve())
+    reject_critical_scope_for_standard_delivery(manifest)
     workspace=Path(os.environ["BR_OWNER_AUDITION_WORKSPACE"]).resolve()
     store=store_from_environment(repo_root=Path.cwd(),workspace=workspace)
 
