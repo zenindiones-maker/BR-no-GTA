@@ -1,0 +1,33 @@
+name: BR RUN001 Owner-Only Product Recovery
+on:
+  push:
+    branches:
+      - work/br-run001-real-product-recovery-20261010-v1
+    paths:
+      - .github/workflows/br-run001-owner-product-recovery.yml
+      - tests/test_run001_owner_only_product_recovery.py
+      - app/services/run001_owner_only_product_recovery.py
+      - scripts/run001_final_product_dispatch.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  safe-source-recovery-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Isolated original sources and owner-only admission
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_run001_owner_only_product_recovery.py' -v
+          python -m unittest discover -s tests -p 'test_run001_owner_voice_admission.py' -v
+          echo 'BR_RUN001_SOURCE_RECOVERY_TESTS=PASS'
+          echo 'OWNER_APPROVAL=NOT_IMPLIED'
+          echo 'RENDERING=NOT_ATTEMPTED'
+          echo 'YOUTUBE_UPLOAD=NOT_ATTEMPTED'
