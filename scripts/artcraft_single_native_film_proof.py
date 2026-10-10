@@ -52,12 +52,31 @@ def main():
         env = {"HOME": "/tmp", "XDG_CACHE_HOME": "/tmp", "TMPDIR": "/tmp",
                "PATH": "/usr/bin:/bin", "LC_ALL": "C", "CARGO_NET_OFFLINE": "true"}
         receipt["native_executed"] = True
-        receipt["command"] = "filmcraft-cli --demo render --seconds 0 --out [bounded-png] --scale 0.16"
+        receipt["command"] = "filmcraft-cli --demo render --seconds 2 --out [bounded-png] --scale 0.16"
         receipt["execution"] = run([
-            str(binary), "--demo", "render", "--seconds", "0",
+            str(binary), "--demo", "render", "--seconds", "2",
             "--out", str(frame), "--scale", "0.16"
         ], cwd=args.output, timeout=90, env=env)
         receipt["frame"] = check_png(frame)
+        # At 0s the built-in demo begins with an intentional fade-to-black.
+        # Decode an actual interior frame and reject flat/empty images; PNG
+        # validity alone was a documented false-positive quality gate.
+        import subprocess
+        px = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-v", "error", "-nostdin",
+             "-i", str(frame), "-frames:v", "1", "-pix_fmt", "rgb24",
+             "-f", "rawvideo", "pipe:1"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=25, check=False,
+        )
+        if px.returncode or len(px.stdout) != receipt["frame"]["width"] * receipt["frame"]["height"] * 3:
+            raise BoundaryError("REAL_FRAME_DECODE_FAILED")
+        sample = px.stdout[::max(1, len(px.stdout) // 2048)]
+        dynamic = max(sample) - min(sample)
+        if dynamic < 15 or len(set(sample)) < 12:
+            raise BoundaryError("RENDERED_FRAME_IS_VISUALLY_EMPTY_OR_FLAT")
+        receipt["frame"]["sample_luma_channel_span"] = dynamic
+        receipt["frame"]["sample_distinct_channel_values"] = len(set(sample))
         receipt["gate"] = "PASS"
     except Exception as exc:
         receipt["error"] = f"{type(exc).__name__}:{str(exc)[:350]}"
