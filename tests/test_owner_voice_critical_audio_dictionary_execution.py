@@ -23,10 +23,18 @@ class OwnerCriticalPronunciationTests(unittest.TestCase):
         self.assertTrue(all(x["language"]=="Portuguese" for x in items))
         self.assertTrue(all(x["approved_audio"] is False for x in items))
         self.assertEqual(items[2]["canonical_text"],"Vice City")
-        self.assertEqual(items[2]["spoken_text"],"vaicy siti")
+        self.assertIn("vaicy siti",items[2]["spoken_text"])
+        self.assertEqual(items[2]["spoken_text"].count("vaicy siti"),1)
         for x in items:
-            if x["canonical_text"] not in ("Vice City","GTA 6"):
-                self.assertEqual(x["spoken_text"],x["canonical_text"])
+            expected=(
+                "vaicy siti" if x["canonical_text"]=="Vice City"
+                else "Gê Tê A seis" if x["canonical_text"]=="GTA 6"
+                else x["canonical_text"]
+            )
+            self.assertIn(expected,x["spoken_text"])
+            self.assertEqual(x["spoken_text"].count(expected),1)
+            self.assertGreaterEqual(len(x["spoken_text"].split()),16)
+            self.assertNotIn("Booooa",x["spoken_text"])
 
     def test_single_word_audio_is_forbidden_for_speaker_verification(self):
         items=owner_critical_ptbr_batches()
