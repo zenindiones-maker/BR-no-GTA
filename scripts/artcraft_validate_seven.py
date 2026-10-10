@@ -60,13 +60,17 @@ def run_command(args: list[str], *, cwd: Path | None, log: Path, timeout: int,
 
 
 def check_license(src: Path) -> str:
-    lic = next((p for p in src.iterdir() if p.is_file() and
-                (p.name.lower().startswith("license") or p.name.lower().startswith("copying"))), None)
-    if not lic:
+    candidates = sorted(
+        (p for p in src.iterdir() if p.is_file() and
+         (p.name.lower().startswith("license") or p.name.lower().startswith("copying"))),
+        key=lambda p: p.name,
+    )
+    if not candidates:
         raise RuntimeError("UPSTREAM_LICENSE_NOT_FOUND")
-    if "Apache License" not in lic.read_text(encoding="utf-8", errors="replace"):
-        raise RuntimeError("UPSTREAM_APACHE_LICENSE_NOT_VERIFIED")
-    return lic.name
+    for lic in candidates:
+        if "Apache License" in lic.read_text(encoding="utf-8", errors="replace"):
+            return lic.name
+    raise RuntimeError("UPSTREAM_APACHE_LICENSE_NOT_VERIFIED")
 
 
 def docker_args(*, src: Path, cargo: Path, target: Path, project: str,
