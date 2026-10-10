@@ -69,8 +69,10 @@ class AcousticVocabularyContracts(unittest.TestCase):
         self.assertEqual(len(by_name["Vice City"]), 2)
         self.assertEqual(len(by_name["Rockstar"]), 2)
         self.assertEqual(len(by_name["Leonida"]), 1)
-        self.assertEqual(by_name["Vice City"][0]["start_ms"], 1500)
-        self.assertEqual(by_name["Vice City"][0]["end_ms"], 2400)
+        from_youdubbing = next(p for p in by_name["Vice City"]
+                               if p["video_id"] == "f8IZhKcuEts")
+        self.assertEqual(from_youdubbing["start_ms"], 1500)
+        self.assertEqual(from_youdubbing["end_ms"], 2400)
         self.assertIsNone(by_name["Vice City"][0]["verified_pronunciation"])
 
     def test_low_word_probability_is_not_promoted(self):
