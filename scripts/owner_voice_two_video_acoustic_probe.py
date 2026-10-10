@@ -54,8 +54,89 @@ def check_pyav_versions(fw_version, av_version):
                            "in the existing Codespace only")
 
 
+WORD_TIMING_ISSUES = frozenset({
+    "MISSING_BOUNDARY", "NONFINITE_BOUNDARY", "INVALID_BOUNDARY_TYPE",
+    "OUTSIDE_MEDIA", "NONPOSITIVE_INTERVAL",
+})
+
+
+def review_word_timing(start, end, duration_ms):
+    """Report, never fabricate, word intervals unusable for acoustic playback.
+
+    Word-level Whisper/DTW boundaries may coincide after ms rounding or
+    fall outside the original media after VAD restoration. Retain the
+    lexical ASR hypothesis while refusing a falsely precise interval.
+    """
+    def to_ms(raw):
+        if raw is None:
+            return None
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+            raise TypeError("INVALID_WORD_TIME_TYPE")
+        if not math.isfinite(raw):
+            return None
+        return round(raw * 1000)
+
+    reason = None
+    try:
+        a, b = to_ms(start), to_ms(end)
+    except (TypeError, OverflowError):
+        a = b = None
+        reason = "INVALID_BOUNDARY_TYPE"
+    if reason is None:
+        if start is None or end is None:
+            reason = "MISSING_BOUNDARY"
+        elif a is None or b is None:
+            reason = "NONFINITE_BOUNDARY"
+        elif a < 0 or b > duration_ms + 2000:
+            reason = "OUTSIDE_MEDIA"
+        elif a >= b:
+            reason = "NONPOSITIVE_INTERVAL"
+    if reason:
+        return {
+            "start_ms": None, "end_ms": None,
+            "timing_status": "UNALIGNED", "timing_issue": reason,
+            "raw_start_ms": a, "raw_end_ms": b,
+        }
+    return {
+        "start_ms": a, "end_ms": b,
+        "timing_status": "ALIGNED", "timing_issue": None,
+    }
+
+
+def write_alignment_diagnostics(output, video):
+    """A private, source-bound QA counter only; no transcript or word text."""
+    counts = {key: 0 for key in sorted(WORD_TIMING_ISSUES)}
+    aligned = unaligned = 0
+    for segment in video["segments"]:
+        for word in segment.get("words", []):
+            if word.get("timing_status") == "UNALIGNED":
+                issue = word.get("timing_issue")
+                if issue not in WORD_TIMING_ISSUES:
+                    raise ValueError("INVALID_TIMING_DIAGNOSTIC")
+                counts[issue] += 1
+                unaligned += 1
+            else:
+                aligned += 1
+    summary = {
+        "schema": "OwnerVoiceASRWordTimingQA/v1",
+        "video_id": video["video_id"],
+        "media_sha256": video["media_sha256"],
+        "aligned_count": aligned, "unaligned_count": unaligned,
+        "issues": {k: v for k, v in counts.items() if v},
+        "phonetic_verification": "PENDING",
+        "human_approval": "PENDING",
+    }
+    write_private_json(
+        Path(output) / "alignment-diagnostics" /
+        (video["video_id"] + ".json"), summary
+    )
+    return summary
+
+
 def _flags(word, segment):
     result = []
+    if word.get("timing_status") == "UNALIGNED":
+        result.append("WORD_ALIGNMENT_UNVERIFIED")
     p = word.get("probability")
     if p is None:
         result.append("WORD_CONFIDENCE_MISSING")
@@ -82,6 +163,7 @@ def _validate_video(v):
     if not v.get("segments"):
         raise ValueError("EMPTY_ASR_SEGMENTS")
     words = 0
+    aligned_words = 0
     last = -1
     for seg in v["segments"]:
         a, b = seg["start_ms"], seg["end_ms"]
@@ -89,11 +171,24 @@ def _validate_video(v):
             raise ValueError("INVALID_SEGMENT_TIMESTAMPS")
         last = a
         for w in seg.get("words", []):
-            if not (0 <= w["start_ms"] < w["end_ms"] <= v["duration_ms"] + 2000):
-                raise ValueError("INVALID_WORD_TIMESTAMPS")
+            if w.get("timing_status") == "UNALIGNED":
+                if (w.get("timing_issue") not in WORD_TIMING_ISSUES
+                        or w.get("start_ms") is not None
+                        or w.get("end_ms") is not None):
+                    raise ValueError("INVALID_WORD_TIMESTAMPS")
+            else:
+                if w.get("timing_status") not in (None, "ALIGNED"):
+                    raise ValueError("INVALID_WORD_TIMESTAMPS")
+                a_word, b_word = w.get("start_ms"), w.get("end_ms")
+                if (type(a_word) is not int or type(b_word) is not int
+                        or not (0 <= a_word < b_word <= v["duration_ms"] + 2000)):
+                    raise ValueError("INVALID_WORD_TIMESTAMPS")
+                aligned_words += bool(normalize(w["text"]))
             words += bool(normalize(w["text"]))
     if not words:
         raise ValueError("EMPTY_ASR_WORDS")
+    if not aligned_words:
+        raise ValueError("NO_ALIGNED_ASR_WORDS")
 
 
 def _union_ms(intervals):
@@ -122,6 +217,7 @@ def index_videos(videos):
         _validate_video(video)
         vid = video["video_id"]
         seen, intervals, uncertain, occurrences = set(), [], 0, 0
+        unaligned_occurrences = 0
         for si, seg in enumerate(video["segments"]):
             sequence = []
             for word in seg.get("words", []):
@@ -135,18 +231,25 @@ def index_videos(videos):
                     "segment_end_ms": seg["end_ms"], "start_ms": word["start_ms"],
                     "end_ms": word["end_ms"], "asr_text": word["text"],
                     "word_probability": word.get("probability"),
+                    "timing_status": word.get("timing_status", "ALIGNED"),
+                    "timing_issue": word.get("timing_issue"),
                     "uncertainty_flags": flags,
                 }
                 counts[key].append(o)
                 sequence.append((key, o))
-                intervals.append((word["start_ms"], word["end_ms"]))
+                if word.get("timing_status") == "UNALIGNED":
+                    unaligned_occurrences += 1
+                else:
+                    intervals.append((word["start_ms"], word["end_ms"]))
                 seen.add(key)
                 occurrences += 1
                 uncertain += bool(flags)
             for label, pattern in PATTERNS:
                 for start in range(len(sequence) - len(pattern) + 1):
                     match = sequence[start:start + len(pattern)]
-                    if tuple(t[0] for t in match) == pattern:
+                    if (tuple(t[0] for t in match) == pattern
+                            and all(o["timing_status"] == "ALIGNED"
+                                    for _, o in match)):
                         phrases.append({
                             "canonical_text": label,
                             "asr_phrase": " ".join(t[1]["asr_text"] for t in match),
@@ -166,6 +269,9 @@ def index_videos(videos):
             "language": video["language"], "segments": len(video["segments"]),
             "total_occurrences": occurrences, "unique_words": len(seen),
             "uncertain_occurrences": uncertain,
+            "unaligned_occurrences": unaligned_occurrences,
+            "timed_occurrences": occurrences - unaligned_occurrences,
+            "timing_quality": "DEGRADED" if unaligned_occurrences else "ALIGNED",
             "timed_word_audio_ms": _union_ms(intervals),
             "timed_word_coverage_ratio": round(
                 min(_union_ms(intervals) / video["duration_ms"], 1.0), 5
@@ -440,16 +546,28 @@ def _process(model, media, video_id, output):
                 "no_speech_prob": getattr(s, "no_speech_prob", None),
                 "compression_ratio": getattr(s, "compression_ratio", None),
                 "words": [{
-                    "text": w.word.strip(), "start_ms": round(w.start * 1000),
-                    "end_ms": round(w.end * 1000),
+                    "text": w.word.strip(),
                     "probability": getattr(w, "probability", None),
-                } for w in (s.words or []) if w.start is not None and w.end is not None],
+                    **review_word_timing(
+                        getattr(w, "start", None),
+                        getattr(w, "end", None), duration
+                    ),
+                } for w in (s.words or [])],
             })
-    return {
+    video = {
         "video_id": video_id, "channel": VIDEOS[video_id],
         "media_sha256": EXPECTED[video_id], "duration_ms": duration,
         "language": info.language, "segments": records, "acoustic_review": "PENDING",
     }
+    receipt = write_alignment_diagnostics(output, video)
+    print(
+        "ASR_ALIGNMENT_QA video_id=" + video_id +
+        " aligned=" + str(receipt["aligned_count"]) +
+        " unaligned=" + str(receipt["unaligned_count"]) +
+        " acoustic_review=PENDING",
+        flush=True,
+    )
+    return video
 
 
 def _review_markdown(videos, vocabulary, names, coverage):
