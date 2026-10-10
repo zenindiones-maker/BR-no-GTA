@@ -1,0 +1,49 @@
+name: BR REA investigation Harness real E2E
+
+on:
+  push:
+    branches:
+      - work/br-rea-investigation-harness-gate-v1
+    paths:
+      - app/services/br_rea_investigation_executor.py
+      - app/services/global_capability_registry.py
+      - app/services/harness_capability_service.py
+      - app/services/harness_mcp_capability_execution.py
+      - app/integrations/deepseek_harness/server.py
+      - app/database/harness_authorization_repository.py
+      - scripts/br_rea_investigation_harness_e2e.py
+      - tests/test_br_rea_investigation_executor.py
+      - .github/workflows/br-rea-investigation-harness-real-e2e.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-rea-investigation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  harness-research-sensor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    env:
+      PYTHONPATH: .
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Checkout BR-no-GTA (no persisted credentials)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify source compiles
+        run: |
+          python3 -m py_compile app/services/br_rea_investigation_executor.py \
+            app/services/harness_capability_service.py \
+            app/services/harness_mcp_capability_execution.py \
+            app/integrations/deepseek_harness/server.py \
+            scripts/br_rea_investigation_harness_e2e.py \
+            tests/test_br_rea_investigation_executor.py
+      - name: Run real adversarial SQLite and filesystem tests
+        run: python3 -m unittest discover -s tests -p test_br_rea_investigation_executor.py -v
+      - name: Execute routed Harness E2E on actual repository code
+        run: python3 scripts/br_rea_investigation_harness_e2e.py
