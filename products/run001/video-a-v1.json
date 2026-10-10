@@ -893,6 +893,78 @@
       ]
     },
     {
+      "section_id": "A17",
+      "heading": "Como distinguir calendário de marketing e compromisso público",
+      "role": "body",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S2_ROCKSTAR_CURRENT_DATE",
+        "S3_ROCKSTAR_PREORDER",
+        "S4_TAKE2_Q1_FY27"
+      ],
+      "claim_ids": [],
+      "narration": "Quando acompanhamos um grande lançamento, precisamos distinguir o calendário publicamente anunciado das suposições que surgem ao redor dele. GTA VI oferece um exemplo concreto. A Rockstar divulgou uma data em maio de dois mil e vinte e cinco e, depois, publicou outra comunicação que alterou o cronograma para novembro de dois mil e vinte e seis. Mais tarde, a própria empresa apresentou informações de pré-venda. Esse conjunto de documentos ajuda a estabelecer qual é a data vigente e quais anúncios são históricos. Mas não devemos transformar material promocional em prova de características técnicas que ele não descreve. Uma campanha pode informar plataformas, edições e disponibilidade sem revelar todos os detalhes de desempenho. O ponto mais importante é registrar cada afirmação com o contexto em que foi publicada. Isso também permite verificar se uma notícia antiga continua válida ou foi substituída por anúncio posterior. Quando o público encontra uma captura de tela com uma data diferente, a pergunta correta não é qual imagem parece mais convincente, mas de quando é o documento e quem o publicou. Esse cuidado é fundamental para um canal que pretende acompanhar novidades sem confundir entusiasmo com precisão. Nosso vídeo precisa mostrar como a pesquisa evolui e por que a recência da fonte pode mudar completamente a conclusão.",
+      "visual_candidates": [],
+      "visual_evidence_review": "PENDING_REAL_MEDIA_PROVENANCE"
+    },
+    {
+      "section_id": "A18",
+      "heading": "Plataformas anunciadas não equivalem a promessas sobre PC",
+      "role": "body",
+      "classification": "NOT_CONFIRMED",
+      "evidence_ids": [
+        "S1_ROCKSTAR_CURRENT",
+        "S3_ROCKSTAR_PREORDER",
+        "S4_TAKE2_Q1_FY27"
+      ],
+      "claim_ids": [],
+      "narration": "As páginas oficiais consultadas apresentam PlayStation 5 e Xbox Series X e S como plataformas de lançamento de GTA VI. É uma informação objetiva e limitada. Ela não autoriza anunciar uma data de PC, muito menos prever especificações de hardware ou comparar versões que ainda não foram publicamente detalhadas. Existe uma diferença entre dizer que não foi apresentada uma data oficial para determinada plataforma e afirmar que ela nunca existirá. A primeira frase descreve o alcance da documentação consultada. A segunda tenta determinar o futuro sem base suficiente. Esse erro aparece com frequência em discussões de jogos, porque ausência de anúncio costuma ser tratada como anúncio de ausência. Nosso compromisso é evitar essa armadilha. O mesmo raciocínio vale para modos de desempenho, recursos gráficos opcionais e futuras plataformas. Uma análise técnica pode explicar por que certos cenários são plausíveis, mas plausibilidade não equivale a confirmação. Também é preciso revisar a fonte ao longo do tempo: uma página oficial atualizada pode mudar o cenário e tornar uma conclusão anterior obsoleta. Essa disciplina editorial impede que o canal prometa versões ou recursos apenas para aumentar a expectativa. O que oferecemos é um retrato verificável da informação pública e uma indicação clara das perguntas que ainda aguardam resposta.",
+      "visual_candidates": [],
+      "visual_evidence_review": "PENDING_REAL_MEDIA_PROVENANCE"
+    },
+    {
+      "section_id": "A19",
+      "heading": "O episódio de 2022 e a ética de lidar com vazamentos",
+      "role": "body",
+      "classification": "NOT_CONFIRMED",
+      "evidence_ids": [
+        "S10_SECURITYWEEK_2022_LEAK",
+        "S11_GUARDIAN_2022_LEAK"
+      ],
+      "claim_ids": [],
+      "narration": "O episódio de divulgação não autorizada de materiais de desenvolvimento em setembro de dois mil e vinte e dois ainda influencia discussões sobre GTA VI. Veículos de imprensa relataram a intrusão e contextualizaram a posição pública da Rockstar. Esse histórico é relevante para compreender a origem de certas conversas, mas não significa que cada arquivo redistribuído na internet seja necessário para fazer análise. Podemos discutir o acontecimento e suas implicações sem hospedar material obtido indevidamente ou ajudar na circulação de dados privados. Também precisamos separar o que foi relatado por jornalistas do que a empresa revelou oficialmente sobre a versão atual do jogo. Material preliminar pode mudar durante o desenvolvimento; usar uma imagem antiga para provar o comportamento de uma versão posterior pode produzir conclusão errada. Em termos de método, vazamentos exigem duas perguntas diferentes: há evidência confiável de que determinado episódio ocorreu? E a alegação técnica baseada nele continua válida hoje? Responder à primeira não resolve automaticamente a segunda. Para nosso vídeo, isso significa concentrar a investigação em fontes públicas, identificar incertezas e deixar de fora detalhes não corroborados. O interesse do público por novidades não justifica transformar uma falha de segurança em repositório de material sensível. Uma boa cobertura constrói contexto sem sacrificar responsabilidade.",
+      "visual_candidates": [],
+      "visual_evidence_review": "PENDING_REAL_MEDIA_PROVENANCE"
+    },
+    {
+      "section_id": "A20",
+      "heading": "O que uma análise gráfica independente realmente prova",
+      "role": "body",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S5_ROCKSTAR_EXTENDED_LOOK",
+        "S12_DF_EXTENDED_LOOK"
+      ],
+      "claim_ids": [],
+      "narration": "O Extended Look foi apresentado como captura in-game no PlayStation 5, e análises independentes, como as da Digital Foundry, examinaram aspectos visuais do material. É importante entender a contribuição de cada fonte. A Rockstar pode declarar a origem da captura; analistas podem observar iluminação, reflexos e apresentação de quadros. Ainda assim, uma interpretação técnica de imagens selecionadas não substitui medições sobre a versão final executada em diferentes condições. Há diferenças entre um efeito visual inferido, sua implementação exata e o impacto dele no desempenho. Não devemos converter uma hipótese sobre iluminação em especificação definitiva, nem afirmar que um modo de sessenta quadros por segundo foi confirmado quando a documentação não diz isso. O valor da análise especializada está em explicar o que se vê, com método e ressalvas. Um quadro pode revelar características de composição, mas não oferece sozinho dados suficientes sobre todas as cenas do jogo. Nosso roteiro distingue o que a gravação mostra, o que a fonte afirma e o que especialistas inferem. Essa camada de transparência permite abordar tecnologia de forma interessante sem inventar números ou promessas. Quando houver testes diretos e documentação oficial adicional, novas conclusões poderão substituir as hipóteses atuais. Até lá, a precisão é parte do conteúdo, não um obstáculo a ele.",
+      "visual_candidates": [],
+      "visual_evidence_review": "PENDING_REAL_MEDIA_PROVENANCE"
+    },
+    {
+      "section_id": "A21",
+      "heading": "Construir evidência audiovisual sem montar uma certeza falsa",
+      "role": "body",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S5_ROCKSTAR_EXTENDED_LOOK",
+        "S7_ROCKSTAR_MEDIA"
+      ],
+      "claim_ids": [],
+      "narration": "A última etapa de uma investigação de GTA VI envolve uma responsabilidade específica de quem trabalha com vídeo. Não basta escrever uma afirmação correta; é preciso escolher uma imagem que realmente tenha relação com o trecho narrado. Se discutimos uma localidade, o corte deve ser identificado e associado à fonte adequada. Se uma cena não aparece no material disponível, não devemos preenchê-la com outra região apenas para manter a tela em movimento. Também é preciso evitar que pequenos trechos repetidos sejam esticados até simular vinte e cinco minutos de conteúdo original. Um roteiro profissional pede variedade de evidências, progressão de raciocínio e montagem que ajude o público a compreender o assunto. Isso inclui reconhecer direitos de uso, separar áudio promocional da narração própria e não inserir músicas comerciais sem autorização. Quando citamos uma análise externa, ela deve ser atribuída; quando usamos footage oficial, precisamos confirmar origem e permissão antes da publicação. Esses cuidados fazem parte da engenharia do produto, não somente da revisão final. Por isso, a nossa etapa de renderização exige áudio real, conteúdo original, inspeção dos arquivos completos e verificações técnicas antes de qualquer upload privado. Não há benefício em entregar rapidamente um vídeo que apenas aparenta estar pronto. A confiança do público depende da correspondência entre o que a narração afirma e o que as imagens efetivamente demonstram.",
+      "visual_candidates": [],
+      "visual_evidence_review": "PENDING_REAL_MEDIA_PROVENANCE"
+    },
+    {
       "section_id": "A16",
       "heading": "O retrato mais seguro de GTA 6 hoje",
       "role": "cta",
@@ -939,5 +1011,15 @@
   "brand_opening_theme": "fatos, vazamentos, tecnologia e rumores de GTA 6",
   "product_profile": "professional_ptbr_v1",
   "production_release_authorized": false,
-  "human_editorial_approval": "PENDING"
+  "human_editorial_approval": "PENDING",
+  "estimated_duration_seconds": 1500,
+  "editorial_qa": {
+    "status": "PENDING_INDEPENDENT_REVIEW",
+    "anti_padding": "REQUIRES_REAL_AUDIO_AND_RIGHTS_QA"
+  },
+  "fact_check": {
+    "status": "PENDING_INDEPENDENT_REVIEW",
+    "checks": []
+  },
+  "render_production_admission": "BLOCKED_PENDING_OWNER_APPROVAL_EDITORIAL_AND_VISUAL_QA"
 }
