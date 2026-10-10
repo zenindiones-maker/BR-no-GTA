@@ -7,6 +7,7 @@ on:
       - ".github/workflows/br-agent-office-upstream-high-triage.yml"
       - "scripts/br_agent_office_upstream_high_triage.py"
       - "scripts/br_agent_office_tunnel_removal_candidate.py"
+      - "integrations/munder_difflin/agent_office_ephemeral_no_tunnel_candidate_v1.sh"
       - "integrations/munder_difflin/UPSTREAM.lock"
   workflow_dispatch:
 
@@ -141,6 +142,12 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           npm run typecheck:node
           echo "BR_AGENT_OFFICE_NO_TUNNEL_NODE_TYPECHECK=PASS"
+      - name: Prove reproducible BR policy-pinned no-tunnel patch against real Munder checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash integrations/munder_difflin/agent_office_ephemeral_no_tunnel_candidate_v1.sh \
+            "$RUNNER_TEMP/br-munder-pinned-source"
       - name: Upload exact sanitized triage and unapproved candidate lock
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
