@@ -14,7 +14,12 @@ import sys
 VIDEOS = {"f8IZhKcuEts": "YouDubbing", "K6rVM6gn6k4": "MANGA K"}
 
 def run(args, timeout=240):
-    return subprocess.run(args, check=True, capture_output=True, text=True, timeout=timeout)
+    result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    if result.returncode:
+        # Surface bounded diagnostic text without embedding URL query secrets.
+        detail = (result.stderr or result.stdout or "no subprocess diagnostics")[-1200:]
+        raise RuntimeError("MEDIA_COMMAND_FAILED: " + detail)
+    return result
 
 def process(video_id, directory):
     if video_id not in VIDEOS:
