@@ -38,6 +38,22 @@ class CodespaceLauncherContracts(unittest.TestCase):
             self.assertIn("AUTHORIZATION", result.stderr)
             self.assertFalse((Path(directory) / ".local").exists())
 
+    def test_private_codespace_venv_selected_when_ready(self):
+        import importlib.util
+        from unittest.mock import patch
+        target = ROOT / "scripts" / "owner_voice_two_video_codespace_run.py"
+        spec = importlib.util.spec_from_file_location("codespace_runner", target)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        expected = str(Path.home() /
+                       ".local/share/br-no-gta/owner-voice-acoustic-execution/.asr-venv/bin/python")
+        def inspect(args, **_kwargs):
+            result = 0 if args[0] == expected else 1
+            return subprocess.CompletedProcess(args, result)
+        with patch.object(runner.subprocess, "run", side_effect=inspect):
+            self.assertEqual(runner.find_existing_python(
+                ROOT, {"BR_OWNER_PYTHON": ""}), expected)
+
     def test_no_download_public_artifacts_or_runtime_activation(self):
         content = LAUNCHER.read_text()
         for forbidden in (
