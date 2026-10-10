@@ -174,6 +174,50 @@ class AcousticVocabularyContracts(unittest.TestCase):
             segments, _ = probe.transcribe_pcm(FakeModel(), pcm, language="pt")
             self.assertEqual(segments, [])
 
+    def test_live_asr_progress_is_lazy_and_never_prints_private_text(self):
+        import contextlib
+        import io
+        import numpy as np
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as directory:
+            pcm = Path(directory) / "sample.f32le"
+            pcm.write_bytes(np.zeros(16000, dtype="<f4").tobytes())
+            order = []
+            class FakeModel:
+                def transcribe(self, audio, **kwargs):
+                    def segments():
+                        for i in range(1, 12):
+                            order.append(("yield", i))
+                            yield SimpleNamespace(
+                                end=i * 0.3, text="PRIVATE_SPEECH_MUST_NOT_LOG"
+                            )
+                    return segments(), SimpleNamespace(language="pt")
+
+            def on_segment(segment, number):
+                order.append(("progress", number))
+                probe.emit_segment_progress(
+                    "f8IZhKcuEts", number, round(segment.end * 1000), 10000
+                )
+
+            captured = io.StringIO()
+            with contextlib.redirect_stdout(captured):
+                segments, info = probe.transcribe_pcm(
+                    FakeModel(), pcm, language="pt", on_segment=on_segment
+                )
+            self.assertEqual(len(segments), 11)
+            self.assertEqual(info.language, "pt")
+            self.assertEqual(order[0:4], [
+                ("yield", 1), ("progress", 1),
+                ("yield", 2), ("progress", 2),
+            ])
+            output = captured.getvalue()
+            self.assertIn("ASR_PROGRESS", output)
+            self.assertIn("segments=1", output)
+            self.assertIn("segments=10", output)
+            self.assertNotIn("PRIVATE_SPEECH", output)
+            self.assertNotIn("segments=11", output)
+
     def test_private_video_checkpoint_roundtrip_exact_source_and_script(self):
         with tempfile.TemporaryDirectory() as directory:
             video = self.records()[0]
