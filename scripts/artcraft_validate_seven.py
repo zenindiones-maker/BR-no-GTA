@@ -316,7 +316,7 @@ def main() -> int:
             candidate = target / "debug" / cli
             if result["status"] == "success" and candidate.is_file():
                 binary_bytes = candidate.stat().st_size
-                if binary_bytes <= 50_000_000:
+                if binary_bytes <= 180_000_000:
                     safe_binary = out / cli
                     shutil.copyfile(candidate, safe_binary)
                     safe_binary.chmod(0o644)  # never executable in downloadable report
