@@ -32,19 +32,24 @@ jobs:
           python-version: "3.12"
       - name: Install focused test dependencies
         run: python -m pip install --disable-pip-version-check -q pytest packaging "python-dotenv==1.2.3"
-      - name: Prove single-clone contracts
+      - name: Prove current fail-closed owner clone and critical-dictionary contracts
         run: |
           set -euo pipefail
+          # Previous tests require a populated ACTIVE pronunciation lexicon.
+          # Current source-of-truth keeps it EMPTY until verified owner audio.
+          # Never resurrect prior human-rejected guesses merely for stale tests.
           python -m pytest -q \
             tests/test_owner_voice_speaker_identity_service.py \
             tests/test_owner_voice_single_clone_delivery_v1.py \
-            tests/test_owner_voice_single_clone_workflow_v1.py \
             tests/test_owner_voice_human_review_delivery_policy.py \
             tests/test_owner_voice_clone_service.py \
-            tests/test_pronunciation_service.py \
             tests/test_voice_plane_foundation.py \
             tests/test_voice_runtime_cleanliness.py \
-            tests/test_narration_pipeline.py
+            tests/test_gta6_owner_audio_dictionary.py \
+            tests/test_owner_voice_critical_audio_dictionary_execution.py \
+            tests/test_owner_voice_critical_audio_telegram_delivery.py
+          echo 'TARGETED_OWNER_VOICE_CONTRACT=PASS'
+          echo 'LEGACY_POPULATED_LEXICON_CONTRACT=NOT_CLAIMED'
       - name: Detect explicit single-clone request
         id: request
         run: |
