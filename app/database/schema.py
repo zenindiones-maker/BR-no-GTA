@@ -624,6 +624,35 @@ def _migrate_media_knowledge(connection) -> None:
 
 
 
+def _migrate_speech_analysis(connection) -> None:
+    """Idempotent speech-analysis persistence bound to MediaKnowledge."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS speech_analysis (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            media_knowledge_id INTEGER NOT NULL,
+            source_path TEXT NOT NULL,
+            source_language TEXT,
+            language_probability REAL,
+            analysis_version TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            model_version TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (media_knowledge_id) REFERENCES media_knowledge(id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_speech_analysis_media_knowledge
+        ON speech_analysis(media_knowledge_id, id)
+        """
+    )
+
+
 def _migrate_gta6_knowledge(connection) -> None:
     """Cria a camada de conhecimento especializada em GTA 6."""
     connection.execute(
@@ -799,6 +828,7 @@ def initialize_schema() -> None:
         _migrate_youtube_publication_file_path(connection)
         _migrate_gta6_knowledge(connection)
         _migrate_media_knowledge(connection)
+        _migrate_speech_analysis(connection)
         _migrate_gta6_knowledge_source_name(connection)
         _migrate_gta6_monitor_state(connection)
         _migrate_gta6_monitor_events(connection)

@@ -12,6 +12,7 @@ def test_operational_mcp_tools_are_registered():
 
     assert tool_names == {
         "br_observe",
+        "br_knowledge_query",
         "br_research_run",
         "br_editorial_process_next",
         "br_execution_run_once",
