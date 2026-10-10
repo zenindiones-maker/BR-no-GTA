@@ -13,6 +13,8 @@ on:
       - app/database/harness_authorization_repository.py
       - scripts/br_rea_investigation_harness_e2e.py
       - scripts/br_system_static_surface_audit.py
+      - app/services/owner_voice_dubbing_reference_policy.py
+      - tests/test_owner_voice_dubbing_reference_policy.py
       - tests/test_br_system_static_surface_audit.py
       - tests/test_br_rea_investigation_executor.py
       - .github/workflows/br-rea-investigation-harness-real-e2e.yml
@@ -38,7 +40,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install pinned minimum BR runtime imports
-        run: python3 -m pip install --disable-pip-version-check python-dotenv==1.2.3 mcp==1.29.1
+        run: python3 -m pip install --disable-pip-version-check python-dotenv==1.2.3 mcp==1.29.1 pytest==8.4.2
       - name: Verify source compiles
         run: |
           python3 -m py_compile app/services/br_rea_investigation_executor.py \
@@ -46,9 +48,13 @@ jobs:
             app/services/harness_mcp_capability_execution.py \
             app/integrations/deepseek_harness/server.py \
             scripts/br_rea_investigation_harness_e2e.py \
-            tests/test_br_rea_investigation_executor.py
+            tests/test_br_rea_investigation_executor.py \
+            app/services/owner_voice_dubbing_reference_policy.py \
+            tests/test_owner_voice_dubbing_reference_policy.py
       - name: Run real adversarial SQLite and filesystem tests
         run: python3 -m unittest discover -s tests -p test_br_rea_investigation_executor.py -v
+      - name: Execute Owner Voice reference policy regressions
+        run: python3 -m pytest -q tests/test_owner_voice_dubbing_reference_policy.py
       - name: Validate real and adversarial whole-source inventory
         run: python3 -m unittest discover -s tests -p test_br_system_static_surface_audit.py -v
       - name: Inventory tracked BR repository and workflow hazards
