@@ -3,18 +3,7 @@
   "voice_identity": "BR_OWNER_V1",
   "scope": "GTA VI PT-BR narration",
   "identity_policy": "Only authorized owner audio for synthesis; dubbing videos are pronunciation/prosody references only",
-  "approved_readings": [
-    {
-      "term": "GTA 6",
-      "spoken_text": "Gê Tê A seis",
-      "authority": "owner-approved"
-    },
-    {
-      "term": "Vice City",
-      "spoken_text": "vaicy siti",
-      "authority": "explicit-owner"
-    }
-  ],
+  "approved_readings": [],
   "canonical_terms_pending_acoustic_verification": [
     "Rockstar Games",
     "Leonida",
@@ -37,21 +26,34 @@
   "reference_videos": [
     {
       "id": "f8IZhKcuEts",
+      "url": "https://www.youtube.com/watch?v=f8IZhKcuEts",
       "channel": "YouDubbing",
       "acoustic_verified": false
     },
     {
       "id": "K6rVM6gn6k4",
+      "url": "https://www.youtube.com/watch?v=K6rVM6gn6k4",
       "channel": "MANGÁ K",
       "acoustic_verified": false
     }
   ],
   "rules": [
-    "Never infer phonetic readings from spelling, metadata or subtitles",
-    "Only promote acoustically verified timestamped pronunciation after human approval",
-    "Preserve canonical spelling in scripts",
-    "No actor voice or reference video audio as speaker embedding",
-    "Block unverified names instead of claiming they are correct",
-    "Maintain pronunciation memory in repository and load via Harness governance; this document alone does not alter synthesis"
+    "Only verified audible pronunciation from the two selected videos can be considered source authority",
+    "If a term is not spoken in either video, mark it NOT_ATTESTED rather than guessing",
+    "Keep BR_OWNER_V1 as the sole synthesis voice; dubbing actors provide no speaker reference",
+    "Do not activate phonetic substitutions until audio evidence and audition review",
+    "Legacy written readings are not evidence of pronunciation in the videos"
+  ],
+  "pronunciation_authority": "ONLY_THE_TWO_OWNER_SELECTED_PTBR_DUBBED_TRAILER_VIDEOS",
+  "owner_override_policy": "Do not use earlier user pronunciation spellings as source authority; video acoustic observations take precedence when verified",
+  "legacy_readings_not_authoritative": [
+    {
+      "term": "GTA 6",
+      "former": "Gê Tê A seis"
+    },
+    {
+      "term": "Vice City",
+      "former": "vaicy siti"
+    }
   ]
 }
