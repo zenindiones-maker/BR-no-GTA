@@ -13,6 +13,7 @@ from app.services.harness_authorization_service import (
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
 from app.workers.professional_audiovisual_worker import PROFILE, validate_product_job
 from app.services.run001_owner_voice_admission_service import require_owner_voice_admission
+from app.services.run001_script_to_screen_contract import verify_script_to_screen
 
 OFFICIAL_BRAND_ASSETS = [
     {
@@ -57,6 +58,9 @@ def load(path: Path) -> dict[str, Any]:
 
 def build_render_job(product: dict[str, Any]) -> dict[str, Any]:
     require_owner_voice_admission(product)
+    # A product without explicit shot-to-script evidence cannot be dispatched.
+    # Coverage is necessary, never sufficient: perceptual QA remains mandatory.
+    screen_receipt = verify_script_to_screen(product.get('screen_script') or {}, product.get('screen_plan') or {})
     initialize_application()
     if product.get("product_profile") != PROFILE:
         raise RuntimeError(f"product_profile must be {PROFILE}")
@@ -121,6 +125,7 @@ def build_render_job(product: dict[str, Any]) -> dict[str, Any]:
             "product_label": product["product_label"],
             "product_version": product["product_version"],
         },
+        script_to_screen_receipt=screen_receipt,
         output_path=None,
         error=None,
         persistence_scope="cloud_review_product_v1",
@@ -144,9 +149,9 @@ def main() -> int:
         encoding="utf-8",
     )
     print(f"VIDEO_{job['product_label']}_HARNESS_AUTHORIZATION=PASS")
-    print(f"VIDEO_{job['product_label']}_RESEARCH=PASS")
-    print(f"VIDEO_{job['product_label']}_SCRIPT_PTBR=PASS")
-    print(f"VIDEO_{job['product_label']}_FACT_CHECK=PASS")
+    print(f"VIDEO_{job['product_label']}_SCRIPT_TO_SCREEN_COVERAGE=PASS")
+    print(f"VIDEO_{job['product_label']}_SEMANTIC_QA=PENDING")
+    print(f"VIDEO_{job['product_label']}_EDITORIAL_FACT_CHECK=NOT_ATTESTED_BY_DISPATCH")
     print(f"RENDER_JOB_ID={job['render_job_id']}")
     print(f"EXECUTION_ID={job['execution_id']}")
     print("JOB18_UNCHANGED=BY_DESIGN_NO_CANONICAL_DATABASE_ACCESS")
