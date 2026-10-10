@@ -33,3 +33,12 @@ O gate `BASELINE_ONLY` **NÃO** significa que os CLIs reais executaram. `NATIVE_
 Esta candidata NÃO altera `main`, V24, o DeepSeek Harness, políticas de Owner Voice, Telegram, YouTube, Media Worker, código upstream ou o A15. Não faz instalação permanente, merge, deploy, gastos, novos Codespaces ou promoção. A aprovação de uma linha de base FFmpeg não comprova que o FilmCraft ou EffectCraft estão instalados ou operacionalmente integrados.
 
 Executar o workflow na branch `work/br-artcraft-film-effect-interop-v1`. Revisar conclusões e SHA exato. A branch matriz dos sete fontes permanece isolada em `work/br-artcraft-seven-source-study-v1`.
+
+## Diferença crítica de pixels (prova estática dos códigos originais)
+
+- FilmCraft `crates/render/src/image.rs:1`: imagem `Image { w, h, px: Vec<f32> }` explicitamente descrita como **RGBA premultiplicado em luz linear**.
+- EffectCraft `crates/raster/src/lib.rs:26`: `Image { width, height, data: Vec<[f32;4]> }`; os conversores `to_rgba8`/`from_rgba8` tratam pixels premultiplicados que chegam ou saem em sRGB. O projeto EffectCraft pode usar perfis de cor diferentes e HDR.
+- Por isso **igualdade de TICKS_PER_SECOND não significa igualdade de buffers de imagem**. Copiar `Vec<f32>` diretamente causaria alterações de gamma/transparência e pode falhar em 16/32 bpc.
+- `scripts/artcraft_color_reference_bridge.py` implementa **apenas oráculo de referência SDR/sRGB explicitamente declarado**, sem executar os engines: des-premultiplica → converte curva sRGB → premultiplica. A volta é inversa.
+- `tests/test_artcraft_color_reference_bridge.py` contém seis testes de pixel golden, alpha=0, alpha=0.5, tons médios, red/green e rejeição de `linear`/`ACEScg`/`Rec2020`, HDR, valores inválidos, NaN e Inf.
+- Em produção, exige verificação do color profile upstream, comparação pixel-a-pixel dentro de tolerância e política de tone mapping HDR separada. Nenhum HDR é convertido silenciosamente para SDR.
