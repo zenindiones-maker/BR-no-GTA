@@ -174,6 +174,47 @@ class AcousticVocabularyContracts(unittest.TestCase):
             segments, _ = probe.transcribe_pcm(FakeModel(), pcm, language="pt")
             self.assertEqual(segments, [])
 
+    def test_private_video_checkpoint_roundtrip_exact_source_and_script(self):
+        with tempfile.TemporaryDirectory() as directory:
+            video = self.records()[0]
+            deps = {"faster_whisper": "1.2.1", "av": "19.0.0"}
+            script_sha = "9" * 64
+            probe.write_video_checkpoint(directory, video, "small", deps, script_sha)
+            restored = probe.load_video_checkpoint(
+                directory, video["video_id"], "small", deps, script_sha,
+            )
+            self.assertEqual(restored, video)
+            path = Path(directory) / "checkpoints" / (video["video_id"] + ".json")
+            self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+
+    def test_checkpoint_stale_model_runtime_or_script_is_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            video = self.records()[0]
+            deps = {"faster_whisper": "1.2.1", "av": "19.0.0"}
+            probe.write_video_checkpoint(directory, video, "small", deps, "1" * 64)
+            for model, runtime, script in [
+                ("tiny", deps, "1" * 64),
+                ("small", {"faster_whisper": "1.2.1", "av": "18.0.0"}, "1" * 64),
+                ("small", deps, "2" * 64),
+            ]:
+                with self.assertRaisesRegex(ValueError, "CHECKPOINT_"):
+                    probe.load_video_checkpoint(
+                        directory, video["video_id"], model, runtime, script,
+                    )
+
+    def test_checkpoint_absent_is_not_fabricated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertIsNone(probe.load_video_checkpoint(
+                directory, "f8IZhKcuEts", "small", {}, "a" * 64,
+            ))
+
+    def test_nonstandard_nan_json_is_rejected_before_persistence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "invalid.json"
+            with self.assertRaises(ValueError):
+                probe.write_private_json(path, {"bad": float("nan")})
+            self.assertFalse(path.exists())
+
     def test_atomic_private_output_has_restrictive_permissions(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "candidate.json"
