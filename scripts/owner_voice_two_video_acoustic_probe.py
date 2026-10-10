@@ -232,6 +232,37 @@ def _run(command, capture=False):
     return result.stdout if capture else None
 
 
+def load_pcm_f32(path):
+    """Read exact 16 kHz mono float32-LE FFmpeg output without PyAV.
+
+    Memory mapping avoids loading long-form videos twice into RAM.  The
+    waveform stays in its private temporary directory until the lazy
+    transcription generator has been completely consumed.
+    """
+    import numpy as np
+
+    path = Path(path)
+    size = path.stat().st_size
+    if size < 4 or size % 4:
+        raise ValueError("INVALID_PCM_LENGTH")
+    samples = np.memmap(str(path), dtype="<f4", mode="r")
+    if not np.isfinite(samples).all():
+        raise ValueError("INVALID_PCM_NONFINITE")
+    if np.max(np.abs(samples)) > 1.001:
+        raise ValueError("INVALID_PCM_RANGE")
+    return samples
+
+
+def transcribe_pcm(model, pcm_path, **kwargs):
+    """NumPy is the supported Faster Whisper path that skips decode_audio.
+
+    Materialize the lazy segment iterator before deleting the PCM temp file.
+    """
+    waveform = load_pcm_f32(pcm_path)
+    segments, info = model.transcribe(waveform, **kwargs)
+    return list(segments), info
+
+
 def _safe_output(path):
     path = Path(path).expanduser().resolve()
     if any((p / ".git").exists() for p in (path, *path.parents)):
@@ -242,14 +273,18 @@ def _safe_output(path):
 
 
 def _preflight(model_name):
-    """Actual decoding and lazy model inference on synthetic one-second PCM."""
+    """Actual FFmpeg decode + lazy model inference on synthetic 1s audio.
+
+    This deliberately does not call faster_whisper.audio.decode_audio: the
+    PyAV 19 metadata_errors incompatibility cannot occur with NumPy input.
+    """
     from faster_whisper import WhisperModel
-    from faster_whisper.audio import decode_audio
+
     fw, av = version("faster-whisper"), version("av")
-    check_pyav_versions(fw, av)
     model = WhisperModel(model_name, device="cpu", compute_type="int8")
     with tempfile.TemporaryDirectory() as temp:
         sample = Path(temp) / "synthetic.wav"
+        pcm = Path(temp) / "synthetic.f32le"
         with wave.open(str(sample), "wb") as f:
             f.setnchannels(1)
             f.setsampwidth(2)
@@ -257,12 +292,21 @@ def _preflight(model_name):
             f.writeframes(b"".join(struct.pack("<h", int(
                 3000 * math.sin(2 * math.pi * 440 * n / 16000)
             )) for n in range(16000)))
-        if len(decode_audio(str(sample), sampling_rate=16000)) != 16000:
-            raise RuntimeError("SYNTHETIC_DECODE_FAILED")
-        segments, _ = model.transcribe(str(sample), language="pt", vad_filter=False)
-        list(segments)
-    return model, {"faster_whisper": fw, "av": av, "synthetic_decode_asr": "PASS"}
-
+        _run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+              "-y", "-i", str(sample), "-map", "0:a:0",
+              "-ac", "1", "-ar", "16000", "-f", "f32le",
+              "-c:a", "pcm_f32le", str(pcm)])
+        if load_pcm_f32(pcm).shape != (16000,):
+            raise RuntimeError("SYNTHETIC_FFMPEG_DECODE_FAILED")
+        segments, _ = transcribe_pcm(
+            model, pcm, language="pt", vad_filter=False
+        )
+    return model, {
+        "faster_whisper": fw, "av": av,
+        "synthetic_ffmpeg_decode_and_asr": "PASS",
+        "input_type": "NUMPY_FLOAT32_16KHZ_MONO",
+        "pyav_file_decoder": "BYPASSED",
+    }
 
 def _process(model, media, video_id, output):
     media = Path(media)
@@ -276,14 +320,15 @@ def _process(model, media, video_id, output):
     if duration <= 0:
         raise ValueError("INVALID_MEDIA_DURATION")
     with tempfile.TemporaryDirectory(prefix=".pcm-", dir=str(output)) as temp:
-        wav = Path(temp) / "reference.wav"
+        pcm = Path(temp) / "reference.f32le"
         _run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
               "-y", "-i", str(media), "-map", "0:a:0", "-vn",
-              "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(wav)])
-        if not wav.is_file() or wav.stat().st_size < 1024:
+              "-ac", "1", "-ar", "16000", "-f", "f32le",
+              "-c:a", "pcm_f32le", str(pcm)])
+        if not pcm.is_file() or pcm.stat().st_size < 1024:
             raise ValueError("NO_DECODED_AUDIO")
-        segments, info = model.transcribe(
-            str(wav), language="pt", vad_filter=True, word_timestamps=True,
+        segments, info = transcribe_pcm(
+            model, pcm, language="pt", vad_filter=True, word_timestamps=True,
         )
         records = []
         for s in segments:
