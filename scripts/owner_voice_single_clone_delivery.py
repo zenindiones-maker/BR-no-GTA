@@ -276,10 +276,10 @@ def main()->int:
         if any(not isinstance(ids.get(key),int) for key in ("reference","clone","control")):
             raise RuntimeError("SINGLE_CLONE_CONTROL_RECONCILIATION_RECEIPT_INCOMPLETE")
         print("CONTROL_RECONCILIATION=PASS")
-        print(f"REFERENCE_TELEGRAM_MESSAGE_ID={ids['reference']}")
-        print(f"CLONE_TELEGRAM_MESSAGE_ID={ids['clone']}")
-        print(f"CONTROL_TELEGRAM_MESSAGE_ID={ids['control']}")
-        print(f"OWNER_VOICE_REVIEW_TOKEN={state['review_token']}")
+        print("REFERENCE_TELEGRAM_MESSAGE_ID=CONFIRMED_PRIVATE")
+        print("CLONE_TELEGRAM_MESSAGE_ID=CONFIRMED_PRIVATE")
+        print("CONTROL_TELEGRAM_MESSAGE_ID=CONFIRMED_PRIVATE")
+        print("OWNER_VOICE_REVIEW_TOKEN=PRIVATE")
         print("OWNER_VOICE_REVIEW_UI=INLINE_SINGLE_CLONE_V2")
         print("SINGLE_CLONE_DELIVERED_TO_TELEGRAM=PASS")
         print("HUMAN_REVIEW=PENDING")
@@ -363,10 +363,10 @@ def main()->int:
     required=("reference","clone","control")
     if any(not isinstance(ids.get(key),int) for key in required):
         raise RuntimeError("SINGLE_CLONE_DELIVERY_RECEIPT_INCOMPLETE")
-    print(f"REFERENCE_TELEGRAM_MESSAGE_ID={ids['reference']}")
-    print(f"CLONE_TELEGRAM_MESSAGE_ID={ids['clone']}")
-    print(f"CONTROL_TELEGRAM_MESSAGE_ID={ids['control']}")
-    print(f"OWNER_VOICE_REVIEW_TOKEN={review_token}")
+    print("REFERENCE_TELEGRAM_MESSAGE_ID=CONFIRMED_PRIVATE")
+    print("CLONE_TELEGRAM_MESSAGE_ID=CONFIRMED_PRIVATE")
+    print("CONTROL_TELEGRAM_MESSAGE_ID=CONFIRMED_PRIVATE")
+    print("OWNER_VOICE_REVIEW_TOKEN=PRIVATE")
     print("OWNER_VOICE_REVIEW_UI=INLINE_SINGLE_CLONE_V2")
     print("SINGLE_CLONE_DELIVERED_TO_TELEGRAM=PASS")
     print("HUMAN_REVIEW=PENDING")
@@ -379,5 +379,5 @@ if __name__=="__main__":
     try:
         raise SystemExit(main())
     except Exception as exc:
-        print(f"SINGLE_CLONE_DELIVERY=FAIL FAILURE_CLASS={type(exc).__name__}:{str(exc)[:300]}",file=__import__("sys").stderr)
+        print("SINGLE_CLONE_DELIVERY=FAIL FAILURE_CLASS="+type(exc).__name__,file=__import__("sys").stderr)
         raise SystemExit(52)
