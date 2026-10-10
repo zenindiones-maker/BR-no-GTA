@@ -41,6 +41,10 @@ class RemoteControlContracts(unittest.TestCase):
         self.assertIn("CODESPACES", text)
         self.assertIn("GITHUB_REPOSITORY", text)
         self.assertIn("set -euo pipefail", text)
+        self.assertNotIn(chr(92) + "${", text, "shell env variables must expand remotely")
+        check = subprocess.run(["bash", "-n"], input=text, text=True,
+                               capture_output=True)
+        self.assertEqual(check.returncode, 0, check.stderr)
         self.assertNotIn("yt-dlp", text)
         self.assertNotIn("pip install", text)
 
