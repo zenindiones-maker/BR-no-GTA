@@ -1,0 +1,77 @@
+name: BR_OWNER_V1 Private Reference Index Read-only
+on:
+  push:
+    branches:
+      - work/owner-voice-safe-ingress-recovery-20261010
+    paths:
+      - ".github/workflows/owner-voice-reference-index-readonly.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Validate private index without exposing or downloading references
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Verify owner reference index secret integrity (metadata only)
+        env:
+          BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64 }}
+          BR_OWNER_TELEGRAM_REFERENCE_INDEX: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_INDEX }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import base64
+          import json
+          import hashlib
+
+          envelope = os.environ.get("BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64", "").strip()
+          legacy = os.environ.get("BR_OWNER_TELEGRAM_REFERENCE_INDEX", "").strip()
+          if not envelope and not legacy:
+              print("OWNER_VOICE_REFERENCE_INDEX=BLOCKED_NOT_MATERIALIZED")
+              raise SystemExit(20)
+
+          try:
+              if envelope:
+                  raw = base64.urlsafe_b64decode(envelope.encode("ascii"))
+                  index = json.loads(raw.decode("utf-8"))
+                  mode = "OPAQUE_ENVELOPE"
+              else:
+                  index = json.loads(legacy)
+                  mode = "LEGACY_SECRET"
+              if not isinstance(index, dict):
+                  raise ValueError("schema")
+              expected = str(index.get("index_sha256") or "").lower()
+              base = {key: val for key, val in index.items() if key != "index_sha256"}
+              digest = hashlib.sha256(
+                  json.dumps(base, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+                      .encode("utf-8")
+              ).hexdigest()
+              refs = index.get("references")
+              assert index.get("schema") == "OwnerTelegramVoiceReferenceIndex/v1"
+              assert index.get("voice_identity_id") == "BR_OWNER_V1"
+              assert digest == expected
+              assert isinstance(refs, list)
+              assert len(refs) == index.get("reference_count")
+              assert len(refs) > 0
+              for row in refs:
+                  assert isinstance(row, dict)
+                  assert row.get("input_kind") in ("voice", "audio")
+                  assert row.get("remote_verified") is True
+                  assert str(row.get("telegram_file_id") or "")
+                  assert str(row.get("telegram_file_unique_id") or "")
+          except Exception:
+              # The secret may contain sensitive Telegram metadata: no exceptions.
+              print("OWNER_VOICE_REFERENCE_INDEX=INVALID_OR_INCOMPLETE")
+              raise SystemExit(21)
+
+          print("OWNER_VOICE_REFERENCE_SECRET_MODE=" + mode)
+          print("OWNER_VOICE_REFERENCE_INDEX=VALID")
+          print("OWNER_VOICE_REFERENCE_COUNT=" + str(len(refs)))
+          print("OWNER_VOICE_REFERENCE_INDEX_SHA256=" + digest)
+          print("OWNER_VOICE_REFERENCE_FILES_DOWNLOADED=0")
+          print("TELEGRAM_GETUPDATES_ATTEMPTED=FALSE")
+          print("TELEGRAM_SEND_ATTEMPTED=FALSE")
+          PY
