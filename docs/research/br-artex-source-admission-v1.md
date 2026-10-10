@@ -51,6 +51,15 @@ The source directory is verified against the immutable upstream Git tree. The is
 | ARTEX-007 | MEDIUM | `go.mod` uses `github.com/Autumn-27/norma v0.4.3` and multiple network/proxy dependencies; no independent dependency review, Go build, or package SBOM performed. | OPEN |
 | ARTEX-008 | MEDIUM | Source integrity and CRLF-export mismatch corrected; Git tree verification passed in live upstream-archive CI and in the owner's existing Codespace snapshot. | FIXED for SOURCE INTEGRITY; runtime remains NOT INSTALLED |
 
+## BR-native REA comparison — direct Git-tree inventory
+
+**Observed BR trees (read-only):**
+
+- Current ARTEX source-research branch inherits the Chrome DevTools base `a4f3ed02eaa15292b30a8163c2cae1abd2c618fc`. It contains `docs/operations/br-v23-rea-native-provenance.md`, `.github/workflows/br-v23-rea6-frontend-research.yml`, `.github/workflows/br-v24-native-rea-cross-branch-compatibility.yml`, and `scripts/br_v24_rea_cross_branch_compatibility.py`, **but not** the REA V4 services listed below.
+- The preserved `work/br-reverse-engineering-experiment-intelligence-v4` branch is at exact SHA `ad00c215ecd33ee74703cfeb0d72694220b666f0`. Its Git tree includes `integrations/rea`, `scripts/br_reverse_engineering_harness.py`, `scripts/br_reverse_engineering_observe.py`, `.github/workflows/br-reverse-engineering-plane.yml`, and `app/services/reverse_engineering_{harness,forensics,media,story,learning_proposal,web_har}_service.py`, plus `reverse_engineering_{audio_v3,scene_v3,longform_coverage,experiment_intelligence_v4}` service modules.
+- This is a **Git-tree inventory**, not proof that V4 source is compatible with the current branch or that the original REA is installed in this Codespace. The source-level ARTEX asset/exploration-graph patterns may be studied for additive evidence lineage only after comparing them to the original BR native REA's contracts. Do not auto-restore V4 files, reintroduce deleted architecture, import ARTEX runtime, or promote into the canonical branch.
+- **Next code-development gate:** read exact V4 service contracts, V23/V24 REA compatibility receipts, and current capability registry/authorization policy. Build a small read-only experimental sensor only where a real missing feature is evidenced, then prove actual Harness-backed execution in the approved environment. Until then `ARTEX_HARNESS_BINDING=NONE` remains authoritative.
+
 ## Admission decision
 
 **Source study only.** Do not run `install.sh`, `start.sh`, `update.sh`, `docker compose`, `go run`, any exposed service, agent loop, MITM proxy, shell executor, self-updater, or LLM credential setup. Do not forward ports or grant ARTEX the Codespace's inherited credentials. Do not copy ARTEX files into the BR runtime, registry or existing REA without a separate review.
