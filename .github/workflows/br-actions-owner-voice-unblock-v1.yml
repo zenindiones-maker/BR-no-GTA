@@ -9,6 +9,8 @@ on:
       - .github/workflows/owner-voice-single-human-clone.yml
       - tests/test_owner_voice_single_clone_workflow_v1.py
       - tests/test_owner_voice_prompt_consistency_service.py
+      - tests/test_owner_voice_critical_audio_telegram_delivery.py
+      - tests/test_owner_voice_single_clone_delivery_v1.py
       - app/services/owner_voice_prompt_consistency_service.py
       - app/services/gta6_pronunciation_lexicon_service.py
       - scripts/owner_voice_single_human_clone.py
