@@ -109,10 +109,12 @@ def test_auto_gate_failure_blocks_activation_but_not_human_audition_delivery():
     # The current manifest also enforces the independent critical-term gate.
     # A failed critical-name candidate cannot be sent merely because a general
     # human-review policy considers ordinary auditions reviewable.
-    assert '"audition_delivery_eligible":(' in source
+    assert 'audition_delivery_eligible=(' in source
     assert 'bool(review_decision["audition_delivery_eligible"])' in source
     assert 'and targeted_delivery_allowed' in source
     assert '(identity_gate=="PASS" and content_audio_prescreen=="PASS")' in source
+    assert '"audition_delivery_eligible":audition_delivery_eligible' in source
+    assert 'send_eligible=bool(manifest["audition_delivery_eligible"])' in source
     assert 'payload.get("clone_identity_gate") not in {"PASS","FAIL"}' in delivery
     assert 'payload.get("runtime_activation") is not False' in delivery
     assert "Runtime activation: BLOQUEADA até aprovação humana." in delivery
