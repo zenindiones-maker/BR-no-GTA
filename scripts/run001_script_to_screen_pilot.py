@@ -32,14 +32,33 @@ def render_pilot(edl: dict, output: Path) -> dict:
         path = Path(shot["media_path"])
         if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != shot["media_sha256"]:
             raise ValueError("MEDIA_DIGEST_MISMATCH")
-        # Explicitly image-only to avoid inventing source video in/out decisions.
-        if path.suffix.lower() not in (".png", ".jpg", ".jpeg"):
-            raise ValueError("PILOT_ONLY_SUPPORTS_STILL_IMAGES")
+        kind = shot.get("media_kind", "image")
+        if kind not in ("image", "video"):
+            raise ValueError("UNSUPPORTED_MEDIA_KIND")
+        if kind == "image" and path.suffix.lower() not in (".png", ".jpg", ".jpeg"):
+            raise ValueError("INVALID_STILL_IMAGE")
+        if kind == "video" and path.suffix.lower() not in (".mp4", ".mov", ".mkv"):
+            raise ValueError("INVALID_VIDEO_SOURCE")
         frames = round((b-a)*30/1000)
         if frames < 1 or abs(frames*1000/30-(b-a)) > 17:
             raise ValueError("SHOT_NOT_FRAME_ALIGNED")
-        inputs.extend(["-loop","1","-framerate","30","-i",str(path)])
-        filters.append(f"[{i}:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,trim=end_frame={frames},setpts=PTS-STARTPTS[v{i}]")
+        if kind == "image":
+            inputs.extend(["-loop","1","-framerate","30","-i",str(path)])
+            prefix = f"[{i}:v]"
+        else:
+            source_in = shot.get("source_in_ms")
+            if not isinstance(source_in, int) or isinstance(source_in, bool) or source_in < 0:
+                raise ValueError("SOURCE_IN_REQUIRED")
+            probe = _probe(path)
+            streams = [v for v in probe["streams"] if v.get("codec_type") == "video"]
+            if not streams:
+                raise ValueError("VIDEO_STREAM_MISSING")
+            duration = float(probe["format"].get("duration", 0))
+            if duration * 1000 < source_in + (b-a):
+                raise ValueError("SOURCE_VIDEO_TOO_SHORT")
+            inputs.extend(["-i", str(path)])
+            prefix = f"[{i}:v]trim=start={source_in/1000}:duration={(b-a)/1000},setpts=PTS-STARTPTS,"
+        filters.append(prefix+f"fps=30,scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,trim=end_frame={frames},setpts=PTS-STARTPTS[v{i}]")
     concat = "".join(f"[v{i}]" for i in range(len(ordered)))+f"concat=n={len(ordered)}:v=1:a=0[vout]"
     output.parent.mkdir(parents=True,exist_ok=True)
     cmd=["ffmpeg","-hide_banner","-loglevel","error","-y",*inputs,"-filter_complex",";".join(filters+[concat]),"-map","[vout]","-an","-c:v","libx264","-pix_fmt","yuv420p","-r","30","-movflags","+faststart",str(output)]
