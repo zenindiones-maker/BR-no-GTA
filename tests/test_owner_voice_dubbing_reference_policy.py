@@ -40,6 +40,10 @@ def test_admits_owner_locked_reading_without_runtime_activation():
     ("owner_approval", "PENDING"),
     ("spoken_text", "vice city"),
     ("start_ms", -1),
+    ("start_ms", True),
+    ("end_ms", False),
+    ("acoustic_evidence_sha256", "invalid"),
+    ("acoustic_evidence_sha256", "g" * 64),
     ("acoustic_evidence_sha256", ""),
 ])
 def test_rejects_unsafe_or_unverified_candidate(field, value):
@@ -53,3 +57,11 @@ def test_second_approved_reference_can_be_admitted():
     candidate = valid_candidate()
     candidate["video_id"] = "K6rVM6gn6k4"
     assert admit_pronunciation_candidate(candidate)["reference_video_id"] == "K6rVM6gn6k4"
+
+
+def test_candidate_must_be_structured_and_owner_gate_cannot_autoactivate():
+    with pytest.raises(DubbingReferencePolicyError):
+        admit_pronunciation_candidate(None)
+    result = admit_pronunciation_candidate(valid_candidate())
+    assert result["runtime_activation"] is False
+    assert result["status"] == "APPROVED_PRONUNCIATION_CANDIDATE"
