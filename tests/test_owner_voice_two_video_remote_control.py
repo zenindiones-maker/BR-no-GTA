@@ -39,7 +39,10 @@ class RemoteControlContracts(unittest.TestCase):
         text = ctrl.remote_script()
         self.assertIn("git fetch", text)
         self.assertIn("git show", text)
+        self.assertIn("owner_voice_two_video_codespace_env.py", text)
         self.assertIn("owner_voice_two_video_codespace_run.py", text)
+        self.assertLess(text.index("owner_voice_two_video_codespace_env.py"),
+                        text.index("owner_voice_two_video_codespace_run.py"))
         self.assertIn("CODESPACES", text)
         self.assertIn("GITHUB_REPOSITORY", text)
         self.assertIn("set -euo pipefail", text)
