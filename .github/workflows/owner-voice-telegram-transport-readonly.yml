@@ -1,0 +1,71 @@
+name: BR Owner Voice Telegram Transport Read-only
+on:
+  push:
+    branches:
+      - work/owner-voice-safe-ingress-recovery-20261010
+    paths:
+      - ".github/workflows/owner-voice-telegram-transport-readonly.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Telegram read-only identity and webhook probe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Verify Bot API transport with no consuming or sending
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from urllib.request import Request, urlopen
+
+          token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+          if not token:
+              print("TELEGRAM_AUTHENTICATED_READBACK=BLOCKED_MISSING_SECRET")
+              raise SystemExit(2)
+
+          def read_only(method):
+              assert method in ("getMe", "getWebhookInfo")
+              request = Request(
+                  "https://api.telegram.org/bot" + token + "/" + method,
+                  data=b"",
+                  method="POST",
+                  headers={"Content-Type": "application/x-www-form-urlencoded"},
+              )
+              try:
+                  with urlopen(request, timeout=12) as response:
+                      if response.status != 200:
+                          raise RuntimeError("TELEGRAM_HTTP_ERROR")
+                      payload = json.load(response)
+              except Exception as exc:
+                  # Never print exceptions: URLs can include the bot token.
+                  print("TELEGRAM_READ_ONLY_PROBE=FAILED_" + type(exc).__name__)
+                  raise SystemExit(3)
+              if payload.get("ok") is not True or not isinstance(payload.get("result"), dict):
+                  print("TELEGRAM_READ_ONLY_PROBE=INVALID_RESPONSE")
+                  raise SystemExit(4)
+              return payload["result"]
+
+          identity = read_only("getMe")
+          if str(identity.get("username") or "").casefold() != "brnogta_bot":
+              print("TELEGRAM_BOT_IDENTITY=MISMATCH")
+              raise SystemExit(5)
+          print("TELEGRAM_BOT_IDENTITY=PASS")
+
+          webhook = read_only("getWebhookInfo")
+          is_webhook = bool(webhook.get("url"))
+          print("TELEGRAM_TRANSPORT_MODE=" + ("WEBHOOK" if is_webhook else "LONG_POLLING_ELIGIBLE"))
+          print("TELEGRAM_PENDING_UPDATE_COUNT=" + str(webhook.get("pending_update_count", "UNAVAILABLE")))
+          print("TELEGRAM_LAST_WEBHOOK_ERROR_PRESENT=" + str(bool(webhook.get("last_error_message"))).upper())
+          print("TELEGRAM_LAST_WEBHOOK_ERROR_DATE=" + str(webhook.get("last_error_date", "NONE")))
+          print("TELEGRAM_BOT_API_READ_ONLY=PASS")
+          print("TELEGRAM_GETUPDATES_ATTEMPTED=FALSE")
+          print("TELEGRAM_SEND_ATTEMPTED=FALSE")
+          print("TELEGRAM_WEBHOOK_MUTATION_ATTEMPTED=FALSE")
+          PY
