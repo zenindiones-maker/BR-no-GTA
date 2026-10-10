@@ -1402,10 +1402,10 @@ def main()->int:
     print(f"OWNER_INTRA_SPEAKER_SIMILARITY_P10={profile['intra_speaker_similarity_p10']}")
     print(f"OWNER_OUTLIER_COUNT={profile['outlier_count']}")
     print("OWNER_IDENTITY_PROFILE=PASS")
-    print(f"CANONICAL_REFERENCE_SHA256={canonical['sha256']}")
+    print("CANONICAL_REFERENCE_SHA256=PRIVATE_VERIFIED")
     print(f"CANONICAL_REFERENCE_TELEGRAM_INPUT_ID={canonical['telegram_input_id']}")
     print("CANONICAL_REFERENCE_IDENTITY_MATCH=PASS")
-    print(f"CONDITIONALS_REFERENCE_SHA256={canonical['sha256']}")
+    print("CONDITIONALS_REFERENCE_SHA256=PRIVATE_VERIFIED")
     print("CONDITIONALS_VOICE_IDENTITY=BR_OWNER_V1")
     print("CONDITIONALS_REFERENCE_SOURCE=TELEGRAM_HUMAN_OWNER")
     print("ONE_CANDIDATE_ONLY=TRUE")
@@ -1427,5 +1427,5 @@ if __name__=="__main__":
     try:
         raise SystemExit(main())
     except Exception as exc:
-        print(f"SINGLE_HUMAN_CLONE=FAIL FAILURE_CLASS={type(exc).__name__}:{str(exc)[:300]}",file=__import__("sys").stderr)
+        print("SINGLE_HUMAN_CLONE=FAIL FAILURE_CLASS="+type(exc).__name__,file=__import__("sys").stderr)
         raise SystemExit(51)
