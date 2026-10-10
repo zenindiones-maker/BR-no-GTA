@@ -291,15 +291,15 @@ jobs:
 
           status="$(
             python -c '
-import json
-from pathlib import Path
+          import json
+          from pathlib import Path
 
-payload = json.loads(
-    Path("runtime/media-worker/ingestion-result.json").read_text()
-)
+          payload = json.loads(
+              Path("runtime/media-worker/ingestion-result.json").read_text()
+          )
 
-print(payload["status"])
-'
+          print(payload["status"])
+          '
           )"
 
           echo "INGESTION_STATUS=$status"
