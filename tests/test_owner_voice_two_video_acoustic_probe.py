@@ -99,6 +99,82 @@ class AcousticVocabularyContracts(unittest.TestCase):
         with self.assertRaises(ValueError):
             probe.index_videos(records)
 
+    def test_word_alignment_preserves_invalid_times_without_inventing_boundaries(self):
+        examples = [
+            (0.5, 0.5, "NONPOSITIVE_INTERVAL"),
+            (0.9, 0.7, "NONPOSITIVE_INTERVAL"),
+            (-0.1, 0.4, "OUTSIDE_MEDIA"),
+            (1.2, 999.0, "OUTSIDE_MEDIA"),
+            (None, 0.8, "MISSING_BOUNDARY"),
+            (float("nan"), 0.8, "NONFINITE_BOUNDARY"),
+        ]
+        for start, end, reason in examples:
+            with self.subTest(start=start, end=end):
+                row = probe.review_word_timing(start, end, 10000)
+                self.assertEqual(row["timing_status"], "UNALIGNED")
+                self.assertEqual(row["timing_issue"], reason)
+                self.assertIsNone(row["start_ms"])
+                self.assertIsNone(row["end_ms"])
+                self.assertNotIn("PRIVATE", str(row))
+        valid = probe.review_word_timing(0.25, 0.55, 10000)
+        self.assertEqual(valid["timing_status"], "ALIGNED")
+        self.assertEqual((valid["start_ms"], valid["end_ms"]), (250, 550))
+        self.assertEqual(valid["timing_issue"], None)
+
+    def test_unaligned_word_retained_as_uncertain_without_forged_phrase(self):
+        records = self.records()
+        words = records[0]["segments"][0]["words"]
+        invalid = words[3]
+        invalid.update(probe.review_word_timing(1.5, 1.5, 8000))
+        vocab, names, coverage = probe.index_videos(records)
+        self.assertEqual(coverage["total_occurrences"], 12)
+        self.assertEqual(coverage["videos"][0]["unaligned_occurrences"], 1)
+        self.assertEqual(coverage["videos"][0]["timing_quality"], "DEGRADED")
+        occurrence = next(o for e in vocab["entries"] for o in e["occurrences"]
+                          if o["video_id"] == "f8IZhKcuEts"
+                          and o["asr_text"] == "Vice")
+        self.assertIsNone(occurrence["start_ms"])
+        self.assertIn("WORD_ALIGNMENT_UNVERIFIED", occurrence["uncertainty_flags"])
+        self.assertEqual(
+            [p["video_id"] for p in names["candidates"]
+             if p["canonical_text"] == "Vice City"], ["K6rVM6gn6k4"]
+        )
+        self.assertEqual(vocab["status"], "ASR_UNVERIFIED")
+
+    def test_invalid_word_timing_is_only_accepted_with_explicit_review_marker(self):
+        records = self.records()
+        records[0]["segments"][0]["words"][0]["end_ms"] = -1
+        with self.assertRaisesRegex(ValueError, "INVALID_WORD_TIMESTAMPS"):
+            probe.index_videos(records)
+        records = self.records()
+        row = records[0]["segments"][0]["words"][0]
+        row["timing_status"] = "UNALIGNED"
+        row["timing_issue"] = "NONPOSITIVE_INTERVAL"
+        row["start_ms"] = 0
+        row["end_ms"] = -1
+        with self.assertRaisesRegex(ValueError, "INVALID_WORD_TIMESTAMPS"):
+            probe.index_videos(records)
+
+    def test_all_unaligned_words_fail_closed_even_if_transcript_nonempty(self):
+        records = self.records()
+        for w in records[0]["segments"][0]["words"]:
+            w.update(probe.review_word_timing(None, 0.5, 8000))
+        with self.assertRaisesRegex(ValueError, "NO_ALIGNED_ASR_WORDS"):
+            probe.index_videos(records)
+
+    def test_private_alignment_diagnostics_contain_counts_not_speech(self):
+        with tempfile.TemporaryDirectory() as directory:
+            video = self.records()[0]
+            word = video["segments"][0]["words"][0]
+            word.update(probe.review_word_timing(0.5, 0.5, 8000))
+            word["text"] = "PRIVATE_DO_NOT_PRINT"
+            receipt = probe.write_alignment_diagnostics(directory, video)
+            self.assertEqual(receipt["unaligned_count"], 1)
+            self.assertEqual(receipt["issues"]["NONPOSITIVE_INTERVAL"], 1)
+            path = Path(directory) / "alignment-diagnostics" / (video["video_id"] + ".json")
+            self.assertTrue(path.exists())
+            self.assertNotIn("PRIVATE_DO_NOT_PRINT", path.read_text("utf-8"))
+
     def test_pyav_19_is_blocked_for_released_faster_whisper(self):
         with self.assertRaisesRegex(RuntimeError, "PYAV_INCOMPATIBLE"):
             probe.check_pyav_versions("1.2.1", "19.0.0")
