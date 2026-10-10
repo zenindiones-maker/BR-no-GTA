@@ -1,0 +1,111 @@
+name: BR Agent Office pinned upstream HIGH remediation triage
+on:
+  push:
+    branches:
+      - work/br-agent-office-upstream-high-triage-v1
+    paths:
+      - ".github/workflows/br-agent-office-upstream-high-triage.yml"
+      - "scripts/br_agent_office_upstream_high_triage.py"
+      - "integrations/munder_difflin/UPSTREAM.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-agent-office-high-triage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-only-security-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      NPM_CONFIG_IGNORE_SCRIPTS: "true"
+    steps:
+      - name: Checkout BR source without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Setup Node.js in ephemeral runner
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+      - name: Fetch exact existing Munder pin into RUNNER_TEMP only
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="https://github.com/chaitanyagiri/munder-difflin.git"
+          pin="$(python3 -c 'import json;print(json.load(open("integrations/munder_difflin/UPSTREAM.lock"))["commit"])')"
+          src="$RUNNER_TEMP/br-munder-pinned-source"
+          mkdir -p "$src"
+          git -C "$src" init --quiet
+          git -C "$src" -c gc.auto=0 fetch --quiet --no-tags --depth 1 "$repo" "$pin"
+          test "$(git -C "$src" rev-parse FETCH_HEAD)" = "$pin"
+          git -C "$src" checkout --quiet --detach "$pin"
+          test "$(git -C "$src" rev-parse HEAD)" = "$pin"
+          echo "BR_AGENT_OFFICE_UPSTREAM_CHECKOUT_PIN=PASS"
+      - name: Audit exact production dependency view without running scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/br-munder-pinned-source"
+          set +e
+          npm audit --omit=dev --json > "$RUNNER_TEMP/br-munder-audit-baseline.json" 2> "$RUNNER_TEMP/br-munder-audit-baseline.err"
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ] && [ "$code" -ne 1 ]; then
+            echo "NPM_AUDIT_REQUEST_OR_FORMAT_FAILED" >&2
+            exit 1
+          fi
+          echo "BR_AGENT_OFFICE_BASELINE_AUDIT_OBSERVED=PASS"
+      - name: Test non-force dependency lock repair in disposable copy only
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/br-munder-pinned-source"
+          candidate="$RUNNER_TEMP/br-munder-lock-candidate"
+          mkdir -p "$candidate"
+          cp "$src/package.json" "$src/package-lock.json" "$candidate/"
+          cd "$candidate"
+          set +e
+          npm audit fix --package-lock-only --ignore-scripts --omit=dev --no-fund --no-force > "$RUNNER_TEMP/br-munder-fix-output.log" 2>&1
+          code=$?
+          set -e
+          echo "BR_AGENT_OFFICE_NONFORCE_LOCK_FIX_EXIT=$code"
+          test "$code" -le 1
+          test -f package-lock.json
+          cmp -s "$src/package.json" package.json || {
+            echo "UPSTREAM_PACKAGE_JSON_CHANGE_REQUIRES_REVIEW" >&2
+            exit 1
+          }
+          set +e
+          npm audit --omit=dev --json > "$RUNNER_TEMP/br-munder-audit-candidate.json" 2> "$RUNNER_TEMP/br-munder-audit-candidate.err"
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ] && [ "$code" -ne 1 ]; then
+            echo "NPM_CANDIDATE_AUDIT_REQUEST_OR_FORMAT_FAILED" >&2
+            exit 1
+          fi
+          echo "BR_AGENT_OFFICE_EPHEMERAL_LOCK_CANDIDATE=GENERATED_NOT_APPROVED"
+      - name: Attest source commit and compare actual advisories and lock versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/br_agent_office_upstream_high_triage.py \
+            --upstream "$RUNNER_TEMP/br-munder-pinned-source" \
+            --baseline-json "$RUNNER_TEMP/br-munder-audit-baseline.json" \
+            --candidate "$RUNNER_TEMP/br-munder-lock-candidate" \
+            --candidate-json "$RUNNER_TEMP/br-munder-audit-candidate.json" \
+            --output "$RUNNER_TEMP/br-munder-high-triage.json"
+      - name: Upload exact sanitized triage and unapproved candidate lock
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: br-munder-high-triage-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/br-munder-high-triage.json
+            ${{ runner.temp }}/br-munder-lock-candidate/package-lock.json
+          retention-days: 7
+          if-no-files-found: warn
