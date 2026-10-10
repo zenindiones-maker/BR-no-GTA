@@ -11,6 +11,8 @@ on:
       - app/services/owner_voice_prompt_consistency_service.py
       - app/services/gta6_pronunciation_lexicon_service.py
       - scripts/owner_voice_single_human_clone.py
+      - scripts/owner_voice_single_clone_delivery.py
+      - app/services/owner_voice_clone_step_output_service.py
   workflow_dispatch:
 
 permissions:
@@ -41,7 +43,9 @@ jobs:
             tests/test_owner_voice_prompt_consistency_service.py \
             tests/test_owner_voice_coherent_no_fresh_sample.py \
             tests/test_owner_voice_human_review_delivery_policy.py \
-            tests/test_owner_voice_segmented_delivery_manifest_regression.py
+            tests/test_owner_voice_segmented_delivery_manifest_regression.py \
+            tests/test_owner_voice_single_clone_delivery_v1.py \
+            tests/test_owner_voice_critical_audio_telegram_delivery.py
           echo 'OWNER_VOICE_ISOLATED_CONTRACTS=PASS'
           echo 'OWNER_VOICE_REAL_INFERENCE=NOT_ATTEMPTED'
           echo 'TELEGRAM_SIDE_EFFECT=NOT_ATTEMPTED'
