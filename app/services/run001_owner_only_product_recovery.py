@@ -100,3 +100,59 @@ def verify_distinct_scripts(a: Mapping[str,Any], b: Mapping[str,Any]|None)->dict
     if any(p.get("youtube_publication") is not False for p in (a,b)):
         raise RecoveryBlocked("RUN001_NO_PUBLICATION_AUTHORITY")
     return {"distinct_content":True,"script_a_sha256":digest_a,"script_b_sha256":digest_b,"human_approval":"REQUIRED","youtube_upload":"BLOCKED"}
+
+
+def source_readiness(root)->dict[str,Any]:
+    """Read actual public editorial bytes; approval always stays external.
+
+    No hashes of private voice files are used as fabricated evidence. The
+    remote human-review ledger must be consulted by the authorized Harness.
+    """
+    from pathlib import Path
+    folder=Path(root)
+    products={}
+    verified={}
+    for label in ("A","B"):
+        path=folder/f"video-{label.lower()}-v1.json"
+        if path.is_symlink():
+            products[label]={"status":"BLOCKED_SYMLINK"}
+            continue
+        if not path.is_file():
+            products[label]={"status":"MISSING"}
+            continue
+        try:
+            product=json.loads(path.read_text(encoding="utf-8"))
+            if product.get("product_label")!=label:
+                raise RecoveryBlocked("RUN001_PRODUCT_LABEL_MISMATCH")
+            words=sum(len(s["narration"].split()) for s in product["script_sections"])
+            digest=_text_digest(product)
+            voice=product.get("narration") or {}
+            if (voice.get("voice")!="BR_OWNER_V1"
+                or voice.get("generic_voice_fallback") is not False
+                or voice.get("runtime_activation")!="PENDING_HUMAN_REVIEW"
+                or voice.get("identity_gate")!="PENDING"
+                or voice.get("approved_clone_audio_sha256") is not None
+                or voice.get("independent_approval_ledger_ref") is not None):
+                raise RecoveryBlocked("RUN001_PRODUCT_VOICE_MUST_BE_PENDING")
+            products[label]={"status":"SCRIPT_READY_APPROVAL_PENDING","words":words,
+                             "script_sha256":digest}
+            verified[label]=product
+        except (OSError,KeyError,ValueError,TypeError) as exc:
+            products[label]={"status":"BLOCKED_INVALID_SOURCE","reason":str(exc)[:150]}
+    distinct="NOT_CHECKED"
+    if set(verified)=={"A","B"}:
+        try:
+            verify_distinct_scripts(verified["A"],verified["B"])
+            distinct="PASS_EDITORIAL_TEXT_DIFFERENT"
+        except RecoveryBlocked as exc:
+            distinct=str(exc)
+    return {
+        "schema":"BRRun001ReadOnlySourceReadiness/v1",
+        "video_a":products["A"],
+        "video_b":products["B"],
+        "distinct_editorial_scripts":distinct,
+        "human_owner_approval":"NOT_PROVEN",
+        "dispatch_authorized":False,
+        "youtube_upload":"BLOCKED",
+        "production_rendered":False,
+    }
