@@ -60,7 +60,8 @@ def test_single_clone_runtime_has_real_identity_profile_and_no_placeholder_simil
 def test_single_clone_delivery_sends_reference_clone_and_control_only():
     source=DELIVERY.read_text(encoding="utf-8")
     assert "copyMessage" in source
-    assert "sendAudio" in source
+    assert "sendVoice" in source
+    assert "sendAudio" not in source
     assert "sendMediaGroup" not in source
     assert "REFERENCE_TELEGRAM_MESSAGE_ID=" in source
     assert "CLONE_TELEGRAM_MESSAGE_ID=" in source
@@ -146,7 +147,8 @@ def test_private_materializer_preserves_message_id_for_pronunciation_boundary():
 
 def test_pending_telegram_recovery_is_non_acknowledging_and_owner_scoped():
     service=Path("app/services/owner_voice_telegram_pending_recovery_service.py").read_text(encoding="utf-8")
-    assert '"getUpdates"' in service
+    assert '"getUpdates"' not in service
+    assert "verified_ingress_records" in service
     assert '"offset"' not in service
     assert "after_message_id" in service
     assert "telegram_user_id" in service
