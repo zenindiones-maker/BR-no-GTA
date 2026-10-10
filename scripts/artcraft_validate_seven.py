@@ -91,10 +91,11 @@ def docker_args(*, src: Path, cargo: Path, target: Path, project: str,
         "-v", f"{src}:/src:ro",
         "-v", f"{cargo}:/cargo:{'rw' if stage == 'fetch' else 'ro'}",
         "-v", f"{target}:/target:rw",
-        "-w", "/src", RUST_IMAGE,
+        "-w", "/src",
     ]
     if network == "none":
         args.extend(["-e", "CARGO_NET_OFFLINE=true"])
+    args.append(RUST_IMAGE)
     return args
 
 
