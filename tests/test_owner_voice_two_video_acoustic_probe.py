@@ -134,7 +134,7 @@ class AcousticVocabularyContracts(unittest.TestCase):
             self.assertEqual(arr.dtype, np.float32)
             self.assertEqual(arr.tolist(), [-1.0, -0.5, 0.0, 0.5, 32767 / 32768.0])
             self.assertLessEqual(float(np.max(np.abs(arr))), 1.0)
-            path.write_bytes(b"\\x01")
+            path.write_bytes(bytes([1]))
             with self.assertRaisesRegex(ValueError, "INVALID_PCM"):
                 probe.load_pcm_s16(path)
 
