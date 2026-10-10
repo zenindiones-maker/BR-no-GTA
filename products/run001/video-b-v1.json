@@ -283,6 +283,54 @@
       "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
     },
     {
+      "section_id": "B17",
+      "heading": "O rádio como retrato de uma cidade",
+      "role": "analysis",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S_MUSIC"
+      ],
+      "narration": "Uma rádio fictícia pode comunicar muito mais do que o gênero de uma canção. Ela sugere que existem pessoas selecionando repertórios, apresentadores com uma maneira própria de falar e ouvintes que reconhecem aquela linguagem. A Rockstar divulgou oficialmente diferentes estações e podcasts para GTA VI. Isso permite discutir identidade cultural a partir de dados reais, sem inventar o conteúdo de programas inteiros. Quando aparecem propostas associadas a música latina, country, sonoridades africanas ou metal, percebemos que o universo de Leonida não pretende soar como um único ambiente indiferenciado. É uma conclusão sobre a variedade anunciada, não sobre a mecânica de seleção das rádios durante o jogo. Podemos perguntar como repertórios diferentes ajudam a construir a percepção de regiões e grupos sociais. A resposta definitiva sobre funcionamento técnico dependerá de informações adicionais. Em nossa montagem, esse tema deve ser tratado com narração analítica e referências visuais cuja procedência esteja comprovada, sem copiar fonogramas protegidos. O rádio também permite falar de memória cultural: a escolha de uma sonoridade pode alterar o modo como o espectador interpreta uma rua, um personagem ou um percurso. Essa reflexão é importante por si mesma, mesmo que o jogo final não apresente determinado recurso especulado por fãs.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
+      "section_id": "B18",
+      "heading": "A diferença entre um personagem e seu ambiente sonoro",
+      "role": "analysis",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S_LEONIDA"
+      ],
+      "narration": "Os perfis oficiais de Leonida apresentam personagens envolvidos com música, negócios e relações de confiança. Isso nos convida a pensar no som como parte da caracterização de um lugar. Uma figura associada à vida noturna pode habitar um universo cultural diferente de alguém cuja história está ligada às áreas mais afastadas da cidade. Não precisamos decidir antecipadamente qual música tocará em uma missão específica para observar esse contraste. Os materiais públicos oferecem biografias e estações divulgadas, mas não um catálogo de ligações obrigatórias entre cada personagem e cada rádio. Nosso método mantém essa fronteira. O que podemos analisar é a importância de uma direção artística consistente: quando imagem, linguagem e repertório cultural apontam para o mesmo universo, a ficção parece ganhar continuidade. Quando usamos uma faixa sem licença para simular essa continuidade, comprometemos justamente a credibilidade da produção independente. Por isso, o roteiro explicará as conexões temáticas por meio da narração, deixando claro quais relações foram descritas pela Rockstar e quais são observações editoriais. A experiência completa precisará ser examinada quando o jogo estiver disponível. Até lá, o desafio é fazer perguntas boas e reconhecer o quanto uma ambientação pode comunicar mesmo sem anunciar novos sistemas jogáveis.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
+      "section_id": "B19",
+      "heading": "O olhar das redes e a construção de fama",
+      "role": "analysis",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S_LEONIDA"
+      ],
+      "narration": "Os perfis oficiais de personagens ligados à cultura popular ajudam a observar outra tensão de Vice City: reputação não depende somente de dinheiro. A Rockstar apresenta figuras que procuram espaço na música e na vida pública, enquanto outras constroem influência por caminhos diferentes. Uma cidade assim pode ser interpretada como palco de disputas por atenção, mas não seria correto transformar essa leitura em promessa de um simulador completo de redes sociais. Não sabemos apenas pelas biografias qual interface o jogador poderá controlar ou quantas atividades terão efeitos persistentes. O que sabemos é que a apresentação pública reserva espaço para personagens cuja notoriedade faz parte da maneira como eles são descritos. Esse dado sustenta uma análise sobre fama e identidade cultural. Também permite observar como personagens podem perseguir objetivos distintos mesmo quando compartilham a mesma cidade. Para um canal investigativo, a tentação seria converter cada detalhe em previsão de sistema. Nosso compromisso é fazer o oposto. Vamos explicar o que o perfil confirma, o que podemos inferir como escolha narrativa e o que permanece pergunta aberta. É uma forma mais útil de acompanhar um jogo ainda não lançado, sobretudo porque permite revisar cada conclusão à medida que novas informações oficiais apareçam.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
+      "section_id": "B20",
+      "heading": "Montagem e geografia: o que uma imagem não mostra",
+      "role": "analysis",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S_EXT"
+      ],
+      "narration": "Um vídeo promocional é construído por escolhas de enquadramento e montagem. Quando observamos uma região de Leonida em uma sequência curta, não recebemos automaticamente informações sobre todos os caminhos que a conectam às demais. A Rockstar confirmou a origem in-game do Extended Look no PlayStation 5, mas isso não transforma cortes de câmera em um mapa navegável completo. Para demonstrar uma travessia específica, precisaríamos de evidência de deslocamento contínuo, não apenas de duas imagens bonitas. Essa distinção tem consequências práticas para a nossa própria produção. Não vamos usar janelas de vídeo sem verificar de onde vieram, nem afirmar que um local aparece quando o material mostra outro. O roteiro pode discutir contrastes de ambientes com base nas páginas oficiais; a edição precisa encontrar material correspondente ou assumir a falta de cobertura. O mesmo vale para duração. Repetir cenas para preencher silêncio cria uma sensação artificial de progresso e prejudica o valor da análise. Um bom vídeo organiza ideias diferentes em uma sequência legível, usa imagens proporcionais ao assunto e mantém a identidade da voz aprovada pelo proprietário. Só quando esses elementos estiverem materializados, medidos e revisados poderemos afirmar que a viagem audiovisual por Leonida realmente funciona. Antes disso, temos um roteiro de pesquisa, não um master final.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
       "section_id": "B16",
       "heading": "Conclusão: um mundo que ainda estamos aprendendo a ler",
       "role": "cta",
@@ -295,5 +343,6 @@
       "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
     }
   ],
-  "render_production_admission": "BLOCKED_FACT_VOICE_AND_MEDIA_REVIEW"
+  "render_production_admission": "BLOCKED_FACT_VOICE_AND_MEDIA_REVIEW",
+  "estimated_duration_seconds": 1500
 }
