@@ -23,10 +23,36 @@ class OwnerCriticalPronunciationTests(unittest.TestCase):
         self.assertTrue(all(x["language"]=="Portuguese" for x in items))
         self.assertTrue(all(x["approved_audio"] is False for x in items))
         self.assertEqual(items[2]["canonical_text"],"Vice City")
-        self.assertEqual(items[2]["spoken_text"],"vaicy siti")
+        self.assertIn("vaicy siti",items[2]["spoken_text"])
+        self.assertEqual(items[2]["spoken_text"].count("vaicy siti"),1)
         for x in items:
-            if x["canonical_text"] not in ("Vice City","GTA 6"):
-                self.assertEqual(x["spoken_text"],x["canonical_text"])
+            expected=(
+                "vaicy siti" if x["canonical_text"]=="Vice City"
+                else "Gê Tê A seis" if x["canonical_text"]=="GTA 6"
+                else x["canonical_text"]
+            )
+            self.assertIn(expected,x["spoken_text"])
+            self.assertEqual(x["spoken_text"].count(expected),1)
+            self.assertGreaterEqual(len(x["spoken_text"].split()),16)
+            self.assertNotIn("Booooa",x["spoken_text"])
+
+    def test_single_word_audio_is_forbidden_for_speaker_verification(self):
+        items=owner_critical_ptbr_batches()
+        self.assertEqual(len(items),18)
+        self.assertTrue(all(row["language"]=="Portuguese" for row in items))
+        for row in items:
+            with self.subTest(term=row["canonical_text"]):
+                # Utterances under about three seconds cannot reliably
+                # substitute for a calibrated longer speaker sample.
+                self.assertGreaterEqual(len(row["spoken_text"].split()),12)
+                spoken_target=(
+                    "vaicy siti" if row["canonical_text"]=="Vice City"
+                    else "Gê Tê A seis" if row["canonical_text"]=="GTA 6"
+                    else row["canonical_text"]
+                )
+                self.assertIn(spoken_target,row["spoken_text"])
+                self.assertEqual(row["spoken_text"].count(spoken_target),1)
+                self.assertFalse(row["approved_audio"])
 
     def test_explicit_scope_is_required_before_voice_generation(self):
         manifest=load_candidate()
@@ -74,6 +100,18 @@ class OwnerCriticalPronunciationTests(unittest.TestCase):
                 filename.write_text(json.dumps(bad))
                 with self.assertRaisesRegex(RuntimeError,"SINGLE_CLONE_MANIFEST_CONTRACT_INVALID"):
                     _load_manifest(filename)
+
+    def test_concurrent_remote_clone_is_serialized_by_existing_ledger_guard(self):
+        workflow=Path(".github/workflows/owner-voice-single-human-clone.yml").read_text()
+        self.assertIn("group: br-owner-v1-single-human-clone-ledger",workflow)
+        self.assertIn("cancel-in-progress: false",workflow)
+        self.assertIn("REQUEST_CHANGED=false",workflow)
+        self.assertIn("then REQUEST_CHANGED=true; fi",workflow)
+        self.assertIn("clone_requested == 'true'",workflow)
+        # The current candidate must not take over an existing queued owner
+        # clone run or mutate the separate authenticated Telegram ledger.
+        self.assertIn("steps.generate.outputs.send_eligible == 'true'",workflow)
+        self.assertIn("steps.generate.outputs.critical_scope == 'true'",workflow)
 
     def test_workflow_skips_telegram_when_critical_quality_gate_fails(self):
         wf=Path(".github/workflows/owner-voice-single-human-clone.yml").read_text()

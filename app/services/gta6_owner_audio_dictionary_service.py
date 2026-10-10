@@ -129,20 +129,38 @@ def candidate_summary(path:Path|None=None)->dict[str,Any]:
     }
 
 def owner_critical_ptbr_batches(path:Path|None=None)->tuple[dict[str,Any],...]:
-    """One private short owner-conditioned generation per name, no English voice.
+    """18 individually governed names, spoken inside natural PT-BR context.
 
-    The only spelling-to-speech rewrite is the owner's explicit Vice City
-    reading; all other terms remain unapproved until real acoustics reviewed.
+    Earlier isolated words generated 1.1-2.7 second speech fragments. They
+    failed both speaker-verification and pronunciation QA. Longer phrases
+    retain one unambiguous target per real Qwen call without lowering gates,
+    switching speakers or introducing unapproved phonetic rewrites.
     """
     doc=load_candidate(path)
-    return tuple({
-        "canonical_text":row["term"],
-        "spoken_text":(
-            "Gê Tê A seis" if row["term"]=="GTA 6"
-            else "vaicy siti" if row["term"]=="Vice City"
-            else row["term"]
-        ),
-        "language":"Portuguese",
-        "is_pronunciation_target":True,
-        "approved_audio":False,
-    } for row in doc["entries"])
+    contexts=(
+        "Na narração de hoje, quero falar sobre {term} com uma cadência tranquila, mantendo a frase natural e bem articulada em português brasileiro.",
+        "Quando mencionamos {term} neste assunto, o importante é pronunciar as palavras de maneira fluida, com uma entonação clara e sem pressa.",
+        "Para quem está acompanhando a história, a referência {term} aparece neste trecho como parte de uma frase completa, dita naturalmente em português brasileiro.",
+        "Durante esta explicação, vou citar {term} em uma frase com começo, meio e fim, mantendo o ritmo de uma conversa brasileira.",
+        "Entre as informações que estamos examinando, temos {term}, uma expressão que merece uma leitura clara, com pausas naturais e palavras bem pronunciadas.",
+        "Neste ponto da nossa conversa, o nome {term} será apresentado com naturalidade, dentro de uma frase completa e com a entonação correta.",
+    )
+    results=[]
+    for i,row in enumerate(doc["entries"]):
+        term=row["term"]
+        target=(
+            "Gê Tê A seis" if term=="GTA 6"
+            else "vaicy siti" if term=="Vice City"
+            else term
+        )
+        spoken=contexts[i%len(contexts)].format(term=target)
+        if spoken.count(target)!=1 or len(spoken.split())<16:
+            raise DictionaryBlocked("OWNER_CONTEXTUAL_TARGET_UTTERANCE_INVALID")
+        results.append({
+            "canonical_text":term,
+            "spoken_text":spoken,
+            "language":"Portuguese",
+            "is_pronunciation_target":True,
+            "approved_audio":False,
+        })
+    return tuple(results)
