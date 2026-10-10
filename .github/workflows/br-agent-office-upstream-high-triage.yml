@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/br-agent-office-upstream-high-triage.yml"
       - "scripts/br_agent_office_upstream_high_triage.py"
+      - "scripts/br_agent_office_tunnel_removal_candidate.py"
       - "integrations/munder_difflin/UPSTREAM.lock"
   workflow_dispatch:
 
@@ -99,6 +100,47 @@ jobs:
             --candidate "$RUNNER_TEMP/br-munder-lock-candidate" \
             --candidate-json "$RUNNER_TEMP/br-munder-audit-candidate.json" \
             --output "$RUNNER_TEMP/br-munder-high-triage.json"
+      - name: Construct policy-bound no-tunnel candidate in RUNNER_TEMP
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/br-munder-pinned-source"
+          dest="$RUNNER_TEMP/br-munder-no-tunnel-candidate"
+          mkdir -p "$dest"
+          tar -C "$src" --exclude=.git -cf - . | tar -C "$dest" -xf -
+          python3 scripts/br_agent_office_tunnel_removal_candidate.py --source "$src" --candidate "$dest"
+          cd "$dest"
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          set +e
+          npm audit fix --package-lock-only --ignore-scripts --omit=dev --no-fund --no-force > "$RUNNER_TEMP/br-munder-no-tunnel-fix.log" 2>&1
+          code=$?
+          set -e
+          test "$code" -le 1
+          echo "BR_AGENT_OFFICE_NO_TUNNEL_NONFORCE_FIX_EXIT=$code"
+          set +e
+          npm audit --omit=dev --json > "$RUNNER_TEMP/br-munder-audit-no-tunnel.json"
+          code=$?
+          set -e
+          test "$code" -le 1
+          echo "BR_AGENT_OFFICE_NO_TUNNEL_AUDIT_COMPLETED=PASS"
+      - name: Compare no-tunnel candidate with same immutable pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/br_agent_office_upstream_high_triage.py \
+            --upstream "$RUNNER_TEMP/br-munder-pinned-source" \
+            --baseline-json "$RUNNER_TEMP/br-munder-audit-baseline.json" \
+            --candidate "$RUNNER_TEMP/br-munder-no-tunnel-candidate" \
+            --candidate-json "$RUNNER_TEMP/br-munder-audit-no-tunnel.json" \
+            --output "$RUNNER_TEMP/br-munder-no-tunnel-triage.json"
+      - name: Typecheck real upstream Node code with no tunnel package and scripts disabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/br-munder-no-tunnel-candidate"
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck:node
+          echo "BR_AGENT_OFFICE_NO_TUNNEL_NODE_TYPECHECK=PASS"
       - name: Upload exact sanitized triage and unapproved candidate lock
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -107,5 +149,7 @@ jobs:
           path: |
             ${{ runner.temp }}/br-munder-high-triage.json
             ${{ runner.temp }}/br-munder-lock-candidate/package-lock.json
+            ${{ runner.temp }}/br-munder-no-tunnel-triage.json
+            ${{ runner.temp }}/br-munder-no-tunnel-candidate/package-lock.json
           retention-days: 7
           if-no-files-found: warn
