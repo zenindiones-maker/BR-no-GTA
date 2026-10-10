@@ -163,6 +163,7 @@ jobs:
           /tmp/br-owner-single-clone-venv/bin/python scripts/owner_voice_single_human_clone.py
 
       - name: Deliver reference clone and control
+        if: ${{ steps.generate.outputs.send_eligible != 'false' }}
         env:
           PYTHONPATH: ${{ github.workspace }}
           BR_OWNER_AUDITION_LEDGER_SSH_KEY: ${{ secrets.BR_OWNER_AUDITION_LEDGER_SSH_KEY }}
