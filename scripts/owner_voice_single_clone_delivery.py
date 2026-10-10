@@ -214,6 +214,15 @@ def main()->int:
     if not token or not manifest_env:
         raise RuntimeError("SINGLE_CLONE_DELIVERY_ENV_REQUIRED")
     manifest=_load_manifest(Path(manifest_env).resolve())
+    if (
+        str(os.environ.get("BR_OWNER_REQUIRE_PASS_BEFORE_DELIVERY") or "") == "true"
+        and manifest.get("schema_version") == "OwnerVoiceSingleCloneCandidate/v1"
+        and (
+            manifest.get("clone_identity_gate") != "PASS"
+            or manifest.get("content_audio_prescreen") != "PASS"
+        )
+    ):
+        raise RuntimeError("OWNER_VOICE_RECOVERY_DELIVERY_QA_NOT_PASSED")
     workspace=Path(os.environ["BR_OWNER_AUDITION_WORKSPACE"]).resolve()
     store=store_from_environment(repo_root=Path.cwd(),workspace=workspace)
 
