@@ -1,6 +1,7 @@
 name: BR ArtCraft Film Effect Interop Contract
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - work/br-artcraft-film-effect-interop-v1
