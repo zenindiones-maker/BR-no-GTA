@@ -1,0 +1,92 @@
+name: BR_OWNER_V1 Telegram Original Group Read-only
+on:
+  push:
+    branches:
+      - work/owner-voice-safe-ingress-recovery-20261010
+    paths:
+      - ".github/workflows/owner-voice-group-permissions-readonly.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Verify original Telegram group and bot membership without posting
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          BR_OWNER_REFERENCE_ENVELOPE: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64 }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import json
+          import base64
+          import hashlib
+          from urllib.request import Request,urlopen
+          from urllib.parse import urlencode
+
+          token=os.environ.get("TELEGRAM_BOT_TOKEN","").strip()
+          envelope=os.environ.get("BR_OWNER_REFERENCE_ENVELOPE","").strip()
+          if not token or not envelope:
+              print("OWNER_GROUP_READBACK=BLOCKED_MISSING_SECRETS")
+              raise SystemExit(2)
+          try:
+              index=json.loads(base64.urlsafe_b64decode(envelope).decode("utf-8"))
+              unsigned={k:v for k,v in index.items() if k!="index_sha256"}
+              digest=hashlib.sha256(json.dumps(unsigned,ensure_ascii=False,sort_keys=True,
+                        separators=(",",":")).encode("utf-8")).hexdigest()
+              assert digest==index["index_sha256"]
+              assert index["voice_identity_id"]=="BR_OWNER_V1"
+              chats={int(row["telegram_chat_id"]) for row in index["references"]}
+              assert len(chats)==1
+          except Exception:
+              print("OWNER_GROUP_READBACK=BLOCKED_AMBIGUOUS_REFERENCE_CHAT")
+              raise SystemExit(3)
+
+          def read_only(method,data):
+              assert method in {"getMe","getChat","getChatMember"}
+              request=Request("https://api.telegram.org/bot"+token+"/"+method,
+                  data=urlencode(data).encode("utf-8"),
+                  headers={"Content-Type":"application/x-www-form-urlencoded"},
+                  method="POST")
+              try:
+                  with urlopen(request,timeout=15) as resp:
+                      payload=json.load(resp)
+                  if payload.get("ok") is not True or not isinstance(payload.get("result"),dict):
+                      raise RuntimeError("provider response invalid")
+                  return payload["result"]
+              except Exception:
+                  # Never print provider exception body or any private chat IDs.
+                  print("OWNER_GROUP_READBACK=BLOCKED_API_READ")
+                  raise SystemExit(4)
+
+          me=read_only("getMe",{})
+          assert str(me.get("username") or "").casefold()=="brnogta_bot"
+          bot_id=int(me["id"])
+          chat_id=next(iter(chats))
+          chat=read_only("getChat",{"chat_id":chat_id})
+          if chat.get("type") not in ("group","supergroup"):
+              print("OWNER_GROUP_READBACK=BLOCKED_WRONG_CHAT_TYPE")
+              raise SystemExit(5)
+          membership=read_only("getChatMember",{"chat_id":chat_id,"user_id":bot_id})
+          status=str(membership.get("status") or "").lower()
+          if status not in ("administrator","creator","member","restricted"):
+              print("OWNER_GROUP_READBACK=BLOCKED_BOT_NOT_MEMBER")
+              raise SystemExit(6)
+          if status=="restricted" and (
+              membership.get("is_member") is not True
+              or membership.get("can_send_voice_notes") is not True
+              or membership.get("can_send_audios") is not True
+          ):
+              print("OWNER_GROUP_READBACK=BLOCKED_AUDIO_SENDING_RESTRICTED")
+              raise SystemExit(7)
+          print("OWNER_GROUP_REFERENCE_CHAT_COUNT=1")
+          print("OWNER_GROUP_CHAT_TYPE=GROUP_OR_SUPERGROUP")
+          print("OWNER_GROUP_BOT_MEMBERSHIP="+status.upper())
+          print("OWNER_GROUP_READBACK=PASS_READ_ONLY")
+          print("TELEGRAM_GETUPDATES_ATTEMPTED=FALSE")
+          print("TELEGRAM_SEND_ATTEMPTED=FALSE")
+          PY
