@@ -67,7 +67,7 @@ def main() -> int:
         report["video"] = {"bytes": video.stat().st_size, "sha256": sha256(video)}
         pp = subprocess.run([
             "ffprobe", "-v", "error", "-count_frames", "-show_entries",
-            "stream=codec_type,codec_name,width,height,pix_fmt,nb_read_frames,r_frame_rate:format=duration",
+            "stream=codec_type,codec_name,width,height,pix_fmt,nb_read_frames,r_frame_rate,sample_rate,channels:format=duration",
             "-of", "json", str(video)],
             capture_output=True, timeout=40, check=False,
         )
