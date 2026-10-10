@@ -156,7 +156,14 @@ class OwnerDeliveryScopeIsolationContract(unittest.TestCase):
         reject_critical_scope_for_standard_delivery({
             "schema_version":"OwnerVoiceSingleCloneControlReconciliation/v1",
             "control_only":True,
+            "runtime_activation":False,
         })
+        with self.assertRaisesRegex(ValueError, "CONTROL_MODE_INVALID"):
+            reject_critical_scope_for_standard_delivery({
+                "schema_version":"OwnerVoiceSingleCloneControlReconciliation/v1",
+                "control_only":True,
+                "runtime_activation":True,
+            })
         reject_critical_scope_for_standard_delivery({
             "schema_version":"OwnerVoiceSingleCloneCandidate/v1",
             "pronunciation_scope":"LEGACY",
