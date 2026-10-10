@@ -1,0 +1,89 @@
+name: BR_OWNER_V1 Coherent Reference and STT Compatibility Gate
+
+on:
+  push:
+    branches:
+      - work/br-owner-voice-coherent-qa-recovery-v1
+    paths:
+      - .github/workflows/br-owner-voice-coherent-recovery-contract.yml
+      - .github/workflows/owner-voice-private-materialization.yml
+      - scripts/owner_voice_single_human_clone.py
+      - app/services/owner_voice_prompt_consistency_service.py
+      - tests/test_owner_voice_prompt_consistency_service.py
+
+permissions:
+  contents: read
+
+jobs:
+  owner-source-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Coherent BR_OWNER_V1 seven segment prompt proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            app/services/owner_voice_prompt_consistency_service.py \
+            scripts/owner_voice_single_human_clone.py
+          python3 -m unittest discover -s tests -p 'test_owner_voice_prompt_consistency_service.py' -v
+          python3 - <<'PY'
+          from pathlib import Path
+          wf=Path(".github/workflows/owner-voice-private-materialization.yml").read_text()
+          src=Path("scripts/owner_voice_single_human_clone.py").read_text()
+          assert "av==18.0.0" in wf
+          assert 'BR_OWNER_COHERENT_ANCHOR_ONLY' in src
+          assert '"generate_call_count":len(segment_timing_receipts)' in src
+          assert '"ANCHOR_SPK_PLUS_PRONUNCIATION_CODE"' not in src
+          assert '"x_vector_only_mode":False' in src
+          print("QWEN_OWNER_REFERENCE_COHERENCE=PASS")
+          print("HUMAN_REVIEW_BYPASS=FORBIDDEN")
+          print("OWNER_VOICE_SYNTHESIS=NOT_EXECUTED")
+          PY
+  stt-decode-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Install pinned compatible Faster Whisper + PyAV (no biometric reference)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q \
+            "faster-whisper==1.2.0" "av==18.0.0"
+          python -m pip check
+      - name: Prove PyAV decode of real generated PCM WAV
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import math,struct,wave,tempfile
+          from pathlib import Path
+          from importlib.metadata import version
+          import numpy as np
+          from faster_whisper.audio import decode_audio
+          assert version("faster-whisper")=="1.2.0"
+          assert version("av")=="18.0.0"
+          with tempfile.TemporaryDirectory() as temp:
+              p=Path(temp)/"synthetic-sine.wav"
+              with wave.open(str(p),"wb") as w:
+                  w.setnchannels(1)
+                  w.setsampwidth(2)
+                  w.setframerate(16000)
+                  w.writeframes(b"".join(struct.pack("<h",int(6000*math.sin(2*math.pi*440*n/16000)))
+                                        for n in range(16000)))
+              samples=decode_audio(str(p),sampling_rate=16000)
+              assert isinstance(samples,np.ndarray)
+              assert samples.shape==(16000,), samples.shape
+              assert float(np.max(np.abs(samples)))>0.1
+          print("WHISPER_PYAV_DECODE_REAL_SYNTHETIC_WAV=PASS")
+          print("OWNER_BIOMETRIC_MATERIAL_READ=NO")
+          PY

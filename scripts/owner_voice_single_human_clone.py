@@ -1125,6 +1125,26 @@ def main()->int:
         else:
             segment_prompts.append(anchor_prompt)
 
+    # REA V24: Qwen3-TTS upstream explicitly recommends a single coherent
+    # ref_audio across all utterances to avoid unstable speaker identity.
+    # This is a separately scoped, opt-in recovery candidate only. Owner-only
+    # references still control pronunciation verification and cannot turn into
+    # a preset/fallback speaker. Keep identity calibration and human review.
+    if os.environ.get("BR_OWNER_COHERENT_ANCHOR_ONLY") == "1":
+        from app.services.owner_voice_prompt_consistency_service import (
+            select_single_owner_prompt_for_segments,
+        )
+        segment_prompts=select_single_owner_prompt_for_segments(
+            anchor_prompt=anchor_prompt,
+            segment_count=len(pronunciation_segments),
+            canonical_reference_sha256=str(canonical["sha256"]),
+        )
+        qwen_reference_audio_lineage="SINGLE_COHERENT_OWNER_CANONICAL_REFERENCE"
+        print("QWEN_OWNER_REFERENCE_PER_SEGMENT=CANONICAL_ONLY")
+        print("OWNER_SPEAKER_IDENTITY_THRESHOLDS=UNCHANGED")
+    else:
+        print("QWEN_OWNER_REFERENCE_PER_SEGMENT=LEGACY_MIXED_INDEPENDENT")
+
     # Qwen official API accepts single-item batches. Avoid one unobservable,
     # long multi-segment generation call, and keep each output as a private
     # scratch checkpoint; never reuse older rejected audition segments.
@@ -1380,12 +1400,12 @@ def main()->int:
             "ref_audio_source":"TELEGRAM_HUMAN_OWNER",
             "ref_audio_lineage":qwen_reference_audio_lineage,
             "prompt_component_authority":(
-                "ANCHOR_SPK_PLUS_PRONUNCIATION_CODE"
-                if pronunciation_canonical is not None
-                else "ANCHOR_ONLY"
+                "COHERENT_ANCHOR_ONLY"
+                if qwen_reference_audio_lineage=="SINGLE_COHERENT_OWNER_CANONICAL_REFERENCE"
+                else "SEPARATE_COHERENT_OWNER_REFERENCES"
             ),
             "ref_text_private_only":True,
-            "generate_call_count":1,
+            "generate_call_count":len(segment_timing_receipts),
         },
     }
     manifest_path=workspace/"single-clone-manifest.json"
