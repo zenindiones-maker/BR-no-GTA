@@ -31,6 +31,7 @@ python3 -m py_compile app/services/br_rea_investigation_executor.py \
     app/services/owner_voice_dubbing_reference_policy.py \
     tests/test_owner_voice_dubbing_reference_policy.py
 python3 -m unittest discover -s tests -p test_br_rea_investigation_executor.py -v
+python3 -m unittest discover -s tests -p test_br_rea_public_mcp_denial.py -v
 python3 -m pytest -q tests/test_owner_voice_dubbing_reference_policy.py
 python3 -m unittest discover -s tests -p test_br_system_static_surface_audit.py -v
 python3 scripts/br_system_static_surface_audit.py
