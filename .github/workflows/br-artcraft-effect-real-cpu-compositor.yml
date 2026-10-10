@@ -1,0 +1,138 @@
+name: BR ArtCraft Real EffectCraft CPU Compositor
+
+on:
+  push:
+    branches:
+      - work/br-artcraft-effect-render-cpu-proof-v1
+    paths:
+      - .github/workflows/br-artcraft-effect-real-cpu-compositor.yml
+      - scripts/artcraft_effect_native_cpu_scene.rs
+
+permissions:
+  contents: read
+
+jobs:
+  real-cpu-render:
+    name: Compile exact native EffectCraft renderer and generate real colored frame
+    runs-on: ubuntu-24.04
+    timeout-minutes: 37
+    steps:
+      - name: Checkout the isolated BR source (no persisted credentials)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Fetch exact pinned public upstream without hooks or checkout
+        shell: bash
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+          GIT_LFS_SKIP_SMUDGE: "1"
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/artcraft-effect-cpu"
+          mkdir -p "$root/git" "$root/src" "$root/cargo" "$root/target" "$PWD/effect-cpu-real-output"
+          git init -q "$root/git"
+          git -C "$root/git" remote add origin https://github.com/storytold/effectcraft.git
+          git -c core.hooksPath=/dev/null -C "$root/git" fetch --no-tags --depth=1 \
+            origin 30aaddf7c23329dcdfc72a5bf65b55747bbd6be1
+          test "$(git -C "$root/git" rev-parse FETCH_HEAD)" = \
+            "30aaddf7c23329dcdfc72a5bf65b55747bbd6be1"
+          python3 - "$root/git" "$root/src" <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0,'scripts')
+          from artcraft_validate_seven import safe_tar_github,check_license
+          repo=Path(sys.argv[1]); source=Path(sys.argv[2])
+          info=safe_tar_github(repo,"30aaddf7c23329dcdfc72a5bf65b55747bbd6be1",source,Path("effect-cpu-real-output/sha-receipt.log"))
+          assert check_license(source)
+          assert (source/"Cargo.lock").is_file()
+          print("EFFECTCRAFT_CPU_SOURCE_PIN=PASS",info)
+          PY
+          mkdir -p "$root/src/crates/render/examples"
+          cp scripts/artcraft_effect_native_cpu_scene.rs "$root/src/crates/render/examples/br_native_cpu_scene.rs"
+          echo "SOURCE_PROVENANCE=ORIGINAL_EFFECTCRAFT_SHA_PLUS_EXTERNAL_BR_TEST_EXAMPLE" >> effect-cpu-real-output/sha-receipt.log
+      - name: Install Rust and native build prerequisites in disposable container image
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/effect-native-rust-image"
+          cat > "$RUNNER_TEMP/effect-native-rust-image/Dockerfile" <<'DOCKERFILE'
+          FROM rust:1.95-slim-bookworm
+          RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              pkg-config libasound2-dev libudev-dev libx11-dev libxkbcommon-dev \
+              libfontconfig1-dev libfreetype6-dev ffmpeg && rm -rf /var/lib/apt/lists/*
+          DOCKERFILE
+          docker build -t br-effect-native-cpu-rust:v1 \
+            -f "$RUNNER_TEMP/effect-native-rust-image/Dockerfile" \
+            "$RUNNER_TEMP/effect-native-rust-image"
+      - name: Resolve exact lockfile dependencies before all source execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/artcraft-effect-cpu"
+          docker run --rm --cap-drop ALL --security-opt no-new-privileges \
+            --pids-limit 256 --memory 8g --cpus 4 \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp -e CARGO_HOME=/cargo -e CARGO_TARGET_DIR=/target \
+            -v "$root/src:/src:ro" -v "$root/cargo:/cargo:rw" -v "$root/target:/target:rw" \
+            -w /src br-effect-native-cpu-rust:v1 cargo fetch --locked
+      - name: Run upstream actual compositor unit test and render CPU scene without network
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/artcraft-effect-cpu"
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --read-only --tmpfs /tmp:rw,nosuid,size=256m \
+            --pids-limit 512 --memory 8g --cpus 4 \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp -e CARGO_HOME=/cargo -e CARGO_TARGET_DIR=/target \
+            -e CARGO_PROFILE_DEV_DEBUG=0 -e CARGO_PROFILE_TEST_DEBUG=0 -e CARGO_BUILD_JOBS=4 \
+            -e CARGO_NET_OFFLINE=true \
+            -v "$root/src:/src:ro" -v "$root/cargo:/cargo:ro" -v "$root/target:/target:rw" \
+            -w /src br-effect-native-cpu-rust:v1 \
+            cargo test --offline --locked -p effectcraft-render --lib -- tests::solid_fills_comp
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --read-only --tmpfs /tmp:rw,nosuid,size=256m \
+            --pids-limit 512 --memory 8g --cpus 4 \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp -e CARGO_HOME=/cargo -e CARGO_TARGET_DIR=/target \
+            -e CARGO_PROFILE_DEV_DEBUG=0 -e CARGO_BUILD_JOBS=4 -e CARGO_NET_OFFLINE=true \
+            -v "$root/src:/src:ro" -v "$root/cargo:/cargo:ro" -v "$root/target:/target:rw" \
+            -v "$PWD/effect-cpu-real-output:/out:rw" \
+            -w /src br-effect-native-cpu-rust:v1 \
+            cargo run --offline --locked -p effectcraft-render \
+              --example br_native_cpu_scene -- /out/real-effectcraft-cpu-frame.ppm
+      - name: Inspect actual native colored pixels and independently convert with FFmpeg
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          p=Path("effect-cpu-real-output/real-effectcraft-cpu-frame.ppm")
+          assert p.is_file() and not p.is_symlink() and p.stat().st_size < 1000000
+          parts=p.read_bytes().split(b"\n",3)
+          assert parts[:3]==[b"P6",b"200 100",b"255"]
+          pixels=parts[3]
+          assert len(pixels)==200*100*3
+          colors={bytes(pixels[i:i+3]) for i in range(0,len(pixels),3)}
+          assert len(colors)>1 and b"\xff\x00\x00" in colors and b"\x00\xff\x00" in colors
+          print("EFFECTCRAFT_REAL_UPSTREAM_CPU_PIXELS=PASS",len(colors))
+          print("EFFECTCRAFT_PPM_SHA256="+hashlib.sha256(p.read_bytes()).hexdigest())
+          PY
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --read-only --user "$(id -u):$(id -g)" \
+            -v "$PWD/effect-cpu-real-output:/frames:rw" \
+            br-effect-native-cpu-rust:v1 ffmpeg -hide_banner -v error -nostdin -y \
+              -i /frames/real-effectcraft-cpu-frame.ppm -frames:v 1 \
+              /frames/real-effectcraft-cpu-frame.png
+          test -s effect-cpu-real-output/real-effectcraft-cpu-frame.png
+          sha256sum effect-cpu-real-output/real-effectcraft-cpu-frame.png
+          echo "EFFECTCRAFT_NATIVE_CPU_RENDER_AND_PNG_GATE=PASS"
+      - name: Save real EffectCraft compositor output and source receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: br-effectcraft-real-cpu-render
+          path: effect-cpu-real-output/
+          if-no-files-found: warn
+          retention-days: 30
