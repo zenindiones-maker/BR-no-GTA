@@ -18,7 +18,7 @@ class SecureBridgeContracts(unittest.TestCase):
     def test_bash_syntax_and_fixed_paths(self):
         self.assertEqual(subprocess.run(["bash","-n",str(SH)],capture_output=True).returncode,0)
         script=SH.read_text()
-        self.assertIn("~/.config/br-no-gta/telegram.env",script)
+        self.assertIn("$HOME/.config/br-no-gta/telegram.env",script)
         self.assertIn("telegram-review.env",script)
         self.assertIn("owner_voice_survey_telegram_delivery.py",script)
         self.assertIn("gh codespace ssh",script)
