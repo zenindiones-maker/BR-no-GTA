@@ -9,6 +9,10 @@ on:
       - scripts/production_25min_master_gate.py
       - tests/test_run001_25min_master_gate.py
       - tests/test_run001_master_workflow_order.py
+      - tests/test_run001_owner_voice_admission.py
+      - app/services/run001_owner_voice_admission_service.py
+      - scripts/run001_final_product_dispatch.py
+      - .run001/video-a-investigative-longform.json
       - .github/workflows/real-multi-agent-production.yml
 
 permissions:
@@ -31,6 +35,7 @@ jobs:
           python3 -m py_compile scripts/production_25min_master_gate.py tests/test_run001_25min_master_gate.py
           python3 -m unittest discover -s tests -p 'test_run001_25min_master_gate.py' -v
           python3 -m unittest discover -s tests -p 'test_run001_master_workflow_order.py' -v
+          python3 -m unittest discover -s tests -p 'test_run001_owner_voice_admission.py' -v
           echo "TWO_25_MIN_MASTERS_GATE_CONTRACT=PASS"
           echo "PRODUCTION_MASTER_RENDERED=NO"
           echo "YOUTUBE_PRIVATE_HD_UPLOADED=NO"
