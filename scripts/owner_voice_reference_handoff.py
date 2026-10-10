@@ -7,7 +7,7 @@ import subprocess
 import sys
 from typing import Any
 
-from app.database.telegram_user_input_repository import list_recent_telegram_user_inputs
+from app.database.telegram_user_input_repository import list_verified_owner_voice_inputs
 from app.services.owner_voice_telegram_handoff_service import (
     build_owner_voice_reference_index,
     handoff_dispatch_key,
@@ -18,7 +18,7 @@ from app.services.telegram_ingress_policy_service import configured_allowed_chat
 
 
 DEFAULT_REPOSITORY = "zenindiones-maker/BR-no-GTA"
-DEFAULT_LIMIT = 500
+DEFAULT_LIMIT = 100  # GitHub Actions secrets are size-bounded; never silently truncate voice.
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -68,7 +68,11 @@ def main() -> int:
     if not allowed_chat_ids:
         raise RuntimeError("OWNER_TELEGRAM_AUTHORIZED_CHAT_UNAVAILABLE")
 
-    records = list_recent_telegram_user_inputs(limit=DEFAULT_LIMIT)
+    records = list_verified_owner_voice_inputs(
+        owner_user_id=owner_user_id,
+        allowed_chat_ids=allowed_chat_ids,
+        limit=DEFAULT_LIMIT,
+    )
     index = build_owner_voice_reference_index(
         records=records,
         owner_user_id=owner_user_id,
