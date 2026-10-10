@@ -505,7 +505,10 @@ def br_capability_execute(
     # authorizations. Addy semantic skills must enter through the internal
     # persisted-authorization path, never through a caller-supplied ID that
     # causes the MCP boundary to self-mint the credential.
-    if capability_id.startswith("addy:"):
+    if capability_id.startswith("addy:") or capability_id == "reverse-engineering.evidence.inspect":
+        internal_label = (
+            "Addy" if capability_id.startswith("addy:") else "BR-native REA investigation"
+        )
         blocked = {
             "capability_id": capability_id,
             "status": "BLOCKED",
@@ -521,7 +524,7 @@ def br_capability_execute(
                 "model_turn_started": False,
             },
             "boundary": (
-                "Public MCP cannot issue Addy execution authority; "
+                f"Public MCP cannot issue {internal_label} execution authority; "
                 "no model turn started; use persisted internal Harness "
                 "authorization and routing"
             ),
