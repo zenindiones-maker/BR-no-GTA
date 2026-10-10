@@ -1,0 +1,154 @@
+name: BR ArtCraft Optimized EffectCraft Real Native Frame
+
+on:
+  push:
+    branches:
+      - work/br-artcraft-effect-cli-optimized-v1
+    paths:
+      - .github/workflows/br-artcraft-effect-real-frame.yml
+      - scripts/artcraft_validate_seven.py
+      - scripts/artcraft_single_native_effect_proof.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-artcraft-effect-optimized-real
+  cancel-in-progress: false
+
+jobs:
+  build-effect:
+    name: Compile exact pinned EffectCraft CLI with no-debug 4-core sandbox
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Checkout exact BR research candidate without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Ensure isolated Rust proof syntax
+        shell: bash
+        run: |
+          python3 -m py_compile scripts/artcraft_validate_seven.py scripts/artcraft_single_native_effect_proof.py
+      - name: Compile exact upstream EffectCraft real CLI with conservative dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/artcraft_validate_seven.py \
+            --project effectcraft \
+            --output artcraft-effect-optimized \
+            --cli-timeout 1600
+      - name: Preserve exact complete build logs and bounded binary even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: artcraft-effect-optimized-native
+          path: artcraft-effect-optimized/effectcraft/
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 1
+
+  render-effect:
+    name: Execute actual EffectCraft CLI render and independent PNG decode
+    needs: build-effect
+    if: needs.build-effect.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    steps:
+      - name: Checkout research-only source and fixture verifier
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Download exact successful EffectCraft CLI build from this run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: artcraft-effect-optimized-native
+          path: effect-native-evidence
+      - name: Check binary source SHA and hash against build receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,hashlib,hmac
+          from pathlib import Path
+          d=json.loads(Path("effect-native-evidence/result.json").read_text())
+          p=Path("effect-native-evidence/effectcraft-cli")
+          assert d["pinned_sha"]=="30aaddf7c23329dcdfc72a5bf65b55747bbd6be1"
+          assert d["source_status"]=="verified"
+          for key in ("build_status","tests_status","cli_status","cli_smoke_status"):
+              assert d.get(key)=="success",key
+          a=d["compiled_artifact"]
+          assert a["filename"]=="effectcraft-cli" and a["debug_stripped"] is True
+          assert p.is_file() and not p.is_symlink()
+          assert p.stat().st_size==a["bytes"]
+          digest=hashlib.file_digest(p.open("rb"),"sha256").hexdigest()
+          assert hmac.compare_digest(digest,a["sha256"])
+          print("EFFECTCRAFT_PINNED_BINARY_DIGEST=PASS",digest)
+          PY
+          chmod u+x effect-native-evidence/effectcraft-cli
+      - name: Prepare temporary runtime Docker without upstream code
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/effect-native-image"
+          cat > "$RUNNER_TEMP/effect-native-image/Dockerfile" <<'DOCKERFILE'
+          FROM python:3.12-slim-bookworm
+          RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              ffmpeg libasound2 libudev1 libx11-6 libxkbcommon0 libxcursor1 libxrandr2 libxi6 \
+              libgl1 libwayland-client0 libfontconfig1 libfreetype6 libdbus-1-3 \
+              libgtk-3-0 libvulkan1 && rm -rf /var/lib/apt/lists/*
+          DOCKERFILE
+          docker build -t artcraft-effect-native-sandbox:v1 \
+            -f "$RUNNER_TEMP/effect-native-image/Dockerfile" \
+            "$RUNNER_TEMP/effect-native-image"
+          mkdir -p effect-real-qa/fixtures effect-real-qa/frames
+      - name: Generate synthetic-only reference in offline runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --pids-limit 128 --memory 2g --cpus 1 \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD/scripts:/scripts:ro" -v "$PWD/effect-real-qa/fixtures:/fixtures:rw" \
+            artcraft-effect-native-sandbox:v1 \
+            python3 /scripts/artcraft_make_synthetic_interop_fixtures.py /fixtures
+      - name: Run actual EffectCraft CLI with no network and decode its native PNG
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --read-only --tmpfs /tmp:rw,nosuid,size=256m \
+            --pids-limit 256 --memory 4g --cpus 2 \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD/scripts:/scripts:ro" \
+            -v "$PWD/docs/research/artcraft-seven-pinned-sources.json:/manifest.json:ro" \
+            -v "$PWD/effect-native-evidence:/evidence:ro" \
+            -v "$PWD/effect-real-qa/fixtures:/fixtures:ro" \
+            -v "$PWD/effect-real-qa/frames:/out:rw" \
+            artcraft-effect-native-sandbox:v1 \
+            python3 /scripts/artcraft_single_native_effect_proof.py \
+              --manifest /manifest.json --fixtures /fixtures \
+              --binary /evidence/effectcraft-cli --build-receipt /evidence/result.json \
+              --output /out
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --read-only --user "$(id -u):$(id -g)" \
+            -v "$PWD/effect-real-qa/frames:/frames:ro" \
+            artcraft-effect-native-sandbox:v1 \
+            ffmpeg -hide_banner -v error -nostdin -i /frames/real-effectcraft-frame.png \
+              -frames:v 1 -f null -
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("effect-real-qa/frames/native-effectcraft-receipt.json").read_text())
+          assert d["gate"]=="PASS" and d["native_executed"] is True
+          assert d["production_approved"] is False and d["harness_authority"]=="NONE"
+          print("EFFECTCRAFT_REAL_NATIVE_PNG_FFMPEG_GATE=PASS",d["frame"])
+          PY
+      - name: Preserve actual native PNG and verifiable receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: br-effectcraft-real-render-evidence
+          path: effect-real-qa/
+          if-no-files-found: warn
+          retention-days: 30
