@@ -516,6 +516,59 @@ def update_telegram_execution_outcome(
         connection.close()
 
 
+def list_verified_owner_voice_inputs(
+    *,
+    owner_user_id: int,
+    allowed_chat_ids: set[int],
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Select verified authorized voice across ALL history, never recent chat text.
+
+    LIMIT + 1 intentionally detects overflow instead of silently dropping
+    older references from an owner identity index. No Telegram API calls.
+    """
+    if type(owner_user_id) is not int or owner_user_id <= 0:
+        raise ValueError("OWNER_VOICE_OWNER_ID_INVALID")
+    if type(limit) is not int or not 1 <= limit <= 5000:
+        raise ValueError("OWNER_VOICE_REFERENCE_LIMIT_INVALID")
+    if not allowed_chat_ids or len(allowed_chat_ids) > 100:
+        raise ValueError("OWNER_VOICE_AUTHORIZED_CHAT_SCOPE_INVALID")
+    try:
+        chats = sorted(int(chat_id) for chat_id in allowed_chat_ids)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("OWNER_VOICE_AUTHORIZED_CHAT_SCOPE_INVALID") from exc
+    if any(chat_id == 0 for chat_id in chats):
+        raise ValueError("OWNER_VOICE_AUTHORIZED_CHAT_SCOPE_INVALID")
+
+    placeholders = ",".join("?" for _ in chats)
+    connection = get_connection()
+    try:
+        _ensure_schema(connection)
+        rows = connection.execute(
+            f"""
+            SELECT * FROM telegram_user_inputs
+             WHERE telegram_user_id = ?
+               AND telegram_chat_id IN ({placeholders})
+               AND input_kind IN ('voice', 'audio')
+               AND remote_verified = 1
+               AND telegram_update_id > 0
+               AND LENGTH(COALESCE(telegram_file_id, '')) > 0
+               AND LENGTH(COALESCE(telegram_file_unique_id, '')) > 0
+             ORDER BY id ASC
+             LIMIT ?
+            """,
+            (owner_user_id, *chats, limit + 1),
+        ).fetchall()
+        if len(rows) > limit:
+            raise RuntimeError("OWNER_VOICE_REFERENCE_INDEX_TRUNCATED")
+        return [
+            record for row in rows
+            if (record := _row_to_record(row)) is not None
+        ]
+    finally:
+        connection.close()
+
+
 def list_recent_telegram_user_inputs(*, limit: int = 20) -> list[dict[str, Any]]:
     if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
         raise ValueError("limit must be a positive integer")
