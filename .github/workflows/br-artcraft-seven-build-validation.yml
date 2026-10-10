@@ -1,0 +1,73 @@
+name: BR ArtCraft Seven Isolated Rust Validations
+
+on:
+  push:
+    branches:
+      - work/br-artcraft-seven-source-study-v1
+    paths:
+      - .github/workflows/br-artcraft-seven-build-validation.yml
+      - scripts/artcraft_validate_seven.py
+      - docs/research/artcraft-seven-pinned-sources.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-artcraft-seven-validate-${{ github.ref }}
+  # A newer validated harness revision supersedes prior blocked compilation attempts.
+  cancel-in-progress: false
+
+jobs:
+  seven-isolated-builds:
+    name: Validate ${{ matrix.project }} (pinned Rust sandbox)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 43
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        project:
+          - filmcraft
+          - effectcraft
+          - photocraft
+          - vectorcraft
+          - lightcraft
+          - pdfcraft
+          - designcraft
+    steps:
+      - name: Checkout BR evidence and manifest without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - name: Verify local validator syntax and pinned inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/artcraft_validate_seven.py
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          doc=json.loads(Path('docs/research/artcraft-seven-pinned-sources.json').read_text())
+          assert doc['schema']=='BRArtCraftPinnedSourceStudy/v1'
+          assert len(doc['projects'])==7
+          print('ARTCRAFT_MANIFEST_SCHEMA=PASS')
+          PY
+      - name: Fetch and validate upstream in network-isolated Docker build/test sandbox
+        id: verify
+        shell: bash
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python3 scripts/artcraft_validate_seven.py \
+            --project "${{ matrix.project }}" \
+            --cli-timeout 1000 \
+            --core-timeout 420
+      - name: Attach per-project logs, evidence and any bounded compiled CLI
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: artcraft-validated-${{ matrix.project }}
+          path: artcraft-validation/${{ matrix.project }}/
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 1
