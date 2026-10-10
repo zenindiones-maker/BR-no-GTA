@@ -89,6 +89,14 @@ def test_first_run_ingests_changed_content(monkeypatch):
         lambda **kwargs: events.append(kwargs),
     )
 
+    # Counting-only fixture: mocked ingestion has no persisted event ID.
+    # Real event-to-claim provenance is covered by the integration tests.
+    monkeypatch.setattr(
+        gta6_monitor_run_service,
+        "_process_gta6_knowledge_brain",
+        lambda *, item, ingestion_result: {"intelligence": []},
+    )
+
     result = gta6_monitor_run_service.run_gta6_monitor_once()
 
     assert result.baseline is True
@@ -231,6 +239,14 @@ def test_changed_run_counts_duplicates(monkeypatch):
         lambda url, content_hash: saved_states.append(
             (url, content_hash)
         ),
+    )
+
+    # Counting-only fixture: mocked ingestion has no persisted event ID.
+    # Real event-to-claim provenance is covered by the integration tests.
+    monkeypatch.setattr(
+        gta6_monitor_run_service,
+        "_process_gta6_knowledge_brain",
+        lambda *, item, ingestion_result: {"intelligence": []},
     )
 
     result = gta6_monitor_run_service.run_gta6_monitor_once()
