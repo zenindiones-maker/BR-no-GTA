@@ -305,14 +305,34 @@ def load_pcm_f32(path):
     return samples
 
 
-def transcribe_pcm(model, pcm_path, **kwargs):
-    """NumPy is the supported Faster Whisper path that skips decode_audio.
+def transcribe_pcm(model, pcm_path, *, on_segment=None, **kwargs):
+    """NumPy bypasses PyAV file decode and consumes lazy ASR before PCM cleanup.
 
-    Materialize the lazy segment iterator before deleting the PCM temp file.
+    The optional callback runs INSIDE generator iteration so legitimate
+    progress can reach the Codespace terminal while inference is ongoing.
     """
     waveform = load_pcm_f32(pcm_path)
     segments, info = model.transcribe(waveform, **kwargs)
-    return list(segments), info
+    records = []
+    for segment in segments:
+        records.append(segment)
+        if on_segment is not None:
+            on_segment(segment, len(records))
+    return records, info
+
+
+def emit_segment_progress(video_id, segment_number, audio_end_ms, duration_ms):
+    """Emit metadata only; never stdout private recognized words or audio."""
+    if video_id not in VIDEOS:
+        raise ValueError("INVALID_PROGRESS_VIDEO_ID")
+    if segment_number == 1 or (segment_number > 0 and segment_number % 5 == 0):
+        progress_ms = max(0, min(int(audio_end_ms), int(duration_ms)))
+        print(
+            "ASR_PROGRESS video_id=" + video_id +
+            " segments=" + str(segment_number) +
+            " audio_ms=" + str(progress_ms) + "/" + str(duration_ms),
+            flush=True,
+        )
 
 
 def _safe_output(path):
@@ -381,6 +401,9 @@ def _process(model, media, video_id, output):
             raise ValueError("NO_DECODED_AUDIO")
         segments, info = transcribe_pcm(
             model, pcm, language="pt", vad_filter=True, word_timestamps=True,
+            on_segment=lambda segment, number: emit_segment_progress(
+                video_id, number, round(segment.end * 1000), duration
+            ),
         )
         records = []
         for s in segments:
