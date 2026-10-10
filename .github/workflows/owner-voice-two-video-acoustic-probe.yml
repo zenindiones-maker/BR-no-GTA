@@ -7,6 +7,8 @@ on:
       - 'scripts/owner_voice_two_video_acoustic_review.py'
       - 'scripts/owner_voice_survey_telegram_delivery.py'
       - 'scripts/owner_voice_survey_telegram_remote_control.py'
+      - 'scripts/owner_voice_survey_telegram_secure_bridge.sh'
+      - 'tests/test_owner_voice_survey_secure_bridge.py'
       - 'tests/test_owner_voice_survey_telegram_delivery.py'
       - 'tests/test_owner_voice_survey_telegram_remote_control.py'
       - 'tests/test_owner_voice_two_video_acoustic_review.py'
@@ -47,10 +49,12 @@ jobs:
           python3 -m py_compile scripts/owner_voice_two_video_acoustic_review.py
           python3 -m py_compile scripts/owner_voice_survey_telegram_delivery.py
           python3 -m py_compile scripts/owner_voice_survey_telegram_remote_control.py
+          bash -n scripts/owner_voice_survey_telegram_secure_bridge.sh
           python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_acoustic_probe.py' -v
           python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_acoustic_review.py' -v
           python3 -m unittest discover -s tests -p 'test_owner_voice_survey_telegram_delivery.py' -v
           python3 -m unittest discover -s tests -p 'test_owner_voice_survey_telegram_remote_control.py' -v
+          python3 -m unittest discover -s tests -p 'test_owner_voice_survey_secure_bridge.py' -v
           python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_review_remote_control.py' -v
           python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_codespace_launcher.py' -v
           python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_codespace_env.py' -v
