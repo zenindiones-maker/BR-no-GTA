@@ -62,7 +62,7 @@ def test_opus_encoder_validates_codec_and_private_workspace(tmp_path):
         w.setsampwidth(2)
         w.setframerate(16000)
         w.writeframes(b"\x00\x00"*16000)
-    output=encode_private_opus(source,private / "voice")
+    output=encode_private_opus(source,private / "voice",private_workspace=private)
     assert output.is_file() and output.stat().st_size > 0
     probe=subprocess.run(
         ["ffprobe","-v","error","-select_streams","a:0",
@@ -78,7 +78,7 @@ def test_codec_rejects_source_outside_private_workspace(tmp_path):
     private=tmp_path / "private"
     private.mkdir()
     with pytest.raises(ValueError, match="OWNER_AUDIO_OUTSIDE_PRIVATE_WORKSPACE"):
-        encode_private_opus(source,private)
+        encode_private_opus(source,private,private_workspace=private)
 
 
 class FakeStore:
