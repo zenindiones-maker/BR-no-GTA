@@ -240,14 +240,14 @@ def main() -> int:
         # to this build context, and no source build scripts run here.
         dockerfile = temp / "Dockerfile"
         dockerfile.write_text(
-            f"FROM {RUST_IMAGE}\\n"
+            f"FROM {RUST_IMAGE}\n"
             "RUN apt-get update && DEBIAN_FRONTEND=noninteractive "
             "apt-get install -y --no-install-recommends "
             "pkg-config libasound2-dev libudev-dev libx11-dev "
             "libxkbcommon-dev libxcursor-dev libxrandr-dev libxi-dev "
             "libgl1-mesa-dev libwayland-dev libfontconfig1-dev "
             "libfreetype6-dev libdbus-1-dev libgtk-3-dev libvulkan-dev "
-            "&& rm -rf /var/lib/apt/lists/*\\n",
+            "&& rm -rf /var/lib/apt/lists/*\n",
             encoding="utf-8",
         )
         build_image = run_command(
