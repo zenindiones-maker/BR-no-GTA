@@ -156,3 +156,21 @@ def source_readiness(root)->dict[str,Any]:
         "youtube_upload":"BLOCKED",
         "production_rendered":False,
     }
+
+
+def reject_rejected_editorial_package(source: Mapping[str,Any])->None:
+    """A previously human-rejected source can inform research, not production.
+
+    An owner-rejected manuscript must undergo a new substantive editorial
+    revision and independent QA, not merely a relabel from A to B.
+    """
+    if not isinstance(source,Mapping):
+        raise RecoveryBlocked("RUN001_SOURCE_OBJECT_REQUIRED")
+    rejection=source.get("human_rejection_basis") or {}
+    if not isinstance(rejection,Mapping):
+        raise RecoveryBlocked("RUN001_REJECTION_LINEAGE_INVALID")
+    if (rejection.get("script_editorial_quality")=="FAIL"
+        or source.get("human_voice_review")=="REJECTED"
+        or source.get("production_readiness")=="FAIL"
+        or source.get("full_render_authorized")=="NO"):
+        raise RecoveryBlocked("RUN001_HUMAN_REJECTED_EDITORIAL_SOURCE_FORBIDDEN")
