@@ -8,9 +8,14 @@ on:
       - work/br-owner-voice-coherent-qa-recovery-v1
     paths:
       - .run/br-owner-v1-single-human-clone.request.json
+      - .github/workflows/owner-voice-single-human-clone.yml
+      - scripts/owner_voice_single_human_clone.py
+      - scripts/owner_voice_single_clone_delivery.py
+      - tests/test_owner_voice_single_clone_workflow_v1.py
+      - config/pronunciation_lexicon.json
 
 concurrency:
-  group: br-owner-v1-single-human-clone-${{ github.sha }}
+  group: br-owner-v1-single-human-clone-ledger
   cancel-in-progress: false
 
 permissions:
@@ -53,7 +58,22 @@ jobs:
       - name: Detect explicit single-clone request
         id: request
         run: |
-          if [ -f .run/br-owner-v1-single-human-clone.request.json ]; then
+          # Source-only pushes validate contracts; they must not start synthesis.
+          # Only an explicit dispatch or a push changing the request may do so.
+          REQUEST_CHANGED=false
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            REQUEST_CHANGED=true
+          elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            if python - <<'PY'
+          import json,os,sys
+          event=json.load(open(os.environ["GITHUB_EVENT_PATH"]))
+          target=".run/br-owner-v1-single-human-clone.request.json"
+          commits=event.get("commits",[])
+          sys.exit(0 if any(target in commit.get(k,[]) for commit in commits for k in ("added","modified")) else 1)
+          PY
+            then REQUEST_CHANGED=true; fi
+          fi
+          if [ "$REQUEST_CHANGED" = true ] && [ -f .run/br-owner-v1-single-human-clone.request.json ]; then
             python - <<'PY'
           import json
           from pathlib import Path
