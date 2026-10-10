@@ -35,12 +35,25 @@ def test_send_voice_uses_ogg_opus_not_wav(monkeypatch, tmp_path):
         assert method == "sendVoice"
         assert list(files) == ["voice"]
         assert files["voice"][2] == "audio/ogg"
-        return {"message_id": 901}
+        return {"message_id": 901, "chat": {"id": -1001},
+                "voice": {"file_id": "test-only", "file_unique_id": "unique-test"}}
     monkeypatch.setattr(delivery, "_telegram_post", fake_post)
     ogg = tmp_path / "probe.ogg"
     ogg.write_bytes(b"OggS-synthetic-only")
     assert _voice_api().send_clone_audio(chat_id=-1001, clone_path=ogg, protect_content=True) == 901
     assert len(calls) == 1
+
+
+def test_sent_result_must_contain_actual_voice_receipt(monkeypatch, tmp_path):
+    import scripts.owner_voice_single_clone_delivery as delivery
+    monkeypatch.setattr(
+        delivery, "_telegram_post",
+        lambda *_a, **_kw: {"message_id": 901, "chat": {"id": -1001}},
+    )
+    ogg = tmp_path / "voice.ogg"
+    ogg.write_bytes(b"OggS-synthetic-only")
+    with pytest.raises(RuntimeError, match="SINGLE_CLONE_VOICE_RECEIPT_INVALID"):
+        _voice_api().send_clone_audio(chat_id=-1001, clone_path=ogg, protect_content=True)
 
 
 def test_wav_is_never_sent_directly(monkeypatch, tmp_path):
