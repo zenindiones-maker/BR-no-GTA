@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - work/br-owner-voice-serial-audition-v11
+      - work/br-owner-voice-coherent-qa-recovery-v1
     paths:
       - .run/br-owner-v1-single-human-clone.request.json
 
@@ -78,6 +79,7 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       BR_OWNER_AUDITION_LEDGER_REPOSITORY: zenindiones-maker/BR-no-GTA-audition-ledger
       BR_OWNER_AUDITION_AUTHORITY_REF: owner-explicit:BR_OWNER_V1_SINGLE_CLONE
+      BR_OWNER_COHERENT_ANCHOR_ONLY: "1"
       BR_OWNER_STT_MODEL: large-v3-turbo
       OMP_NUM_THREADS: "4"
       MKL_NUM_THREADS: "4"
