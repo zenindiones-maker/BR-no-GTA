@@ -44,14 +44,14 @@ def find_authorized_target(entries):
 def remote_script():
     """Pure fixed shell; never interpolate local paths, credentials or user input."""
     return r'''set -euo pipefail
-if [[ "\${CODESPACES:-}" != "true" ||
-      "\${CODESPACE_NAME:-}" != "br-v23-recovery-gxp67g5g7wphwxjw" ||
-      "\${GITHUB_REPOSITORY:-}" != "zenindiones-maker/BR-no-GTA" ]]; then
+if [[ "${CODESPACES:-}" != "true" ||
+      "${CODESPACE_NAME:-}" != "br-v23-recovery-gxp67g5g7wphwxjw" ||
+      "${GITHUB_REPOSITORY:-}" != "zenindiones-maker/BR-no-GTA" ]]; then
     echo "REMOTE_AUTHORIZATION=DENIED" >&2
     exit 3
 fi
 repo=""
-for candidate in "\${CODESPACE_VSCODE_FOLDER:-}" \
+for candidate in "${CODESPACE_VSCODE_FOLDER:-}" \
                  /workspaces/BR-no-GTA /workspaces/BR \
                  "$HOME/BR-no-GTA" "$HOME/BR" \
                  /home/codespace/BR-no-GTA /home/vscode/BR-no-GTA; do
