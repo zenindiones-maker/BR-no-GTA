@@ -7,7 +7,23 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 test "${GITHUB_ACTIONS:-}" = "true"
 test "${GITHUB_REPOSITORY:-}" = "zenindiones-maker/BR-no-GTA"
-test "${GITHUB_REF_NAME:-}" = "work/br-agent-office-upstream-high-triage-v1"
+if [[ "${GITHUB_EVENT_NAME:-}" == "pull_request" ]]; then
+  python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+payload = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
+pr = payload.get("pull_request") or {}
+head = pr.get("head") or {}
+base = pr.get("base") or {}
+assert head.get("ref") == "work/br-agent-office-upstream-high-triage-v1", "WRONG_PR_HEAD"
+assert (head.get("repo") or {}).get("full_name") == "zenindiones-maker/BR-no-GTA", "FORK_NOT_AUTHORIZED"
+assert base.get("ref") == "work/br-rea-investigation-harness-gate-v1", "WRONG_PR_BASE"
+PY
+else
+  test "${GITHUB_EVENT_NAME:-}" = "push"
+  test "${GITHUB_REF_NAME:-}" = "work/br-agent-office-upstream-high-triage-v1"
+fi
 test -d "$upstream/.git"
 python3 scripts/agent_office_preflight.py --upstream-dir "$upstream" >/dev/null
 test -z "$(git -C "$upstream" status --porcelain)"
