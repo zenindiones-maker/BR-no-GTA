@@ -41,6 +41,56 @@ class SecureBridgeContracts(unittest.TestCase):
             self.assertNotIn("TOKEN",r.stdout)
             self.assertIn("ACTION_INVALID",r.stderr)
 
+    def test_mocked_ssh_stdin_forwards_existing_termux_credentials_without_leak(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            config=root/".config/br-no-gta"
+            config.mkdir(parents=True)
+            token="123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ12345678"
+            chat="-10012345678"
+            (config/"telegram.env").write_text(
+                "export TELEGRAM_BOT_TOKEN="+token+"\n"
+            )
+            (config/"telegram-review.env").write_text(
+                "export TELEGRAM_REVIEW_CHAT_ID="+chat+"\n"
+            )
+            fake=root/"bin"
+            fake.mkdir()
+            gh=fake/"gh"
+            gh.write_text(r'''#!/usr/bin/env python3
+import os,sys
+args=sys.argv[1:]
+token="123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ12345678"
+chat="-10012345678"
+assert token not in repr(args), "SECRET_IN_PROCESS_ARGS"
+if args[0]=="api" and "/commits/" in args[1]:
+    print("a"*40)
+elif args[0]=="api" and "/user/codespaces/" in args[1]:
+    print("zenindiones-maker/BR-no-GTA Available")
+elif args[:2]==["codespace","ssh"]:
+    assert "bash -lc" in args[-1]
+    raw=sys.stdin.buffer.read()
+    if raw==b"BR_NO_GTA_EPHEMERAL_STDIN_V1\n":
+        print("SSH_STDIN_CANARY=PASS")
+    elif raw==(token+"\n"+chat+"\n"+"a"*40+"\n"+"--verify-target\n").encode():
+        print("SURVEY_TELEGRAM_DELIVERY=TARGET_VERIFIED")
+    else:
+        sys.exit(8)
+else:
+    sys.exit(9)
+''')
+            gh.chmod(0o700)
+            env=dict(os.environ,HOME=str(root),BR_OWNER_AUDITED_SHA="a"*40,
+                     PATH=str(fake)+os.pathsep+os.environ.get("PATH",""))
+            out=subprocess.run(["bash",str(SH),"--verify-target"],
+                               capture_output=True,text=True,env=env,timeout=15)
+            self.assertEqual(out.returncode,0,out.stderr)
+            self.assertIn("SSH_STDIN_CANARY=PASS",out.stdout)
+            self.assertIn("SURVEY_TELEGRAM_DELIVERY=TARGET_VERIFIED",out.stdout)
+            self.assertNotIn(token,out.stdout+out.stderr)
+            self.assertNotIn(chat,out.stdout+out.stderr)
+            self.assertFalse(any(root.rglob("telegram-delivery-v1.json")))
+
     def test_bot_chat_verified_in_read_only_mode_no_ledger_side_effect(self):
         class FakeAPI:
             def __init__(self): self.requests=[]
