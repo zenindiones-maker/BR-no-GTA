@@ -84,7 +84,11 @@ jobs:
           echo "PHONE_REVIEW_DIFF_BASE=$common"
           git diff --check "${common}..HEAD"
           test -z "$(git diff --name-only "${common}..HEAD" | grep -Ei 'job.?18' || true)"
-          ! git diff "${common}..HEAD" -- . ':!tests/test_phone_control_service.py' ':!tests/test_phone_control_mcp_boundary.py' | grep -E 'BR_PHONE_PORTAL_TOKEN[[:space:]]*=[[:space:]]*[^"'"']+'
+          if git diff "${common}..HEAD" -- . ':!tests/test_phone_control_service.py' ':!tests/test_phone_control_mcp_boundary.py' | grep -Eq 'BR_PHONE_PORTAL_TOKEN[[:space:]]*=[[:space:]]*[^[:space:]]+'; then
+            echo "PHONE_PORTAL_SECRET_DIFF=BLOCKED" >&2
+            exit 1
+          fi
+          echo "PHONE_DIFF_AND_SECRET_GUARD=PASS"
 
       - name: Canonical full application suite
         run: .venv/bin/python -m pytest -q tests/
