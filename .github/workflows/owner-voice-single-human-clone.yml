@@ -32,6 +32,13 @@ jobs:
           python-version: "3.12"
       - name: Install focused test dependencies
         run: python -m pip install --disable-pip-version-check -q pytest packaging "python-dotenv==1.2.3"
+      - name: Install synthetic-audio test tools
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ffmpeg
+          fi
       - name: Prove single-clone contracts
         run: |
           set -euo pipefail
