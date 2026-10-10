@@ -281,7 +281,7 @@ def _send_album(bundle,token,chat_id):
         raise ReviewBlocked("UNKNOWN_REMOTE_STATE_MANUAL_RECONCILIATION_REQUIRED") from None
 
 def execute(folder,mode="preflight"):
-    if mode not in ("preflight","send"):
+    if mode not in ("preflight","verify-target","send"):
         raise ReviewBlocked("INVALID_REVIEW_ACTION")
     bundle=validate_bundle(folder)
     token=os.environ.get("TELEGRAM_BOT_TOKEN","").strip()
@@ -294,6 +294,12 @@ def execute(folder,mode="preflight"):
     if not configured:
         raise ReviewBlocked("TELEGRAM_CREDENTIALS_MISSING_IN_EXISTING_CODESPACE")
     cid=int(chat)
+    if mode=="verify-target":
+        bot=telegram_call("getMe",token)
+        target=telegram_call("getChat",token,{"chat_id":chat})
+        validate_telegram_chat(bot,target,expected_id=cid)
+        return {"state":"TARGET_VERIFIED","review_clips":len(bundle["clips"]),
+                "telegram_credentials":"PRESENT","no_audio_sent":True}
     lock_path=Path(folder)/".telegram-send.lock"
     if lock_path.is_symlink():
         raise ReviewBlocked("TELEGRAM_LOCK_SYMLINK_FORBIDDEN")
@@ -316,6 +322,7 @@ def main(argv=None):
     parser=argparse.ArgumentParser()
     group=parser.add_mutually_exclusive_group()
     group.add_argument("--preflight",action="store_true")
+    group.add_argument("--verify-target",action="store_true")
     group.add_argument("--send",action="store_true")
     args=parser.parse_args(argv)
     # Identity BEFORE inspecting private media or external network.
@@ -324,7 +331,8 @@ def main(argv=None):
             and os.environ.get("GITHUB_REPOSITORY")==REPOSITORY):
         raise ReviewBlocked("AUTHORIZATION_DENIED_EXISTING_CODESPACE_ONLY")
     folder=Path.home()/".local/share/br-no-gta/owner-voice-acoustic-curation-v2"
-    result=execute(folder,mode="send" if args.send else "preflight")
+    result=execute(folder,mode="send" if args.send else
+                   "verify-target" if args.verify_target else "preflight")
     print("SURVEY_TELEGRAM_DELIVERY="+result["state"],flush=True)
     if "telegram_credentials" in result:
         print("TELEGRAM_REMOTE_CREDENTIALS="+result["telegram_credentials"],flush=True)
