@@ -160,8 +160,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", choices=sorted(PROJECTS), required=True)
     parser.add_argument("--output", default="artcraft-validation")
+    parser.add_argument("--cli-timeout", type=int, default=300,
+                        help="Bounded CLI build timeout for isolated headless study")
     args = parser.parse_args()
     project = args.project
+    if not 60 <= args.cli_timeout <= 1200:
+        parser.error("--cli-timeout outside 60..1200s")
     out = (ROOT / args.output / project).resolve()
     out.mkdir(parents=True, exist_ok=True)
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
@@ -305,7 +309,7 @@ def main() -> int:
                                 project=project, stage="cli-build", network="none")
             result = run_command(build + ["cargo", "build", "--locked", "--offline",
                                           "-p", cli], cwd=ROOT, log=out / "cli_build.log",
-                                 timeout=300)
+                                 timeout=args.cli_timeout)
             report["stages"]["cli_build"] = result
             report["cli_status"] = result["status"]
             save()
