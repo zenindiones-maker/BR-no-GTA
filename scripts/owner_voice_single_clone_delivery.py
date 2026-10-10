@@ -35,10 +35,11 @@ def _telegram_post(token:str,method:str,*,data:Mapping[str,Any],files=None)->Any
         payload={}
     if response.status_code!=200 or not isinstance(payload,dict) or payload.get("ok") is not True:
         code=payload.get("error_code") if isinstance(payload,dict) else None
-        description=" ".join(str(payload.get("description") or "unavailable").split())[:160] if isinstance(payload,dict) else "unavailable"
+        # Provider descriptions may contain chat or file identifiers.
+        # Keep only the bounded method and HTTP/code diagnostics in CI logs.
         raise RuntimeError(
             f"TELEGRAM_METHOD={method}:HTTP_STATUS={response.status_code}:"
-            f"TELEGRAM_ERROR_CODE={code}:DESCRIPTION={description}"
+            f"TELEGRAM_ERROR_CODE={code}"
         )
     return payload.get("result")
 
@@ -113,6 +114,14 @@ class TelegramSingleCloneApi:
                 },
                 files={"voice":(path.name,handle,"audio/ogg")},
             )
+        if (
+            not isinstance(result,dict)
+            or not isinstance(result.get("voice"),dict)
+            or not str(result["voice"].get("file_unique_id") or "")
+            or int(result.get("message_id") or 0)<=0
+            or int((result.get("chat") or {}).get("id") or 0)!=int(chat_id)
+        ):
+            raise RuntimeError("SINGLE_CLONE_VOICE_RECEIPT_INVALID")
         return int(result["message_id"])
 
     def send_control(self,*,chat_id:int,protect_content:bool)->int:
