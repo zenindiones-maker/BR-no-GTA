@@ -25,6 +25,7 @@ from app.services.owner_voice_human_audition_pack_service import (
     evaluate_short_candidate,
 )
 from app.services.owner_voice_human_review_delivery_policy_service import build_human_review_delivery_decision
+from app.services.owner_voice_clone_step_output_service import write_delivery_step_outputs
 from app.services.owner_voice_private_materialization_service import (
     materialize_telegram_owner_references,
     sanitize_owner_reference_index,
@@ -541,16 +542,15 @@ def main()->int:
             encoding="utf-8",
         )
         out=str(os.environ.get("GITHUB_OUTPUT") or "").strip()
-        if out:
-            with open(out,"a",encoding="utf-8") as stream:
-                stream.write(f"manifest_path={manifest_path}\n")
-                stream.write(f"clone_id={clone_id}\n")
-            stream.write(
-                "send_eligible="
-                +("true" if targeted_delivery_allowed else "false")
-                +"\n"
-            )
-            stream.write("critical_scope="+("true" if is_critical_audition else "false")+"\n")
+        if not out:
+            raise RuntimeError("OWNER_CLONE_GITHUB_OUTPUT_REQUIRED")
+        # This mode reconciles an already recorded control send only. No
+        # inference, new clone, or critical-name audio delivery may occur.
+        write_delivery_step_outputs(
+            output_path=Path(out), manifest_path=manifest_path,
+            clone_id=clone_id, send_eligible=True,
+            critical_scope=False, control_only=True,
+        )
         print("SINGLE_CLONE_CONTROL_RECONCILIATION_ONLY=TRUE")
         print("SINGLE_CLONE_CONTROL_RECONCILIATION_TARGET="+clone_id)
         return 0
@@ -1454,10 +1454,14 @@ def main()->int:
     manifest_path=workspace/"single-clone-manifest.json"
     manifest_path.write_text(json.dumps(manifest,sort_keys=True,indent=2)+"\n",encoding="utf-8")
     out=str(os.environ.get("GITHUB_OUTPUT") or "").strip()
-    if out:
-        with open(out,"a",encoding="utf-8") as stream:
-            stream.write(f"manifest_path={manifest_path}\n")
-            stream.write(f"clone_id={clone_id}\n")
+    if not out:
+        raise RuntimeError("OWNER_CLONE_GITHUB_OUTPUT_REQUIRED")
+    write_delivery_step_outputs(
+        output_path=Path(out), manifest_path=manifest_path,
+        clone_id=clone_id,
+        send_eligible=bool(manifest["audition_delivery_eligible"]),
+        critical_scope=is_critical_audition,
+    )
     print(f"OWNER_REFERENCE_COUNT={profile['reference_count']}")
     print(f"OWNER_INTRA_SPEAKER_SIMILARITY_MEDIAN={profile['intra_speaker_similarity_median']}")
     print(f"OWNER_INTRA_SPEAKER_SIMILARITY_P10={profile['intra_speaker_similarity_p10']}")
