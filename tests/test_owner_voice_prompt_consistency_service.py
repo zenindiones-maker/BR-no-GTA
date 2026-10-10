@@ -1,4 +1,4 @@
-"""Security/lineage checks for one coherent owner reference across seven lines."""
+"""Security/lineage checks for one coherent owner reference across bounded critical-name segments."""
 from pathlib import Path
 import sys
 import unittest
@@ -17,6 +17,14 @@ class OwnerCoherentReferenceContract(unittest.TestCase):
         )
         self.assertEqual(len(prompts), 7)
         self.assertTrue(all(x is anchor for x in prompts))
+
+    def test_eighteen_critical_names_share_one_owner_prompt(self):
+        anchor = object()
+        prompts = select_single_owner_prompt_for_segments(
+            anchor_prompt=anchor, segment_count=18, canonical_reference_sha256="d"*64,
+        )
+        self.assertEqual(len(prompts), 18)
+        self.assertTrue(all(prompt is anchor for prompt in prompts))
 
     def test_not_switchable_into_another_voice(self):
         anchor = object()
@@ -40,7 +48,7 @@ class OwnerCoherentReferenceContract(unittest.TestCase):
                 )
 
     def test_unbounded_or_boolean_count_rejected(self):
-        for count in (-1, 0, True, 13, "7"):
+        for count in (-1, 0, True, 65, "7"):
             with self.subTest(count=count), self.assertRaises(ValueError):
                 select_single_owner_prompt_for_segments(
                     anchor_prompt=object(), segment_count=count, canonical_reference_sha256="a"*64,
