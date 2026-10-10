@@ -50,6 +50,16 @@ bash scripts/br_rea_investigation_acceptance.sh
 
 The command checks environment/repo and runs actual read-only source tests, Owner Voice reference policy regressions, full tracked-source static inventory, and the real internal Harness E2E. A failed prerequisite must block without fallback. Do not execute it on A15 or in unrelated projects.
 
-## 5. Not a publication or promotion authorization
+## 5. Adjacent CI failure triage (not hidden)
+
+Additional CI workflows automatically triggered by updates on this isolated branch; these are not covered by the successful bounded investigator E2E:
+
+- **Agent Office Validation**, run [38078582785](https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/38078582785), FAILED at `UPSTREAM_AUDIT_ALLOWLIST_DRIFT_REVIEW_REQUIRED` in the *independent pinned Munder upstream security audit*. It did not reach the full Agent Office runtime tests. This is a **HIGH/OPEN** independent-review/supply-chain issue, not a reason to amend a vulnerability allowlist or disable the gate.
+- **Phone Control Harness Validation**, run [38078582802](https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/38078582802), reported **139 Python tests PASS** and then FAILED at `git diff --check BASE_SHA..HEAD` on trailing spaces in historical `docs/architecture/br-specialist-intelligence-v17.md`. The workflow compares from base `5412ed0b63a3ea577734e00b78a7f9c6dabd65f5`; this broad historical diff is not evidence that the new REA investigator or the phone runtime malfunctioned. **OPEN** — reconcile the correct diff boundary in that separately governed workflow; do not bypass its secret checks or rewrite historical files without review.
+- **Public MCP transport**, initial attempts failed during module import due missing declared Python dependencies (`bs4`, then `google`) on a minimal CI runner. A follow-up uses the repository's own `requirements.txt` with security transitive constraints; no result is asserted until its exact run finishes. The already-proven *internal* routed Harness E2E remains valid.
+
+None of these failures has been marked FIXED or quietly retried. If a later independent run validates a specific fix, record exact run+SHA.
+
+## 6. Not a publication or promotion authorization
 
 This does not authorize merging `main`, restoring old REA architecture, ARTEX execution, Owner Voice audio synthesis or approval, Telegram changes, public or private YouTube uploads, paid inference, or creating/deleting Codespaces. Human/independent review requirements remain intact.
