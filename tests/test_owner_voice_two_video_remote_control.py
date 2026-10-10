@@ -24,10 +24,12 @@ class RemoteControlContracts(unittest.TestCase):
                                           "state": "Available"}])
 
     def test_inactive_codespace_fails_closed_instead_of_auto_starting(self):
-        with self.assertRaisesRegex(ctrl.ControlBlocked, "NOT_RUNNING"):
+        with self.assertRaisesRegex(ctrl.ControlBlocked, "RESUME_EXISTING_MANUALLY") as failure:
             ctrl.find_authorized_target([{"name": ctrl.CODESPACE,
                                           "repository": ctrl.REPO,
                                           "state": "Shutdown"}])
+        self.assertIn("https://github.com/codespaces", str(failure.exception))
+        self.assertIn("CHECK_FREE_QUOTA", str(failure.exception))
 
     def test_not_found_does_not_create_a_codespace(self):
         with self.assertRaisesRegex(ctrl.ControlBlocked, "TARGET"):
