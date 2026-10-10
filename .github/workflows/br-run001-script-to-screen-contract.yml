@@ -1,0 +1,22 @@
+name: RUN001 Script to Screen Contract
+on:
+  push:
+    branches:
+      - work/run001-script-to-screen-contract-v1
+  pull_request:
+    paths:
+      - 'app/services/run001_script_to_screen_contract.py'
+      - 'tests/test_run001_script_to_screen_contract.py'
+      - '.github/workflows/br-run001-script-to-screen-contract.yml'
+permissions:
+  contents: read
+jobs:
+  coverage-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run script-to-screen regression tests
+        run: python -m unittest discover -s tests -p 'test_run001_script_to_screen_contract.py' -v
