@@ -134,6 +134,12 @@ def _git_tree_oid(directory: Path) -> str:
                     raise Blocked("unexpected executable source file")
                 mode = b"100755" if relative in SOURCE_EXECUTABLES else b"100644"
                 raw = path.read_bytes()
+                # Pinned upstream .gitattributes sets '*.bat text eol=crlf'.
+                # 'git archive' exports CRLF while the committed Git blob
+                # is LF-normalized. Reverse that single declared conversion
+                # before comparing the reconstructed tree to the pinned SHA.
+                if relative.endswith(".bat"):
+                    raw = raw.replace(b"\r\n", b"\n")
                 header = b"blob " + str(len(raw)).encode("ascii") + b"\x00"
                 oid = hashlib.sha1(header + raw).digest()
                 order_key = name
