@@ -115,9 +115,42 @@ def select_base_python():
     raise EnvironmentBlocked("NO_SUPPORTED_CODESPACE_PYTHON_3_11_TO_3_13")
 
 
+def classify_venv_failure(stderr):
+    """Reduce native Python creation errors to actionable, nonsecret codes."""
+    msg = (stderr or "").lower()
+    if "ensurepip is not available" in msg or "no module named ensurepip" in msg:
+        return "ENSUREPIP_UNAVAILABLE"
+    if "no module named venv" in msg:
+        return "VENV_MODULE_MISSING"
+    if "permission denied" in msg or "operation not permitted" in msg:
+        return "PERMISSION_DENIED"
+    if "no space left" in msg or "disk quota exceeded" in msg:
+        return "NO_SPACE_LEFT"
+    return "UNCLASSIFIED_VENV_ERROR"
+
+
+def _pip_works(python):
+    try:
+        check = subprocess.run(
+            [str(python), "-m", "pip", "--version"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=20, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return check.returncode == 0
+
+
 def bootstrap_private_venv(root):
-    """One wheel-only install to private venv; no repo changes or global pip."""
+    """Repair incomplete Ubuntu venv without deleting files or touching system Python.
+
+    On Debian/Ubuntu, python -m venv may create bin/python but fail while
+    invoking ensurepip. Resume its private state with --without-pip, then
+    install wheels via existing uv or pip's documented --python option.
+    Never build from source, install globally, or download a new Python.
+    """
     base = select_base_python()
+    root = Path(root)
     root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(root.parent, 0o700)
     if shutil.disk_usage(root.parent).free < 1024 * 1024 * 1024:
@@ -125,31 +158,81 @@ def bootstrap_private_venv(root):
     executable = root / "bin/python"
     if not executable.is_file():
         try:
-            result = subprocess.run(
+            creation = subprocess.run(
                 [base, "-m", "venv", str(root)],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120,
                 text=True, check=False,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
-            raise EnvironmentBlocked("PRIVATE_VENV_CREATION_FAILED") from exc
-        if result.returncode:
-            raise EnvironmentBlocked("PRIVATE_VENV_CREATION_FAILED")
-    print("PRIVATE_CODESPACE_ASR_BOOTSTRAP=START", flush=True)
-    args = [
-        str(executable), "-m", "pip", "install",
-        "--disable-pip-version-check", "--no-input",
-        "--only-binary=:all:", *PINNED_DEPENDENCIES,
-    ]
+            raise EnvironmentBlocked("PRIVATE_VENV_CREATION_INTERRUPTED") from exc
+        if creation.returncode:
+            reason = classify_venv_failure(creation.stderr)
+            print("PRIVATE_VENV_DIAGNOSIS=" + reason, flush=True)
+            if reason != "ENSUREPIP_UNAVAILABLE":
+                raise EnvironmentBlocked("PRIVATE_VENV_CREATION_FAILED_" + reason)
+            # Debian/Ubuntu venv may be partially created. This modifies only
+            # the dedicated private .asr-venv; never deletes prior checkpoints.
+            try:
+                recovery = subprocess.run(
+                    [base, "-m", "venv", "--without-pip", str(root)],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120,
+                    text=True, check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                raise EnvironmentBlocked("PRIVATE_VENV_NO_PIP_RECOVERY_INTERRUPTED") from exc
+            if recovery.returncode:
+                raise EnvironmentBlocked(
+                    "PRIVATE_VENV_NO_PIP_RECOVERY_FAILED_" +
+                    classify_venv_failure(recovery.stderr)
+                )
+    if not executable.is_file():
+        raise EnvironmentBlocked("PRIVATE_VENV_PYTHON_MISSING")
+
+    if _pip_works(executable):
+        method = "VENV_PIP"
+        args = [
+            str(executable), "-m", "pip", "install",
+            "--disable-pip-version-check", "--no-input",
+            "--only-binary=:all:", *PINNED_DEPENDENCIES,
+        ]
+    else:
+        uv = shutil.which("uv")
+        if uv:
+            method = "EXISTING_UV"
+            args = [
+                uv, "pip", "install", "--python", str(executable),
+                "--no-progress", "--no-python-downloads",
+                "--only-binary", ":all:", *PINNED_DEPENDENCIES,
+            ]
+        else:
+            # pip >=22.3 can install into venvs created --without-pip.
+            drivers = list(dict.fromkeys([base, sys.executable]))
+            driver = next((p for p in drivers if _pip_works(p)), None)
+            if driver is None:
+                raise EnvironmentBlocked(
+                    "PRIVATE_VENV_NO_PIP_OR_UV: python3-venv/ensurepip "
+                    "or an existing uv/pip bootstrap is required on the Codespace"
+                )
+            method = "HOST_PIP_PYTHON"
+            args = [
+                str(driver), "-m", "pip", "--python", str(root), "install",
+                "--disable-pip-version-check", "--no-input",
+                "--only-binary=:all:", *PINNED_DEPENDENCIES,
+            ]
+    print("PRIVATE_CODESPACE_ASR_INSTALL_METHOD=" + method, flush=True)
     try:
         installed = subprocess.run(
             args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, timeout=900, check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise EnvironmentBlocked("BINARY_WHEEL_INSTALL_FAILED_OR_TIMED_OUT") from exc
+        raise EnvironmentBlocked("BINARY_WHEEL_INSTALL_INTERRUPTED") from exc
     if installed.returncode:
-        # Avoid echoing pip text which can contain auth indexes/credentials.
-        raise EnvironmentBlocked("BINARY_WHEEL_INSTALL_FAILED_CHECK_WHEELS_OR_NETWORK")
+        # Never echo pip/uv stderr, indexes, tokens or private remote paths.
+        raise EnvironmentBlocked(
+            "BINARY_WHEEL_INSTALL_FAILED_" + method +
+            "_CHECK_NETWORK_AND_AVAILABLE_WHEELS"
+        )
     checked = probe_python(str(executable))
     if checked["status"] != "PASS":
         raise EnvironmentBlocked(
@@ -157,7 +240,6 @@ def bootstrap_private_venv(root):
         )
     print("PRIVATE_CODESPACE_ASR_BOOTSTRAP=PASS", flush=True)
     return str(executable)
-
 
 def ensure_python(root, env):
     """Reuse environment, then explicitly prepare one private venv if needed."""
