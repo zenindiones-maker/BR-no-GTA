@@ -466,7 +466,7 @@ jobs:
       - name: Run bounded parallel-task canary
         run: |
           python scripts/agent_office_canary.py \
-            --branch "${GITHUB_REF_NAME}" \
+            --branch "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" \
             --base-sha "${GITHUB_SHA}" \
             --output agent-office-evidence/canary.json
           test -z "$(git status --porcelain --untracked-files=no)"
@@ -474,7 +474,7 @@ jobs:
       - name: Prove Addy 24 Agent Office swarm routing and isolation
         run: |
           python scripts/agent_office_addy_24_canary.py \
-            --branch "${GITHUB_REF_NAME}" \
+            --branch "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" \
             --base-sha "${GITHUB_SHA}" \
             --output agent-office-evidence/addy-24-swarm.json
           test -z "$(git status --porcelain --untracked-files=no)"
