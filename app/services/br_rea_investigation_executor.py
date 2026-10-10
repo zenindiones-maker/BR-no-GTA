@@ -19,6 +19,9 @@ from app.database.harness_authorization_repository import (
     consume_active_harness_authorization,
 )
 from app.services.harness_authorization_service import validate_harness_authorization
+from app.services.br_rea_issuer_attestation_service import (
+    verify_trusted_issuer_attestation,
+)
 
 
 CAPABILITY_ID = "reverse-engineering.evidence.inspect"
@@ -44,12 +47,13 @@ class InvestigationRequest:
     harness_decision_id: str
     execution_id: str
     paths: tuple[str, ...]
+    issuer_attestation: dict[str, Any]
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "InvestigationRequest":
         if not isinstance(payload, dict):
             raise InvestigationBlocked("Typed investigation payload required")
-        if set(payload) != {"authorization_id", "harness_decision_id", "execution_id", "paths"}:
+        if set(payload) != {"authorization_id", "harness_decision_id", "execution_id", "paths", "issuer_attestation"}:
             raise InvestigationBlocked("Unexpected investigation payload fields")
         ids = (payload.get("authorization_id"), payload.get("harness_decision_id"), payload.get("execution_id"))
         if any(not isinstance(value, str) or not value or len(value) > 128 for value in ids):
@@ -61,7 +65,10 @@ class InvestigationRequest:
             raise InvestigationBlocked("Paths must be nonempty strings")
         if len(set(paths)) != len(paths):
             raise InvestigationBlocked("Duplicate paths denied")
-        return cls(*ids, tuple(paths))
+        proof = payload["issuer_attestation"]
+        if not isinstance(proof, dict):
+            raise InvestigationBlocked("Signed independent issuer proof required")
+        return cls(*ids, tuple(paths), proof)
 
 
 @dataclass(frozen=True)
@@ -200,6 +207,11 @@ def execute_br_rea_investigation(capability: Any, payload: dict[str, Any]) -> di
     )
     if authorized.harness_decision_id != request.harness_decision_id:
         raise InvestigationBlocked("Harness decision lineage mismatch")
+    verify_trusted_issuer_attestation(
+        authorized,
+        request.paths,
+        request.issuer_attestation,
+    )
     # Single-use transition is atomic in SQLite and precedes every filesystem read.
     if not consume_active_harness_authorization(request.authorization_id):
         raise InvestigationBlocked("Harness authorization already used")
