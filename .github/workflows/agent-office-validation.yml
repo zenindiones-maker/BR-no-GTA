@@ -309,7 +309,7 @@ jobs:
               }
               root.mkdir(parents=True, exist_ok=True)
               (root / "upstream-audit-triage.json").write_text(
-                  json.dumps(payload, sort_keys=True, indent=2) + "\\n",
+                  json.dumps(payload, sort_keys=True, indent=2) + "\n",
                   encoding="utf-8",
               )
               print("UPSTREAM_AUDIT_TRIAGE=" + payload["status"])
