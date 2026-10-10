@@ -654,3 +654,21 @@ def test_qwen_generation_emits_periodic_heartbeat_without_changing_audio_contrac
     assert "segment_texts=segment_texts" in generation
     assert "segment_languages=segment_languages" in generation
     assert "segment_prompts=segment_prompts" in generation
+
+
+def test_delivery_eligibility_receipt_uses_exact_manifest_decision():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert 'audition_delivery_eligible=(' in source
+    assert 'bool(review_decision["audition_delivery_eligible"])' in source
+    assert 'and targeted_delivery_allowed' in source
+    assert '"PASS" if audition_delivery_eligible else "BLOCKED_QUALITY_GATES"' in source
+    assert '"audition_delivery_eligible":audition_delivery_eligible' in source
+    assert '"PASS" if targeted_delivery_allowed else "BLOCKED_QUALITY_GATES"' not in source
+
+
+def test_source_only_changes_cannot_request_new_owner_clone():
+    workflow=WORKFLOW.read_text(encoding="utf-8")
+    assert 'REQUEST_CHANGED=false' in workflow
+    assert 'if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then' in workflow
+    assert 'target=".run/br-owner-v1-single-human-clone.request.json"' in workflow
+    assert 'if [ "$REQUEST_CHANGED" = true ]' in workflow
