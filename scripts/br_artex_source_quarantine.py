@@ -134,15 +134,15 @@ def _git_tree_oid(directory: Path) -> str:
                     raise Blocked("unexpected executable source file")
                 mode = b"100755" if relative in SOURCE_EXECUTABLES else b"100644"
                 raw = path.read_bytes()
-                header = b"blob " + str(len(raw)).encode("ascii") + b"\\x00"
+                header = b"blob " + str(len(raw)).encode("ascii") + b"\x00"
                 oid = hashlib.sha1(header + raw).digest()
                 order_key = name
             else:
                 raise Blocked("unsupported file type in staged source")
-            entries.append((order_key, mode + b" " + name + b"\\x00" + oid))
+            entries.append((order_key, mode + b" " + name + b"\x00" + oid))
         entries.sort(key=lambda entry: entry[0])
         raw_tree = b"".join(entry[1] for entry in entries)
-        header = b"tree " + str(len(raw_tree)).encode("ascii") + b"\\x00"
+        header = b"tree " + str(len(raw_tree)).encode("ascii") + b"\x00"
         return hashlib.sha1(header + raw_tree).digest()
 
     return walk(directory).hex()
