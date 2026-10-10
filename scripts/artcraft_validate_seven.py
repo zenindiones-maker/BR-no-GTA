@@ -84,10 +84,12 @@ def docker_args(*, src: Path, cargo: Path, target: Path, project: str,
         "docker", "run", "--rm", "--name", f"artcraft-{project}-{stage}-{os.getpid()}",
         "--network", network, "--user", f"{uid}:{gid}",
         "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-        "--pids-limit", "256", "--memory", "5g", "--cpus", "2",
+        "--pids-limit", "512", "--memory", "8g", "--cpus", "4",
         "--read-only", "--tmpfs", "/tmp:rw,nosuid,size=512m",
         "-e", "HOME=/tmp", "-e", "CARGO_HOME=/cargo",
         "-e", "CARGO_TARGET_DIR=/target", "-e", "CARGO_INCREMENTAL=0",
+        "-e", "CARGO_PROFILE_DEV_DEBUG=0", "-e", "CARGO_PROFILE_TEST_DEBUG=0",
+        "-e", "CARGO_BUILD_JOBS=4",
         "-e", "RUST_BACKTRACE=1",
         "-v", f"{src}:/src:ro",
         "-v", f"{cargo}:/cargo:{'rw' if stage == 'fetch' else 'ro'}",
@@ -166,8 +168,8 @@ def main() -> int:
                         help="Bounded individual core crate test timeout")
     args = parser.parse_args()
     project = args.project
-    if not 60 <= args.cli_timeout <= 1200:
-        parser.error("--cli-timeout outside 60..1200s")
+    if not 60 <= args.cli_timeout <= 1700:
+        parser.error("--cli-timeout outside 60..1700s")
     if not 60 <= args.core_timeout <= 600:
         parser.error("--core-timeout outside 60..600s")
     out = (ROOT / args.output / project).resolve()
@@ -349,7 +351,7 @@ def main() -> int:
                 save()
                 # FilmCraft parser treats --help as an option and expects the
                 # positional "help" subcommand; EffectCraft supports --help.
-                help_arg = "help" if project == "filmcraft" else "--help"
+                help_arg = "help" if project == "filmcraft" else "info"
                 probe = docker_args(src=src, cargo=cargo, target=target,
                                     project=project, stage="cli-smoke", network="none")
                 result = run_command(probe + [f"/target/debug/{cli}", help_arg],
