@@ -64,7 +64,10 @@ class OwnerCoherentReferenceContract(unittest.TestCase):
 
 from tempfile import TemporaryDirectory
 
-from app.services.owner_voice_clone_step_output_service import write_delivery_step_outputs
+from app.services.owner_voice_clone_step_output_service import (
+    write_delivery_step_outputs,
+    reject_critical_scope_for_standard_delivery,
+)
 
 
 class OwnerGitHubDeliveryOutputContract(unittest.TestCase):
@@ -136,6 +139,36 @@ class OwnerGitHubDeliveryOutputContract(unittest.TestCase):
                 with self.subTest(bad=bad), self.assertRaises((ValueError, RuntimeError)):
                     write_delivery_step_outputs(**data)
                 self.assertEqual(output.read_text(), "existing=receipt\\n")
+
+
+class OwnerDeliveryScopeIsolationContract(unittest.TestCase):
+    def test_critical_scope_rejected_by_standard_delivery_before_side_effect(self):
+        with self.assertRaisesRegex(ValueError, "PROTECTED_DELIVERY_REQUIRED"):
+            reject_critical_scope_for_standard_delivery({
+                "schema_version":"OwnerVoiceSingleCloneCandidate/v1",
+                "pronunciation_scope":"OWNER_GTA6_CRITICAL_NAMES_ONLY_V1",
+                "clone_identity_gate":"PASS",
+                "content_audio_prescreen":"PASS",
+                "audition_delivery_eligible":True,
+            })
+
+    def test_control_only_and_ordinary_clones_keep_standard_delivery(self):
+        reject_critical_scope_for_standard_delivery({
+            "schema_version":"OwnerVoiceSingleCloneControlReconciliation/v1",
+            "control_only":True,
+        })
+        reject_critical_scope_for_standard_delivery({
+            "schema_version":"OwnerVoiceSingleCloneCandidate/v1",
+            "pronunciation_scope":"LEGACY",
+        })
+
+    def test_delivery_script_applies_scope_guard_before_ledger_network_operations(self):
+        source=Path("scripts/owner_voice_single_clone_delivery.py").read_text(encoding="utf-8")
+        main=source.split("def main()->int:",1)[1]
+        assert "reject_critical_scope_for_standard_delivery(manifest)" in main
+        assert main.index("reject_critical_scope_for_standard_delivery(manifest)") < main.index(
+            "store=store_from_environment("
+        )
 
 
 if __name__ == "__main__":
