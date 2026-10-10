@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import json
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from app.services.owner_voice_telegram_handoff_service import (
     build_owner_voice_reference_index,
@@ -12,22 +11,13 @@ class OwnerVoicePendingTelegramRecoveryError(RuntimeError):
     pass
 
 
-def _message_media(message: Mapping[str, Any]) -> tuple[str, Mapping[str, Any]] | None:
-    voice=message.get("voice")
-    if isinstance(voice, Mapping):
-        return "voice", voice
-    audio=message.get("audio")
-    if isinstance(audio, Mapping):
-        return "audio", audio
-    return None
-
-
 def recover_pending_owner_voice_references(
     *,
     telegram_bot_token: str,
     reference_index: Mapping[str, Any],
     after_message_id: int,
     api_call: Callable[[str, str, dict[str, Any]], Any] | None = None,
+    verified_ingress_records: Iterable[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     token=str(telegram_bot_token or "").strip()
     if not token:
@@ -57,24 +47,16 @@ def recover_pending_owner_voice_references(
         )
     owner_user_id=next(iter(owner_ids))
 
-    if api_call is None:
-        from app.services.telegram_brand_asset_materializer import (
-            _telegram_api_call as telegram_api_call,
-        )
-        api_call=telegram_api_call
-
-    updates=api_call(
-        token,
-        "getUpdates",
-        {
-            "limit":100,
-            "timeout":0,
-            "allowed_updates":json.dumps(["message"],separators=(",",":")),
-        },
-    )
-    if not isinstance(updates,list):
+    # The owning gateway/webhook MUST ingest and remotely verify records first.
+    # Recovery does not own the Telegram update queue: no polling, webhook
+    # mutation, offset advancement or external side effect is permitted.
+    if api_call is not None:
         raise OwnerVoicePendingTelegramRecoveryError(
-            "OWNER_PENDING_RECOVERY_RESPONSE_INVALID"
+            "DIRECT_GETUPDATES_RECOVERY_FORBIDDEN"
+        )
+    if verified_ingress_records is None:
+        raise OwnerVoicePendingTelegramRecoveryError(
+            "VERIFIED_INGRESS_REQUIRED"
         )
 
     known={
@@ -87,48 +69,42 @@ def recover_pending_owner_voice_references(
         if isinstance(row, Mapping)
     }
     recovered_records=[]
-    for update in updates:
-        if not isinstance(update,Mapping):
+    for row in verified_ingress_records:
+        if not isinstance(row, Mapping) or row.get("remote_verified") is not True:
             continue
-        message=update.get("message")
-        if not isinstance(message,Mapping):
+        try:
+            user_id=int(row.get("telegram_user_id") or 0)
+            chat_id=int(row.get("telegram_chat_id") or 0)
+            message_id=int(row.get("telegram_message_id") or 0)
+            update_id=int(row.get("telegram_update_id") or 0)
+            input_id=int(row.get("id") or 0)
+        except (ValueError, TypeError):
             continue
-        sender=message.get("from")
-        chat=message.get("chat")
-        if not isinstance(sender,Mapping) or not isinstance(chat,Mapping):
+        kind=str(row.get("input_kind") or "").lower().strip()
+        file_id=str(row.get("telegram_file_id") or "").strip()
+        unique_id=str(row.get("telegram_file_unique_id") or "").strip()
+        if user_id!=owner_user_id or chat_id not in chat_ids:
             continue
-        telegram_user_id=int(sender.get("id") or 0)
-        telegram_chat_id=int(chat.get("id") or 0)
-        message_id=int(message.get("message_id") or 0)
-        update_id=int(update.get("update_id") or 0)
-        if telegram_user_id!=owner_user_id or telegram_chat_id not in chat_ids:
+        if message_id<=cutoff or not update_id or not input_id:
             continue
-        if message_id<=cutoff or update_id<=0:
+        if kind not in {"voice", "audio"} or not file_id or not unique_id:
             continue
-        selected=_message_media(message)
-        if selected is None:
-            continue
-        media_kind,media=selected
-        file_id=str(media.get("file_id") or "").strip()
-        unique_id=str(media.get("file_unique_id") or "").strip()
-        if not file_id or not unique_id:
-            continue
-        identity=(telegram_chat_id,message_id,unique_id)
+        identity=(chat_id,message_id,unique_id)
         if identity in known:
             continue
         known.add(identity)
         recovered_records.append({
-            "id":-update_id,
-            "telegram_user_id":telegram_user_id,
-            "telegram_chat_id":telegram_chat_id,
+            "id":input_id,
+            "telegram_user_id":user_id,
+            "telegram_chat_id":chat_id,
             "telegram_message_id":message_id,
             "telegram_update_id":update_id,
-            "input_kind":media_kind,
+            "input_kind":kind,
             "telegram_file_id":file_id,
             "telegram_file_unique_id":unique_id,
-            "duration_seconds":media.get("duration"),
-            "mime_type":str(media.get("mime_type") or "").strip() or None,
-            "file_size":media.get("file_size"),
+            "duration_seconds":row.get("duration_seconds"),
+            "mime_type":str(row.get("mime_type") or "").strip() or None,
+            "file_size":row.get("file_size"),
             "remote_verified":True,
         })
 
