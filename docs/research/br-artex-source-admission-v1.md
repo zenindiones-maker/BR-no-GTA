@@ -11,6 +11,19 @@
 - **Hardening:** prior receipt-only verification could be forged by replacing both the file and its local receipt. On development commit `54346feaf00a9989721bd9f7c00c5f12a83072d4`, verification recomputes a Git tree object ID from file bytes, with upstream executable mode reconstruction, and compares it to the immutable tree constant. Old quarantines are preserved. New tests cover forged receipts, extra files, executable files, synthetic `git write-tree` equivalence, and unauthorized environments.
 - CI run [38075177116](https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/38075177116): 10 tests PASS + unauthorized-runner denial PASS. This is NOT an ARTEX runtime E2E or a complete third-party security audit.
 
+## Archive-equivalence correction (10 October 2026)
+
+The existing source snapshot passed the initial receipt-only verifier in the owner's Codespace but the upgraded verifier at `30827beae3c8029a28d373c2cba8eca744ffb121` returned `source tree differs from pinned upstream Git tree`. This was an **archive-normalization false positive**, not proof of modified source:
+
+- The upstream `.gitattributes` at pinned commit specifies `*.bat text eol=crlf`. Git's `archive` writes CRLF in `start.bat` whereas its Git blob is LF-normalized.
+- The original upgraded verifier attempted to hash archived bytes as raw Git blobs without reversing this declared transformation.
+- The corrected `_git_tree_oid` reverses only the pinned `*.bat` end-of-line conversion before computing the Git blob/tree IDs. It retains byte-for-byte manifest verification and refuses unrelated modifications.
+- The synthetic regression test proves `git archive` conversion, tree equivalence and detection of modified batch-file content.
+- **Independent live check:** [GitHub Actions 38077293643](https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/38077293643) fetched the **actual pinned upstream commit**, extracted the real Git archive without running any ARTEX code, and independently reported `ARTEX_PINNED_ARCHIVE_REAL_TREE=PASS`; 11 synthetic/adversarial tests PASS and unauthorized-runner admission DENIED.
+- **Not yet proved:** the owner's previously staged Codespace directory has not been rechecked with the corrected verifier. Preserve it; never delete or restage on mismatch.
+
+This fixes the false positive in research source verification, **not** ARTEX's supply-chain authenticity, operational safety, runtime functionality or Harness integration.
+
 ## Source-level findings / gap map
 
 | ID | Severity | Finding and code evidence | Status |
@@ -22,7 +35,7 @@
 | ARTEX-005 | HIGH | `agent/planner.go` creates an independent intent producer, and `agent/worker.go` executes work with real tools. BR-no-GTA requires its own DeepSeek Harness to remain the single authority. | OPEN; only read-only research patterns may transfer |
 | ARTEX-006 | MEDIUM | `README.md` and `LICENSE` specify AGPL-3.0; README also states restrictions for non-offensive local research. License compatibility/other author statements require review before copying or linking source. | OPEN |
 | ARTEX-007 | MEDIUM | `go.mod` uses `github.com/Autumn-27/norma v0.4.3` and multiple network/proxy dependencies; no independent dependency review, Go build, or package SBOM performed. | OPEN |
-| ARTEX-008 | MEDIUM | Source integrity prior to hardening depended on a co-located editable receipt. The hash-tree fix and adversarial unit tests passed in CI, but the upgraded verifier has not yet been executed on the user's existing staged ARTEX tree. | CODE FIXED; remote re-verification PENDING |
+| ARTEX-008 | MEDIUM | Source integrity and CRLF-export mismatch identified; corrected verifier checks pinned Git tree, backed by live upstream-archive CI PASS. Previously staged Codespace snapshot still awaits remote re-verification. | CODE FIXED; remote re-verification PENDING |
 
 ## Admission decision
 
