@@ -1,0 +1,47 @@
+name: RUN001 Script to Screen Contract
+on:
+  push:
+    branches:
+      - work/run001-script-to-screen-contract-v1
+  pull_request:
+    paths:
+      - 'app/services/run001_script_to_screen_contract.py'
+      - 'tests/test_run001_script_to_screen_contract.py'
+      - 'tests/test_run001_dispatch_screen_gate.py'
+      - 'tests/test_run001_script_to_screen_edl.py'
+      - 'app/services/run001_script_to_screen_edl.py'
+      - 'scripts/run001_script_to_screen_pilot.py'
+      - 'tests/test_run001_script_to_screen_pilot.py'
+      - 'app/services/run001_script_to_screen_frame_evidence.py'
+      - 'tests/test_run001_script_to_screen_frame_evidence.py'
+      - 'app/services/run001_script_to_screen_editorial_review.py'
+      - 'tests/test_run001_script_to_screen_editorial_review.py'
+      - 'app/services/run001_editorial_candidate_selection.py'
+      - 'tests/test_run001_editorial_candidate_selection.py'
+      - 'scripts/run001_chapter_pilot_execution.py'
+      - 'tests/test_run001_chapter_pilot_execution.py'
+      - 'scripts/run001_chapter_input_diagnostic.py'
+      - 'tests/test_run001_chapter_input_diagnostic.py'
+      - 'scripts/run001_final_product_dispatch.py'
+      - '.github/workflows/br-run001-script-to-screen-contract.yml'
+permissions:
+  contents: read
+jobs:
+  coverage-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run script-to-screen regression tests
+        run: |
+          python -m unittest discover -s tests -p 'test_run001_script_to_screen_contract.py' -v
+          python -m unittest discover -s tests -p 'test_run001_dispatch_screen_gate.py' -v
+          python -m unittest discover -s tests -p 'test_run001_script_to_screen_edl.py' -v
+          python -m unittest discover -s tests -p 'test_run001_script_to_screen_pilot.py' -v
+          python -m unittest discover -s tests -p 'test_run001_script_to_screen_frame_evidence.py' -v
+          python -m unittest discover -s tests -p 'test_run001_script_to_screen_editorial_review.py' -v
+          python -m unittest discover -s tests -p 'test_run001_editorial_candidate_selection.py' -v
+          python -m unittest discover -s tests -p 'test_run001_chapter_pilot_execution.py' -v
+          python -m unittest discover -s tests -p 'test_run001_chapter_input_diagnostic.py' -v
