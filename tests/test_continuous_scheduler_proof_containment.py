@@ -33,6 +33,8 @@ def test_dispatch_reconciliation_failure_never_becomes_zero_runs():
     assert "DUPLICATE_RECONCILIATION_UNAVAILABLE_BLOCKED" in data
     assert "DUPLICATE_RECONCILIATION_WINDOW_TRUNCATED_BLOCKED" in data
     assert "jq --arg title" in data
+    assert '--created ">=$since"' in data
+    assert "--limit 1000" in data
     assert "2>/dev/null || echo 0" not in data
     assert "if: steps.duplicate.outputs.duplicate != 'true'" in data
 
