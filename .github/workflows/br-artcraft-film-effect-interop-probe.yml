@@ -7,6 +7,8 @@ on:
     paths:
       - .github/workflows/br-artcraft-film-effect-interop-probe.yml
       - scripts/artcraft_film_effect_interop.py
+      - scripts/artcraft_color_reference_bridge.py
+      - tests/test_artcraft_color_reference_bridge.py
       - scripts/artcraft_make_synthetic_interop_fixtures.py
       - tests/test_artcraft_film_effect_interop.py
       - docs/research/artcraft-seven-pinned-sources.json
@@ -40,7 +42,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/artcraft_film_effect_interop.py scripts/artcraft_make_synthetic_interop_fixtures.py
+          python3 -m py_compile scripts/artcraft_film_effect_interop.py scripts/artcraft_make_synthetic_interop_fixtures.py scripts/artcraft_color_reference_bridge.py
       - name: Test 15 negative and positive boundaries
         shell: bash
         run: |
@@ -48,6 +50,7 @@ jobs:
           command -v ffmpeg
           command -v ffprobe
           python3 -m unittest discover -s tests -p test_artcraft_film_effect_interop.py -v
+          python3 -m unittest discover -s tests -p test_artcraft_color_reference_bridge.py -v
       - name: Generate independent synthetic 5-second H264/AAC and stereo fixture
         shell: bash
         run: |
