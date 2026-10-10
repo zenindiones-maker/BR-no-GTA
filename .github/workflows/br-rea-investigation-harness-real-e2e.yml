@@ -6,6 +6,7 @@ on:
       - work/br-rea-investigation-harness-gate-v1
     paths:
       - app/services/br_rea_investigation_executor.py
+      - app/services/br_rea_issuer_attestation_service.py
       - app/services/global_capability_registry.py
       - app/services/harness_capability_service.py
       - app/services/harness_mcp_capability_execution.py
@@ -46,6 +47,7 @@ jobs:
       - name: Verify source compiles
         run: |
           python3 -m py_compile app/services/br_rea_investigation_executor.py \
+            app/services/br_rea_issuer_attestation_service.py \
             app/services/harness_capability_service.py \
             app/services/harness_mcp_capability_execution.py \
             app/integrations/deepseek_harness/server.py \
