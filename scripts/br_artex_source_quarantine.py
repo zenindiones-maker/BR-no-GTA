@@ -24,6 +24,13 @@ MAX_FILES = 15000
 MAX_BYTES = 150 * 1024 * 1024
 DEST_NAME = "artex-0.3.15-" + REV[:12]
 RECEIPT = ".br_artex_source_receipt.json"
+# Executable entries observed in the independently pinned upstream Git tree.
+# Staging v1 intentionally discarded mode bits, so mode is reconstructed
+# strictly from this allowlist for backward-compatible content verification.
+SOURCE_EXECUTABLES = frozenset({
+    "build.sh", "dev.sh", "install.sh", "reset-password.sh",
+    "start.sh", "update.sh",
+})
 
 
 class Blocked(RuntimeError):
@@ -100,6 +107,47 @@ def _manifest(directory: Path) -> tuple[int, int, str]:
     return len(entries), size, hashlib.sha256("".join(entries).encode()).hexdigest()
 
 
+
+def _git_tree_oid(directory: Path) -> str:
+    """Recompute the Git tree object ID from the actual staged source bytes.
+
+    The receipt is excluded, but every other file and directory is included.
+    Reconstruct known upstream executable modes instead of relying on the
+    permission bits lost by the older inert-source staging procedure.
+    """
+
+    def walk(current: Path) -> bytes:
+        entries: list[tuple[bytes, bytes]] = []
+        for path in current.iterdir():
+            if path == directory / RECEIPT:
+                continue
+            if path.is_symlink():
+                raise Blocked("symlink in staged source")
+            name = os.fsencode(path.name)
+            if path.is_dir():
+                mode = b"40000"
+                oid = walk(path)
+                order_key = name + b"/"
+            elif path.is_file():
+                relative = path.relative_to(directory).as_posix()
+                if path.stat().st_mode & 0o111 and relative not in SOURCE_EXECUTABLES:
+                    raise Blocked("unexpected executable source file")
+                mode = b"100755" if relative in SOURCE_EXECUTABLES else b"100644"
+                raw = path.read_bytes()
+                header = b"blob " + str(len(raw)).encode("ascii") + b"\\x00"
+                oid = hashlib.sha1(header + raw).digest()
+                order_key = name
+            else:
+                raise Blocked("unsupported file type in staged source")
+            entries.append((order_key, mode + b" " + name + b"\\x00" + oid))
+        entries.sort(key=lambda entry: entry[0])
+        raw_tree = b"".join(entry[1] for entry in entries)
+        header = b"tree " + str(len(raw_tree)).encode("ascii") + b"\\x00"
+        return hashlib.sha1(header + raw_tree).digest()
+
+    return walk(directory).hex()
+
+
 def _verify(dest: Path) -> None:
     if dest.is_symlink() or not dest.is_dir():
         raise Blocked("source directory missing or unsafe")
@@ -114,6 +162,8 @@ def _verify(dest: Path) -> None:
     count, size, digest = _manifest(dest)
     if (count, size, digest) != (data.get("file_count"), data.get("byte_count"), data.get("manifest_sha256")):
         raise Blocked("staged source integrity mismatch")
+    if _git_tree_oid(dest) != TREE:
+        raise Blocked("source tree differs from pinned upstream Git tree")
     print("ARTEX_SOURCE_STAGING=PASS")
     print("ARTEX_SOURCE_COMMIT=" + REV)
     print("ARTEX_RUNTIME=NOT_INSTALLED")
@@ -176,6 +226,8 @@ def _stage(dest: Path) -> None:
                         remaining -= len(block)
         if not (payload / "go.mod").is_file() or not (payload / "LICENSE").is_file():
             raise Blocked("expected source package markers absent")
+        if _git_tree_oid(payload) != TREE:
+            raise Blocked("archive bytes do not match pinned Git tree")
         file_count, byte_count, digest = _manifest(payload)
         receipt = {
             "schema": "BRArtexInertSourceReceipt/v1",
