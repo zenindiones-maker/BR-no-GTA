@@ -48,7 +48,11 @@ jobs:
             tests/test_owner_voice_human_review_delivery_policy.py \
             tests/test_owner_voice_segmented_delivery_manifest_regression.py \
             tests/test_owner_voice_single_clone_delivery_v1.py \
-            tests/test_owner_voice_critical_audio_telegram_delivery.py
+            tests/test_owner_voice_critical_audio_telegram_delivery.py \
+            tests/test_owner_voice_audition_ledger_store_integration.py \
+            tests/test_owner_voice_commit_refs_retry_v24.py \
+            tests/test_owner_voice_critical_audio_dictionary_execution.py \
+            tests/test_gta6_owner_audio_dictionary.py
           echo 'OWNER_VOICE_ISOLATED_CONTRACTS=PASS'
           echo 'OWNER_VOICE_REAL_INFERENCE=NOT_ATTEMPTED'
           echo 'TELEGRAM_SIDE_EFFECT=NOT_ATTEMPTED'
