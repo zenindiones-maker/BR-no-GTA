@@ -163,7 +163,7 @@ jobs:
           /tmp/br-owner-single-clone-venv/bin/python scripts/owner_voice_single_human_clone.py
 
       - name: Deliver reference clone and control
-        if: ${{ steps.generate.outputs.send_eligible != 'false' }}
+        if: ${{ steps.generate.outputs.send_eligible != 'false' && steps.generate.outputs.critical_scope != 'true' }}
         env:
           PYTHONPATH: ${{ github.workspace }}
           BR_OWNER_AUDITION_LEDGER_SSH_KEY: ${{ secrets.BR_OWNER_AUDITION_LEDGER_SSH_KEY }}
@@ -171,6 +171,16 @@ jobs:
         run: |
           set -euo pipefail
           /tmp/br-owner-single-clone-venv/bin/python scripts/owner_voice_single_clone_delivery.py
+
+      - name: Deliver one protected critical-name audio only
+        if: ${{ steps.generate.outputs.send_eligible == 'true' && steps.generate.outputs.critical_scope == 'true' }}
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          BR_OWNER_AUDITION_LEDGER_SSH_KEY: ${{ secrets.BR_OWNER_AUDITION_LEDGER_SSH_KEY }}
+          BR_OWNER_SINGLE_CLONE_MANIFEST_PATH: ${{ steps.generate.outputs.manifest_path }}
+        run: |
+          set -euo pipefail
+          /tmp/br-owner-single-clone-venv/bin/python scripts/owner_voice_critical_audio_telegram_delivery.py
 
       - name: Remove ephemeral owner biometric and clone material
         if: ${{ always() }}
