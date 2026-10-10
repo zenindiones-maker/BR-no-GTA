@@ -21,6 +21,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          command -v ffmpeg
           python3 -m pip install --disable-pip-version-check -q 'numpy==2.2.6'
           python3 -m py_compile scripts/owner_voice_two_video_acoustic_probe.py
           python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_acoustic_probe.py' -v
