@@ -36,11 +36,11 @@ def write_delivery_step_outputs(
         raise ValueError("OWNER_CLONE_OUTPUT_ID_INVALID")
     if (not isinstance(manifest_path,Path) or not manifest_path.is_absolute()
         or manifest_path.is_symlink() or not manifest_path.is_file()
-        or manifest_path.suffix!=".json" or any(c in str(manifest_path) for c in "\\r\\n")):
+        or manifest_path.suffix!=".json" or any(ord(c) in (10,13) for c in str(manifest_path))):
         raise ValueError("OWNER_CLONE_MANIFEST_OUTPUT_INVALID")
     if (not isinstance(output_path,Path) or not output_path.is_absolute()
         or output_path.is_symlink() or not output_path.is_file()
-        or any(c in str(output_path) for c in "\\r\\n")):
+        or any(ord(c) in (10,13) for c in str(output_path))):
         raise RuntimeError("OWNER_CLONE_GITHUB_OUTPUT_REQUIRED")
     rows=(
         f"manifest_path={manifest_path}",
@@ -48,7 +48,7 @@ def write_delivery_step_outputs(
         "send_eligible="+("true" if send_eligible else "false"),
         "critical_scope="+("true" if critical_scope else "false"),
     )
-    payload=("\\n".join(rows)+"\\n").encode("utf-8")
+    payload=(chr(10).join(rows)+chr(10)).encode("utf-8")
     # O_NOFOLLOW rejects link swaps after the initial is_symlink check.
     fd=os.open(output_path,os.O_WRONLY|os.O_APPEND|getattr(os,"O_NOFOLLOW",0))
     try:
