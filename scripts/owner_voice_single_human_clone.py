@@ -1032,7 +1032,14 @@ def main()->int:
     import soundfile as sf
     from qwen_tts import Qwen3TTSModel
 
-    torch.set_num_threads(4)
+    # Respect Linux CPU affinity on hosted runners; avoid oversubscription.
+    # Preserve model, precision, prompts and all identity/ASR quality gates.
+    available_cpus=(len(os.sched_getaffinity(0)) if hasattr(os,"sched_getaffinity")
+                    else (os.cpu_count() or 1))
+    owner_cpu_threads=max(1,min(4,available_cpus))
+    torch.set_num_threads(owner_cpu_threads)
+    torch.set_num_interop_threads(1)
+    print(f"OWNER_QWEN_CPU_THREADS={owner_cpu_threads} AVAILABLE_CPUS={available_cpus}",flush=True)
     qwen_load_t0=time.monotonic()
     print("OWNER_PERF_STAGE_START=qwen_model_load",flush=True)
     qwen_snapshot=_prepare_qwen_model(cache_root/"qwen3-tts")
