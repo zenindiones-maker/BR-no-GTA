@@ -1,0 +1,90 @@
+name: BR ArtCraft Film Effect Interop Contract
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - work/br-artcraft-film-effect-interop-v1
+    paths:
+      - .github/workflows/br-artcraft-film-effect-interop-probe.yml
+      - scripts/artcraft_film_effect_interop.py
+      - scripts/artcraft_color_reference_bridge.py
+      - tests/test_artcraft_color_reference_bridge.py
+      - scripts/artcraft_make_synthetic_interop_fixtures.py
+      - tests/test_artcraft_film_effect_interop.py
+      - docs/research/artcraft-seven-pinned-sources.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: artcraft-film-effect-interop-\${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  synthetic-contract:
+    name: Verify native CLI boundary + real synthetic media baseline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact isolated study (no persisted credentials)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - name: Prepare FFmpeg and FFprobe on disposable GitHub runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ffmpeg
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+      - name: Python compile proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/artcraft_film_effect_interop.py scripts/artcraft_make_synthetic_interop_fixtures.py scripts/artcraft_color_reference_bridge.py
+      - name: Test 15 negative and positive boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v ffmpeg
+          command -v ffprobe
+          python3 -m unittest discover -s tests -p test_artcraft_film_effect_interop.py -v
+          python3 -m unittest discover -s tests -p test_artcraft_color_reference_bridge.py -v
+      - name: Generate independent synthetic 5-second H264/AAC and stereo fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artcraft-interop-qa
+          python3 scripts/artcraft_make_synthetic_interop_fixtures.py artcraft-interop-qa/fixtures
+      - name: Decode reference video and audio, verify pinned manifest and emit receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          ffmpeg -hide_banner -v error -nostdin -i artcraft-interop-qa/fixtures/reference_5s_320x180_30fps.mp4 -f null -
+          python3 scripts/artcraft_film_effect_interop.py \
+            --manifest docs/research/artcraft-seven-pinned-sources.json \
+            --fixtures artcraft-interop-qa/fixtures \
+            --receipt artcraft-interop-qa/receipt.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('artcraft-interop-qa/receipt.json').read_text())
+          assert d['gate'] == 'BASELINE_ONLY'
+          assert d['synthetic_fixture']['profile']['frames'] == 150
+          assert d['native_executed'] is False
+          assert d['production_approved'] is False
+          assert d['harness_authority'] == 'NONE'
+          print('BR_ARTCRAFT_REPRODUCIBLE_MEDIA_BASELINE=PASS')
+          print('NATIVE_ARTCRAFT_CLI=NOT_EXECUTED')
+          print('HARNESS_AUTHORITY_UNCHANGED=PASS')
+          PY
+      - name: Preserve exact synthetic evidence (no third-party executables)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: br-artcraft-film-effect-synthetic-qa
+          path: artcraft-interop-qa/
+          if-no-files-found: warn
+          retention-days: 30

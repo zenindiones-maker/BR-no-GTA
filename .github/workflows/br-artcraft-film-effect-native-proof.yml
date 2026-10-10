@@ -1,0 +1,182 @@
+name: BR ArtCraft Film and Effect Exact Native CLI Proof
+
+# Research-only exact-pinned native CLI build. No promotion, public service,
+# upstream MCP, production voice data or A15 computation.
+on:
+  push:
+    branches:
+      - work/br-artcraft-film-effect-interop-v1
+    paths:
+      - .github/workflows/br-artcraft-film-effect-native-proof.yml
+      - scripts/artcraft_validate_seven.py
+      - scripts/artcraft_film_effect_interop.py
+      - scripts/artcraft_make_synthetic_interop_fixtures.py
+      - docs/research/artcraft-seven-pinned-sources.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-artcraft-film-effect-native-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native-builds:
+    name: Native pinned CLI build ${{ matrix.project }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 43
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        project:
+          - filmcraft
+          - effectcraft
+    steps:
+      - name: Checkout isolated branch only without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - name: Validate Python proof without upstream execution
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/artcraft_validate_seven.py
+      - name: Build real exact-pinned CLI in no-network Docker Rust sandbox
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/artcraft_validate_seven.py \
+            --project "${{ matrix.project }}" \
+            --output artcraft-native-build \
+            --cli-timeout 950
+      - name: Preserve exact build status, CLI bytes and logs for both projects
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: artcraft-real-native-${{ matrix.project }}
+          path: artcraft-native-build/${{ matrix.project }}/
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 1
+
+  native-interop:
+    name: Verify two actual CLIs rendering offline in isolated container
+    needs: native-builds
+    if: needs.native-builds.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact research candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - name: Download FilmCraft binary and bounded build receipt
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: artcraft-real-native-filmcraft
+          path: artcraft-native-bin/filmcraft
+      - name: Download EffectCraft binary and bounded build receipt
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: artcraft-real-native-effectcraft
+          path: artcraft-native-bin/effectcraft
+      - name: Verify exact pinned upstream provenance and candidate artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import hashlib
+          import hmac
+          from pathlib import Path
+          expected={
+              'filmcraft': '7b6c134472287db4367fca80bcb498240ba36567',
+              'effectcraft': '30aaddf7c23329dcdfc72a5bf65b55747bbd6be1',
+          }
+          for name, sha in expected.items():
+              folder = Path('artcraft-native-bin') / name
+              d=json.loads((folder/'result.json').read_text(encoding='utf-8'))
+              assert d['pinned_sha']==sha and d['source_status']=='verified'
+              assert d['dependency_status']=='fetched'
+              assert d['build_status']=='success'
+              assert d['tests_status']=='success'
+              assert d['cli_status']=='success'
+              assert d['compiled_artifact']['filename']==name+'-cli'
+              assert d['compiled_artifact']['debug_stripped'] is True
+              assert d['cli_smoke_status']=='success'
+              binary=folder/(name+'-cli')
+              assert binary.is_file() and not binary.is_symlink()
+              assert binary.stat().st_size==d['compiled_artifact']['bytes']
+              observed=hashlib.file_digest(binary.open('rb'),'sha256').hexdigest()
+              assert hmac.compare_digest(observed,d['compiled_artifact']['sha256'])
+              print('PINNED_NATIVE_BUILD_DIGEST=PASS', name, sha, observed)
+          PY
+          chmod u+x artcraft-native-bin/filmcraft/filmcraft-cli
+          chmod u+x artcraft-native-bin/effectcraft/effectcraft-cli
+          mkdir -p artcraft-native-proof
+          python3 scripts/artcraft_make_synthetic_interop_fixtures.py artcraft-native-proof/fixtures
+      - name: Build no-source runtime sandbox with Python, FFmpeg and native libs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/artcraft-interop-image"
+          cat > "$RUNNER_TEMP/artcraft-interop-image/Dockerfile" <<'DOCKERFILE'
+          FROM rust:1.95-slim-bookworm
+          RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              python3 ffmpeg libasound2 libudev1 libx11-6 libxkbcommon0 libxcursor1 libxrandr2 \
+              libxi6 libgl1 libwayland-client0 libfontconfig1 libfreetype6 libdbus-1-3 \
+              libgtk-3-0 libvulkan1 && rm -rf /var/lib/apt/lists/*
+          DOCKERFILE
+          docker build --pull=false --tag br-artcraft-native-offline:1 \
+            --file "$RUNNER_TEMP/artcraft-interop-image/Dockerfile" \
+            "$RUNNER_TEMP/artcraft-interop-image"
+      - name: Execute fixed native frame probes without network, tokens or MCP
+        shell: bash
+        run: |
+          set -euo pipefail
+          filmsha="$(sha256sum artcraft-native-bin/filmcraft/filmcraft-cli | awk '{print $1}')"
+          effectsha="$(sha256sum artcraft-native-bin/effectcraft/effectcraft-cli | awk '{print $1}')"
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --pids-limit 256 --memory 5g --cpus 2 --read-only \
+            --tmpfs /tmp:rw,nosuid,size=256m \
+            --user "$(id -u):$(id -g)" \
+            -e ARTCRAFT_EXTERNAL_NETWORK_SANDBOX=CONFIRMED \
+            -v "$PWD/scripts:/scripts:ro" \
+            -v "$PWD/docs/research/artcraft-seven-pinned-sources.json:/manifest.json:ro" \
+            -v "$PWD/artcraft-native-bin:/binaries:ro" \
+            -v "$PWD/artcraft-native-proof/fixtures:/fixtures:ro" \
+            -v "$PWD/artcraft-native-proof:/out:rw" \
+            br-artcraft-native-offline:1 \
+            python3 /scripts/artcraft_film_effect_interop.py \
+              --manifest /manifest.json --fixtures /fixtures \
+              --receipt /out/native-receipt.json --native \
+              --filmcraft-bin /binaries/filmcraft/filmcraft-cli \
+              --effectcraft-bin /binaries/effectcraft/effectcraft-cli \
+              --film-sha256 "$filmsha" --effect-sha256 "$effectsha" \
+              --sandbox-work /out/work
+          test -s artcraft-native-proof/work/film-frame.png
+          test -s artcraft-native-proof/work/effect-frame.png
+          ffmpeg -v error -nostdin -i artcraft-native-proof/work/film-frame.png -frames:v 1 -f null -
+          ffmpeg -v error -nostdin -i artcraft-native-proof/work/effect-frame.png -frames:v 1 -f null -
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('artcraft-native-proof/native-receipt.json').read_text())
+          assert d['gate']=='PASS'
+          assert d['native_executed'] is True
+          assert d['production_approved'] is False
+          assert d['harness_authority']=='NONE'
+          assert d['native']['filmcraft']['frame']['width'] > 0
+          assert d['native']['effectcraft']['frame']['width'] > 0
+          print('BR_ARTCRAFT_TWO_REAL_NATIVE_CLIS=PASS')
+          print('NO_PRODUCTION_ADMISSION=PASS')
+          PY
+      - name: Preserve real frame PNGs and exact QA receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: artcraft-film-effect-real-native-frames
+          path: artcraft-native-proof/
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 1
