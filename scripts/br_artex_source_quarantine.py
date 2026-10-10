@@ -76,8 +76,8 @@ def _guard() -> Path:
 def _destination() -> Path:
     home = Path.home().resolve()
     dest = home / ".local/share/br-no-gta/external-source-quarantine" / DEST_NAME
-    if dest.is_symlink() or dest.parent.is_symlink():
-        raise Blocked("source destination is symlinked")
+    if any(path.is_symlink() for path in (dest, *dest.parents) if path != home and home in path.parents):
+        raise Blocked("source destination traverses a symlink")
     return dest
 
 
@@ -85,7 +85,7 @@ def _manifest(directory: Path) -> tuple[int, int, str]:
     entries = []
     size = 0
     for path in sorted(directory.rglob("*")):
-        if path.name == RECEIPT:
+        if path.relative_to(directory).as_posix() == RECEIPT:
             continue
         if path.is_symlink():
             raise Blocked("symlink in staged source")
