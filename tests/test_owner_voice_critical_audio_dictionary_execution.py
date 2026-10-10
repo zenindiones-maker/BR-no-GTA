@@ -28,6 +28,24 @@ class OwnerCriticalPronunciationTests(unittest.TestCase):
             if x["canonical_text"] not in ("Vice City","GTA 6"):
                 self.assertEqual(x["spoken_text"],x["canonical_text"])
 
+    def test_single_word_audio_is_forbidden_for_speaker_verification(self):
+        items=owner_critical_ptbr_batches()
+        self.assertEqual(len(items),18)
+        self.assertTrue(all(row["language"]=="Portuguese" for row in items))
+        for row in items:
+            with self.subTest(term=row["canonical_text"]):
+                # Utterances under about three seconds cannot reliably
+                # substitute for a calibrated longer speaker sample.
+                self.assertGreaterEqual(len(row["spoken_text"].split()),12)
+                spoken_target=(
+                    "vaicy siti" if row["canonical_text"]=="Vice City"
+                    else "Gê Tê A seis" if row["canonical_text"]=="GTA 6"
+                    else row["canonical_text"]
+                )
+                self.assertIn(spoken_target,row["spoken_text"])
+                self.assertEqual(row["spoken_text"].count(spoken_target),1)
+                self.assertFalse(row["approved_audio"])
+
     def test_explicit_scope_is_required_before_voice_generation(self):
         manifest=load_candidate()
         intent={"pronunciation_scope":"OWNER_GTA6_CRITICAL_NAMES_ONLY_V1",
