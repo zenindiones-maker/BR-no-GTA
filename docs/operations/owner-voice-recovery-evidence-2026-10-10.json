@@ -1,0 +1,95 @@
+{
+  "schema": "BRNOOwnerVoiceRecoveryEvidence/v1",
+  "created_date": "2026-10-10",
+  "voice_identity_id": "BR_OWNER_V1",
+  "source_repository": "zenindiones-maker/BR-no-GTA",
+  "isolated_branch": "work/owner-voice-safe-ingress-recovery-20261010",
+  "original_development_head": "0f577b576c87aa0fd9b72714f9236a4d0d44305a",
+  "canonical_branch": "work/gate6f-analytics-learning",
+  "canonical_promotion_attempted": false,
+  "hazewave_modified": false,
+  "a15_audio_processing_attempted": false,
+  "telegram": {
+    "identity_verified": true,
+    "webhook_active": false,
+    "polling_eligible": true,
+    "pending_updates_at_probe": 0,
+    "gateway_process_current_state": "NOT_OBSERVED",
+    "original_group_count": 1,
+    "bot_membership": "ADMINISTRATOR",
+    "getUpdates_called": false,
+    "message_sent_in_recovery": false
+  },
+  "references": {
+    "source": "EXISTING_PRIVATE_GITHUB_ACTIONS_ENVELOPE",
+    "index_sha256": "c8715ce00a53871c38c5d28883bbbb398fdc14871dddda2c2f1b32dd5ba101d8",
+    "reference_count": 57,
+    "getFile_confirmed": 57,
+    "getFile_unavailable": 0,
+    "file_unique_id_mismatches": 0,
+    "file_stream_sha256_verified": 57,
+    "audio_inventory_sha256": "675613aff3d1b140484b75b58befe0e7e802ea97171e1e775b7deebe9cd40bc9",
+    "individual_audio_sha256_publicly_logged": false,
+    "private_audio_bytes_persisted_in_this_audit": false,
+    "public_audio_artifacts_created": false
+  },
+  "regressions": {
+    "red_run": 38021970422,
+    "red_summary": "2 failed, 11 passed",
+    "green_run": 38022102507,
+    "green_summary": "16 passed",
+    "private_stream_tests": 5,
+    "direct_secondary_getUpdates_prohibited": true,
+    "deferred_workflow_dispatch_false_success_blocked": true,
+    "voice_index_query_filters_before_limit": true
+  },
+  "evidence_runs": [
+    {
+      "run_id": 38022102507,
+      "purpose": "ingress and handoff regression tests",
+      "conclusion": "success"
+    },
+    {
+      "run_id": 38022154164,
+      "purpose": "authenticated getMe and getWebhookInfo readback",
+      "conclusion": "success"
+    },
+    {
+      "run_id": 38022219846,
+      "purpose": "private reference index integrity and count",
+      "conclusion": "success"
+    },
+    {
+      "run_id": 38022279132,
+      "purpose": "getFile 57 reference validation",
+      "conclusion": "success"
+    },
+    {
+      "run_id": 38022430531,
+      "purpose": "cloud in-memory original file SHA-256 streaming",
+      "conclusion": "success"
+    },
+    {
+      "run_id": 38022505735,
+      "purpose": "authorized original group membership readback",
+      "conclusion": "success"
+    }
+  ],
+  "independent_ledger": {
+    "repository": "zenindiones-maker/BR-no-GTA-audition-ledger",
+    "branch": "owner-voice-audition-state",
+    "observed_head": "87f2dd39705437bead0df8710eefe0c48ea1d529",
+    "historical_audition_delivery_state": "CONFIRMED",
+    "historical_human_review": "PENDING",
+    "latest_new_audition_delivery": "NOT_CONFIRMED",
+    "ledger_modified": false
+  },
+  "blocked_boundaries": [
+    "LIVE_A15_GATEWAY_PROCESS_AND_DURABLE_INGRESS_NOT_ATTESTED",
+    "NEW_CLONE_IDENTITY_QA_NOT_PASSED",
+    "NEW_AUDITION_TELEGRAM_DELIVERY_NOT_CONFIRMED",
+    "LEGACY_CHATTERBOX_DELIVERY_LACKS_DURABLE_PER_SEND_LEDGER_RECONCILIATION"
+  ],
+  "overall_status": "PARTIAL_RECOVERY_NO_NEW_DELIVERY",
+  "sensitive_data_in_receipt": false
+}
