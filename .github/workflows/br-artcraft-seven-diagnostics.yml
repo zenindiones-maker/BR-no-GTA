@@ -1,0 +1,80 @@
+name: BR ArtCraft Collect Seven Validation Diagnostics
+
+on:
+  push:
+    branches: [work/br-artcraft-seven-source-study-v1]
+    paths:
+      - .github/workflows/br-artcraft-seven-diagnostics.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    name: Read completed validation artifacts (no upstream execution)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Fetch available per-project evidence from prior seven-matrix run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: "38010319887"
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          for project in filmcraft effectcraft photocraft vectorcraft lightcraft pdfcraft designcraft; do
+            if gh run download "$SOURCE_RUN" -R "$GITHUB_REPOSITORY" \
+              -n "artcraft-validated-$project" -D "diagnostics/$project"; then
+              echo "EVIDENCE_FETCHED=$project"
+            else
+              echo "EVIDENCE_NOT_YET_AVAILABLE=$project"
+            fi
+          done
+
+      - name: Print exact causes and generate one aggregate report
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("diagnostics")
+          final={}
+          for name in "filmcraft effectcraft photocraft vectorcraft lightcraft pdfcraft designcraft".split():
+              path=root/name/"result.json"
+              if not path.is_file():
+                  final[name]={"evidence_available":False}
+                  continue
+              r=json.loads(path.read_text())
+              stages={}
+              for stage in ("git_fetch","docker_pull","cargo_fetch","cargo_check","core_test","cli_build","cli_help"):
+                  x=r.get("stages",{}).get(stage)
+                  if not x: continue
+                  stages[stage]={"status":x["status"],"exit_code":x["exit_code"],"duration_seconds":x["duration_seconds"]}
+                  if x["status"]!="success":
+                      lines=x.get("last_log_lines",[])
+                      print(f"=== {name}::{stage} status={x['status']} ===")
+                      print("\n".join(lines[-18:])[-4000:])
+              final[name]={"pinned_sha":r["pinned_sha"],"source_status":r.get("source_status"),
+                           "dependency_status":r.get("dependency_status"),
+                           "blocking_error":r.get("blocking_error"),
+                           "build_status":r.get("build_status"),
+                           "tests_status":r.get("tests_status"),
+                           "cli_status":r.get("cli_status"),"stages":stages}
+          (root/"combined-diagnostics.json").write_text(json.dumps(final,indent=2)+"\n")
+          print("ALL_PROJECT_EVIDENCE_SUMMARY="+json.dumps({
+              k:{"source":v.get("source_status"),"dep":v.get("dependency_status"),
+                 "check":v.get("build_status"),"test":v.get("tests_status")}
+              for k,v in final.items()
+          }))
+          PY
+
+      - name: Upload aggregate diagnostic report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: artcraft-seven-diagnostics-run-38010319887
+          path: diagnostics/combined-diagnostics.json
+          if-no-files-found: warn
+          retention-days: 30
