@@ -14,6 +14,8 @@ on:
       - 'tests/test_run001_script_to_screen_pilot.py'
       - 'app/services/run001_script_to_screen_frame_evidence.py'
       - 'tests/test_run001_script_to_screen_frame_evidence.py'
+      - 'app/services/run001_script_to_screen_editorial_review.py'
+      - 'tests/test_run001_script_to_screen_editorial_review.py'
       - 'scripts/run001_final_product_dispatch.py'
       - '.github/workflows/br-run001-script-to-screen-contract.yml'
 permissions:
@@ -33,3 +35,4 @@ jobs:
           python -m unittest discover -s tests -p 'test_run001_script_to_screen_edl.py' -v
           python -m unittest discover -s tests -p 'test_run001_script_to_screen_pilot.py' -v
           python -m unittest discover -s tests -p 'test_run001_script_to_screen_frame_evidence.py' -v
+          python -m unittest discover -s tests -p 'test_run001_script_to_screen_editorial_review.py' -v
