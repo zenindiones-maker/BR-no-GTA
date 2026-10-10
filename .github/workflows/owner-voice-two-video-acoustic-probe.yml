@@ -6,6 +6,8 @@ on:
       - 'scripts/owner_voice_two_video_acoustic_probe.py'
       - 'tests/test_owner_voice_two_video_acoustic_probe.py'
       - 'tests/test_owner_voice_two_video_codespace_launcher.py'
+      - 'tests/test_owner_voice_two_video_remote_control.py'
+      - 'scripts/owner_voice_two_video_remote_control.py'
       - 'scripts/owner_voice_two_video_codespace_run.py'
       - '.github/workflows/owner-voice-two-video-acoustic-probe.yml'
   workflow_dispatch:
@@ -30,6 +32,7 @@ jobs:
           python3 -m py_compile scripts/owner_voice_two_video_acoustic_probe.py
           python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_acoustic_probe.py' -v
           python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_codespace_launcher.py' -v
+          python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_remote_control.py' -v
           echo 'PRIVATE_MEDIA_ACCESSED=NO'
           echo 'VOCABULARY_EXTRACTED=NOT_CLAIMED'
           echo 'REMOTE_CODESPACE_EXECUTION=REQUIRED'
