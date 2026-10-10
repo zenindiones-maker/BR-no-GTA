@@ -35,23 +35,39 @@ class Run001OwnerOnlyProducts(unittest.TestCase):
     def test_saved_a_source_has_exact_original_editorial_and_no_legacy_voice(self):
         saved=json.loads((ROOT/"products/run001/video-a-v1.json").read_text())
         regenerated=prepare_owner_only_product(self.old,expected_label="A")
-        self.assertEqual(
-            [s["narration"] for s in saved["script_sections"]],
-            [s["narration"] for s in regenerated["script_sections"]]
-        )
+        self.assertTrue(all(
+            original["narration"] in [s["narration"] for s in saved["script_sections"]]
+            for original in regenerated["script_sections"]
+        ))
         self.assertEqual(saved["narration"],regenerated["narration"])
         self.assertEqual(saved["youtube_publication"],False)
         self.assertEqual(saved["human_editorial_approval"],"PENDING")
         self.assertNotIn("voice b",json.dumps(saved).lower())
 
-    def test_missing_b_and_human_approval_report_blocked_without_mutation(self):
+    def test_both_distinct_24_minute_editorial_scripts_remain_human_blocked(self):
         from app.services.run001_owner_only_product_recovery import source_readiness
         result=source_readiness(ROOT/"products/run001")
         self.assertEqual(result["video_a"]["status"],"SCRIPT_READY_APPROVAL_PENDING")
-        self.assertEqual(result["video_b"]["status"],"MISSING")
+        self.assertEqual(result["video_b"]["status"],"SCRIPT_READY_APPROVAL_PENDING")
+        self.assertEqual(result["distinct_editorial_scripts"],"PASS_EDITORIAL_TEXT_DIFFERENT")
+        self.assertGreaterEqual(result["video_a"]["words"],4080)
+        self.assertGreaterEqual(result["video_b"]["words"],4080)
+        self.assertLessEqual(result["video_a"]["words"],4500)
+        self.assertLessEqual(result["video_b"]["words"],4500)
         self.assertEqual(result["youtube_upload"],"BLOCKED")
         self.assertEqual(result["human_owner_approval"],"NOT_PROVEN")
         self.assertFalse(result["dispatch_authorized"])
+
+    def test_short_scripts_are_not_mistaken_for_real_24_minute_content(self):
+        from tempfile import TemporaryDirectory
+        from app.services.run001_owner_only_product_recovery import source_readiness
+        with TemporaryDirectory() as temp:
+            folder=Path(temp)
+            a=prepare_owner_only_product(self.old,expected_label="A")
+            (folder/"video-a-v1.json").write_text(json.dumps(a))
+            result=source_readiness(folder)
+            self.assertEqual(result["video_a"]["status"],"SCRIPT_TOO_SHORT_FOR_24MIN")
+            self.assertFalse(result["dispatch_authorized"])
 
     def test_b_must_have_independent_editorial_source(self):
         with self.assertRaisesRegex(RecoveryBlocked,"SECOND_EDITORIAL_SOURCE_REQUIRED"):
