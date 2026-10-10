@@ -6,7 +6,7 @@ on:
       - 'scripts/owner_voice_two_video_acoustic_probe.py'
       - 'tests/test_owner_voice_two_video_acoustic_probe.py'
       - 'tests/test_owner_voice_two_video_codespace_launcher.py'
-      - 'scripts/owner_voice_two_video_codespace_run.sh'
+      - 'scripts/owner_voice_two_video_codespace_run.py'
       - '.github/workflows/owner-voice-two-video-acoustic-probe.yml'
   workflow_dispatch:
 permissions:
