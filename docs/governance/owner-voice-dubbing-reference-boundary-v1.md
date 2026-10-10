@@ -11,3 +11,19 @@ Any candidate must pass the fail-closed `app/services/owner_voice_dubbing_refere
 
 ## Scope
 Repository `zenindiones-maker/BR-no-GTA` only. No Hazewave changes. A15 remains control-only.
+
+## Supersession and delivery boundary (2026-10-10)
+
+Owner instruction: replace the prior audition candidate with a **new** BR_OWNER_V1 audition informed by the two approved dubbing videos. Historical run `38025936216` is preserved as completed history, **not** accepted as the new audition or human approval. Its delivery must be reconciled with the private ledger and Telegram before any new send; successful GitHub delivery steps are not proof of human receipt.
+
+Required execution order:
+
+1. Read the exact active HEAD and preserve all current owner voice WIP and immutable ledger entries.
+2. Obtain lawful short acoustic observations from both approved videos. Record exact video ID, term, start/end timestamps, evidence digest, verified spoken reading, syllable timing and reviewer; never infer audio from subtitles. If audio is inaccessible, **block** acoustic promotion rather than invent evidence.
+3. Keep the speaker conditioning/reference audio **exclusively** from authorized `BR_OWNER_V1` material. Never pass video audio, actor audio or actor embeddings to Qwen3-TTS speaker conditioning, cloning, training or voice conversion.
+4. Propose pronunciation/prosody adjustments only from verified acoustic observations. Keep owner-locked `Vice City -> vaicy siti`; no auto-approval, no unverified runtime overrides.
+5. Generate one short audition using the owner's voice; validate identity, lexical accuracy, timing, fluency, audio quality and existing thresholds. Fail closed on any gate; no fallback voice.
+6. Reconcile previous send/ledger state and deliver the **new** candidate once through the authorized Telegram transport. Require an idempotent send receipt and await explicit human approval.
+7. Do not start a 20–25-minute YouTube production until the new candidate is approved.
+
+The reference-policy service is an admission guard, not an acoustic extractor or a synthesis integration. Its presence does not prove the new audition exists.
