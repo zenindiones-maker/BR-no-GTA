@@ -7,6 +7,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -58,23 +59,78 @@ class ArtexQuarantineTests(unittest.TestCase):
             with self.assertRaises(artex.Blocked):
                 artex._manifest(root)
 
+
+    def test_tree_oid_matches_git_write_tree(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            repository = base / "upstream"
+            repository.mkdir()
+            (repository / "nested").mkdir()
+            (repository / "nested" / "file.txt").write_text("hello")
+            (repository / "build.sh").write_text("#!/bin/sh\nexit 0\n")
+            (repository / "build.sh").chmod(0o755)
+            subprocess.run(["git", "init", "-q", str(repository)], check=True)
+            subprocess.run(
+                ["git", "-C", str(repository), "add", "--all"],
+                check=True,
+            )
+            actual = subprocess.check_output(
+                ["git", "-C", str(repository), "write-tree"],
+                text=True,
+            ).strip()
+            payload = base / "payload"
+            payload.mkdir()
+            (payload / "nested").mkdir()
+            (payload / "nested" / "file.txt").write_text("hello")
+            (payload / "build.sh").write_text("#!/bin/sh\nexit 0\n")
+            # The historical staging loses executable bits: reconstruct pin.
+            self.assertEqual(artex._git_tree_oid(payload), actual)
+
     def test_receipt_cannot_mask_tampering(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             source = root / "src.txt"
             source.write_text("original")
-            count, size, digest = artex._manifest(root)
-            (root / artex.RECEIPT).write_text(json.dumps({
-                "repository": artex.SOURCE, "commit": artex.REV,
-                "tree": artex.TREE, "file_count": count,
-                "byte_count": size, "manifest_sha256": digest,
-                "runtime_enabled": False,
-            }))
-            with patch("builtins.print"):
-                artex._verify(root)
-            source.write_text("tampered")
+            original_tree = artex._git_tree_oid(root)
+            with patch.object(artex, "TREE", original_tree):
+                count, size, digest = artex._manifest(root)
+                (root / artex.RECEIPT).write_text(json.dumps({
+                    "repository": artex.SOURCE, "commit": artex.REV,
+                    "tree": artex.TREE, "file_count": count,
+                    "byte_count": size, "manifest_sha256": digest,
+                    "runtime_enabled": False,
+                }))
+                with patch("builtins.print"):
+                    artex._verify(root)
+                source.write_text("tampered")
+                # Attacker updates the self-authored receipt: must still fail
+                # because the immutable Git tree is independently pinned.
+                new_count, new_size, new_digest = artex._manifest(root)
+                (root / artex.RECEIPT).write_text(json.dumps({
+                    "repository": artex.SOURCE, "commit": artex.REV,
+                    "tree": artex.TREE, "file_count": new_count,
+                    "byte_count": new_size, "manifest_sha256": new_digest,
+                    "runtime_enabled": False,
+                }))
+                with self.assertRaises(artex.Blocked):
+                    artex._verify(root)
+
+    def test_additional_untracked_file_changes_tree(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "a.txt").write_text("data")
+            original = artex._git_tree_oid(root)
+            (root / "extra.txt").write_text("unexpected")
+            self.assertNotEqual(artex._git_tree_oid(root), original)
+
+    def test_unexpected_executable_source_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "sample.txt"
+            source.write_text("ordinary")
+            source.chmod(0o755)
             with self.assertRaises(artex.Blocked):
-                artex._verify(root)
+                artex._git_tree_oid(root)
 
     def test_runtime_enabled_receipt_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
