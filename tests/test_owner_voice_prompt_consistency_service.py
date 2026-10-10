@@ -178,5 +178,13 @@ class OwnerDeliveryScopeIsolationContract(unittest.TestCase):
         )
 
 
+class OwnerWorkflowFailClosedRouteContract(unittest.TestCase):
+    def test_missing_or_invalid_outputs_cannot_trigger_standard_telegram_worker(self):
+        workflow=Path(".github/workflows/owner-voice-single-human-clone.yml").read_text()
+        assert "steps.generate.outputs.send_eligible != 'false'" not in workflow
+        assert "steps.generate.outputs.send_eligible == 'true' && steps.generate.outputs.critical_scope == 'false'" in workflow
+        assert "steps.generate.outputs.send_eligible == 'true' && steps.generate.outputs.critical_scope == 'true'" in workflow
+
+
 if __name__ == "__main__":
     unittest.main()
