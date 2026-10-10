@@ -10,6 +10,7 @@ on:
       - scripts/owner_voice_single_human_clone.py
       - app/services/owner_voice_prompt_consistency_service.py
       - tests/test_owner_voice_prompt_consistency_service.py
+      - tests/test_owner_voice_coherent_no_fresh_sample.py
       - tests/test_owner_voice_commit_refs_retry_v24.py
       - app/services/owner_voice_audition_ledger_store.py
 
@@ -32,6 +33,7 @@ jobs:
             app/services/owner_voice_prompt_consistency_service.py \
             scripts/owner_voice_single_human_clone.py
           python3 -m unittest discover -s tests -p 'test_owner_voice_prompt_consistency_service.py' -v
+          python3 -m unittest discover -s tests -p 'test_owner_voice_coherent_no_fresh_sample.py' -v
           python3 -m unittest discover -s tests -p 'test_owner_voice_commit_refs_retry_v24.py' -v
           python3 -m pip install --disable-pip-version-check -q pytest==8.4.2 python-dotenv==1.2.3
           python3 -m pytest -q tests/test_owner_voice_audition_ledger_store_integration.py

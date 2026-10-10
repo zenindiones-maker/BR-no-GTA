@@ -1110,11 +1110,16 @@ def main()->int:
         raise RuntimeError("GTA6_PRONUNCIATION_SEGMENT_LANGUAGE_AUTO_FORBIDDEN")
     print("GTA6_PRONUNCIATION_SEGMENT_COUNT="+str(len(pronunciation_segments)))
     print("GTA6_PRONUNCIATION_SEGMENT_LANGUAGES="+",".join(segment_languages))
+    coherent_anchor_only=os.environ.get("BR_OWNER_COHERENT_ANCHOR_ONLY")=="1"
     segment_prompts=[]
     for row in pronunciation_segments:
         language=str(row["language"])
         canonical_text=str(row["canonical_text"])
-        if VICE_CITY_TERM in canonical_text:
+        if coherent_anchor_only:
+            # Select the canonical Telegram owner prompt BEFORE any optional
+            # pronunciation-only source can block a legitimate audition.
+            segment_prompts.append(anchor_prompt)
+        elif VICE_CITY_TERM in canonical_text:
             if vice_city_prompt is None:
                 raise RuntimeError("OWNER_VICE_CITY_PRONUNCIATION_REFERENCE_REQUIRED")
             segment_prompts.append(vice_city_prompt)
@@ -1130,7 +1135,7 @@ def main()->int:
     # This is a separately scoped, opt-in recovery candidate only. Owner-only
     # references still control pronunciation verification and cannot turn into
     # a preset/fallback speaker. Keep identity calibration and human review.
-    if os.environ.get("BR_OWNER_COHERENT_ANCHOR_ONLY") == "1":
+    if coherent_anchor_only:
         from app.services.owner_voice_prompt_consistency_service import (
             select_single_owner_prompt_for_segments,
         )
@@ -1197,21 +1202,16 @@ def main()->int:
         )
         segment_embedding=_embedding(classifier,segment_identity16)
         canonical_text=str(row["canonical_text"])
-        if VICE_CITY_TERM in canonical_text:
-            if pronunciation_reference_embedding is None:
-                raise RuntimeError("OWNER_VICE_CITY_IDENTITY_REFERENCE_REQUIRED")
-            reference_embedding=pronunciation_reference_embedding
-            gate_language="pt"
-        elif language=="Portuguese":
-            reference_embedding=canonical_embedding
-            gate_language="pt"
-        elif language=="English":
-            if pronunciation_reference_embedding is None:
-                raise RuntimeError("OWNER_ENGLISH_IDENTITY_REFERENCE_REQUIRED")
-            reference_embedding=pronunciation_reference_embedding
-            gate_language="en"
-        else:
-            raise RuntimeError("OWNER_CLONE_SEGMENT_LANGUAGE_UNSUPPORTED")
+        from app.services.owner_voice_prompt_consistency_service import (
+            owner_reference_for_identity_measurement,
+        )
+        reference_embedding,gate_language=owner_reference_for_identity_measurement(
+            canonical_embedding=canonical_embedding,
+            pronunciation_embedding=pronunciation_reference_embedding,
+            coherent_anchor_only=coherent_anchor_only,
+            language=language,
+            contains_vice_city=VICE_CITY_TERM in canonical_text,
+        )
         segment_identity_rows.append({
             "position":position,
             "language":gate_language,
