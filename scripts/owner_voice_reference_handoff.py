@@ -96,6 +96,15 @@ def main() -> int:
     handoff_state_path = _state_file()
     previous = _load_json(handoff_state_path)
     if previous.get("dispatch_key") == dispatch_key:
+        if (previous.get("repository") != repository
+                or previous.get("branch") != branch):
+            print("OWNER_VOICE_REFERENCE_HANDOFF=AUTHORITY_CHANGED_RECONCILIATION_REQUIRED", flush=True)
+            return 5
+        if previous.get("status") != "DISPATCHED":
+            # A failed/ambiguous GitHub dispatch is not proof that the
+            # materialization workflow started. Do not blindly replay it.
+            print("OWNER_VOICE_REFERENCE_HANDOFF=DISPATCH_RECONCILIATION_REQUIRED", flush=True)
+            return 4
         print("OWNER_VOICE_REFERENCE_HANDOFF=UNCHANGED", flush=True)
         return 0
 
@@ -136,6 +145,13 @@ def main() -> int:
     except OSError:
         pass
 
+    # Only a confirmed successful CLI dispatch is eligible for success.
+    # A deferred dispatch is durably recorded but must be reconciled before
+    # any new attempt with this exact reference index.
+    dispatch_status = str(receipt.get("status") or "")
+    if dispatch_status != "DISPATCHED":
+        print("OWNER_VOICE_REFERENCE_HANDOFF=DISPATCH_RECONCILIATION_REQUIRED", flush=True)
+        return 4
     print("OWNER_VOICE_REFERENCE_HANDOFF=DISPATCHED", flush=True)
     return 0
 
