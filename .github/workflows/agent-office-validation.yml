@@ -202,6 +202,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Checkout pinned Munder Difflin source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -209,6 +210,7 @@ jobs:
           repository: chaitanyagiri/munder-difflin
           ref: 6248293a7cd9dfdbf9633d12bbe857831ccfee88
           path: .agent-office-upstream
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
