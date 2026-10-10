@@ -218,7 +218,59 @@ def write_private_text(path, text):
 
 
 def write_private_json(path, value):
-    write_private_text(path, json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+    write_private_text(path, json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
+
+
+def _checkpoint_path(output, video_id):
+    if video_id not in VIDEOS:
+        raise ValueError("CHECKPOINT_UNKNOWN_SOURCE")
+    return Path(output) / "checkpoints" / (video_id + ".json")
+
+
+def write_video_checkpoint(output, video, model_name, runtime, analyzer_sha256):
+    """Durably save exactly one fully decoded + transcribed, hash-pinned source."""
+    _validate_video(video)
+    video_id = video["video_id"]
+    if len(analyzer_sha256) != 64:
+        raise ValueError("CHECKPOINT_SCRIPT_FINGERPRINT_INVALID")
+    write_private_json(_checkpoint_path(output, video_id), {
+        "schema": "OwnerVoiceVideoASRCheckpoint/v1",
+        "video_id": video_id, "media_sha256": EXPECTED[video_id],
+        "model_name": model_name, "runtime": runtime,
+        "analyzer_sha256": analyzer_sha256,
+        "video": video,
+    })
+
+
+def load_video_checkpoint(output, video_id, model_name, runtime, analyzer_sha256):
+    """Resume only an exact model/runtime/analyzer/media match; never silently trust."""
+    path = _checkpoint_path(output, video_id)
+    if path.is_symlink():
+        raise ValueError("CHECKPOINT_SYMLINK_FORBIDDEN")
+    if not path.exists():
+        return None
+    if not path.is_file():
+        raise ValueError("CHECKPOINT_NOT_FILE")
+    payload = json.loads(
+        path.read_text(encoding="utf-8"),
+        parse_constant=lambda v: (_ for _ in ()).throw(
+            ValueError("CHECKPOINT_NONFINITE_VALUE")
+        ),
+    )
+    if not (
+        payload.get("schema") == "OwnerVoiceVideoASRCheckpoint/v1"
+        and payload.get("video_id") == video_id
+        and payload.get("media_sha256") == EXPECTED[video_id]
+        and payload.get("model_name") == model_name
+        and payload.get("runtime") == runtime
+        and payload.get("analyzer_sha256") == analyzer_sha256
+    ):
+        raise ValueError("CHECKPOINT_PROVENANCE_MISMATCH")
+    video = payload.get("video")
+    if not isinstance(video, dict):
+        raise ValueError("CHECKPOINT_INVALID_PAYLOAD")
+    _validate_video(video)
+    return video
 
 
 def _run(command, capture=False):
@@ -409,12 +461,26 @@ def main():
     output = _safe_output(args.output)
     write_private_json(output / "run-state.json", {"status": "RUNNING"})
     try:
+        source = Path(args.input_dir).expanduser()
+        # Verify BOTH original media hashes before any potentially long model load.
+        for vid in VIDEOS:
+            media = source / (vid + ".mp4")
+            if not media.is_file() or sha256_file(media) != EXPECTED[vid]:
+                raise ValueError("LOCAL_MEDIA_MISSING_OR_SHA256_MISMATCH_" + vid)
         model, deps = _preflight(args.model)
         write_private_json(output / "preflight.json", deps)
-        videos = [
-            _process(model, Path(args.input_dir).expanduser() / (vid + ".mp4"),
-                     vid, output) for vid in VIDEOS
-        ]
+        analyzer_sha256 = sha256_file(Path(__file__))
+        videos = []
+        for vid in VIDEOS:
+            prior = load_video_checkpoint(
+                output, vid, args.model, deps, analyzer_sha256
+            )
+            if prior is None:
+                prior = _process(model, source / (vid + ".mp4"), vid, output)
+                write_video_checkpoint(
+                    output, prior, args.model, deps, analyzer_sha256
+                )
+            videos.append(prior)
         vocabulary, names, coverage = index_videos(videos)
         write_private_json(output / "candidate-report.json", {
             "schema": "OwnerVoiceTwoVideoASR/v3", "videos": videos,
