@@ -7,6 +7,13 @@ Creates only an ephemeral Harness SQLite database on an authorized runner.
 """
 from __future__ import annotations
 
+import base64
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from app.services.br_rea_issuer_attestation_service import (
+    SCHEMA, PUBLIC_KEY_ENV, canonical_message,
+)
+import time
 from hashlib import sha256
 import json
 import os
@@ -30,12 +37,23 @@ from app.services.harness_routing_policy_service import (
 def run() -> dict:
     if os.environ.get("BR_TEST_DATABASE"):
         raise RuntimeError("E2E must use a new isolated Harness database")
+    if os.environ.get(PUBLIC_KEY_ENV):
+        raise RuntimeError("E2E cannot overwrite preconfigured trusted production key")
     paths = (
         "app/services/harness_capability_service.py",
         "app/services/harness_authorization_service.py",
         "app/database/harness_authorization_repository.py",
     )
     with tempfile.TemporaryDirectory(prefix="br-rea-harness-e2e-") as workspace:
+        # Synthetic ephemeral CI signer tests verification math only.
+        # This key does NOT attest the identity of a production issuer.
+        ci_signer = Ed25519PrivateKey.generate()
+        os.environ[PUBLIC_KEY_ENV] = base64.b64encode(
+            ci_signer.public_key().public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw,
+            )
+        ).decode("ascii")
         os.environ["BR_TEST_DATABASE"] = str(Path(workspace) / "harness.sqlite")
         try:
             initialize_schema()
@@ -55,12 +73,29 @@ def run() -> dict:
                 subject=f"capability:{CAPABILITY_ID}",
                 lineage={"routing_id": routing.routing_id, "scope": list(paths)},
             )
+            now = int(time.time())
+            ci_proof = {
+                "schema": SCHEMA,
+                "issued_at": now,
+                "expires_at": now + 60,
+            }
+            ci_proof["signature_b64"] = base64.b64encode(
+                ci_signer.sign(
+                    canonical_message(
+                        authorization, paths,
+                        issued_at=now, expires_at=now + 60,
+                    )
+                )
+            ).decode("ascii")
             payload = {
                 "authorization_id": authorization.authorization_id,
                 "harness_decision_id": authorization.harness_decision_id,
                 "execution_id": authorization.execution_id,
                 "paths": list(paths),
+                "issuer_attestation": ci_proof,
             }
+            # Signing key is not needed by the verifier.
+            del ci_signer
             observed = execute_mcp_capability(
                 routing_decision=routing,
                 authorization=authorization,
@@ -117,10 +152,13 @@ def run() -> dict:
                 "receipt_sha256": evidence["receipt_sha256"],
                 "single_use": "PASS",
                 "fallback": "FORBIDDEN",
+                "issuer_signature_verification": "PASS_TEST_KEY_ONLY",
+                "production_trusted_issuer": "UNVERIFIED",
                 "third_party_runtime": "NOT_INSTALLED",
             }
         finally:
             os.environ.pop("BR_TEST_DATABASE", None)
+            os.environ.pop(PUBLIC_KEY_ENV, None)
 
 
 if __name__ == "__main__":
