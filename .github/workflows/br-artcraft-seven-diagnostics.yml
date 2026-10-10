@@ -19,7 +19,7 @@ jobs:
       - name: Fetch available per-project evidence from prior seven-matrix run
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_RUN: "38010319887"
+          SOURCE_RUN: "38010474735"
         run: |
           set -euo pipefail
           mkdir -p diagnostics
@@ -74,7 +74,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: artcraft-seven-diagnostics-run-38010319887
+          name: artcraft-seven-diagnostics-run-38010474735
           path: diagnostics/combined-diagnostics.json
           if-no-files-found: warn
           retention-days: 30
