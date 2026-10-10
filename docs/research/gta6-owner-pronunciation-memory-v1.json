@@ -1,0 +1,57 @@
+{
+  "schema": "GTA6OwnerPronunciationMemory/v1",
+  "voice_identity": "BR_OWNER_V1",
+  "scope": "GTA VI PT-BR narration",
+  "identity_policy": "Only authorized owner audio for synthesis; dubbing videos are pronunciation/prosody references only",
+  "approved_readings": [
+    {
+      "term": "GTA 6",
+      "spoken_text": "Gê Tê A seis",
+      "authority": "owner-approved"
+    },
+    {
+      "term": "Vice City",
+      "spoken_text": "vaicy siti",
+      "authority": "explicit-owner"
+    }
+  ],
+  "canonical_terms_pending_acoustic_verification": [
+    "Rockstar Games",
+    "Leonida",
+    "Leonida Keys",
+    "Port Gellhorn",
+    "Ambrosia",
+    "Grassrivers",
+    "Mount Kalaga",
+    "Jason Duval",
+    "Jason",
+    "Lucia Caminos",
+    "Lucia",
+    "Cal Hampton",
+    "Boobie Ike",
+    "Dre'Quan Priest",
+    "Real Dimez",
+    "Raul Bautista",
+    "Brian Heder"
+  ],
+  "reference_videos": [
+    {
+      "id": "f8IZhKcuEts",
+      "channel": "YouDubbing",
+      "acoustic_verified": false
+    },
+    {
+      "id": "K6rVM6gn6k4",
+      "channel": "MANGÁ K",
+      "acoustic_verified": false
+    }
+  ],
+  "rules": [
+    "Never infer phonetic readings from spelling, metadata or subtitles",
+    "Only promote acoustically verified timestamped pronunciation after human approval",
+    "Preserve canonical spelling in scripts",
+    "No actor voice or reference video audio as speaker embedding",
+    "Block unverified names instead of claiming they are correct",
+    "Maintain pronunciation memory in repository and load via Harness governance; this document alone does not alter synthesis"
+  ]
+}
