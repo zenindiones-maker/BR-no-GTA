@@ -545,6 +545,9 @@ def main()->int:
         +(",".join(owner_asserted_pronunciation_targets) or "NONE")
     )
     raw_index=_index()
+    expected_index_sha=str(request_payload.get("expected_reference_index_sha256") or "").strip().lower()
+    if expected_index_sha and expected_index_sha != str(raw_index.get("index_sha256") or "").lower():
+        raise RuntimeError("OWNER_VOICE_RECOVERY_REFERENCE_INDEX_CHANGED")
     index,health=sanitize_owner_reference_index(
         raw_index,
         min_message_id_exclusive=pronunciation_after_message_id,
