@@ -1,0 +1,34 @@
+name: Owner Voice Two Video Acoustic Probe
+on:
+  push:
+    branches: [work/br-owner-voice-coherent-qa-recovery-v1]
+    paths:
+      - 'scripts/owner_voice_two_video_acoustic_probe.py'
+      - '.github/workflows/owner-voice-two-video-acoustic-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install media and ASR tooling
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m pip install --disable-pip-version-check 'yt-dlp>=2025.1' 'faster-whisper==1.2.0'
+      - name: Acquire, decode and transcribe only approved video sources
+        run: |
+          python scripts/owner_voice_two_video_acoustic_probe.py --output "$RUNNER_TEMP/owner-voice-acoustic"
+      - name: Upload non-biometric candidate evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owner-voice-two-video-acoustic-candidates
+          path: ${{ runner.temp }}/owner-voice-acoustic/candidate-report.json
+          retention-days: 2
+          if-no-files-found: warn
