@@ -135,6 +135,33 @@ class AcousticVocabularyContracts(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "INVALID_PCM"):
                 probe.load_pcm_f32(pcm)
 
+    def test_real_ffmpeg_resampling_32000_to_16000_float32(self):
+        import math
+        import struct
+        import wave
+        import numpy as np
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "synthetic-32khz.wav"
+            pcm = Path(directory) / "synthetic-16khz.f32le"
+            with wave.open(str(source), "wb") as out:
+                out.setnchannels(1)
+                out.setsampwidth(2)
+                out.setframerate(32000)
+                out.writeframes(b"".join(struct.pack("<h", int(
+                    5000 * math.sin(2 * math.pi * 440 * i / 32000)
+                )) for i in range(32000)))
+            probe._run([
+                "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+                "-y", "-i", str(source), "-map", "0:a:0", "-ac", "1",
+                "-ar", "16000", "-f", "f32le", "-c:a", "pcm_f32le", str(pcm),
+            ])
+            audio = probe.load_pcm_f32(pcm)
+            self.assertIsInstance(audio, np.ndarray)
+            self.assertEqual(audio.dtype, np.float32)
+            self.assertEqual(audio.shape, (16000,))
+            self.assertGreater(float(np.max(np.abs(audio))), 0.1)
+            self.assertLessEqual(float(np.max(np.abs(audio))), 1.0)
+
     def test_pyav19_no_longer_blocks_numpy_path(self):
         import numpy as np
         with tempfile.TemporaryDirectory() as directory:
