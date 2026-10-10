@@ -77,7 +77,9 @@ class OwnerCriticalPronunciationTests(unittest.TestCase):
 
     def test_workflow_skips_telegram_when_critical_quality_gate_fails(self):
         wf=Path(".github/workflows/owner-voice-single-human-clone.yml").read_text()
-        self.assertIn("steps.generate.outputs.send_eligible != 'false'",wf)
+        self.assertIn("steps.generate.outputs.send_eligible == 'true'",wf)
+        self.assertIn("steps.generate.outputs.critical_scope == 'false'",wf)
+        self.assertNotIn("steps.generate.outputs.send_eligible != 'false'",wf)
         src=Path("scripts/owner_voice_single_human_clone.py").read_text()
         self.assertIn("GTA6_OWNER_AUDITION_SPEAKER_REFERENCE=TELEGRAM_OWNER_ONLY",src)
         self.assertIn("critical_batches if is_critical_audition",src)
