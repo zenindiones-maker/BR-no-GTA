@@ -532,8 +532,16 @@ def test_multilingual_identity_gate_is_language_matched_not_whole_clone_cross_li
     assert "evaluate_language_matched_segment_identity_gate" in source
     assert "pronunciation_reference_embedding" in source
     assert "segment_identity_rows=[]" in source
-    assert 'reference_embedding=canonical_embedding' in source
-    assert 'reference_embedding=pronunciation_reference_embedding' in source
+    # The reference choice was extracted to a typed helper so a coherent
+    # canonical-only trial can keep valid speaker QA without a fresh Vice City
+    # recording. Check both identity baselines, not obsolete inline spelling.
+    assert "owner_reference_for_identity_measurement(" in source
+    ref_selector=Path(
+        "app/services/owner_voice_prompt_consistency_service.py"
+    ).read_text(encoding="utf-8")
+    assert "if coherent_anchor_only:" in ref_selector
+    assert "return canonical_embedding, gate_language" in ref_selector
+    assert "return pronunciation_embedding,gate_language" in ref_selector
     assert "LANGUAGE_MATCHED_OWNER_REFERENCE_P10" in Path(
         "app/services/owner_voice_speaker_identity_service.py"
     ).read_text(encoding="utf-8")

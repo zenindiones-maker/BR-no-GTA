@@ -1,0 +1,79 @@
+name: Owner Voice Two Video Acoustic Offline Contract
+on:
+  push:
+    branches: [work/br-owner-voice-coherent-qa-recovery-v1]
+    paths:
+      - 'scripts/owner_voice_two_video_acoustic_probe.py'
+      - 'scripts/owner_voice_two_video_acoustic_review.py'
+      - 'app/services/gta6_owner_audio_dictionary_service.py'
+      - 'config/gta6_owner_audio_pronunciation_dictionary_v1.json'
+      - 'scripts/owner_voice_single_human_clone.py'
+      - 'scripts/owner_voice_single_clone_delivery.py'
+      - 'scripts/owner_voice_critical_audio_telegram_delivery.py'
+      - 'tests/test_owner_voice_critical_audio_telegram_delivery.py'
+      - 'tests/test_gta6_owner_audio_dictionary.py'
+      - 'tests/test_owner_voice_critical_audio_dictionary_execution.py'
+      - 'scripts/owner_voice_survey_telegram_delivery.py'
+      - 'scripts/owner_voice_survey_telegram_remote_control.py'
+      - 'scripts/owner_voice_survey_telegram_secure_bridge.sh'
+      - 'tests/test_owner_voice_survey_secure_bridge.py'
+      - 'tests/test_owner_voice_survey_telegram_delivery.py'
+      - 'tests/test_owner_voice_survey_telegram_remote_control.py'
+      - 'tests/test_owner_voice_two_video_acoustic_review.py'
+      - 'scripts/owner_voice_two_video_review_remote_control.py'
+      - 'tests/test_owner_voice_two_video_review_remote_control.py'
+      - 'tests/test_owner_voice_two_video_acoustic_probe.py'
+      - 'tests/test_owner_voice_two_video_codespace_launcher.py'
+      - 'tests/test_owner_voice_two_video_remote_control.py'
+      - 'scripts/owner_voice_two_video_remote_control.py'
+      - 'scripts/owner_voice_two_video_codespace_run.py'
+      - 'scripts/owner_voice_two_video_codespace_env.py'
+      - 'tests/test_owner_voice_two_video_codespace_env.py'
+      - '.github/workflows/owner-voice-two-video-acoustic-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Syntax and offline tests only (no private media)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # CI only: use pinned binary wheels to avoid hanging on apt mirrors.
+          python3 -m pip install --disable-pip-version-check --only-binary=:all: -q 'numpy==2.2.6' 'imageio-ffmpeg==0.6.0'
+          FF_BIN="$(python3 -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')"
+          test -x "$FF_BIN"
+          mkdir -p "$RUNNER_TEMP/asr-ffmpeg-bin"
+          ln -s "$FF_BIN" "$RUNNER_TEMP/asr-ffmpeg-bin/ffmpeg"
+          export PATH="$RUNNER_TEMP/asr-ffmpeg-bin:$PATH"
+          ffmpeg -version | head -n 1
+          python3 -m py_compile scripts/owner_voice_two_video_acoustic_probe.py
+          python3 -m py_compile scripts/owner_voice_two_video_acoustic_review.py
+          python3 -m py_compile app/services/gta6_owner_audio_dictionary_service.py
+          python3 -m py_compile scripts/owner_voice_single_human_clone.py
+          python3 -m py_compile scripts/owner_voice_single_clone_delivery.py
+          python3 -m py_compile scripts/owner_voice_critical_audio_telegram_delivery.py
+          python3 -m py_compile scripts/owner_voice_survey_telegram_delivery.py
+          python3 -m py_compile scripts/owner_voice_survey_telegram_remote_control.py
+          bash -n scripts/owner_voice_survey_telegram_secure_bridge.sh
+          python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_acoustic_probe.py' -v
+          python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_acoustic_review.py' -v
+          python3 -m unittest discover -s tests -p 'test_gta6_owner_audio_dictionary.py' -v
+          python3 -m unittest discover -s tests -p 'test_owner_voice_critical_audio_dictionary_execution.py' -v
+          python3 -m unittest discover -s tests -p 'test_owner_voice_critical_audio_telegram_delivery.py' -v
+          python3 -m unittest discover -s tests -p 'test_owner_voice_survey_telegram_delivery.py' -v
+          python3 -m unittest discover -s tests -p 'test_owner_voice_survey_telegram_remote_control.py' -v
+          python3 -m unittest discover -s tests -p 'test_owner_voice_survey_secure_bridge.py' -v
+          python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_review_remote_control.py' -v
+          python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_codespace_launcher.py' -v
+          python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_codespace_env.py' -v
+          python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_remote_control.py' -v
+          echo 'PRIVATE_MEDIA_ACCESSED=NO'
+          echo 'VOCABULARY_EXTRACTED=NOT_CLAIMED'
+          echo 'REMOTE_CODESPACE_EXECUTION=REQUIRED'
