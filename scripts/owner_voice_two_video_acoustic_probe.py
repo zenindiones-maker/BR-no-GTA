@@ -305,13 +305,39 @@ def load_pcm_f32(path):
     return samples
 
 
-def transcribe_pcm(model, pcm_path, *, on_segment=None, **kwargs):
+def load_pcm_s16(path):
+    """Decode FFmpeg's 16-bit PCM into the canonical Whisper float32 signal.
+
+    Match faster_whisper.audio.decode_audio: signed-16 mono PCM is converted
+    to float32 and divided by 32768. This avoids rejecting ordinary codec
+    overshoots in intermediate floating-point decodes, without bypassing
+    the finite/signal-shape checks or using the incompatible PyAV decoder.
+    """
+    import numpy as np
+
+    path = Path(path)
+    size = path.stat().st_size
+    if size < 2 or size % 2:
+        raise ValueError("INVALID_PCM_S16_LENGTH")
+    samples = np.memmap(str(path), dtype="<i2", mode="r")
+    waveform = samples.astype(np.float32) / 32768.0
+    if not np.isfinite(waveform).all():
+        raise ValueError("INVALID_PCM_S16_NONFINITE")
+    return waveform
+
+
+def transcribe_pcm(model, pcm_path, *, pcm_format="f32le", on_segment=None, **kwargs):
     """NumPy bypasses PyAV file decode and consumes lazy ASR before PCM cleanup.
 
     The optional callback runs INSIDE generator iteration so legitimate
     progress can reach the Codespace terminal while inference is ongoing.
     """
-    waveform = load_pcm_f32(pcm_path)
+    if pcm_format == "s16le":
+        waveform = load_pcm_s16(pcm_path)
+    elif pcm_format == "f32le":
+        waveform = load_pcm_f32(pcm_path)
+    else:
+        raise ValueError("INVALID_PCM_FORMAT")
     segments, info = model.transcribe(waveform, **kwargs)
     records = []
     for segment in segments:
@@ -356,7 +382,7 @@ def _preflight(model_name):
     model = WhisperModel(model_name, device="cpu", compute_type="int8")
     with tempfile.TemporaryDirectory() as temp:
         sample = Path(temp) / "synthetic.wav"
-        pcm = Path(temp) / "synthetic.f32le"
+        pcm = Path(temp) / "synthetic.s16le"
         with wave.open(str(sample), "wb") as f:
             f.setnchannels(1)
             f.setsampwidth(2)
@@ -366,17 +392,17 @@ def _preflight(model_name):
             )) for n in range(16000)))
         _run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
               "-y", "-i", str(sample), "-map", "0:a:0",
-              "-ac", "1", "-ar", "16000", "-f", "f32le",
-              "-c:a", "pcm_f32le", str(pcm)])
-        if load_pcm_f32(pcm).shape != (16000,):
+              "-ac", "1", "-ar", "16000", "-f", "s16le",
+              "-c:a", "pcm_s16le", str(pcm)])
+        if load_pcm_s16(pcm).shape != (16000,):
             raise RuntimeError("SYNTHETIC_FFMPEG_DECODE_FAILED")
         segments, _ = transcribe_pcm(
-            model, pcm, language="pt", vad_filter=False
+            model, pcm, pcm_format="s16le", language="pt", vad_filter=False
         )
     return model, {
         "faster_whisper": fw, "av": av,
         "synthetic_ffmpeg_decode_and_asr": "PASS",
-        "input_type": "NUMPY_FLOAT32_16KHZ_MONO",
+        "input_type": "NUMPY_FLOAT32_FROM_S16LE_16KHZ_MONO",
         "pyav_file_decoder": "BYPASSED",
     }
 
@@ -392,15 +418,15 @@ def _process(model, media, video_id, output):
     if duration <= 0:
         raise ValueError("INVALID_MEDIA_DURATION")
     with tempfile.TemporaryDirectory(prefix=".pcm-", dir=str(output)) as temp:
-        pcm = Path(temp) / "reference.f32le"
+        pcm = Path(temp) / "reference.s16le"
         _run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
               "-y", "-i", str(media), "-map", "0:a:0", "-vn",
-              "-ac", "1", "-ar", "16000", "-f", "f32le",
-              "-c:a", "pcm_f32le", str(pcm)])
+              "-ac", "1", "-ar", "16000", "-f", "s16le",
+              "-c:a", "pcm_s16le", str(pcm)])
         if not pcm.is_file() or pcm.stat().st_size < 1024:
             raise ValueError("NO_DECODED_AUDIO")
         segments, info = transcribe_pcm(
-            model, pcm, language="pt", vad_filter=True, word_timestamps=True,
+            model, pcm, pcm_format="s16le", language="pt", vad_filter=True, word_timestamps=True,
             on_segment=lambda segment, number: emit_segment_progress(
                 video_id, number, round(segment.end * 1000), duration
             ),
