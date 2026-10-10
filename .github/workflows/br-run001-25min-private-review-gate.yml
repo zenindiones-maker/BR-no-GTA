@@ -1,0 +1,34 @@
+name: RUN-001 Two 25-Minute Masters Contract Gate
+
+on:
+  push:
+    branches:
+      - work/br-25min-private-review-gate-v1
+    paths:
+      - .github/workflows/br-run001-25min-private-review-gate.yml
+      - scripts/production_25min_master_gate.py
+      - tests/test_run001_25min_master_gate.py
+
+permissions:
+  contents: read
+
+jobs:
+  real-master-admission-contract:
+    name: Reject short/fake masters before any private upload
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Read-only checkout, no credential persistence
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Compile and run focused negative admission tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/production_25min_master_gate.py tests/test_run001_25min_master_gate.py
+          python3 -m unittest discover -s tests -p 'test_run001_25min_master_gate.py' -v
+          echo "TWO_25_MIN_MASTERS_GATE_CONTRACT=PASS"
+          echo "PRODUCTION_MASTER_RENDERED=NO"
+          echo "YOUTUBE_PRIVATE_HD_UPLOADED=NO"
+          echo "BR_OWNER_V1_HUMAN_REVIEW=NOT_AUTOMATICALLY_APPROVED"
