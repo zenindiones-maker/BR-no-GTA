@@ -12,6 +12,8 @@ on:
       - app/integrations/deepseek_harness/server.py
       - app/database/harness_authorization_repository.py
       - scripts/br_rea_investigation_harness_e2e.py
+      - scripts/br_system_static_surface_audit.py
+      - tests/test_br_system_static_surface_audit.py
       - tests/test_br_rea_investigation_executor.py
       - .github/workflows/br-rea-investigation-harness-real-e2e.yml
   workflow_dispatch:
@@ -47,5 +49,9 @@ jobs:
             tests/test_br_rea_investigation_executor.py
       - name: Run real adversarial SQLite and filesystem tests
         run: python3 -m unittest discover -s tests -p test_br_rea_investigation_executor.py -v
+      - name: Validate real and adversarial whole-source inventory
+        run: python3 -m unittest discover -s tests -p test_br_system_static_surface_audit.py -v
+      - name: Inventory tracked BR repository and workflow hazards
+        run: python3 scripts/br_system_static_surface_audit.py
       - name: Execute routed Harness E2E on actual repository code
         run: python3 scripts/br_rea_investigation_harness_e2e.py
