@@ -1,0 +1,121 @@
+name: BR ArtCraft Seven Pinned Source Snapshots
+
+# One bounded, read-only ingestion. No schedule, no secrets, no runtime execution.
+on:
+  push:
+    branches:
+      - work/br-artcraft-seven-source-study-v1
+    paths:
+      - .github/workflows/br-artcraft-seven-source-snapshot.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-artcraft-seven-source-snapshot
+  cancel-in-progress: false
+
+jobs:
+  source-snapshot:
+    name: Fetch pinned public source only
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout BR manifest without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Validate source identities and fixed safety policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+
+          p = json.loads(Path("docs/research/artcraft-seven-pinned-sources.json").read_text())
+          assert p["schema"] == "BRArtCraftPinnedSourceStudy/v1"
+          expected = {"photocraft", "vectorcraft", "filmcraft", "lightcraft", "pdfcraft", "effectcraft", "designcraft"}
+          entries = p["projects"]
+          assert len(entries) == len(expected)
+          assert {entry["name"] for entry in entries} == expected
+          for entry in entries:
+              name = entry["name"]
+              assert entry["repository"] == "storytold/" + name
+              assert entry["clone_url"] == "https://github.com/storytold/" + name + ".git"
+              assert re.fullmatch(r"[0-9a-f]{40}", entry["commit_sha"])
+              assert entry["license"] == "Apache-2.0"
+          print("SEVEN_EXACT_PUBLIC_SOURCES=PASS")
+          print("NO_SCRIPTS_FROM_SOURCE_EXECUTED=PASS")
+          PY
+
+      - name: Fetch immutable commits and make read-only source archives
+        shell: bash
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+          GIT_LFS_SKIP_SMUDGE: "1"
+        run: |
+          set -euo pipefail
+          umask 022
+          mkdir -p snapshots
+          cp docs/research/artcraft-seven-pinned-sources.json snapshots/SOURCE-MANIFEST.json
+          printf '# ArtCraft source-only study snapshots\n\n' > snapshots/README.md
+          printf 'Upstream: https://github.com/storytold — Apache-2.0.\n' >> snapshots/README.md
+          printf 'Pinned source-only exports, not Adobe executables or full git histories.\n' >> snapshots/README.md
+          printf 'No builds, tests, downloaded code execution, submodule checkout, or LFS smudge.\n' >> snapshots/README.md
+          printf 'Use SHA256SUMS.txt to verify archives; review licenses and security before adaptation.\n' >> snapshots/README.md
+          : > snapshots/SHA256SUMS.txt
+          while IFS=$'\t' read -r name url sha; do
+            echo "PINNED_SOURCE_FETCH=$name $sha"
+            gitdir="$RUNNER_TEMP/artcraft-source-$name"
+            git init --quiet "$gitdir"
+            git -C "$gitdir" remote add origin "$url"
+            git -c core.hooksPath=/dev/null -C "$gitdir" fetch --no-tags --depth=1 origin "$sha"
+            observed="$(git -C "$gitdir" rev-parse FETCH_HEAD)"
+            test "$observed" = "$sha"
+            license_path="$(git -C "$gitdir" ls-tree --name-only "$sha" | grep -iE '^(LICENSE|COPYING)([.-].*)?$' | head -n1 || true)"
+            if [[ -z "$license_path" ]]; then
+              echo "MISSING_UPSTREAM_LICENSE=$name" >&2
+              exit 43
+            fi
+            if ! git -C "$gitdir" show "$sha:$license_path" | grep -qi 'Apache License'; then
+              echo "UNEXPECTED_UPSTREAM_LICENSE=$name" >&2
+              exit 44
+            fi
+            archive="$name-${sha:0:12}.tar.gz"
+            git -c core.hooksPath=/dev/null -C "$gitdir" archive --format=tar --prefix="$name/" "$sha" | gzip -n > "snapshots/$archive"
+            tar -tzf "snapshots/$archive" >/dev/null
+            (
+              cd snapshots
+              sha256sum "$archive" >> SHA256SUMS.txt
+            )
+            count="$(git -C "$gitdir" ls-tree -r --name-only "$sha" | wc -l)"
+            bytes="$(stat -c %s "snapshots/$archive")"
+            printf '\n- %s — %s — %s tracked entries, %s archived bytes\n' "$name" "$sha" "$count" "$bytes" >> snapshots/README.md
+            echo "SOURCE_ARCHIVED=$name SHA=$sha FILES=$count BYTES=$bytes"
+            rm -rf -- "$gitdir"
+          done < <(
+            jq -r '.projects[] | [.name, .clone_url, .commit_sha] | @tsv' docs/research/artcraft-seven-pinned-sources.json
+          )
+          test "$(find snapshots -maxdepth 1 -type f -name '*.tar.gz' | wc -l)" -eq 7
+          sort -o snapshots/SHA256SUMS.txt snapshots/SHA256SUMS.txt
+          (
+            cd snapshots
+            sha256sum -c SHA256SUMS.txt
+          )
+          total="$(du -sb snapshots | cut -f1)"
+          test "$total" -le 1000000000
+          echo "SEVEN_ARCHIVES_VERIFIED=PASS TOTAL_BYTES=$total"
+          echo "NO_A15_COMPUTE=PASS"
+          echo "NO_EXECUTION_OF_UPSTREAM_CODE=PASS"
+          echo "NO_CANONICAL_MUTATION=PASS"
+
+      - name: Upload all seven pinned source snapshots
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: br-artcraft-seven-source-study
+          path: snapshots/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
