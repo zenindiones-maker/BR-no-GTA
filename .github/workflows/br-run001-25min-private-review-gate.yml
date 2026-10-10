@@ -8,6 +8,8 @@ on:
       - .github/workflows/br-run001-25min-private-review-gate.yml
       - scripts/production_25min_master_gate.py
       - tests/test_run001_25min_master_gate.py
+      - tests/test_run001_master_workflow_order.py
+      - .github/workflows/real-multi-agent-production.yml
 
 permissions:
   contents: read
@@ -28,6 +30,7 @@ jobs:
           set -euo pipefail
           python3 -m py_compile scripts/production_25min_master_gate.py tests/test_run001_25min_master_gate.py
           python3 -m unittest discover -s tests -p 'test_run001_25min_master_gate.py' -v
+          python3 -m unittest discover -s tests -p 'test_run001_master_workflow_order.py' -v
           echo "TWO_25_MIN_MASTERS_GATE_CONTRACT=PASS"
           echo "PRODUCTION_MASTER_RENDERED=NO"
           echo "YOUTUBE_PRIVATE_HD_UPLOADED=NO"
