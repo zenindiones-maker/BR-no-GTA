@@ -101,6 +101,18 @@ class OwnerCriticalPronunciationTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError,"SINGLE_CLONE_MANIFEST_CONTRACT_INVALID"):
                     _load_manifest(filename)
 
+    def test_concurrent_remote_clone_is_serialized_by_existing_ledger_guard(self):
+        workflow=Path(".github/workflows/owner-voice-single-human-clone.yml").read_text()
+        self.assertIn("group: br-owner-v1-single-human-clone-ledger",workflow)
+        self.assertIn("cancel-in-progress: false",workflow)
+        self.assertIn("REQUEST_CHANGED=false",workflow)
+        self.assertIn("then REQUEST_CHANGED=true; fi",workflow)
+        self.assertIn("clone_requested == 'true'",workflow)
+        # The current candidate must not take over an existing queued owner
+        # clone run or mutate the separate authenticated Telegram ledger.
+        self.assertIn("steps.generate.outputs.send_eligible == 'true'",workflow)
+        self.assertIn("steps.generate.outputs.critical_scope == 'true'",workflow)
+
     def test_workflow_skips_telegram_when_critical_quality_gate_fails(self):
         wf=Path(".github/workflows/owner-voice-single-human-clone.yml").read_text()
         self.assertIn("steps.generate.outputs.send_eligible == 'true'",wf)
