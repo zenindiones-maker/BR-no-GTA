@@ -1363,8 +1363,12 @@ def main()->int:
         not is_critical_audition
         or (identity_gate=="PASS" and content_audio_prescreen=="PASS")
     )
+    audition_delivery_eligible=(
+        bool(review_decision["audition_delivery_eligible"])
+        and targeted_delivery_allowed
+    )
     print("AUDITION_DELIVERY_ELIGIBLE="+(
-        "PASS" if targeted_delivery_allowed else "BLOCKED_QUALITY_GATES"
+        "PASS" if audition_delivery_eligible else "BLOCKED_QUALITY_GATES"
     ))
     print("RUNTIME_ACTIVATION=BLOCKED_PENDING_HUMAN_REVIEW")
 
@@ -1407,10 +1411,7 @@ def main()->int:
         "clone_sha256":clone_sha,
         "clone_identity_gate":identity_gate,
         "content_audio_prescreen":content_audio_prescreen,
-        "audition_delivery_eligible":(
-            bool(review_decision["audition_delivery_eligible"])
-            and targeted_delivery_allowed
-        ),
+        "audition_delivery_eligible":audition_delivery_eligible,
         "pronunciation_scope":(
             targeted_scope if is_critical_audition else "LEGACY"
         ),
