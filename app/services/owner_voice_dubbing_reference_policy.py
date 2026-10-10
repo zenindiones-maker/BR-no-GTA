@@ -23,7 +23,7 @@ def admit_pronunciation_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
         raise DubbingReferencePolicyError("only BR_OWNER_V1 is permitted")
     if candidate.get("reference_role") != "pronunciation_and_prosody_only":
         raise DubbingReferencePolicyError("reference cannot supply speaker identity")
-    if candidate.get("acoustic_review") != "VERIFIED":
+    if candidate.get("reference_speaker_audio_used_for_synthesis") is not False:\n        raise DubbingReferencePolicyError("dubbing reference audio cannot be used for synthesis")\n    if candidate.get("voice_clone_reference_identity") != OWNER_VOICE_ID:\n        raise DubbingReferencePolicyError("clone reference must be the authorized owner")\n    if candidate.get("acoustic_review") != "VERIFIED":
         raise DubbingReferencePolicyError("transcript is not acoustic evidence")
     if candidate.get("owner_approval") != "APPROVED":
         raise DubbingReferencePolicyError("owner approval required")
