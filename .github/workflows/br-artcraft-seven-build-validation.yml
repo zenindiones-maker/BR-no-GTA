@@ -14,7 +14,8 @@ permissions:
 
 concurrency:
   group: br-artcraft-seven-validate-${{ github.ref }}
-  cancel-in-progress: false
+  # A newer validated harness revision supersedes prior blocked compilation attempts.
+  cancel-in-progress: true
 
 jobs:
   seven-isolated-builds:

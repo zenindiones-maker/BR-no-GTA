@@ -25,6 +25,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "docs/research/artcraft-seven-pinned-sources.json"
 RUST_IMAGE = "rust:1.95-slim-bookworm"
+SANDBOX_IMAGE = "br-artcraft-rust:1.95-systemlibs-v1"
 PROJECTS = {"photocraft", "vectorcraft", "filmcraft", "lightcraft", "pdfcraft", "effectcraft", "designcraft"}
 
 
@@ -95,7 +96,7 @@ def docker_args(*, src: Path, cargo: Path, target: Path, project: str,
     ]
     if network == "none":
         args.extend(["-e", "CARGO_NET_OFFLINE=true"])
-    args.append(RUST_IMAGE)
+    args.append(SANDBOX_IMAGE)
     return args
 
 
@@ -234,8 +235,32 @@ def main() -> int:
         save()
         if preflight["status"] != "success":
             raise RuntimeError("RUST_SANDBOX_IMAGE_UNAVAILABLE")
+        # Install only Debian build prerequisites into the container image
+        # BEFORE entering the no-network sandbox. No upstream source is added
+        # to this build context, and no source build scripts run here.
+        dockerfile = temp / "Dockerfile"
+        dockerfile.write_text(
+            f"FROM {RUST_IMAGE}\\n"
+            "RUN apt-get update && DEBIAN_FRONTEND=noninteractive "
+            "apt-get install -y --no-install-recommends "
+            "pkg-config libasound2-dev libudev-dev libx11-dev "
+            "libxkbcommon-dev libxcursor-dev libxrandr-dev libxi-dev "
+            "libgl1-mesa-dev libwayland-dev libfontconfig1-dev "
+            "libfreetype6-dev libdbus-1-dev libgtk-3-dev libvulkan-dev "
+            "&& rm -rf /var/lib/apt/lists/*\\n",
+            encoding="utf-8",
+        )
+        build_image = run_command(
+            ["docker", "build", "--pull=false", "-t", SANDBOX_IMAGE,
+             "-f", str(dockerfile), str(temp)],
+            cwd=ROOT, log=out / "docker_systemlibs.log", timeout=480,
+        )
+        report["stages"]["docker_systemlibs"] = build_image
+        save()
+        if build_image["status"] != "success":
+            raise RuntimeError("SYSTEM_LIBRARIES_IMAGE_BUILD_FAILED")
         image_inspect = run_command(
-            ["docker", "image", "inspect", RUST_IMAGE, "--format", "{{json .RepoDigests}}"],
+            ["docker", "image", "inspect", SANDBOX_IMAGE, "--format", "{{.Id}}"],
             cwd=ROOT, log=out / "docker_image_digest.log", timeout=20)
         report["stages"]["image_inspect"] = image_inspect
         save()
