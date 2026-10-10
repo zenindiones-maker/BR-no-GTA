@@ -27,10 +27,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg
-          command -v ffmpeg
-          python3 -m pip install --disable-pip-version-check -q 'numpy==2.2.6'
+          # CI only: use pinned binary wheels to avoid hanging on apt mirrors.
+          python3 -m pip install --disable-pip-version-check --only-binary=:all: -q 'numpy==2.2.6' 'imageio-ffmpeg==0.6.0'
+          FF_BIN="$(python3 -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')"
+          test -x "$FF_BIN"
+          mkdir -p "$RUNNER_TEMP/asr-ffmpeg-bin"
+          ln -s "$FF_BIN" "$RUNNER_TEMP/asr-ffmpeg-bin/ffmpeg"
+          export PATH="$RUNNER_TEMP/asr-ffmpeg-bin:$PATH"
+          ffmpeg -version | head -n 1
           python3 -m py_compile scripts/owner_voice_two_video_acoustic_probe.py
           python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_acoustic_probe.py' -v
           python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_codespace_launcher.py' -v
