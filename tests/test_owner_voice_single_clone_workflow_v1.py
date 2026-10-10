@@ -109,7 +109,10 @@ def test_auto_gate_failure_blocks_activation_but_not_human_audition_delivery():
     # The current manifest also enforces the independent critical-term gate.
     # A failed critical-name candidate cannot be sent merely because a general
     # human-review policy considers ordinary auditions reviewable.
-    assert '"audition_delivery_eligible":(' in source
+    # Inline or exact-bound local variable are both valid if they preserve
+    # the SAME review decision and strict critical-scope quality conjunction.
+    assert ('"audition_delivery_eligible":(' in source or
+            '"audition_delivery_eligible":audition_delivery_eligible' in source)
     assert 'bool(review_decision["audition_delivery_eligible"])' in source
     assert 'and targeted_delivery_allowed' in source
     assert '(identity_gate=="PASS" and content_audio_prescreen=="PASS")' in source
