@@ -674,3 +674,23 @@ def test_source_only_changes_cannot_request_new_owner_clone():
     assert 'if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then' in workflow
     assert 'target=".run/br-owner-v1-single-human-clone.request.json"' in workflow
     assert 'if [ "$REQUEST_CHANGED" = true ]' in workflow
+
+
+def test_qwen_cpu_parallelism_respects_runner_affinity_and_preserves_fidelity():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert 'os.sched_getaffinity(0)' in source
+    assert 'owner_cpu_threads=max(1,min(4,available_cpus))' in source
+    assert 'torch.set_num_threads(owner_cpu_threads)' in source
+    assert 'torch.set_num_interop_threads(1)' in source
+    assert 'dtype=torch.float32' in source
+    assert 'x_vector_only_mode=False' in source
+    assert 'evaluate_language_matched_segment_identity_gate(' in source
+    assert 'send_eligible=bool(manifest["audition_delivery_eligible"])' in source
+
+
+def test_source_push_never_authorizes_telegram_audition():
+    workflow=WORKFLOW.read_text(encoding="utf-8")
+    assert 'REQUEST_CHANGED=false' in workflow
+    assert 'if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then' in workflow
+    assert 'needs.contract.outputs.clone_requested == \'true\'' in workflow
+    assert 'cancel-in-progress: false' in workflow
