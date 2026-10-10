@@ -21,6 +21,11 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
           python -m pip install --disable-pip-version-check 'yt-dlp>=2025.1' 'faster-whisper==1.2.0'
+      - name: Verify executable probe and dependencies
+        run: |
+          python -m py_compile scripts/owner_voice_two_video_acoustic_probe.py
+          yt-dlp --version
+          ffmpeg -version | head -n 1
       - name: Acquire, decode and transcribe only approved video sources
         run: |
           python scripts/owner_voice_two_video_acoustic_probe.py --output "$RUNNER_TEMP/owner-voice-acoustic"
