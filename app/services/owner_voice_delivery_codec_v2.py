@@ -13,10 +13,10 @@ import tempfile
 MAX_TELEGRAM_VOICE_BYTES = 49_000_000
 
 
-def encode_private_opus(source: Path, output_dir: Path) -> Path:
+def encode_private_opus(source: Path, output_dir: Path, *, private_workspace: Path) -> Path:
     source = Path(source).expanduser().resolve()
     output_dir = Path(output_dir).expanduser().resolve()
-    private_root = output_dir.parent
+    private_root = Path(private_workspace).expanduser().resolve()
     if not source.is_relative_to(private_root):
         raise ValueError("OWNER_AUDIO_OUTSIDE_PRIVATE_WORKSPACE")
     if not source.is_file() or source.suffix.lower() != ".wav" or source.stat().st_size <= 0:
