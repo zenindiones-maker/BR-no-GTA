@@ -173,6 +173,67 @@ def choose_candidates(videos,named):
     chosen.sort(key=lambda x:(TARGETS.index(x["target"]),x["video_id"],x["start_ms"]))
     return chosen,rejected
 
+def choose_segment_surveys(videos,chosen,max_per_video=3):
+    """Quality-scoped listening samples, NOT named-word or phonetic evidence.
+
+    Read finished ASR only. Distribute by source-time thirds where possible,
+    require at least two aligned words to ground each bounded segment.
+    Never infer a target name from noisy decoded speech.
+    """
+    surveys=[]
+    for vid in FILES:
+        if any(x["video_id"]==vid for x in chosen):
+            continue
+        video=videos[vid]
+        duration=video["duration_ms"]
+        buckets={}
+        for index,seg in enumerate(video["segments"]):
+            a,z=seg.get("start_ms"),seg.get("end_ms")
+            if (type(a) is not int or type(z) is not int
+                    or not 0<=a<z<=duration or z-a<600):
+                continue
+            logp=seg.get("avg_logprob")
+            no=seg.get("no_speech_prob")
+            if (type(logp) not in (int,float) or not -1.0<=logp<=0
+                    or (no is not None and
+                        (type(no) not in (int,float) or not 0<=no<=.6))):
+                continue
+            aligned=[]
+            for w in seg.get("words",[]):
+                start,end,p=w.get("start_ms"),w.get("end_ms"),w.get("probability")
+                if (w.get("timing_status","ALIGNED")=="ALIGNED"
+                        and type(start) is int and type(end) is int
+                        and 0<=start<end<=duration
+                        and type(p) in (int,float) and .65<=p<=1):
+                    aligned.append(w)
+            if len(aligned)<2:
+                continue
+            start=max(0,a-150)
+            end=min(duration,z+250,a+5500)
+            if end-start<750:
+                continue
+            score=round(sum(w["probability"] for w in aligned) / len(aligned),6)
+            bucket=min(2,(3*a)//duration)
+            item={
+                "target":None,"evidence_class":"SEGMENT_SURVEY_NOT_NAMED_PRONUNCIATION",
+                "video_id":vid,"media_sha256":FILES[vid],
+                "segment_index":index,"start_ms":a,"end_ms":z,
+                "clip_start_ms":start,"clip_end_ms":end,
+                "aligned_word_count":len(aligned),"mean_word_probability":score,
+                "source_speaker_identity":"NOT_BR_OWNER_V1",
+                "speaker_reference_allowed":False,
+                "acoustic_review":"PENDING","human_approval":"PENDING",
+                "timing_quality":"ASR_ALIGNED_NOT_ACOUSTICALLY_VERIFIED",
+            }
+            rank=(score,len(aligned),-index)
+            if bucket not in buckets or rank>buckets[bucket][0]:
+                buckets[bucket]=(rank,item)
+        ranked=[value[1] for key,value in sorted(buckets.items())]
+        # If any of the thirds are silent/low confidence, do not manufacture clips.
+        surveys.extend(ranked[:max_per_video])
+    return sorted(surveys,key=lambda x:(x["video_id"],x["clip_start_ms"]))
+
+
 def atomic_private_json(path,value):
     path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
     fd,tmp=tempfile.mkstemp(prefix=".private-",dir=path.parent)
@@ -210,7 +271,7 @@ def prepare(root):
     root=Path(root)
     evidence=root/"owner-voice-acoustic-execution/evidence"
     media=root/"owner-voice-dubbing-input"
-    target=root/"owner-voice-acoustic-curation-v1"
+    target=root/"owner-voice-acoustic-curation-v2"
     if any(x.is_symlink() for x in (evidence,media,target)):
         raise ReviewBlocked("UNTRUSTED_PRIVATE_SYMLINK")
     videos,named=validate_receipt(evidence)
@@ -224,6 +285,8 @@ def prepare(root):
         "named-phrase-candidates.json"
     )}
     chosen,rejected=choose_candidates(videos,named)
+    surveys=choose_segment_surveys(videos,chosen,max_per_video=3)
+    selected=chosen+surveys
     if target.exists():
         old=safe_json(target/"manifest.json")
         if old.get("evidence_sha256")!=inputs:
@@ -244,15 +307,20 @@ def prepare(root):
         os.chmod(folder,0o700)
         (folder/"clips").mkdir(mode=0o700)
         clips=[]
-        for i,item in enumerate(chosen):
+        for i,item in enumerate(selected):
             file=f"clips/{i+1:02d}-{item['video_id']}.wav"
             checksum=clip_wav(media/(item["video_id"]+".mp4"),item,folder/file)
             clips.append(item|{"file":file,"clip_sha256":checksum})
         manifest={
-            "schema":"OwnerVoiceAcousticHumanCuration/v1",
-            "status":"CLIPS_READY_HUMAN_REVIEW" if clips else "NO_SAFE_CLIPS",
+            "schema":"OwnerVoiceAcousticHumanCuration/v2",
+            "status":("SEGMENT_SURVEY_READY_HUMAN_REVIEW" if surveys
+                      else "CLIPS_READY_HUMAN_REVIEW" if clips else "NO_SAFE_CLIPS"),
             "evidence_sha256":inputs,
-            "targets":{t:sum(x["target"]==t for x in clips) for t in TARGETS},
+            "targets":{t:sum(x["target"]==t for x in chosen) for t in TARGETS},
+            "named_input_candidate_count":len(named["candidates"]),
+            "named_target_clip_count":len(chosen),
+            "survey_clip_count":len(surveys),
+            "survey_clips_are_not_named_pronunciation_evidence":True,
             "eligible_clip_count":len(clips),
             "rejected_candidate_count":len(rejected),
             "rejections":rejected,
@@ -295,10 +363,14 @@ def main():
         print("TARGET="+label.replace(" ","_")+
               " PRIVATE_CLIPS="+str(manifest["targets"][label]),flush=True)
     print("PRIVATE_CLIPS_TOTAL="+str(manifest["eligible_clip_count"]),flush=True)
+    print("ASR_NAMED_CANDIDATES="+str(manifest["named_input_candidate_count"]),flush=True)
+    print("NAMED_TARGET_CLIPS="+str(manifest["named_target_clip_count"]),flush=True)
+    print("SURVEY_CLIPS="+str(manifest["survey_clip_count"]),flush=True)
+    print("SURVEY_IS_NOT_PRONUNCIATION_PROOF=TRUE",flush=True)
     print("REJECTED_CANDIDATES="+str(manifest["rejected_candidate_count"]),flush=True)
     print("ACOUSTIC_REVIEW=PENDING",flush=True)
     print("SPEAKER_REFERENCE_ALLOWED=FALSE",flush=True)
-    print("CURATION_PRIVATE_DIRECTORY="+str(root/"owner-voice-acoustic-curation-v1"),flush=True)
+    print("CURATION_PRIVATE_DIRECTORY="+str(root/"owner-voice-acoustic-curation-v2"),flush=True)
     return 0
 
 if __name__=="__main__":
