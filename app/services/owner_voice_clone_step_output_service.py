@@ -61,3 +61,23 @@ def write_delivery_step_outputs(
     finally:
         if fd>=0:
             os.close(fd)
+
+
+def reject_critical_scope_for_standard_delivery(manifest: dict) -> None:
+    """Keep single-clone Telegram delivery separate from protected critical WAV.
+
+    Called after structural validation and before any ledger or Telegram I/O.
+    Even if workflow step routing is wrong, this worker cannot send the
+    18-name protected audition through the legacy multi-message delivery.
+    """
+    if not isinstance(manifest,dict):
+        raise ValueError("OWNER_CLONE_STANDARD_MANIFEST_INVALID")
+    schema=manifest.get("schema_version")
+    if schema=="OwnerVoiceSingleCloneControlReconciliation/v1":
+        if manifest.get("control_only") is True and manifest.get("runtime_activation") is False:
+            return
+        raise ValueError("OWNER_CLONE_CONTROL_MODE_INVALID")
+    if schema!="OwnerVoiceSingleCloneCandidate/v1":
+        raise ValueError("OWNER_CLONE_STANDARD_MANIFEST_INVALID")
+    if manifest.get("pronunciation_scope") not in (None,"LEGACY"):
+        raise ValueError("CRITICAL_OWNER_AUDIO_PROTECTED_DELIVERY_REQUIRED")
