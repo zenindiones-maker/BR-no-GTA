@@ -1,17 +1,18 @@
 """Safety regression contracts for the existing Codespace-only acoustic launcher."""
 import os
+import sys
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-LAUNCHER = ROOT / "scripts" / "owner_voice_two_video_codespace_run.sh"
+LAUNCHER = ROOT / "scripts" / "owner_voice_two_video_codespace_run.py"
 
 
 class CodespaceLauncherContracts(unittest.TestCase):
-    def test_bash_syntax(self):
-        result = subprocess.run(["bash", "-n", str(LAUNCHER)],
+    def test_python_syntax(self):
+        result = subprocess.run([sys.executable, "-m", "py_compile", str(LAUNCHER)],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -19,7 +20,7 @@ class CodespaceLauncherContracts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             env = {"PATH": os.environ["PATH"], "HOME": directory,
                    "CODESPACES": "false", "CODESPACE_NAME": ""}
-            result = subprocess.run(["bash", str(LAUNCHER)],
+            result = subprocess.run([sys.executable, str(LAUNCHER)],
                                     cwd=directory, env=env,
                                     capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
@@ -30,7 +31,7 @@ class CodespaceLauncherContracts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             env = {"PATH": os.environ["PATH"], "HOME": directory,
                    "CODESPACES": "true", "CODESPACE_NAME": "other-codespace"}
-            result = subprocess.run(["bash", str(LAUNCHER)],
+            result = subprocess.run([sys.executable, str(LAUNCHER)],
                                     cwd=directory, env=env,
                                     capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
@@ -44,9 +45,9 @@ class CodespaceLauncherContracts(unittest.TestCase):
             "pip install", "docker run", "BR_OWNER_VOICE_ACTIVATE",
         ):
             self.assertNotIn(forbidden, content)
-        self.assertIn("sha256sum", content)
-        self.assertIn("flock", content)
-        self.assertIn("git show", content)
+        self.assertIn("hashlib.sha256", content)
+        self.assertIn("fcntl.flock", content)
+        self.assertIn('"show"', content)
         self.assertIn("owner_voice_two_video_acoustic_probe.py", content)
 
 
