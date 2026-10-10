@@ -20,6 +20,16 @@ class ScriptToScreenEDLTests(unittest.TestCase):
         self.assertEqual(r["shots"][0]["media_sha256"],self.digest)
         self.assertFalse(r["render_authorized"])
         self.assertEqual(r["semantic_qa"],"PENDING_RENDERED_FRAME_REVIEW")
+    def test_video_in_point_is_preserved(self):
+        self.assets["a1"]["media_kind"]="video"
+        self.plan["shots"][0]["source_in_ms"]=250
+        r=build_edit_decision_list(self.script,self.plan,self.assets)
+        self.assertEqual(r["shots"][0]["source_in_ms"],250)
+        self.assertEqual(r["shots"][0]["media_kind"],"video")
+    def test_video_without_in_point_fails(self):
+        self.assets["a1"]["media_kind"]="video"
+        with self.assertRaises(ScreenContractError):
+            build_edit_decision_list(self.script,self.plan,self.assets)
     def test_missing_media_rejected(self):
         self.path.unlink()
         with self.assertRaises(ScreenContractError):
