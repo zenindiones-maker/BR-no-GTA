@@ -1,0 +1,41 @@
+name: BR ARTEX inert-source static gate
+
+on:
+  push:
+    branches:
+      - work/br-artex-source-isolated-v1
+    paths:
+      - scripts/br_artex_source_quarantine.py
+      - tests/test_br_artex_source_quarantine.py
+      - .github/workflows/br-artex-inert-source-gate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-artex-inert-source-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inert-source-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout BR-no-GTA only
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Validate quarantine script syntax
+        run: python3 -m py_compile scripts/br_artex_source_quarantine.py tests/test_br_artex_source_quarantine.py
+      - name: Run integrity and negative-admission checks
+        run: python3 -m unittest discover -s tests -p test_br_artex_source_quarantine.py -v
+      - name: Prove GitHub runner cannot acquire ARTEX source
+        run: |
+          set -eu
+          if python3 scripts/br_artex_source_quarantine.py stage > /tmp/artex-out.txt 2>&1; then
+            echo 'FAIL: unauthorized runner admitted'
+            exit 1
+          fi
+          grep -q 'ARTEX_SOURCE_STAGING=BLOCKED' /tmp/artex-out.txt
+          echo 'ARTEX_UNAUTHORIZED_RUNNER=DENIED'
