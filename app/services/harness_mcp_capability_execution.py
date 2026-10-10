@@ -58,6 +58,10 @@ from app.services.browser_mcp_exploration_service import (
     BROWSER_MCP_EXPLORATION_EXECUTOR_BINDING,
     execute_authorized_browser_mcp_exploration,
 )
+from app.services.br_rea_investigation_executor import (
+    CAPABILITY_ID as BR_REA_INVESTIGATION_CAPABILITY_ID,
+    execute_br_rea_investigation,
+)
 
 
 SkillExecutor = Callable[[CapabilityDefinition, dict[str, Any]], Any]
@@ -75,6 +79,9 @@ MCP_BOUNDED_EXECUTOR_ALLOWLIST = {
     BROWSER_MCP_EXPLORATION_CAPABILITY_ID: (
         BROWSER_MCP_EXPLORATION_EXECUTOR_BINDING
     ),
+    BR_REA_INVESTIGATION_CAPABILITY_ID: (
+        "app.services.br_rea_investigation_executor.execute_br_rea_investigation"
+    ),
     **NATIVE_BINDINGS,
 }
 
@@ -84,6 +91,7 @@ _NATIVE_EXECUTORS = {
     "qa.preflight": execute_qa_preflight_capability,
     "script.generate": execute_script_generate_capability,
     "video.edit.vedit": execute_vedit_plan_capability,
+    BR_REA_INVESTIGATION_CAPABILITY_ID: execute_br_rea_investigation,
     MEDIA_ANALYSIS_CLOUD_CAPABILITY_ID: execute_media_analysis_cloud_capability,
 }
 

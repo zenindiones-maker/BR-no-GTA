@@ -5,6 +5,7 @@ Reference audio is evidence for pronunciation/prosody, never a voice identity so
 from __future__ import annotations
 
 from typing import Any
+import re
 
 REFERENCE_VIDEO_IDS = frozenset({"f8IZhKcuEts", "K6rVM6gn6k4"})
 OWNER_VOICE_ID = "BR_OWNER_V1"
@@ -17,13 +18,19 @@ class DubbingReferencePolicyError(ValueError):
 
 def admit_pronunciation_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
     """Admit a human-reviewed acoustic observation; never activate it automatically."""
+    if not isinstance(candidate, dict):
+        raise DubbingReferencePolicyError("candidate must be a structured observation")
     if candidate.get("video_id") not in REFERENCE_VIDEO_IDS:
         raise DubbingReferencePolicyError("unapproved reference video")
     if candidate.get("voice_identity") != OWNER_VOICE_ID:
         raise DubbingReferencePolicyError("only BR_OWNER_V1 is permitted")
     if candidate.get("reference_role") != "pronunciation_and_prosody_only":
         raise DubbingReferencePolicyError("reference cannot supply speaker identity")
-    if candidate.get("reference_speaker_audio_used_for_synthesis") is not False:\n        raise DubbingReferencePolicyError("dubbing reference audio cannot be used for synthesis")\n    if candidate.get("voice_clone_reference_identity") != OWNER_VOICE_ID:\n        raise DubbingReferencePolicyError("clone reference must be the authorized owner")\n    if candidate.get("acoustic_review") != "VERIFIED":
+    if candidate.get("reference_speaker_audio_used_for_synthesis") is not False:
+        raise DubbingReferencePolicyError("dubbing reference audio cannot be used for synthesis")
+    if candidate.get("voice_clone_reference_identity") != OWNER_VOICE_ID:
+        raise DubbingReferencePolicyError("clone reference must be the authorized owner")
+    if candidate.get("acoustic_review") != "VERIFIED":
         raise DubbingReferencePolicyError("transcript is not acoustic evidence")
     if candidate.get("owner_approval") != "APPROVED":
         raise DubbingReferencePolicyError("owner approval required")
@@ -34,10 +41,11 @@ def admit_pronunciation_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
     if term in OWNER_LOCKED_READINGS and spoken != OWNER_LOCKED_READINGS[term]:
         raise DubbingReferencePolicyError("owner-locked pronunciation cannot change")
     start, end = candidate.get("start_ms"), candidate.get("end_ms")
-    if not isinstance(start, int) or not isinstance(end, int) or start < 0 or end <= start:
+    if type(start) is not int or type(end) is not int or start < 0 or end <= start:
         raise DubbingReferencePolicyError("verified source timestamps required")
-    if not str(candidate.get("acoustic_evidence_sha256") or "").strip():
-        raise DubbingReferencePolicyError("acoustic evidence digest required")
+    digest = candidate.get("acoustic_evidence_sha256")
+    if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
+        raise DubbingReferencePolicyError("valid sha256 acoustic evidence digest required")
     return {
         "canonical_text": term,
         "spoken_text": spoken,

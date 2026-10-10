@@ -169,6 +169,7 @@ CAPABILITY_CATALOG = tuple(
             "gta6.brain.decide",
             "browser.qa.validate",
             "browser.qa.explore",
+            "reverse-engineering.evidence.inspect",
         }
     )
 )
@@ -247,6 +248,15 @@ def execute_capability(
     capability = authorize_capability(capability_id, authorization)
 
     record = _REGISTRY_BY_ID[capability_id]
+    if capability_id == "reverse-engineering.evidence.inspect":
+        # Tie the immutable payload lineage to the outer validated capability
+        # call, before the executor can consume a persisted single-use grant.
+        if not isinstance(payload, dict) or any((
+            payload.get("authorization_id") != authorization.authorization_id,
+            payload.get("harness_decision_id") != authorization.harness_decision_id,
+            payload.get("execution_id") != authorization.execution_id,
+        )):
+            raise PermissionError("Investigation payload Harness lineage mismatch")
     if routing_decision is not None:
         if routing_decision.selected_capability_id != capability_id:
             raise PermissionError("Harness routing capability mismatch")

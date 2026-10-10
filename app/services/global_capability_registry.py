@@ -2960,3 +2960,66 @@ _REGISTRY._records=tuple(sorted(
     (*_REGISTRY._records,BR_LLAMAFACTORY_STAGED_RECORD),
     key=lambda item:item.capability_id,
 ))
+
+
+# BR-native read-only investigation sensor; ARTEX is not imported or executed.
+# Its exact executor is subordinate to the persisted DeepSeek Harness boundary.
+BR_REA_EVIDENCE_INSPECT_RECORD = CapabilityRecord(
+    capability_id="reverse-engineering.evidence.inspect",
+    capability_type="EXECUTOR",
+    domain="reverse-engineering",
+    implementation="First-party bounded Python source/lineage observation, no ARTEX runtime",
+    input_contract="BRReaInvestigationRequest/v1 (Harness lineage + up to 8 scoped Python paths)",
+    output_contract="BRReaInvestigationEvidence/v1 (source hashes and observed dependency edges)",
+    requirements=(
+        "fresh persisted DeepSeek Harness DEVELOPMENT authorization",
+        "exact Registry executor binding",
+        "bound authorization/decision/execution IDs",
+        "read-only first-party Python source scope",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("DEVELOPMENT",),
+    policy_tags=("rea", "reverse-engineering", "source", "forensics", "evidence",
+                 "read-only", "no-network", "deterministic"),
+    security_boundary=(
+        "No external ARTEX runtime, no commands, no network, no read outside "
+        "first-party source whitelist, no content returned. Atomic one-shot "
+        "Harness authorization, no independent agent, mutation or publication."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL",
+    quality_class="AST_PROVENANCE_FAIL_CLOSED",
+    evidence_contract="BRReaInvestigationEvidence/v1",
+    fallback_eligibility=False,
+    executor_binding="app.services.br_rea_investigation_executor.execute_br_rea_investigation",
+    version="1",
+    provider_id="internal",
+    agent_id=None,
+    side_effects=("one-time persisted Harness authorization consumption",),
+    authority="NONE",
+    memory_write="FORBIDDEN",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+    supports_parallelism=False,
+    supports_retry=False,
+    supports_resume=False,
+    supports_review=False,
+    side_effect_class="READ_ONLY",
+    default_read_scope=("app/services", "app/database", "scripts"),
+    default_write_scope=(),
+    allowed_tools=(),
+    health_policy="DETERMINISTIC_SOURCE_ONLY",
+    execution_operations=(CAN_READ_REPOSITORY, CAN_PRODUCE_ARTIFACT_REFS),
+    execution_kind="TOOL",
+    functional_roles=("RESEARCH", "AUDIT"),
+)
+if _REGISTRY._by_id.get(BR_REA_EVIDENCE_INSPECT_RECORD.capability_id) is not None:
+    raise ValueError("Duplicate BR REA investigation capability")
+_REGISTRY._by_id[BR_REA_EVIDENCE_INSPECT_RECORD.capability_id] = BR_REA_EVIDENCE_INSPECT_RECORD
+_REGISTRY._records = tuple(sorted(
+    (*_REGISTRY._records, BR_REA_EVIDENCE_INSPECT_RECORD),
+    key=lambda item: item.capability_id,
+))

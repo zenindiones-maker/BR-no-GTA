@@ -1,0 +1,73 @@
+name: BR REA V4 compatibility with current investigation branch
+on:
+  push:
+    branches: [work/br-rea-investigation-harness-gate-v1]
+    paths:
+      - ".github/workflows/br-rea-v4-current-compatibility-evidence.yml"
+      - "scripts/br_v24_rea_cross_branch_compatibility.py"
+      - "scripts/br_rea_investigation_harness_e2e.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: br-rea-v4-current-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-source-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Checkout current first-party BR branch without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify same repo and pin historical V4 source outside worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "zenindiones-maker/BR-no-GTA"
+          test "$GITHUB_REF_NAME" = "work/br-rea-investigation-harness-gate-v1"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          pin="ad00c215ecd33ee74703cfeb0d72694220b666f0"
+          git fetch --no-tags origin "$pin"
+          test "$(git rev-parse FETCH_HEAD)" = "$pin"
+          wt="$RUNNER_TEMP/br-native-rea-v4-readonly"
+          git worktree add --detach "$wt" "$pin"
+          test "$(git -C "$wt" rev-parse HEAD)" = "$pin"
+          test -z "$(git -C "$wt" status --porcelain)"
+          echo "BR_REA_V4_SOURCE_PIN=PASS"
+      - name: Compare exact first-party contracts without executing third-party REA
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          from scripts.br_v24_rea_cross_branch_compatibility import compare, FILES, V4_SHA
+
+          source = Path(os.environ["RUNNER_TEMP"]) / "br-native-rea-v4-readonly"
+          current = Path.cwd()
+          evidence = compare(source, current)
+          counts = evidence["status_counts"]
+          if counts.get("HISTORICAL_PROVENANCE_MISSING", 0) != 0:
+              raise RuntimeError("REA_V4_HISTORICAL_SOURCE_MISSING")
+          if evidence["inspection_count"] != len(FILES):
+              raise RuntimeError("REA_V4_SOURCE_COVERAGE_MISMATCH")
+          evidence["destination_branch"] = os.environ["GITHUB_REF_NAME"]
+          evidence["current_head"] = os.environ["GITHUB_SHA"]
+          serialized = json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode()
+          print("BR_REA_V4_COMPAT_INSPECTION_COUNT=" + str(evidence["inspection_count"]))
+          print("BR_REA_V4_COMPAT_STATUS_COUNTS=" + json.dumps(counts, sort_keys=True))
+          print("BR_REA_V4_COMPAT_RECEIPT_SHA256=" + hashlib.sha256(serialized).hexdigest())
+          print("BR_REA_V4_RUNTIME=NOT_ATTEMPTED")
+          print("BR_REA_V4_REINTRODUCED=FALSE")
+          print("BR_REA_V4_CURRENT_SOURCE_AUDIT=PASS")
+          PY

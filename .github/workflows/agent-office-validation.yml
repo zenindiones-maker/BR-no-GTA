@@ -270,6 +270,61 @@ jobs:
           print("UPSTREAM_AUDIT_BOUNDARY=PASS")
           PY
 
+      - name: Preserve sanitized upstream npm audit evidence for security reviewer
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["GITHUB_WORKSPACE"]) / "agent-office-evidence"
+          source = root / "upstream-npm-audit.json"
+          if not source.is_file():
+              print("UPSTREAM_AUDIT_TRIAGE=NOT_AVAILABLE")
+          else:
+              raw = json.loads(source.read_text(encoding="utf-8"))
+              packages = []
+              for name, finding in sorted(raw.get("vulnerabilities", {}).items()):
+                  if finding.get("severity") not in ("high", "critical"):
+                      continue
+                  advisory_ids = sorted({
+                      str(item.get("name") or item.get("url") or "")
+                      for item in finding.get("via", ())
+                      if isinstance(item, dict)
+                  })
+                  packages.append({
+                      "package": name,
+                      "severity": finding.get("severity"),
+                      "is_direct": finding.get("isDirect") is True,
+                      "advisory_identifiers": advisory_ids[:16],
+                      "fix_available": finding.get("fixAvailable") is not False,
+                  })
+              payload = {
+                  "schema": "BRAgentOfficeUpstreamAuditTriage/v1",
+                  "status": "REVIEW_REQUIRED" if packages else "NO_REPORTED_HIGH_OR_CRITICAL",
+                  "packages": packages,
+              }
+              root.mkdir(parents=True, exist_ok=True)
+              (root / "upstream-audit-triage.json").write_text(
+                  json.dumps(payload, sort_keys=True, indent=2) + "\n",
+                  encoding="utf-8",
+              )
+              print("UPSTREAM_AUDIT_TRIAGE=" + payload["status"])
+              print("UPSTREAM_AUDIT_HIGH_CRITICAL_COUNT=" + str(len(packages)))
+          PY
+
+      - name: Upload sanitized upstream audit triage
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: br-agent-office-upstream-audit-${{ github.run_id }}
+          path: agent-office-evidence/upstream-audit-triage.json
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Install BR test dependencies
         run: |
           python -m pip install --upgrade pip
