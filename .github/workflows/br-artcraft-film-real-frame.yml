@@ -108,9 +108,14 @@ jobs:
           assert d["harness_authority"]=="NONE"
           print("FILMCRAFT_NATIVE_REAL_PROOF=PASS",d["frame"])
           PY
-          ffmpeg -hide_banner -v error -nostdin -i film-real-qa/frames/real-filmcraft-frame.png \
-            -frames:v 1 -f null -
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --read-only --user "$(id -u):$(id -g)" \
+            -v "$PWD/film-real-qa/frames:/frames:ro" \
+            artcraft-film-real-sandbox:v1 \
+            ffmpeg -hide_banner -v error -nostdin -i /frames/real-filmcraft-frame.png \
+              -frames:v 1 -f null -
           sha256sum film-real-qa/frames/real-filmcraft-frame.png
+          echo "FILMCRAFT_REAL_PNG_FFMPEG_DECODE=PASS"
       - name: Preserve native binary provenance and FilmCraft actual frame
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
