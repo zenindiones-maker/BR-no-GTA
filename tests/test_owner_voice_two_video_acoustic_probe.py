@@ -104,6 +104,49 @@ class AcousticVocabularyContracts(unittest.TestCase):
             probe.check_pyav_versions("1.2.1", "19.0.0")
         probe.check_pyav_versions("1.2.1", "18.0.0")
 
+    def test_pcm_waveform_transcription_bypasses_pyav_without_patching(self):
+        import numpy as np
+        with tempfile.TemporaryDirectory() as directory:
+            pcm = Path(directory) / "audio.f32le"
+            reference = np.array([0.0, 0.25, -0.5, 0.125], dtype="<f4")
+            pcm.write_bytes(reference.tobytes())
+            seen = []
+            class FakeModel:
+                def transcribe(self, audio, **kwargs):
+                    self_assert = isinstance(audio, np.ndarray)
+                    seen.append((self_assert, audio.dtype, audio.tolist(), kwargs))
+                    return iter([{"text": "sim"}]), {"language": "pt"}
+            segments, info = probe.transcribe_pcm(FakeModel(), pcm, language="pt")
+            self.assertEqual(segments, [{"text": "sim"}])
+            self.assertEqual(info, {"language": "pt"})
+            self.assertEqual(len(seen), 1)
+            self.assertTrue(seen[0][0])
+            self.assertEqual(seen[0][2], reference.tolist())
+            self.assertEqual(seen[0][3]["language"], "pt")
+
+    def test_pcm_waveform_rejects_invalid_length_and_nan(self):
+        import numpy as np
+        with tempfile.TemporaryDirectory() as directory:
+            pcm = Path(directory) / "bad.f32le"
+            pcm.write_bytes(b"abc")
+            with self.assertRaisesRegex(ValueError, "INVALID_PCM"):
+                probe.load_pcm_f32(pcm)
+            pcm.write_bytes(np.array([0., np.nan], dtype="<f4").tobytes())
+            with self.assertRaisesRegex(ValueError, "INVALID_PCM"):
+                probe.load_pcm_f32(pcm)
+
+    def test_pyav19_no_longer_blocks_numpy_path(self):
+        import numpy as np
+        with tempfile.TemporaryDirectory() as directory:
+            pcm = Path(directory) / "audio.f32le"
+            pcm.write_bytes(np.zeros(16000, dtype="<f4").tobytes())
+            class FakeModel:
+                def transcribe(self, audio, **kwargs):
+                    assert isinstance(audio, np.ndarray)
+                    return iter([]), {"language": "pt"}
+            segments, _ = probe.transcribe_pcm(FakeModel(), pcm, language="pt")
+            self.assertEqual(segments, [])
+
     def test_atomic_private_output_has_restrictive_permissions(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "candidate.json"
