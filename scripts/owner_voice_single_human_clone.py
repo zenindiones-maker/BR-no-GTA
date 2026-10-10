@@ -623,11 +623,16 @@ def main()->int:
     print("PRONUNCIATION_LANGUAGE_POLICY=CODE_SWITCH_ALLOWED")
     print("IDENTITY_REFERENCE_SCOPE=GLOBAL_OWNER_INLIERS")
 
+    speaker_model_t0=time.monotonic()
+    print("OWNER_PERF_STAGE_START=speaker_model_load",flush=True)
     classifier=_load_speaker_model(cache_root)
+    print(f"OWNER_PERF_STAGE_DONE=speaker_model_load elapsed_seconds={time.monotonic()-speaker_model_t0:.3f}",flush=True)
     normalized={}
     original_sources={}
     embeddings={}
     metrics={}
+    reference_embedding_t0=time.monotonic()
+    print(f"OWNER_PERF_STAGE_START=reference_embeddings count={len(refs)}",flush=True)
     for row in refs:
         rid=str(int(row["telegram_input_id"]))
         original=Path(row["runtime_path"]).resolve()
@@ -637,6 +642,7 @@ def main()->int:
         metrics[rid]=pcm16_quality_metrics(wav)
         embeddings[rid]=_embedding(classifier,wav)
 
+    print(f"OWNER_PERF_STAGE_DONE=reference_embeddings elapsed_seconds={time.monotonic()-reference_embedding_t0:.3f}",flush=True)
     profile=calibrate_owner_identity_profile(embeddings)
     centroid_floor=float(profile["clone_centroid_min_similarity"])
     inlier_ids=set(str(x) for x in profile["inlier_ids"])
@@ -1027,6 +1033,8 @@ def main()->int:
     from qwen_tts import Qwen3TTSModel
 
     torch.set_num_threads(4)
+    qwen_load_t0=time.monotonic()
+    print("OWNER_PERF_STAGE_START=qwen_model_load",flush=True)
     qwen_snapshot=_prepare_qwen_model(cache_root/"qwen3-tts")
     model=Qwen3TTSModel.from_pretrained(
         str(qwen_snapshot),
@@ -1034,6 +1042,9 @@ def main()->int:
         dtype=torch.float32,
         attn_implementation="sdpa",
     )
+    print(f"OWNER_PERF_STAGE_DONE=qwen_model_load elapsed_seconds={time.monotonic()-qwen_load_t0:.3f}",flush=True)
+    prompt_t0=time.monotonic()
+    print("OWNER_PERF_STAGE_START=owner_prompt_build",flush=True)
     anchor_prompt_items=model.create_voice_clone_prompt(
         ref_audio=str(canonical24),
         ref_text=anchor_ref_text,
@@ -1180,6 +1191,8 @@ def main()->int:
     # scratch checkpoint; never reuse older rejected audition segments.
     from app.services.owner_voice_serial_generation_v11 import generate_one_private_audition
 
+    print(f"OWNER_PERF_STAGE_DONE=owner_prompt_build elapsed_seconds={time.monotonic()-prompt_t0:.3f}",flush=True)
+    print("OWNER_PERF_STAGE_START=qwen_segment_generation",flush=True)
     wavs,sample_rate,generation_seconds,segment_timing_receipts=generate_one_private_audition(
         generate=model.generate_voice_clone,
         heartbeat=_run_with_generation_heartbeat,
@@ -1188,6 +1201,7 @@ def main()->int:
         segment_prompts=segment_prompts,
         workspace=workspace,
     )
+    print(f"OWNER_PERF_STAGE_DONE=qwen_segment_generation elapsed_seconds={generation_seconds:.3f}",flush=True)
     if len(wavs)!=len(segment_texts) or int(sample_rate)<=0:
         raise RuntimeError("QWEN3_TTS_SEGMENT_BATCH_OUTPUT_INVALID")
     print("OWNER_QWEN_SEGMENT_MEASURED_COUNT="+str(len(segment_timing_receipts)))
