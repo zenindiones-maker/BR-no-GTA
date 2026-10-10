@@ -77,8 +77,11 @@ def find_existing_python(repo, env):
         env.get("BR_OWNER_PYTHON"),
         str(Path(env["VIRTUAL_ENV"]) / "bin/python")
         if env.get("VIRTUAL_ENV") else None,
+        str(Path.home() / ".local/share/br-no-gta/owner-voice-acoustic-execution/.asr-venv/bin/python"),
         str(repo / ".venv/bin/python"),
         str(Path.home() / ".venv/bin/python"),
+        "/opt/venv/bin/python",
+        "/workspaces/BR-no-GTA/.venv/bin/python",
         sys.executable,
     ]
     for candidate in filter(None, candidates):
