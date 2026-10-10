@@ -1325,7 +1325,9 @@ def main()->int:
         row for row in index["references"]
         if int(row["telegram_input_id"])==int(human_review_reference["telegram_input_id"])
     )
-    clone_id=f"BR_OWNER_V1_SINGLE_CLONE_{os.environ.get('GITHUB_RUN_ID','local')}_{os.environ.get('GITHUB_RUN_ATTEMPT','1')}"
+    # Retry attempts of the SAME GitHub run must have one ledger mission.
+    # If a rerun produces different bytes, the ledger collision guard blocks it.
+    clone_id=f"BR_OWNER_V1_SINGLE_CLONE_{os.environ.get('GITHUB_RUN_ID','local')}"
     manifest={
         "schema_version":"OwnerVoiceSingleCloneCandidate/v1",
         "clone_id":clone_id,
