@@ -4,7 +4,15 @@ No mocks, no network, no ARTEX runtime, no paid models.
 """
 from __future__ import annotations
 
+import base64
+from datetime import datetime, timezone
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from app.services.br_rea_issuer_attestation_service import (
+    SCHEMA, PUBLIC_KEY_ENV, canonical_message,
+)
 from hashlib import sha256
+import time
 import os
 from pathlib import Path
 import tempfile
@@ -37,6 +45,14 @@ from app.services.harness_routing_policy_service import (
 class ReaInvestigationAdversarialTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="rea-adversarial-")
+        self.old_public_key = os.environ.get(PUBLIC_KEY_ENV)
+        self.private_key = Ed25519PrivateKey.generate()
+        os.environ[PUBLIC_KEY_ENV] = base64.b64encode(
+            self.private_key.public_key().public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw,
+            )
+        ).decode("ascii")
         self.old_database = os.environ.get("BR_TEST_DATABASE")
         os.environ["BR_TEST_DATABASE"] = str(Path(self.temp.name) / "harness.sqlite")
         initialize_schema()
@@ -46,6 +62,10 @@ class ReaInvestigationAdversarialTests(unittest.TestCase):
             os.environ.pop("BR_TEST_DATABASE", None)
         else:
             os.environ["BR_TEST_DATABASE"] = self.old_database
+        if self.old_public_key is None:
+            os.environ.pop(PUBLIC_KEY_ENV, None)
+        else:
+            os.environ[PUBLIC_KEY_ENV] = self.old_public_key
         self.temp.cleanup()
 
     def grant(self, action="DEVELOPMENT", subject=None):
@@ -54,13 +74,26 @@ class ReaInvestigationAdversarialTests(unittest.TestCase):
             subject=subject or f"capability:{CAPABILITY_ID}",
         )
 
-    @staticmethod
-    def payload(auth, paths=None):
+    def payload(self, auth, paths=None):
+        paths = paths or ["app/services/harness_capability_service.py"]
+        issued_at = int(time.time())
+        expires_at = issued_at + 60
+        proof = {
+            "schema": SCHEMA,
+            "issued_at": issued_at,
+            "expires_at": expires_at,
+        }
+        proof["signature_b64"] = base64.b64encode(
+            self.private_key.sign(
+                canonical_message(auth, tuple(paths), issued_at=issued_at, expires_at=expires_at)
+            )
+        ).decode("ascii")
         return {
             "authorization_id": auth.authorization_id,
             "harness_decision_id": auth.harness_decision_id,
             "execution_id": auth.execution_id,
-            "paths": paths or ["app/services/harness_capability_service.py"],
+            "paths": paths,
+            "issuer_attestation": proof,
         }
 
     def test_real_harness_capability_executes_and_hashes_actual_file(self):
@@ -199,7 +232,7 @@ class ReaInvestigationAdversarialTests(unittest.TestCase):
             _read_scoped(fixture, "app/services/large.py")
         (fixture / "app/services/bad.py").write_text("def broken(: pass")
         request = InvestigationRequest(
-            "auth", "decision", "execution", ("app/services/bad.py",)
+            "auth", "decision", "execution", ("app/services/bad.py",), {}
         )
         with self.assertRaises(InvestigationBlocked):
             inspect_first_party_sources(request, root=fixture)
@@ -227,6 +260,71 @@ class ReaInvestigationAdversarialTests(unittest.TestCase):
             e["module"] == "app.services.harness_authorization_service" and e["status"] == "PRESENT"
             for e in imports
         ))
+
+
+    def test_unsigned_sqlite_grant_cannot_execute(self):
+        auth = self.grant()
+        unsigned = self.payload(auth)
+        del unsigned["issuer_attestation"]
+        result = execute_capability(
+            capability_id=CAPABILITY_ID,
+            authorization=auth, payload=unsigned,
+            executor=execute_br_rea_investigation,
+        )
+        self.assertEqual(result.status, "FAILED")
+        self.assertNotEqual(result.result.get("error_type"), None)
+
+    def test_signature_rejects_path_scope_tampering_and_wrong_key(self):
+        auth = self.grant()
+        valid = self.payload(auth)
+        altered = {**valid, "paths": ["app/database/harness_authorization_repository.py"]}
+        observed = execute_capability(
+            capability_id=CAPABILITY_ID, authorization=auth,
+            payload=altered, executor=execute_br_rea_investigation,
+        )
+        self.assertEqual(observed.status, "FAILED")
+        alternate = Ed25519PrivateKey.generate()
+        os.environ[PUBLIC_KEY_ENV] = base64.b64encode(
+            alternate.public_key().public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw,
+            )
+        ).decode("ascii")
+        observed2 = execute_capability(
+            capability_id=CAPABILITY_ID, authorization=auth,
+            payload=valid, executor=execute_br_rea_investigation,
+        )
+        self.assertEqual(observed2.status, "FAILED")
+
+    def test_no_trust_anchor_fail_closed(self):
+        auth = self.grant()
+        valid = self.payload(auth)
+        os.environ.pop(PUBLIC_KEY_ENV, None)
+        result = execute_capability(
+            capability_id=CAPABILITY_ID, authorization=auth,
+            payload=valid, executor=execute_br_rea_investigation,
+        )
+        self.assertEqual(result.status, "FAILED")
+
+    def test_expired_proof_denied_even_with_valid_signature(self):
+        auth = self.grant()
+        valid = self.payload(auth)
+        expired = int(time.time()) - 12
+        issued = expired - 20
+        valid["issuer_attestation"] = {
+            "schema": SCHEMA,
+            "issued_at": issued, "expires_at": expired,
+            "signature_b64": base64.b64encode(
+                self.private_key.sign(
+                    canonical_message(auth, tuple(valid["paths"]), issued_at=issued, expires_at=expired)
+                )
+            ).decode("ascii"),
+        }
+        result = execute_capability(
+            capability_id=CAPABILITY_ID, authorization=auth,
+            payload=valid, executor=execute_br_rea_investigation,
+        )
+        self.assertEqual(result.status, "FAILED")
 
 
 if __name__ == "__main__":
