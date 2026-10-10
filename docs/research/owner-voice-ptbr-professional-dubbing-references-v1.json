@@ -30,9 +30,24 @@
     "production_without_approval": false
   },
   "next_steps": [
-    "Check whether target words occur in spoken audio, not just video metadata",
-    "Capture exact timestamps and acoustically compare permitted short excerpts",
-    "Test phonetic variants only with owner-bound Qwen TTS",
-    "Deliver one short audition after ledger reconciliation"
-  ]
+    "Provide playable copies or permitted excerpts of both selected videos for acoustic inspection",
+    "Identify spoken names and capture start/end timestamps with audio evidence",
+    "Create phonetic variants only from attested audio; mark absent terms NOT_ATTESTED",
+    "Test with BR_OWNER_V1 conditioning exclusively; gate identity and pronunciation before Telegram"
+  ],
+  "acoustic_inventory": {
+    "status": "BLOCKED_AUDIO_NOT_AVAILABLE_IN_CURRENT_SESSION",
+    "source_policy": "ONLY_TWO_SELECTED_DUBBED_VIDEOS",
+    "candidate_names_from_video_descriptions_not_pronunciations": [
+      "Jason",
+      "Lucia",
+      "Brian",
+      "Cal",
+      "Real Dimez",
+      "Phil"
+    ],
+    "pronunciations_verified": [],
+    "timestamps_verified": [],
+    "note": "These candidate names are written credits only. No spoken form, stress, or duration has been measured. Do not feed this inventory into the synthesis lexicon."
+  }
 }
