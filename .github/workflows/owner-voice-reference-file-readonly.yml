@@ -1,0 +1,102 @@
+name: BR_OWNER_V1 Telegram getFile Read-only Verification
+on:
+  push:
+    branches:
+      - work/owner-voice-safe-ingress-recovery-20261010
+    paths:
+      - ".github/workflows/owner-voice-reference-file-readonly.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Confirm indexed Telegram audio availability with getFile only
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Validate private references with metadata-only getFile
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          OWNER_REFERENCE_ENVELOPE: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64 }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+          import time
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
+
+          token=os.environ.get("TELEGRAM_BOT_TOKEN","").strip()
+          envelope=os.environ.get("OWNER_REFERENCE_ENVELOPE","").strip()
+          if not token or not envelope:
+              print("OWNER_VOICE_GETFILE=BLOCKED_MISSING_PRIVATE_INPUT")
+              raise SystemExit(2)
+          try:
+              index=json.loads(base64.urlsafe_b64decode(envelope).decode("utf-8"))
+              base={k:v for k,v in index.items() if k!="index_sha256"}
+              digest=hashlib.sha256(json.dumps(base,sort_keys=True,ensure_ascii=False,separators=(",",":")).encode()).hexdigest()
+              refs=index["references"]
+              assert digest==index["index_sha256"]
+              assert index["voice_identity_id"]=="BR_OWNER_V1"
+              assert len(refs)==index["reference_count"]
+              assert 0<len(refs)<=100
+              assert all(row.get("remote_verified") is True for row in refs)
+          except Exception:
+              print("OWNER_VOICE_GETFILE=BLOCKED_INDEX_INVALID")
+              raise SystemExit(3)
+
+          confirmed=0
+          mismatched=0
+          unavailable=0
+          rate_limited=0
+          for row in refs:
+              # No update consumption, no file download and no file ID logging.
+              file_id=str(row.get("telegram_file_id") or "").strip()
+              unique_id=str(row.get("telegram_file_unique_id") or "").strip()
+              if not file_id or not unique_id:
+                  unavailable+=1
+                  continue
+              request=Request(
+                  "https://api.telegram.org/bot"+token+"/getFile",
+                  data=urlencode({"file_id":file_id}).encode(),
+                  headers={"Content-Type":"application/x-www-form-urlencoded"},
+                  method="POST",
+              )
+              try:
+                  with urlopen(request,timeout=12) as response:
+                      payload=json.load(response)
+                  result=payload.get("result") if payload.get("ok") is True else None
+                  if not isinstance(result,dict) or not result.get("file_path"):
+                      unavailable+=1
+                  elif result.get("file_unique_id")!=unique_id:
+                      mismatched+=1
+                  else:
+                      confirmed+=1
+              except HTTPError as exc:
+                  if exc.code==429:
+                      rate_limited+=1
+                      break
+                  unavailable+=1
+              except Exception:
+                  # Exception strings may include private file IDs or bot token.
+                  unavailable+=1
+              time.sleep(0.25)
+
+          print("OWNER_VOICE_INDEXED_REFERENCES="+str(len(refs)))
+          print("OWNER_VOICE_GETFILE_CONFIRMED="+str(confirmed))
+          print("OWNER_VOICE_GETFILE_UNAVAILABLE="+str(unavailable))
+          print("OWNER_VOICE_GETFILE_IDENTITY_MISMATCH="+str(mismatched))
+          print("OWNER_VOICE_GETFILE_RATE_LIMITED="+str(rate_limited))
+          print("TELEGRAM_GETUPDATES_ATTEMPTED=FALSE")
+          print("TELEGRAM_FILE_BYTES_DOWNLOADED=0")
+          print("TELEGRAM_SEND_ATTEMPTED=FALSE")
+          if confirmed != len(refs) or unavailable or mismatched or rate_limited:
+              print("OWNER_VOICE_GETFILE=INCOMPLETE")
+              raise SystemExit(4)
+          print("OWNER_VOICE_GETFILE=PASS_METADATA_ONLY")
+          PY
