@@ -9,6 +9,8 @@ on:
       - 'config/gta6_owner_audio_pronunciation_dictionary_v1.json'
       - 'scripts/owner_voice_single_human_clone.py'
       - 'scripts/owner_voice_single_clone_delivery.py'
+      - 'scripts/owner_voice_critical_audio_telegram_delivery.py'
+      - 'tests/test_owner_voice_critical_audio_telegram_delivery.py'
       - 'tests/test_gta6_owner_audio_dictionary.py'
       - 'tests/test_owner_voice_critical_audio_dictionary_execution.py'
       - 'scripts/owner_voice_survey_telegram_delivery.py'
@@ -56,6 +58,7 @@ jobs:
           python3 -m py_compile app/services/gta6_owner_audio_dictionary_service.py
           python3 -m py_compile scripts/owner_voice_single_human_clone.py
           python3 -m py_compile scripts/owner_voice_single_clone_delivery.py
+          python3 -m py_compile scripts/owner_voice_critical_audio_telegram_delivery.py
           python3 -m py_compile scripts/owner_voice_survey_telegram_delivery.py
           python3 -m py_compile scripts/owner_voice_survey_telegram_remote_control.py
           bash -n scripts/owner_voice_survey_telegram_secure_bridge.sh
@@ -63,6 +66,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_acoustic_review.py' -v
           python3 -m unittest discover -s tests -p 'test_gta6_owner_audio_dictionary.py' -v
           python3 -m unittest discover -s tests -p 'test_owner_voice_critical_audio_dictionary_execution.py' -v
+          python3 -m unittest discover -s tests -p 'test_owner_voice_critical_audio_telegram_delivery.py' -v
           python3 -m unittest discover -s tests -p 'test_owner_voice_survey_telegram_delivery.py' -v
           python3 -m unittest discover -s tests -p 'test_owner_voice_survey_telegram_remote_control.py' -v
           python3 -m unittest discover -s tests -p 'test_owner_voice_survey_secure_bridge.py' -v
