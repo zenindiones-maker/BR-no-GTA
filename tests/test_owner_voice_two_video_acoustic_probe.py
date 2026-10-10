@@ -124,6 +124,55 @@ class AcousticVocabularyContracts(unittest.TestCase):
             self.assertEqual(seen[0][2], reference.tolist())
             self.assertEqual(seen[0][3]["language"], "pt")
 
+    def test_s16le_loader_accepts_full_scale_and_never_exceeds_one(self):
+        import numpy as np
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "audio.s16le"
+            path.write_bytes(np.array([-32768, -16384, 0, 16384, 32767],
+                                      dtype="<i2").tobytes())
+            arr = probe.load_pcm_s16(path)
+            self.assertEqual(arr.dtype, np.float32)
+            self.assertEqual(arr.tolist(), [-1.0, -0.5, 0.0, 0.5, 32767 / 32768.0])
+            self.assertLessEqual(float(np.max(np.abs(arr))), 1.0)
+            path.write_bytes(b"\\x01")
+            with self.assertRaisesRegex(ValueError, "INVALID_PCM"):
+                probe.load_pcm_s16(path)
+
+    def test_ffmpeg_normalizes_synthetic_above_unity_float_samples(self):
+        import numpy as np
+        with tempfile.TemporaryDirectory() as directory:
+            f32 = Path(directory) / "loud.f32le"
+            s16 = Path(directory) / "clipped.s16le"
+            f32.write_bytes(np.array([0., 0.5, 1.23, -1.4, -0.2],
+                                     dtype="<f4").tobytes())
+            probe._run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+                        "-y", "-f", "f32le", "-ar", "16000", "-ac", "1",
+                        "-i", str(f32), "-ar", "16000", "-ac", "1",
+                        "-f", "s16le", "-c:a", "pcm_s16le", str(s16)])
+            audio = probe.load_pcm_s16(s16)
+            self.assertEqual(audio.size, 5)
+            self.assertTrue(np.isfinite(audio).all())
+            self.assertTrue((np.abs(audio) <= 1.0).all())
+            self.assertEqual(float(audio[2]), 32767.0 / 32768)
+            self.assertEqual(float(audio[3]), -1.0)
+
+    def test_s16le_pcm_numpy_path_bypasses_pyav(self):
+        import numpy as np
+        with tempfile.TemporaryDirectory() as directory:
+            p = Path(directory) / "reference.s16le"
+            p.write_bytes(np.array([0, -32768, 32767], dtype="<i2").tobytes())
+            class FakeModel:
+                def transcribe(self, audio, **kwargs):
+                    assert isinstance(audio, np.ndarray)
+                    assert audio.dtype == np.float32
+                    assert np.isfinite(audio).all()
+                    assert np.abs(audio).max() <= 1.0
+                    return iter([1]), {"language": "pt"}
+            records, info = probe.transcribe_pcm(FakeModel(), p, pcm_format="s16le",
+                                                  language="pt")
+            self.assertEqual(records, [1])
+            self.assertEqual(info["language"], "pt")
+
     def test_pcm_waveform_rejects_invalid_length_and_nan(self):
         import numpy as np
         with tempfile.TemporaryDirectory() as directory:
