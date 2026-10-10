@@ -32,7 +32,14 @@ def build_edit_decision_list(script: dict, plan: dict, assets: dict) -> dict:
                 h.update(block)
         if h.hexdigest() != digest:
             raise ScreenContractError("ASSET_HASH_MISMATCH")
+        media_kind = asset.get("media_kind", "image")
+        if media_kind not in ("image", "video"):
+            raise ScreenContractError("UNSUPPORTED_ASSET_KIND")
+        if media_kind == "video" and (not isinstance(shot.get("source_in_ms"), int) or isinstance(shot.get("source_in_ms"), bool) or shot["source_in_ms"] < 0):
+            raise ScreenContractError("SOURCE_IN_REQUIRED")
         timeline.append({
+            "media_kind": media_kind,
+            **({"source_in_ms": shot["source_in_ms"]} if media_kind == "video" else {}),
             "segment_id": shot["segment_id"],
             "asset_id": shot["asset_id"],
             "media_path": str(media.resolve()),
