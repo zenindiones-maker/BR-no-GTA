@@ -162,10 +162,14 @@ def main() -> int:
     parser.add_argument("--output", default="artcraft-validation")
     parser.add_argument("--cli-timeout", type=int, default=300,
                         help="Bounded CLI build timeout for isolated headless study")
+    parser.add_argument("--core-timeout", type=int, default=210,
+                        help="Bounded individual core crate test timeout")
     args = parser.parse_args()
     project = args.project
     if not 60 <= args.cli_timeout <= 1200:
         parser.error("--cli-timeout outside 60..1200s")
+    if not 60 <= args.core_timeout <= 600:
+        parser.error("--core-timeout outside 60..600s")
     out = (ROOT / args.output / project).resolve()
     out.mkdir(parents=True, exist_ok=True)
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
@@ -297,7 +301,7 @@ def main() -> int:
                            stage="core-test", network="none")
         test = run_command(core + ["cargo", "test", "--locked", "--offline",
                                    "-p", candidate_core, "--lib"],
-                           cwd=ROOT, log=out / "core_test.log", timeout=210)
+                           cwd=ROOT, log=out / "core_test.log", timeout=args.core_timeout)
         report["stages"]["core_test"] = test
         report["core_crate"] = candidate_core
         report["tests_status"] = test["status"]

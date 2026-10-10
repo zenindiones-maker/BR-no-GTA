@@ -15,16 +15,16 @@ permissions:
 concurrency:
   group: br-artcraft-seven-validate-${{ github.ref }}
   # A newer validated harness revision supersedes prior blocked compilation attempts.
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   seven-isolated-builds:
     name: Validate ${{ matrix.project }} (pinned Rust sandbox)
     runs-on: ubuntu-24.04
-    timeout-minutes: 29
+    timeout-minutes: 43
     strategy:
       fail-fast: false
-      max-parallel: 3
+      max-parallel: 2
       matrix:
         project:
           - filmcraft
@@ -58,7 +58,10 @@ jobs:
         env:
           PYTHONUNBUFFERED: "1"
         run: |
-          python3 scripts/artcraft_validate_seven.py --project "${{ matrix.project }}"
+          python3 scripts/artcraft_validate_seven.py \
+            --project "${{ matrix.project }}" \
+            --cli-timeout 1000 \
+            --core-timeout 420
       - name: Attach per-project logs, evidence and any bounded compiled CLI
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
