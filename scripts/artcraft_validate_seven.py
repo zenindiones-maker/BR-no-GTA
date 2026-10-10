@@ -328,8 +328,16 @@ def main() -> int:
     if report.get("blocking_error"):
         print("BLOCKER=" + report["blocking_error"])
     print("EVIDENCE=" + str(report_path.relative_to(ROOT)))
-    # CI jobs must be green if evidence was safely captured; failure is in report.
-    return 0
+    # Upload evidence with if: always() in workflow, while preserving a truthful
+    # red check for a failed build/test/CLI smoke. Never promote partial success.
+    accepted = (
+        report["build_status"] == "success"
+        and report["tests_status"] == "success"
+        and report["cli_status"] in {"success", "not_present"}
+        and report.get("cli_smoke_status", "success") == "success"
+    )
+    print("ARTCRAFT_ISOLATED_TECHNICAL_GATE=" + ("PASS" if accepted else "FAIL"))
+    return 0 if accepted else 1
 
 
 if __name__ == "__main__":
