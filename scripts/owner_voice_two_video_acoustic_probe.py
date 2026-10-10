@@ -1,86 +1,112 @@
 #!/usr/bin/env python3
-"""Acquire two approved dubbed-video audio references and extract candidate spoken words.
+"""Produce timestamped PT-BR vocabulary candidates from two approved local dubbed videos.
 
-No audio is committed, uploaded as an artifact, used for speaker conditioning, or promoted.
-Run only in an authorized remote environment; fail closed on acquisition errors.
+Audio remains private on the remote workstation. ASR output is NOT acoustic approval.
 """
+import argparse
 import hashlib
 import json
-import os
-from pathlib import Path
+import re
 import subprocess
 import sys
+import unicodedata
+from collections import defaultdict
+from pathlib import Path
 
 VIDEOS = {"f8IZhKcuEts": "YouDubbing", "K6rVM6gn6k4": "MANGA K"}
+EXPECTED = {
+    "f8IZhKcuEts": "b4e981094e468a2ca5f5d270ff2a5338187df935a8d177971a2640bcc28f34be",
+    "K6rVM6gn6k4": "ec4645c92e41be73a077f33f04159e45b9abc35c7843d5c7a35be7ccd75a1e52",
+}
 
-def run(args, timeout=240):
-    result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
-    if result.returncode:
-        # Surface bounded diagnostic text without embedding URL query secrets.
-        detail = (result.stderr or result.stdout or "no subprocess diagnostics")[-1200:]
-        raise RuntimeError("MEDIA_COMMAND_FAILED: " + detail)
-    return result
+def sha256_file(path):
+    h = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            h.update(block)
+    return h.hexdigest()
 
-def process(video_id, directory):
-    if video_id not in VIDEOS:
-        raise ValueError("unapproved video")
-    directory.mkdir(parents=True, exist_ok=True)
-    template = str(directory / (video_id + ".%(ext)s"))
-    run(["yt-dlp", "--no-playlist", "--no-progress", "--no-warnings",
-         "--max-downloads", "1", "-f", "bestaudio/best",
-         "-o", template, "https://www.youtube.com/watch?v=" + video_id], timeout=240)
-    candidates = [p for p in directory.glob(video_id + ".*") if p.is_file()]
-    if len(candidates) != 1:
-        raise RuntimeError("expected exactly one acquired media file")
-    media = candidates[0]
-    wav = directory / (video_id + ".wav")
-    run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-         "-i", str(media), "-vn", "-ac", "1", "-ar", "16000",
-         "-c:a", "pcm_s16le", str(wav)], timeout=120)
-    if not wav.exists() or wav.stat().st_size < 1024:
-        raise RuntimeError("decoded audio missing or empty")
-    digest = hashlib.sha256(wav.read_bytes()).hexdigest()
-    # Never retain the original downloaded media once decoded.
-    media.unlink()
-    return wav, digest
+def run(command):
+    subprocess.run(command, check=True, stdout=subprocess.DEVNULL)
+
+def normalize(token):
+    token = unicodedata.normalize("NFC", token).casefold()
+    return re.sub(r"^[^\wÀ-ÿ]+|[^\wÀ-ÿ]+$", "", token, flags=re.UNICODE)
 
 def main():
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--output", default="owner-voice-video-evidence")
-    args = parser.parse_args()
-    root = Path(args.output)
-    root.mkdir(parents=True, exist_ok=True)
-    report = {"schema": "OwnerVoiceTwoDubbedVideoAcousticCandidates/v1",
-              "speaker_reference_allowed": False,
-              "runtime_activation": False, "human_approval": "PENDING",
-              "videos": [], "errors": []}
-    for video_id, channel in VIDEOS.items():
+    p = argparse.ArgumentParser()
+    p.add_argument("--input-dir", required=True)
+    p.add_argument("--output", default="owner-voice-video-evidence")
+    p.add_argument("--model", default="small")
+    args = p.parse_args()
+    source = Path(args.input_dir).expanduser()
+    out = Path(args.output).expanduser()
+    out.mkdir(parents=True, exist_ok=True)
+    from faster_whisper import WhisperModel
+    model = WhisperModel(args.model, device="cpu", compute_type="int8")
+    report = {
+        "schema": "OwnerVoiceTwoDubbedVideoAcousticCandidates/v2",
+        "speaker_reference_allowed": False, "runtime_activation": False,
+        "human_approval": "PENDING", "videos": [], "errors": []
+    }
+    vocab = defaultdict(lambda: {"count": 0, "occurrences": []})
+    for vid, channel in VIDEOS.items():
+        media = source / (vid + ".mp4")
+        wav = out / (vid + ".temporary.wav")
         try:
-            wav, digest = process(video_id, root)
-            try:
-                from faster_whisper import WhisperModel
-                model = WhisperModel("small", device="cpu", compute_type="int8")
-                segments, info = model.transcribe(str(wav), language="pt", vad_filter=True, word_timestamps=True)
-                words = [{"text": w.word.strip(), "start_ms": round(w.start * 1000),
-                          "end_ms": round(w.end * 1000)}
-                         for s in segments for w in (s.words or [])
-                         if w.start is not None and w.end is not None]
-                report["videos"].append({"video_id": video_id, "channel": channel,
-                                         "pcm_sha256": digest, "language": info.language,
-                                         "words_unverified": words,
-                                         "acoustic_review": "PENDING"})
-            finally:
-                wav.unlink(missing_ok=True)
+            if not media.is_file() or sha256_file(media) != EXPECTED[vid]:
+                raise ValueError("LOCAL_MEDIA_MISSING_OR_SHA256_MISMATCH")
+            run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+                 "-y", "-i", str(media), "-vn", "-ac", "1", "-ar", "16000",
+                 "-c:a", "pcm_s16le", str(wav)])
+            segments, info = model.transcribe(str(wav), language="pt",
+                                              vad_filter=True, word_timestamps=True)
+            words = []
+            for segment in segments:
+                for w in segment.words or []:
+                    if w.start is None or w.end is None:
+                        continue
+                    raw = w.word.strip()
+                    key = normalize(raw)
+                    item = {"text": raw, "start_ms": round(w.start * 1000),
+                            "end_ms": round(w.end * 1000)}
+                    words.append(item)
+                    if key:
+                        vocab[key]["count"] += 1
+                        vocab[key]["occurrences"].append({
+                            "video_id": vid, "start_ms": item["start_ms"],
+                            "end_ms": item["end_ms"], "asr_text": raw
+                        })
+            report["videos"].append({
+                "video_id": vid, "channel": channel, "media_sha256": EXPECTED[vid],
+                "language": info.language, "words_unverified": words,
+                "acoustic_review": "PENDING"
+            })
         except Exception as exc:
-            report["errors"].append({"video_id": video_id,
-                                     "type": type(exc).__name__,
-                                     "detail": str(exc)[:400]})
-    (root / "candidate-report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))
-    print(json.dumps({"processed": len(report["videos"]), "errors": report["errors"]}, ensure_ascii=False))
-    if report["errors"] or len(report["videos"]) != 2:
-        return 2
-    return 0
+            report["errors"].append({"video_id": vid, "type": type(exc).__name__,
+                                     "detail": str(exc)[:300]})
+        finally:
+            wav.unlink(missing_ok=True)
+    vocabulary = {
+        "schema": "OwnerVoiceDubbedAudioVocabularyCandidates/v1",
+        "source": "two approved locally transferred MP4 files",
+        "status": "ASR_UNVERIFIED",
+        "human_approval": "PENDING",
+        "entries": [
+            {"word": key, "count": val["count"],
+             "occurrences": val["occurrences"], "pronunciation": None,
+             "acoustic_review": "PENDING"}
+            for key, val in sorted(vocab.items())
+        ]
+    }
+    (out / "candidate-report.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out / "audio-vocabulary-candidates.json").write_text(
+        json.dumps(vocabulary, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps({"processed": len(report["videos"]),
+                      "unique_words": len(vocabulary["entries"]),
+                      "errors": report["errors"]}, ensure_ascii=False))
+    return 0 if len(report["videos"]) == 2 and not report["errors"] else 2
 
 if __name__ == "__main__":
     sys.exit(main())
