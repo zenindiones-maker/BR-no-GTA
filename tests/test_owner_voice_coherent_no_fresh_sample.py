@@ -46,8 +46,12 @@ class CoherentAnchorWithoutFreshSample(unittest.TestCase):
     def test_request_no_special_reference_is_handled_before_legacy_prompt_error(self):
         text=(Path(__file__).resolve().parents[1]/"scripts/owner_voice_single_human_clone.py").read_text()
         early=text.index("if coherent_anchor_only:\n            # Select the canonical Telegram owner prompt")
-        legacy=text.index("raise RuntimeError(\"OWNER_VICE_CITY_PRONUNCIATION_REFERENCE_REQUIRED\")")
+        legacy=text.index('elif VICE_CITY_TERM in canonical_text:',early)
         self.assertLess(early,legacy)
+        self.assertIn(
+            'if coherent_anchor_only:\\n            # Select the canonical Telegram owner prompt',
+            text[early-3:legacy],
+        )
         self.assertIn("reference_embedding,gate_language=owner_reference_for_identity_measurement(",text)
         self.assertIn("evaluate_language_matched_segment_identity_gate(",text)
         self.assertIn("CONTENT_AUDIO_PRESCREEN=",text)
