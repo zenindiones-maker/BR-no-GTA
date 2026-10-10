@@ -10,7 +10,7 @@ on:
       - .run/br-owner-v1-single-human-clone.request.json
 
 concurrency:
-  group: br-owner-v1-single-human-clone-${{ github.ref }}
+  group: br-owner-v1-single-human-clone-ledger
   cancel-in-progress: false
 
 permissions:
