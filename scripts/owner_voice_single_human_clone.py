@@ -550,6 +550,7 @@ def main()->int:
                 +("true" if targeted_delivery_allowed else "false")
                 +"\n"
             )
+            stream.write("critical_scope="+("true" if is_critical_audition else "false")+"\n")
         print("SINGLE_CLONE_CONTROL_RECONCILIATION_ONLY=TRUE")
         print("SINGLE_CLONE_CONTROL_RECONCILIATION_TARGET="+clone_id)
         return 0
