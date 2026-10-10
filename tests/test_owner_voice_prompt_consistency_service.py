@@ -62,5 +62,81 @@ class OwnerCoherentReferenceContract(unittest.TestCase):
             self.assertNotIn(forbidden, source)
 
 
+from tempfile import TemporaryDirectory
+
+from app.services.owner_voice_clone_step_output_service import write_delivery_step_outputs
+
+
+class OwnerGitHubDeliveryOutputContract(unittest.TestCase):
+    def test_critical_audio_routes_only_to_protected_delivery(self):
+        with TemporaryDirectory() as tmp:
+            output = Path(tmp) / "github-output"
+            output.write_text("", encoding="utf-8")
+            manifest = Path(tmp) / "private-critical-manifest.json"
+            manifest.write_text("{}", encoding="utf-8")
+            write_delivery_step_outputs(
+                output_path=output, manifest_path=manifest,
+                clone_id="BR_OWNER_V1_SINGLE_CLONE_900_1",
+                send_eligible=True, critical_scope=True,
+            )
+            actual = dict(row.split("=", 1) for row in output.read_text().splitlines())
+            self.assertEqual(actual["send_eligible"], "true")
+            self.assertEqual(actual["critical_scope"], "true")
+            self.assertEqual(actual["manifest_path"], str(manifest))
+            self.assertEqual(actual["clone_id"], "BR_OWNER_V1_SINGLE_CLONE_900_1")
+
+    def test_rejected_critical_audio_cannot_trigger_any_delivery(self):
+        with TemporaryDirectory() as tmp:
+            output = Path(tmp) / "github-output"
+            output.write_text("", encoding="utf-8")
+            manifest = Path(tmp) / "private-critical-manifest.json"
+            manifest.write_text("{}", encoding="utf-8")
+            write_delivery_step_outputs(
+                output_path=output, manifest_path=manifest,
+                clone_id="BR_OWNER_V1_SINGLE_CLONE_900_1",
+                send_eligible=False, critical_scope=True,
+            )
+            actual = dict(row.split("=", 1) for row in output.read_text().splitlines())
+            self.assertEqual(actual["send_eligible"], "false")
+            self.assertEqual(actual["critical_scope"], "true")
+
+    def test_reconciliation_is_control_only_and_not_critical_delivery(self):
+        with TemporaryDirectory() as tmp:
+            output = Path(tmp) / "github-output"
+            output.write_text("", encoding="utf-8")
+            manifest = Path(tmp) / "private-control-manifest.json"
+            manifest.write_text("{}", encoding="utf-8")
+            write_delivery_step_outputs(
+                output_path=output, manifest_path=manifest,
+                clone_id="BR_OWNER_V1_SINGLE_CLONE_900_1",
+                send_eligible=True, critical_scope=False, control_only=True,
+            )
+            actual = dict(row.split("=", 1) for row in output.read_text().splitlines())
+            self.assertEqual(actual["send_eligible"], "true")
+            self.assertEqual(actual["critical_scope"], "false")
+
+    def test_invalid_or_ambiguous_output_rejected_without_file_mutation(self):
+        with TemporaryDirectory() as tmp:
+            output = Path(tmp) / "github-output"
+            output.write_text("existing=receipt\\n", encoding="utf-8")
+            manifest = Path(tmp) / "private-manifest.json"
+            manifest.write_text("{}", encoding="utf-8")
+            for bad in (
+                {"send_eligible": "true"},
+                {"critical_scope": "true"},
+                {"clone_id": "BR_OWNER_V1_SINGLE_CLONE_900_1\\nevil=1"},
+                {"control_only": True, "critical_scope": True},
+            ):
+                data = dict(
+                    output_path=output, manifest_path=manifest,
+                    clone_id="BR_OWNER_V1_SINGLE_CLONE_900_1",
+                    send_eligible=True, critical_scope=False, control_only=False,
+                )
+                data.update(bad)
+                with self.subTest(bad=bad), self.assertRaises((ValueError, RuntimeError)):
+                    write_delivery_step_outputs(**data)
+                self.assertEqual(output.read_text(), "existing=receipt\\n")
+
+
 if __name__ == "__main__":
     unittest.main()
