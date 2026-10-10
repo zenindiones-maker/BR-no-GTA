@@ -1,0 +1,112 @@
+name: BR_OWNER_V1 Private Cloud Audio SHA Verification
+on:
+  push:
+    branches:
+      - work/owner-voice-safe-ingress-recovery-20261010
+    paths:
+      - ".github/workflows/owner-voice-private-stream-hash.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  hash:
+    name: Private no-disk byte integrity proof
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Install focused test runtime
+        run: python -m pip install -q --disable-pip-version-check pytest==8.4.2 python-dotenv==1.2.3
+      - name: Prove streaming hash boundary without provider calls
+        run: python -m pytest -q tests/test_owner_voice_stream_hash.py
+      - name: Hash original Telegram owner audio bytes in memory only
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          OWNER_REFERENCE_ENVELOPE: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64 }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+          import time
+          from urllib.parse import quote, urlencode
+          from urllib.request import Request, urlopen
+          from app.services.owner_voice_reference_stream_hash_service import (
+              hash_bounded_audio_stream,
+              private_audio_inventory_digest,
+          )
+
+          token=os.environ.get("TELEGRAM_BOT_TOKEN","").strip()
+          envelope=os.environ.get("OWNER_REFERENCE_ENVELOPE","").strip()
+          if not token or not envelope:
+              print("OWNER_AUDIO_HASH_VERIFICATION=BLOCKED_SECRET_MISSING")
+              raise SystemExit(2)
+          try:
+              index=json.loads(base64.urlsafe_b64decode(envelope).decode("utf-8"))
+              unsigned={k:v for k,v in index.items() if k!="index_sha256"}
+              digest=hashlib.sha256(json.dumps(unsigned,ensure_ascii=False,
+                  sort_keys=True,separators=(",",":")).encode("utf-8")).hexdigest()
+              assert digest==index["index_sha256"]
+              assert index["voice_identity_id"]=="BR_OWNER_V1"
+              refs=index["references"]
+              assert 0<len(refs)<=100 and len(refs)==index["reference_count"]
+          except Exception:
+              print("OWNER_AUDIO_HASH_VERIFICATION=BLOCKED_INDEX_INVALID")
+              raise SystemExit(3)
+
+          hashes=[]
+          for row in refs:
+              if row.get("remote_verified") is not True:
+                  print("OWNER_AUDIO_HASH_VERIFICATION=BLOCKED_UNVERIFIED_INPUT")
+                  raise SystemExit(4)
+              try:
+                  file_id=str(row["telegram_file_id"])
+                  expected_unique=str(row["telegram_file_unique_id"])
+                  file_request=Request(
+                      "https://api.telegram.org/bot"+token+"/getFile",
+                      data=urlencode({"file_id":file_id}).encode("utf-8"),
+                      headers={"Content-Type":"application/x-www-form-urlencoded"},
+                      method="POST")
+                  with urlopen(file_request,timeout=20) as resp:
+                      info=json.load(resp)
+                  result=info.get("result") if info.get("ok") else None
+                  if not isinstance(result,dict):
+                      raise ValueError("GETFILE_FAILED")
+                  if result.get("file_unique_id")!=expected_unique:
+                      raise ValueError("GETFILE_IDENTITY_MISMATCH")
+                  path=str(result.get("file_path") or "")
+                  if not path or path.startswith("/") or ".." in path.split("/"):
+                      raise ValueError("GETFILE_PATH_INVALID")
+                  size=result.get("file_size")
+                  declared=int(size) if size is not None else None
+                  # getFile URL is never logged; no filesystem materialization.
+                  url="https://api.telegram.org/file/bot"+token+"/"+quote(path,safe="/")
+                  with urlopen(Request(url,method="GET"),timeout=45) as audio:
+                      measured=hash_bounded_audio_stream(audio,declared_size=declared)
+                  hashes.append(measured["sha256"])
+              except Exception:
+                  # Do not disclose raw Telegram error strings, file paths,
+                  # bot credentials or individual biometric checksums.
+                  print("OWNER_AUDIO_HASH_VERIFICATION=BLOCKED_DOWNLOAD_OR_INTEGRITY")
+                  print("OWNER_AUDIO_HASHED_COUNT="+str(len(hashes)))
+                  raise SystemExit(5)
+              time.sleep(0.15)
+
+          root=private_audio_inventory_digest(hashes,index_sha256=digest)
+          print("OWNER_AUDIO_HASHED_COUNT="+str(len(hashes)))
+          print("OWNER_AUDIO_INVENTORY_SHA256="+root)
+          print("OWNER_AUDIO_REFERENCE_INDEX_SHA256="+digest)
+          print("OWNER_AUDIO_HASH_VERIFICATION=PASS")
+          print("OWNER_AUDIO_DISK_WRITES=0")
+          print("OWNER_AUDIO_PUBLIC_ARTIFACTS=0")
+          print("TELEGRAM_GETUPDATES_ATTEMPTED=FALSE")
+          print("TELEGRAM_SEND_ATTEMPTED=FALSE")
+          PY
