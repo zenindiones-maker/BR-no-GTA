@@ -6,6 +6,7 @@ on:
       - work/br-actions-owner-voice-unblock-20261010-v1
     paths:
       - .github/workflows/br-actions-owner-voice-unblock-v1.yml
+      - .github/workflows/owner-voice-single-human-clone.yml
       - tests/test_owner_voice_single_clone_workflow_v1.py
       - tests/test_owner_voice_prompt_consistency_service.py
       - app/services/owner_voice_prompt_consistency_service.py
