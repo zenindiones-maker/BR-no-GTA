@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from app.services.owner_voice_audition_ledger_store import store_from_environment
+from app.services.owner_voice_delivery_codec_v2 import encode_private_opus
 from app.services.owner_voice_single_clone_delivery_service import (
     RECONCILIATION_REQUIRED,
     SingleCloneDeliveryLedger,
@@ -100,15 +101,17 @@ class TelegramSingleCloneApi:
         path=Path(clone_path).resolve()
         if not path.is_file() or path.stat().st_size<=0:
             raise RuntimeError("SINGLE_CLONE_AUDIO_MISSING")
+        if path.suffix.lower() != ".ogg":
+            raise RuntimeError("SINGLE_CLONE_TELEGRAM_OPUS_REQUIRED")
         with path.open("rb") as handle:
             result=_telegram_post(
-                self.token,"sendAudio",
+                self.token,"sendVoice",
                 data={
                     "chat_id":str(chat_id),
                     "caption":self.caption,
                     "protect_content":"true" if protect_content else "false",
                 },
-                files={"audio":(path.name,handle,"audio/wav")},
+                files={"voice":(path.name,handle,"audio/ogg")},
             )
         return int(result["message_id"])
 
@@ -315,8 +318,22 @@ def main()->int:
             else None
         ),
     )
+    # The ledger snapshot controls whether this operation may be attempted.
+    # Encoding happens before any OPERATION_SENDING event or Telegram call.
+    prior=ledger.load()
+    if (
+        prior.get("state") == "CONFIRMED"
+        or prior.get("reconciliation_state") == RECONCILIATION_REQUIRED
+        or (prior.get("active_operation") or {}).get("status") == "SENDING"
+    ):
+        safe_clone_path=""
+    else:
+        safe_clone_path=str(encode_private_opus(
+            Path(str(manifest["clone_path"])),
+            workspace / "telegram-voice",
+        ))
     result=deliver_single_clone_durable(
-        api,ledger=ledger,clone_path=str(manifest["clone_path"])
+        api,ledger=ledger,clone_path=safe_clone_path
     )
     if result.get("reconciliation_state")==RECONCILIATION_REQUIRED:
         print("SINGLE_CLONE_DELIVERY=RECONCILIATION_REQUIRED")
