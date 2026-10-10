@@ -120,6 +120,32 @@ jobs:
           test -n "${BR_OWNER_AUDITION_LEDGER_SSH_KEY:-}"
           echo "SINGLE_CLONE_SECRET_PREFLIGHT=PASS"
 
+      - name: Mask owner identifiers before voice materialization
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import re
+          from app.services.owner_voice_telegram_handoff_service import parse_reference_envelope_b64
+          envelope=os.environ.get("BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64","").strip()
+          if not envelope:
+              raise SystemExit("OWNER_PRIVATE_ENVELOPE_MISSING")
+          index=parse_reference_envelope_b64(envelope)
+          assert index.get("voice_identity_id")=="BR_OWNER_V1"
+          for row in index.get("references",[]):
+              for key in (
+                  "telegram_input_id","telegram_user_id","telegram_chat_id",
+                  "telegram_message_id","telegram_update_id",
+                  "telegram_file_id","telegram_file_unique_id",
+              ):
+                  value=str(row.get(key) or "").strip()
+                  if 3<=len(value)<=512 and re.fullmatch(r"[-A-Za-z0-9_:]+",value):
+                      print("::add-mask::"+value,flush=True)
+          print("OWNER_REFERENCE_METADATA_MASKS=INSTALLED")
+          PY
+
       - name: Establish private workspace and public cache
         run: |
           set -euo pipefail
