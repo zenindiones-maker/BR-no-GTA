@@ -111,6 +111,31 @@ class CurationContracts(unittest.TestCase):
             with self.assertRaisesRegex(review.ReviewBlocked,"RECEIPT"):
                 review.validate_receipt(p)
 
+    def test_real_ffmpeg_produces_short_private_mono_wav(self):
+        import math
+        import struct
+        import wave
+        import os
+        import shutil
+        if shutil.which("ffmpeg") is None:
+            self.skipTest("ffmpeg not available outside configured CI runner")
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            wav=root/"source.wav"
+            out=root/"clip.wav"
+            with wave.open(str(wav),"wb") as f:
+                f.setnchannels(1);f.setsampwidth(2);f.setframerate(16000)
+                f.writeframes(b"".join(
+                    struct.pack("<h",int(6000*math.sin(2*math.pi*440*i/16000)))
+                    for i in range(16000)))
+            result=review.clip_wav(wav,{"clip_start_ms":200,"clip_end_ms":850},out)
+            self.assertEqual(result,review.digest(out))
+            self.assertEqual(os.stat(out).st_mode & 0o777,0o600)
+            with wave.open(str(out),"rb") as f:
+                self.assertEqual((f.getnchannels(),f.getsampwidth(),f.getframerate()),
+                                 (1,2,16000))
+                self.assertTrue(9800 <= f.getnframes() <= 11000)
+
     def test_bundle_is_hash_bound_private_and_idempotent(self):
         videos,named=self.fixture()
         with tempfile.TemporaryDirectory() as d:
