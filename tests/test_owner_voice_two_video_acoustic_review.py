@@ -111,6 +111,77 @@ class CurationContracts(unittest.TestCase):
             with self.assertRaisesRegex(review.ReviewBlocked,"RECEIPT"):
                 review.validate_receipt(p)
 
+    def test_empty_named_candidates_still_yield_truthful_source_surveys(self):
+        videos,named=self.fixture()
+        named["candidates"]=[]
+        self.assertEqual(review.choose_candidates(videos,named),([],[]))
+        chosen=review.choose_segment_surveys(videos,chosen=[],max_per_video=3)
+        self.assertEqual(len(chosen),2)
+        self.assertEqual({x["video_id"] for x in chosen},set(review.FILES))
+        self.assertTrue(all(x["target"] is None for x in chosen))
+        self.assertTrue(all(x["evidence_class"]=="SEGMENT_SURVEY_NOT_NAMED_PRONUNCIATION"
+                            for x in chosen))
+        self.assertTrue(all(x["source_speaker_identity"]=="NOT_BR_OWNER_V1"
+                            and x["speaker_reference_allowed"] is False
+                            and x["human_approval"]=="PENDING" for x in chosen))
+
+    def test_survey_requires_source_aligned_words_and_never_forges_a_target(self):
+        videos,named=self.fixture()
+        videos[next(iter(videos))]["segments"][0]["words"]=[
+            {"text":"Vice","start_ms":None,"end_ms":None,
+             "timing_status":"UNALIGNED","probability":.99}]
+        chosen=review.choose_segment_surveys(videos,chosen=[],max_per_video=3)
+        self.assertEqual(len(chosen),1)
+        self.assertTrue(all(x["target"] is None for x in chosen))
+
+    def test_zero_named_candidates_prepares_v2_without_touching_v1(self):
+        videos,named=self.fixture()
+        named["candidates"]=[]
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            evidence=root/"owner-voice-acoustic-execution/evidence"
+            media=root/"owner-voice-dubbing-input"
+            evidence.mkdir(parents=True)
+            media.mkdir()
+            for vid in review.FILES:
+                (media/(vid+".mp4")).write_bytes(("synthetic-"+vid).encode())
+            hashes={vid:review.digest(media/(vid+".mp4")) for vid in review.FILES}
+            with patch.dict(review.FILES,hashes,clear=True):
+                for vid,v in videos.items():v["media_sha256"]=review.FILES[vid]
+                values={
+                    "run-state.json":{"status":"COMPLETE_ASR_UNVERIFIED","videos_processed":2,
+                                      "unique_words":10,"total_occurrences":15},
+                    "coverage-quality.json":{"status":"ASR_UNVERIFIED",
+                                             "acoustic_pronunciations_verified":0,
+                                             "unique_words":10,"total_occurrences":15},
+                    "candidate-report.json":{"schema":"OwnerVoiceTwoVideoASR/v3",
+                        "status":"ASR_UNVERIFIED","videos":list(videos.values()),
+                        "human_approval":"PENDING","speaker_reference_allowed":False,
+                        "runtime_activation":False},
+                    "named-phrase-candidates.json":named,
+                }
+                for k,v in values.items():(evidence/k).write_text(json.dumps(v))
+                prior=root/"owner-voice-acoustic-curation-v1"
+                prior.mkdir()
+                (prior/"manifest.json").write_text('{"status":"NO_SAFE_CLIPS"}')
+                with patch.object(review,"clip_wav") as fake_clip:
+                    def make_clip(source,item,dest):
+                        dest.write_bytes(b"RIFF"+b"\x00"*2048)
+                        return review.digest(dest)
+                    fake_clip.side_effect=make_clip
+                    result,mode=review.prepare(root)
+                    repeated,reused=review.prepare(root)
+                self.assertEqual((mode,reused),("CREATED","REUSED_VERIFIED"))
+                self.assertEqual(result,repeated)
+                self.assertEqual(result["status"],"SEGMENT_SURVEY_READY_HUMAN_REVIEW")
+                self.assertEqual(result["eligible_clip_count"],2)
+                self.assertEqual(result["named_target_clip_count"],0)
+                self.assertEqual(result["survey_clip_count"],2)
+                self.assertEqual(fake_clip.call_count,2)
+                self.assertEqual((prior/"manifest.json").read_text(),
+                                 '{"status":"NO_SAFE_CLIPS"}')
+                self.assertTrue((root/"owner-voice-acoustic-curation-v2"/"manifest.json").exists())
+
     def test_real_ffmpeg_produces_short_private_mono_wav(self):
         import math
         import struct
