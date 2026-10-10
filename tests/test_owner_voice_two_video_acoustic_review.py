@@ -134,6 +134,31 @@ class CurationContracts(unittest.TestCase):
         self.assertEqual(len(chosen),1)
         self.assertTrue(all(x["target"] is None for x in chosen))
 
+    def test_spread_survey_across_three_sections_without_full_phrase_claim(self):
+        videos,_=self.fixture()
+        for vid,v in videos.items():
+            v["duration_ms"]=90000
+            base=dict(v["segments"][0])
+            v["segments"]=[]
+            for ms in (1000,32000,64000,68000):
+                words=[dict(w,start_ms=w["start_ms"]+ms,end_ms=w["end_ms"]+ms)
+                       for w in base["words"]]
+                v["segments"].append(dict(base,start_ms=ms,end_ms=ms+3000,words=words))
+        surveys=review.choose_segment_surveys(videos,chosen=[],max_per_video=3)
+        self.assertEqual(len(surveys),6)
+        self.assertEqual({v:sum(x["video_id"]==v for x in surveys)
+                          for v in videos},{v:3 for v in videos})
+        self.assertTrue(all(x["target"] is None and
+                            x["clip_end_ms"]-x["clip_start_ms"]<=5500
+                            for x in surveys))
+
+    def test_survey_can_fail_closed_if_no_segments_have_credible_word_bounds(self):
+        videos,_=self.fixture()
+        for v in videos.values():
+            for s in v["segments"]:
+                s["avg_logprob"]=-2
+        self.assertEqual(review.choose_segment_surveys(videos,chosen=[],max_per_video=3),[])
+
     def test_zero_named_candidates_prepares_v2_without_touching_v1(self):
         videos,named=self.fixture()
         named["candidates"]=[]
