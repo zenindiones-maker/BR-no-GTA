@@ -13,7 +13,10 @@ import re
 from typing import Any, Mapping
 
 _MIN_WORDS=3000
-_MAX_WORDS=3500
+_MAX_WORDS=4500
+_CONTENT_PLANNING_WPM=170
+_MIN_EDITORIAL_24MIN_WORDS=24*_CONTENT_PLANNING_WPM
+_MAX_EDITORIAL_25MIN_WORDS=25*_CONTENT_PLANNING_WPM
 _ALLOWED_LABELS={"A","B"}
 
 class RecoveryBlocked(ValueError):
@@ -126,6 +129,14 @@ def source_readiness(root)->dict[str,Any]:
                 raise RecoveryBlocked("RUN001_PRODUCT_LABEL_MISMATCH")
             words=sum(len(s["narration"].split()) for s in product["script_sections"])
             digest=_text_digest(product)
+            if words<_MIN_EDITORIAL_24MIN_WORDS:
+                products[label]={"status":"SCRIPT_TOO_SHORT_FOR_24MIN","words":words,
+                                 "script_sha256":digest}
+                continue
+            if words>_MAX_EDITORIAL_25MIN_WORDS:
+                products[label]={"status":"SCRIPT_TOO_LONG_FOR_25MIN","words":words,
+                                 "script_sha256":digest}
+                continue
             voice=product.get("narration") or {}
             if (voice.get("voice")!="BR_OWNER_V1"
                 or voice.get("generic_voice_fallback") is not False
@@ -135,7 +146,9 @@ def source_readiness(root)->dict[str,Any]:
                 or voice.get("independent_approval_ledger_ref") is not None):
                 raise RecoveryBlocked("RUN001_PRODUCT_VOICE_MUST_BE_PENDING")
             products[label]={"status":"SCRIPT_READY_APPROVAL_PENDING","words":words,
-                             "script_sha256":digest}
+                             "script_sha256":digest,
+                             "content_planning_wpm":_CONTENT_PLANNING_WPM,
+                             "estimated_narration_minutes":round(words/_CONTENT_PLANNING_WPM,3)}
             verified[label]=product
         except (OSError,KeyError,ValueError,TypeError) as exc:
             products[label]={"status":"BLOCKED_INVALID_SOURCE","reason":str(exc)[:150]}
