@@ -5,11 +5,12 @@ on:
   push:
     branches:
       - work/br-owner-voice-serial-audition-v11
+      - work/owner-voice-safe-ingress-recovery-20261010
     paths:
       - .run/br-owner-v1-single-human-clone.request.json
 
 concurrency:
-  group: br-owner-v1-single-human-clone-${{ github.sha }}
+  group: br-owner-v1-single-human-clone-serialized
   cancel-in-progress: false
 
 permissions:
@@ -38,6 +39,7 @@ jobs:
             tests/test_owner_voice_speaker_identity_service.py \
             tests/test_owner_voice_single_clone_delivery_v1.py \
             tests/test_owner_voice_single_clone_workflow_v1.py \
+            tests/test_owner_voice_transport_hardening_v2.py \
             tests/test_owner_voice_human_review_delivery_policy.py \
             tests/test_owner_voice_clone_service.py \
             tests/test_pronunciation_service.py \
@@ -57,6 +59,10 @@ jobs:
           assert d["reference_source"]=="TELEGRAM_HUMAN_OWNER"
           assert d["one_candidate_only"] is True
           assert d["runtime_activation"] is False
+          if __import__("os").environ.get("GITHUB_REF_NAME")=="work/owner-voice-safe-ingress-recovery-20261010":
+              assert d.get("recover_pending_telegram_updates") is False
+              assert d.get("generic_voice_fallback") is False
+              assert d.get("owner_asserted_pronunciation_targets")==["Vice City"]
           PY
             echo "requested=true" >> "$GITHUB_OUTPUT"
           else
@@ -79,6 +85,7 @@ jobs:
       BR_OWNER_AUDITION_LEDGER_REPOSITORY: zenindiones-maker/BR-no-GTA-audition-ledger
       BR_OWNER_AUDITION_AUTHORITY_REF: owner-explicit:BR_OWNER_V1_SINGLE_CLONE
       BR_OWNER_STT_MODEL: large-v3-turbo
+      BR_OWNER_REQUIRE_PASS_BEFORE_DELIVERY: "true"
       OMP_NUM_THREADS: "4"
       MKL_NUM_THREADS: "4"
       TOKENIZERS_PARALLELISM: "false"
