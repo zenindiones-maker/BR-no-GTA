@@ -1002,6 +1002,40 @@ jobs:
           print("BURNED_SUBTITLES=OFF")
           PY
 
+      - name: Independently verify real 25-minute MASTER_FINAL before any private upload
+        run: |
+          set -euo pipefail
+          if ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends ffmpeg
+          fi
+          MASTER="$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          qa=Path("artifacts/real-multi-agent-production/master-qa.json")
+          d=json.loads(qa.read_text(encoding="utf-8"))
+          assert d["MASTER_FINAL_QA_BEFORE_UPLOAD"]=="PASS"
+          master=Path(d["MASTER_FINAL"])
+          scope=Path("artifacts/real-multi-agent-production/render-output").resolve(strict=True)
+          if master.is_symlink() or not master.is_file() or not master.resolve().is_relative_to(scope):
+              raise SystemExit("MASTER_FINAL_OUTSIDE_QA_PASSED_RENDER_OUTPUT")
+          print(master)
+          PY
+          )"
+          python3 scripts/production_25min_master_gate.py \
+            --master "$MASTER" \
+            --case A \
+            --receipt artifacts/real-multi-agent-production/25min-master-proof.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("artifacts/real-multi-agent-production/25min-master-proof.json").read_text())
+          assert r["status"]=="PASS",r
+          assert r["production_release_authorized"] is False
+          assert r["youtube_private_hd"]=="NOT_UPLOADED"
+          print("RUN001_VIDEO_A_REAL_25MIN_MASTER_GATE=PASS")
+          PY
+
       - name: Deliver requested narration master to Telegram without recompression
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
