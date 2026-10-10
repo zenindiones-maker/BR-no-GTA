@@ -31,6 +31,10 @@ jobs:
       - name: Verify synthetic codec and ledger
         run: |
           set -euo pipefail
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ffmpeg
+          fi
           command -v ffmpeg
           command -v ffprobe
           python -m pytest -q tests/test_owner_voice_transport_hardening_v2.py tests/test_owner_voice_single_clone_delivery_v1.py
