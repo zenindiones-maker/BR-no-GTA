@@ -74,6 +74,7 @@ if [[ -z "$repo" ]]; then
 fi
 cd "$repo"
 git fetch --quiet --no-tags origin work/br-owner-voice-coherent-qa-recovery-v1
+git show FETCH_HEAD:scripts/owner_voice_two_video_codespace_env.py | python3
 git show FETCH_HEAD:scripts/owner_voice_two_video_codespace_run.py | python3
 '''
 
