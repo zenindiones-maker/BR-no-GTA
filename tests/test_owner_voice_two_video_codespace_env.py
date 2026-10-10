@@ -75,6 +75,87 @@ class CodespaceEnvironmentContracts(unittest.TestCase):
                         envtool.bootstrap_private_venv(root)
             self.assertTrue((root / "bin/python").exists())
 
+    def test_venv_failure_classification_does_not_expose_secrets(self):
+        self.assertEqual(envtool.classify_venv_failure(
+            "ensurepip is not available: secret-token=NEVER_PRINT"),
+            "ENSUREPIP_UNAVAILABLE")
+        self.assertEqual(envtool.classify_venv_failure("No module named venv"),
+                         "VENV_MODULE_MISSING")
+        self.assertEqual(envtool.classify_venv_failure("Permission denied"),
+                         "PERMISSION_DENIED")
+        self.assertEqual(envtool.classify_venv_failure("No space left on device"),
+                         "NO_SPACE_LEFT")
+        self.assertEqual(envtool.classify_venv_failure("https://user:pass@example"),
+                         "UNCLASSIFIED_VENV_ERROR")
+
+    def test_partial_venv_without_pip_uses_uv_binary_only(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / ".asr-venv"
+            (root / "bin").mkdir(parents=True)
+            (root / "bin/python").write_text("existing incomplete venv")
+            commands = []
+            def fake_run(args, **kwargs):
+                commands.append(args)
+                if args[1:4] == ["-m", "pip", "--version"]:
+                    return subprocess.CompletedProcess(args, 1, stdout="", stderr="")
+                if args[:3] == ["/fake/uv", "pip", "install"]:
+                    self.assertIn("--only-binary", args)
+                    self.assertIn(":all:", args)
+                    self.assertIn("--python", args)
+                    self.assertIn(str(root / "bin/python"), args)
+                    return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+                raise AssertionError(repr(args))
+            with patch.object(envtool, "select_base_python", return_value="python3.12"):
+                with patch.object(envtool.shutil, "which", side_effect=lambda n: "/fake/uv" if n == "uv" else None):
+                    with patch.object(envtool.subprocess, "run", side_effect=fake_run):
+                        with patch.object(envtool, "probe_python",
+                                          return_value={"status":"PASS"}):
+                            result = envtool.bootstrap_private_venv(root)
+            self.assertEqual(result, str(root / "bin/python"))
+            self.assertEqual(len(commands), 2)
+            self.assertFalse(any("venv" in cmd for cmd in commands))
+
+    def test_ensurepip_failure_falls_back_to_without_pip_plus_uv(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / ".asr-venv"
+            steps = []
+            def fake_run(args, **kwargs):
+                steps.append(args)
+                if args[:3] == ["python3.12", "-m", "venv"] and "--without-pip" not in args:
+                    return subprocess.CompletedProcess(args, 1, stdout="",
+                                  stderr="The virtual environment was not created successfully because ensurepip is not available")
+                if args[:4] == ["python3.12", "-m", "venv", "--without-pip"]:
+                    (root / "bin").mkdir(parents=True, exist_ok=True)
+                    (root / "bin/python").write_text("no pip")
+                    return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+                if args[1:4] == ["-m", "pip", "--version"]:
+                    return subprocess.CompletedProcess(args, 1, stdout="", stderr="")
+                if args[:3] == ["/fake/uv", "pip", "install"]:
+                    return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+                raise AssertionError(repr(args))
+            with patch.object(envtool, "select_base_python", return_value="python3.12"):
+                with patch.object(envtool.shutil, "which", side_effect=lambda n: "/fake/uv" if n == "uv" else None):
+                    with patch.object(envtool.subprocess, "run", side_effect=fake_run):
+                        with patch.object(envtool, "probe_python",
+                                          return_value={"status":"PASS"}):
+                            result = envtool.bootstrap_private_venv(root)
+            self.assertEqual(result, str(root / "bin/python"))
+            self.assertIn("--without-pip", steps[1])
+            self.assertEqual(len(steps), 4)
+
+    def test_no_bootstrap_tool_produces_specific_diagnostic(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / ".asr-venv"
+            (root / "bin").mkdir(parents=True)
+            (root / "bin/python").write_text("existing incomplete")
+            def fake_run(args, **kwargs):
+                return subprocess.CompletedProcess(args, 1, stdout="", stderr="")
+            with patch.object(envtool, "select_base_python", return_value="python3.12"):
+                with patch.object(envtool.shutil, "which", return_value=None):
+                    with patch.object(envtool.subprocess, "run", side_effect=fake_run):
+                        with self.assertRaisesRegex(envtool.EnvironmentBlocked, "NO_PIP_OR_UV"):
+                            envtool.bootstrap_private_venv(root)
+
     def test_diagnose_missing_module_without_raw_traceback(self):
         with patch.object(envtool.subprocess, "run", return_value=subprocess.CompletedProcess(
                 ["python"], 3, stdout="MISSING:faster_whisper", stderr="SECRET")):
