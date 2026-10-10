@@ -4,9 +4,9 @@
   "reference_source": "TELEGRAM_HUMAN_OWNER",
   "one_candidate_only": true,
   "runtime_activation": false,
-  "recovery_attempt_id": "corrected-coherent-with-original-137-contracts-002",
-  "recovery_from_run_id": 38018708764,
-  "recovery_reason": "Previous run blocked in pre-generation legacy test; 137 original contract tests and all recovery tests now green on run 38018845760",
+  "recovery_attempt_id": "segmented-delivery-contract-fixed-003",
+  "recovery_from_run_id": 38018878725,
+  "recovery_reason": "Previous run synthesized seven segments but failed before Telegram API send due to delivery manifest count==1; fixed exact seven-segment Qwen contract, regression gate 38025694122 PASS. New audition only; reconcile durable ledger before send.",
   "human_approval_required": true,
   "production_activated": false
 }
