@@ -197,8 +197,14 @@ def cli_frame_probes(film: Path, effect: Path, film_digest: str, effect_digest: 
                         '--out', str(out_f), '--scale', '0.16'], cwd=tmp, env=env, timeout=60)
         effect_run = run([str(e), 'render-frame', '--demo', '--frame', '0',
                           '--max-side', '320', '--out', str(out_e), '--json'], cwd=tmp, env=env, timeout=60)
-        return {'native_execution': 'PASS', 'filmcraft': {**film_run, 'frame': check_png(out_f)},
-                'effectcraft': {**effect_run, 'frame': check_png(out_e)},
+        film_info = check_png(out_f)
+        effect_info = check_png(out_e)
+        # Preserve exactly two synthetic demo PNGs for independent FFmpeg decode.
+        # The work directory was empty on entry, so no existing file is replaced.
+        shutil.copyfile(out_f, work / 'film-frame.png')
+        shutil.copyfile(out_e, work / 'effect-frame.png')
+        return {'native_execution': 'PASS', 'filmcraft': {**film_run, 'frame': film_info},
+                'effectcraft': {**effect_run, 'frame': effect_info},
                 'warning': 'Separate demo frames; pixel-equivalence not asserted; not production video approval'}
 
 
