@@ -91,7 +91,22 @@ class SingleCloneDeliveryLedger:
     )->dict[str,Any]:
         snap=self._snapshot()
         if isinstance(snap.mission_head,dict):
-            return dict(snap.mission_head)
+            previous=dict(snap.mission_head)
+            if not (
+                str(previous.get("clone_id") or "")==self.clone_id
+                and str(previous.get("clone_sha256") or "")==str(clone_sha256)
+                and int(previous.get("telegram_chat_id") or 0)==int(telegram_chat_id)
+                and int(previous.get("reference_source_message_id") or 0)==int(reference_source_message_id)
+                and str(previous.get("authority_ref") or "")==str(authority_ref)
+                and str(previous.get("clone_identity_gate") or "")==str(clone_identity_gate)
+                and str(previous.get("content_audio_prescreen") or "")==str(content_audio_prescreen)
+                and str(previous.get("human_review") or "")==str(human_review)
+                and bool(previous.get("runtime_activation"))==bool(runtime_activation)
+            ):
+                raise ValueError("SINGLE_CLONE_LEDGER_PAYLOAD_COLLISION")
+            # Replays of exactly the same logical delivery resume the CAS
+            # state, never create another mission or silently change payload.
+            return previous
         token=str(review_token or review_token_for_clone(self.clone_id)).strip().lower()
         if not _valid_review_token(token):
             raise ValueError("SINGLE_CLONE_REVIEW_TOKEN_INVALID")
