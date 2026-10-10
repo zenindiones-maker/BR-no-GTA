@@ -24,6 +24,20 @@ The existing source snapshot passed the initial receipt-only verifier in the own
 
 This fixes the false positive in research source verification, **not** ARTEX's supply-chain authenticity, operational safety, runtime functionality or Harness integration.
 
+## Codespace verification — 10 October 2026
+
+The operator verified the **existing**, previously staged ARTEX directory with the corrected verifier at BR-no-GTA research revision `c3f65e9ce69d5f523bb0e1a4f05444b0661acd78` in Codespace `br-v23-recovery-gxp67g5g7wphwxjw`, without rerunning upstream installers:
+
+```text
+ARTEX_SOURCE_STAGING=PASS
+ARTEX_SOURCE_COMMIT=f3e3f54b6c93916388a0a3dc6a439893a9abe37a
+ARTEX_RUNTIME=NOT_INSTALLED
+ARTEX_HARNESS_BINDING=NONE
+ARTEX_HARDENED_SOURCE_VERIFY=PASS
+```
+
+The source directory is verified against the immutable upstream Git tree. The isolated research worktree was fast-forwarded/detached to the audited BR verifier revision; the Chrome DevTools working branch was not modified. This is **inert source integrity only**: upstream authorship, dependency integrity, ARTEX execution, security isolation, Harness authorization/binding, and real E2E are **not** established. No additional staging, installation or remote command is necessary to re-prove this milestone.
+
 ## Source-level findings / gap map
 
 | ID | Severity | Finding and code evidence | Status |
@@ -35,7 +49,7 @@ This fixes the false positive in research source verification, **not** ARTEX's s
 | ARTEX-005 | HIGH | `agent/planner.go` creates an independent intent producer, and `agent/worker.go` executes work with real tools. BR-no-GTA requires its own DeepSeek Harness to remain the single authority. | OPEN; only read-only research patterns may transfer |
 | ARTEX-006 | MEDIUM | `README.md` and `LICENSE` specify AGPL-3.0; README also states restrictions for non-offensive local research. License compatibility/other author statements require review before copying or linking source. | OPEN |
 | ARTEX-007 | MEDIUM | `go.mod` uses `github.com/Autumn-27/norma v0.4.3` and multiple network/proxy dependencies; no independent dependency review, Go build, or package SBOM performed. | OPEN |
-| ARTEX-008 | MEDIUM | Source integrity and CRLF-export mismatch identified; corrected verifier checks pinned Git tree, backed by live upstream-archive CI PASS. Previously staged Codespace snapshot still awaits remote re-verification. | CODE FIXED; remote re-verification PENDING |
+| ARTEX-008 | MEDIUM | Source integrity and CRLF-export mismatch corrected; Git tree verification passed in live upstream-archive CI and in the owner's existing Codespace snapshot. | FIXED for SOURCE INTEGRITY; runtime remains NOT INSTALLED |
 
 ## Admission decision
 
