@@ -8,6 +8,7 @@ import fcntl
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -79,12 +80,20 @@ def find_existing_python(repo, env):
         if env.get("VIRTUAL_ENV") else None,
         str(Path.home() / ".local/share/br-no-gta/owner-voice-acoustic-execution/.asr-venv/bin/python"),
         str(repo / ".venv/bin/python"),
+        str(Path.home() / ".local/share/br-no-gta/owner-voice-dubbing/.venv/bin/python"),
+        str(Path.home() / ".local/share/br-no-gta/.venv/bin/python"),
+        str(Path.home() / ".local/share/venvs/owner-voice/bin/python"),
+        str(Path.home() / "venv/bin/python"),
         str(Path.home() / ".venv/bin/python"),
         "/opt/venv/bin/python",
         "/workspaces/BR-no-GTA/.venv/bin/python",
         sys.executable,
+        shutil.which("python3.12"),
+        shutil.which("python3.11"),
+        shutil.which("python3.13"),
+        shutil.which("python3"),
     ]
-    for candidate in filter(None, candidates):
+    for candidate in dict.fromkeys(x for x in candidates if x):
         try:
             result = subprocess.run(
                 [candidate, "-c", "import numpy, av, ctranslate2, faster_whisper"],
