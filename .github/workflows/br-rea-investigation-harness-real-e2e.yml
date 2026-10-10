@@ -18,6 +18,7 @@ on:
       - tests/test_owner_voice_dubbing_reference_policy.py
       - tests/test_br_system_static_surface_audit.py
       - tests/test_br_rea_investigation_executor.py
+      - tests/test_br_rea_public_mcp_denial.py
       - .github/workflows/br-rea-investigation-harness-real-e2e.yml
   workflow_dispatch:
 
@@ -54,6 +55,8 @@ jobs:
             tests/test_owner_voice_dubbing_reference_policy.py
       - name: Run real adversarial SQLite and filesystem tests
         run: python3 -m unittest discover -s tests -p test_br_rea_investigation_executor.py -v
+      - name: Verify public MCP cannot self-issue REA authorization
+        run: python3 -m unittest discover -s tests -p test_br_rea_public_mcp_denial.py -v
       - name: Execute Owner Voice reference policy regressions
         run: python3 -m pytest -q tests/test_owner_voice_dubbing_reference_policy.py
       - name: Validate real and adversarial whole-source inventory
