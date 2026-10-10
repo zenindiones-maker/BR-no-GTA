@@ -12,6 +12,7 @@ from app.services.harness_authorization_service import (
 )
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
 from app.workers.professional_audiovisual_worker import PROFILE, validate_product_job
+from app.services.run001_owner_voice_admission_service import require_owner_voice_admission
 
 OFFICIAL_BRAND_ASSETS = [
     {
@@ -55,6 +56,7 @@ def load(path: Path) -> dict[str, Any]:
 
 
 def build_render_job(product: dict[str, Any]) -> dict[str, Any]:
+    require_owner_voice_admission(product)
     initialize_application()
     if product.get("product_profile") != PROFILE:
         raise RuntimeError(f"product_profile must be {PROFILE}")
