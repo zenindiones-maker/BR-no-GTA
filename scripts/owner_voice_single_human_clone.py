@@ -497,6 +497,22 @@ def main()->int:
     cache_root=Path(os.environ.get("BR_OWNER_PUBLIC_MODEL_CACHE") or Path.home()/".cache"/"br-owner-voice"/"hf-public").resolve()
     workspace.mkdir(parents=True,exist_ok=True)
     request_payload=_request_payload()
+    targeted_scope="OWNER_GTA6_CRITICAL_NAMES_ONLY_V1"
+    is_critical_audition=request_payload.get("pronunciation_scope")==targeted_scope
+    if request_payload.get("pronunciation_scope") and not is_critical_audition:
+        raise RuntimeError("UNAUTHORIZED_PRONUNCIATION_AUDITION_SCOPE")
+    critical_batches=None
+    if is_critical_audition:
+        from app.services.gta6_owner_audio_dictionary_service import (
+            load_candidate,owner_critical_ptbr_batches,validate_synthesis_intent,
+        )
+        validate_synthesis_intent(
+            request=request_payload,dictionary=load_candidate()
+        )
+        critical_batches=owner_critical_ptbr_batches()
+        print("GTA6_OWNER_CRITICAL_DICTIONARY_ITEMS="+str(len(critical_batches)))
+        print("GTA6_OWNER_AUDITION_SPEAKER_REFERENCE=TELEGRAM_OWNER_ONLY")
+        print("GTA6_OWNER_ACOUSTIC_DICTIONARY_STATUS=PENDING")
     reconciliation=request_payload.get("delivery_reconciliation")
     if reconciliation is not None:
         if not isinstance(reconciliation,dict):
@@ -529,6 +545,11 @@ def main()->int:
             with open(out,"a",encoding="utf-8") as stream:
                 stream.write(f"manifest_path={manifest_path}\n")
                 stream.write(f"clone_id={clone_id}\n")
+            stream.write(
+                "send_eligible="
+                +("true" if targeted_delivery_allowed else "false")
+                +"\n"
+            )
         print("SINGLE_CLONE_CONTROL_RECONCILIATION_ONLY=TRUE")
         print("SINGLE_CLONE_CONTROL_RECONCILIATION_TARGET="+clone_id)
         return 0
@@ -1101,7 +1122,10 @@ def main()->int:
         return 0
 
     print("QWEN_REFERENCE_AUDIO_LINEAGE="+qwen_reference_audio_lineage)
-    pronunciation_segments=build_gta6_pronunciation_batches(SHORT_TEXT)
+    pronunciation_segments=(
+        critical_batches if is_critical_audition
+        else build_gta6_pronunciation_batches(SHORT_TEXT)
+    )
     if not pronunciation_segments:
         raise RuntimeError("GTA6_PRONUNCIATION_SEGMENT_PLAN_EMPTY")
     segment_texts=[str(row["spoken_text"]) for row in pronunciation_segments]
@@ -1334,7 +1358,13 @@ def main()->int:
         identity_gate=identity_gate,
         content_audio_prescreen=content_audio_prescreen,
     )
-    print("AUDITION_DELIVERY_ELIGIBLE=PASS")
+    targeted_delivery_allowed=(
+        not is_critical_audition
+        or (identity_gate=="PASS" and content_audio_prescreen=="PASS")
+    )
+    print("AUDITION_DELIVERY_ELIGIBLE="+(
+        "PASS" if targeted_delivery_allowed else "BLOCKED_QUALITY_GATES"
+    ))
     print("RUNTIME_ACTIVATION=BLOCKED_PENDING_HUMAN_REVIEW")
 
     anchor_source_row=next(
@@ -1376,7 +1406,13 @@ def main()->int:
         "clone_sha256":clone_sha,
         "clone_identity_gate":identity_gate,
         "content_audio_prescreen":content_audio_prescreen,
-        "audition_delivery_eligible":review_decision["audition_delivery_eligible"],
+        "audition_delivery_eligible":(
+            bool(review_decision["audition_delivery_eligible"])
+            and targeted_delivery_allowed
+        ),
+        "pronunciation_scope":(
+            targeted_scope if is_critical_audition else "LEGACY"
+        ),
         "human_review_required":review_decision["human_review_required"],
         "human_review":review_decision["human_review"],
         "runtime_activation":review_decision["runtime_activation"],
@@ -1387,14 +1423,20 @@ def main()->int:
         "clone_reference_threshold":global_identity["reference_min_similarity"],
         "global_identity_diagnostic":global_identity,
         "language_matched_segment_identity":segmented_identity,
-        "text":SHORT_TEXT,
+        "text":(
+            ". ".join(str(row["canonical_text"]) for row in critical_batches)+"."
+            if is_critical_audition else SHORT_TEXT
+        ),
         "generation":{
             "engine":"QWEN3_TTS",
             "model_id":QWEN_MODEL_ID,
             "model_revision":QWEN_MODEL_REVISION,
             "qwen_tts_version":QWEN_TTS_VERSION,
             "language":"MULTILINGUAL",
-            "language_mode":"EXPLICIT_SEGMENTED_MULTILINGUAL",
+            "language_mode":(
+                "OWNER_GTA6_CRITICAL_PTBR_SERIAL" if is_critical_audition
+                else "EXPLICIT_SEGMENTED_MULTILINGUAL"
+            ),
             "clone_mode":"TRANSCRIPT_CONDITIONED_ICL",
             "x_vector_only_mode":False,
             "ref_audio_source":"TELEGRAM_HUMAN_OWNER",
