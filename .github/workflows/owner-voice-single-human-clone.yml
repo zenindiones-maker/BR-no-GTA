@@ -8,6 +8,11 @@ on:
       - work/br-owner-voice-coherent-qa-recovery-v1
     paths:
       - .run/br-owner-v1-single-human-clone.request.json
+      - .github/workflows/owner-voice-single-human-clone.yml
+      - scripts/owner_voice_single_human_clone.py
+      - scripts/owner_voice_single_clone_delivery.py
+      - tests/test_owner_voice_single_clone_workflow_v1.py
+      - config/pronunciation_lexicon.json
 
 concurrency:
   group: br-owner-v1-single-human-clone-ledger
