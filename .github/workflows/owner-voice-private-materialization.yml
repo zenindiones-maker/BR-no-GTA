@@ -147,7 +147,17 @@ jobs:
           python -m venv /tmp/br-owner-stt-venv
           /tmp/br-owner-stt-venv/bin/python -m pip install --disable-pip-version-check -q \
             "faster-whisper==1.2.0" \
+            "av==18.0.0" \
             "requests>=2.32,<3"
+          /tmp/br-owner-stt-venv/bin/python -m pip check
+          /tmp/br-owner-stt-venv/bin/python - <<'PY'
+          from importlib.metadata import version
+          import av
+          from faster_whisper.audio import decode_audio
+          assert version("faster-whisper")=="1.2.0"
+          assert version("av")=="18.0.0"
+          print("WHISPER_PYAV_METADATA_ERRORS_COMPATIBILITY=PINNED")
+          PY
 
       - name: Quality-rank all real Telegram owner references
         env:

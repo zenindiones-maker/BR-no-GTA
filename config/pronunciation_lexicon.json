@@ -1,197 +1,25 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.10.07.5-owner-vaicy-siti",
+  "version": "2026.10.10.1-video-acoustic-only-pending",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "DeepSeek Harness + BR_OWNER_V1 human acoustic authority",
     "priority": [
-      "canonical-lexicon",
-      "owner-acoustic-reference",
-      "pt-BR-fallback"
+      "approved-dubbed-trailer-acoustic-evidence",
+      "pt-BR-native-unverified-block"
     ],
     "canonical_text_immutable": true,
     "human_gate_for_critical_terms": true,
     "governed_foreign_chunks_only": true,
-    "foreign_language_chunks_forbidden": false,
+    "foreign_language_chunks_forbidden": true,
     "arbitrary_foreign_chunks_forbidden": true,
     "same_owner_voice_required": true,
-    "generic_name_autodetection_enabled": false
+    "generic_name_autodetection_enabled": false,
+    "pronunciation_reference_video_ids": [
+      "f8IZhKcuEts",
+      "K6rVM6gn6k4"
+    ],
+    "acoustic_reference_required": true
   },
-  "entries": [
-    {
-      "identity": "gta-6",
-      "term": "GTA 6",
-      "aliases": [
-        "GTA VI"
-      ],
-      "locale": "pt-BR",
-      "strategy": "alias",
-      "synthesis_text": "Gê Tê A seis",
-      "critical": true,
-      "source": "owner-approved Brazilian reading; canonical editorial text remains GTA 6"
-    },
-    {
-      "identity": "rockstar-games",
-      "term": "Rockstar Games",
-      "locale": "en-US",
-      "strategy": "canonical-owner-acoustic",
-      "synthesis_text": "Rockstar Games",
-      "critical": true,
-      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
-    },
-    {
-      "identity": "vice-city",
-      "term": "Vice City",
-      "locale": "pt-BR",
-      "strategy": "owner-brazilian-acoustic",
-      "synthesis_text": "vaicy siti",
-      "critical": true,
-      "source": "owner-explicit Brazilian pronunciation: vaicy siti; acoustic authority is fresh BR_OWNER_V1 Telegram reference",
-      "owner_reading_authority": "EXPLICIT_OWNER_PTBR"
-    },
-    {
-      "identity": "leonida-keys",
-      "term": "Leonida Keys",
-      "locale": "en-US",
-      "strategy": "canonical-owner-acoustic",
-      "synthesis_text": "Leonida Keys",
-      "critical": true,
-      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
-    },
-    {
-      "identity": "leonida",
-      "term": "Leonida",
-      "locale": "en-US",
-      "strategy": "canonical-owner-acoustic",
-      "synthesis_text": "Leonida",
-      "critical": true,
-      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
-    },
-    {
-      "identity": "port-gellhorn",
-      "term": "Port Gellhorn",
-      "locale": "en-US",
-      "strategy": "canonical-owner-acoustic",
-      "synthesis_text": "Port Gellhorn",
-      "critical": true,
-      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
-    },
-    {
-      "identity": "ambrosia",
-      "term": "Ambrosia",
-      "locale": "en-US",
-      "strategy": "canonical-owner-acoustic",
-      "synthesis_text": "Ambrosia",
-      "critical": true,
-      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
-    },
-    {
-      "identity": "grassrivers",
-      "term": "Grassrivers",
-      "locale": "en-US",
-      "strategy": "canonical-owner-acoustic",
-      "synthesis_text": "Grassrivers",
-      "critical": true,
-      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
-    },
-    {
-      "identity": "mount-kalaga",
-      "term": "Mount Kalaga",
-      "locale": "en-US",
-      "strategy": "canonical-owner-acoustic",
-      "synthesis_text": "Mount Kalaga",
-      "critical": true,
-      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
-    },
-    {
-      "identity": "jason-duval",
-      "term": "Jason Duval",
-      "locale": "en-US",
-      "strategy": "canonical-owner-acoustic",
-      "synthesis_text": "Jason Duval",
-      "critical": true,
-      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
-    },
-    {
-      "identity": "character-jason",
-      "term": "Jason",
-      "locale": "en-US",
-      "strategy": "canonical-owner-acoustic",
-      "synthesis_text": "Jason",
-      "critical": true,
-      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
-    },
-    {
-      "identity": "lucia-caminos",
-      "term": "Lucia Caminos",
-      "locale": "en-US",
-      "strategy": "canonical-owner-acoustic",
-      "synthesis_text": "Lucia Caminos",
-      "critical": true,
-      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
-    },
-    {
-      "identity": "character-lucia",
-      "term": "Lucia",
-      "locale": "en-US",
-      "strategy": "canonical-owner-acoustic",
-      "synthesis_text": "Lucia",
-      "critical": true,
-      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
-    },
-    {
-      "identity": "cal-hampton",
-      "term": "Cal Hampton",
-      "locale": "en-US",
-      "strategy": "canonical-owner-acoustic",
-      "synthesis_text": "Cal Hampton",
-      "critical": true,
-      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
-    },
-    {
-      "identity": "boobie-ike",
-      "term": "Boobie Ike",
-      "locale": "en-US",
-      "strategy": "canonical-owner-acoustic",
-      "synthesis_text": "Boobie Ike",
-      "critical": true,
-      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
-    },
-    {
-      "identity": "drequan-priest",
-      "term": "Dre'Quan Priest",
-      "locale": "en-US",
-      "strategy": "canonical-owner-acoustic",
-      "synthesis_text": "Dre'Quan Priest",
-      "critical": true,
-      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
-    },
-    {
-      "identity": "real-dimez",
-      "term": "Real Dimez",
-      "locale": "en-US",
-      "strategy": "canonical-owner-acoustic",
-      "synthesis_text": "Real Dimez",
-      "critical": true,
-      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
-    },
-    {
-      "identity": "raul-bautista",
-      "term": "Raul Bautista",
-      "locale": "en-US",
-      "strategy": "canonical-owner-acoustic",
-      "synthesis_text": "Raul Bautista",
-      "critical": true,
-      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
-    },
-    {
-      "identity": "brian-heder",
-      "term": "Brian Heder",
-      "locale": "en-US",
-      "strategy": "canonical-owner-acoustic",
-      "synthesis_text": "Brian Heder",
-      "critical": true,
-      "source": "Rockstar canonical spelling; BR_OWNER_V1 governed code-switch"
-    }
-  ]
+  "entries": []
 }

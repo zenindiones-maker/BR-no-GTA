@@ -25,6 +25,7 @@ from app.services.owner_voice_human_audition_pack_service import (
     evaluate_short_candidate,
 )
 from app.services.owner_voice_human_review_delivery_policy_service import build_human_review_delivery_decision
+from app.services.owner_voice_clone_step_output_service import write_delivery_step_outputs
 from app.services.owner_voice_private_materialization_service import (
     materialize_telegram_owner_references,
     sanitize_owner_reference_index,
@@ -497,6 +498,22 @@ def main()->int:
     cache_root=Path(os.environ.get("BR_OWNER_PUBLIC_MODEL_CACHE") or Path.home()/".cache"/"br-owner-voice"/"hf-public").resolve()
     workspace.mkdir(parents=True,exist_ok=True)
     request_payload=_request_payload()
+    targeted_scope="OWNER_GTA6_CRITICAL_NAMES_ONLY_V1"
+    is_critical_audition=request_payload.get("pronunciation_scope")==targeted_scope
+    if request_payload.get("pronunciation_scope") and not is_critical_audition:
+        raise RuntimeError("UNAUTHORIZED_PRONUNCIATION_AUDITION_SCOPE")
+    critical_batches=None
+    if is_critical_audition:
+        from app.services.gta6_owner_audio_dictionary_service import (
+            load_candidate,owner_critical_ptbr_batches,validate_synthesis_intent,
+        )
+        validate_synthesis_intent(
+            request=request_payload,dictionary=load_candidate()
+        )
+        critical_batches=owner_critical_ptbr_batches()
+        print("GTA6_OWNER_CRITICAL_DICTIONARY_ITEMS="+str(len(critical_batches)))
+        print("GTA6_OWNER_AUDITION_SPEAKER_REFERENCE=TELEGRAM_OWNER_ONLY")
+        print("GTA6_OWNER_ACOUSTIC_DICTIONARY_STATUS=PENDING")
     reconciliation=request_payload.get("delivery_reconciliation")
     if reconciliation is not None:
         if not isinstance(reconciliation,dict):
@@ -525,10 +542,15 @@ def main()->int:
             encoding="utf-8",
         )
         out=str(os.environ.get("GITHUB_OUTPUT") or "").strip()
-        if out:
-            with open(out,"a",encoding="utf-8") as stream:
-                stream.write(f"manifest_path={manifest_path}\n")
-                stream.write(f"clone_id={clone_id}\n")
+        if not out:
+            raise RuntimeError("OWNER_CLONE_GITHUB_OUTPUT_REQUIRED")
+        # This mode reconciles an already recorded control send only. No
+        # inference, new clone, or critical-name audio delivery may occur.
+        write_delivery_step_outputs(
+            output_path=Path(out), manifest_path=manifest_path,
+            clone_id=clone_id, send_eligible=True,
+            critical_scope=False, control_only=True,
+        )
         print("SINGLE_CLONE_CONTROL_RECONCILIATION_ONLY=TRUE")
         print("SINGLE_CLONE_CONTROL_RECONCILIATION_TARGET="+clone_id)
         return 0
@@ -601,11 +623,16 @@ def main()->int:
     print("PRONUNCIATION_LANGUAGE_POLICY=CODE_SWITCH_ALLOWED")
     print("IDENTITY_REFERENCE_SCOPE=GLOBAL_OWNER_INLIERS")
 
+    speaker_model_t0=time.monotonic()
+    print("OWNER_PERF_STAGE_START=speaker_model_load",flush=True)
     classifier=_load_speaker_model(cache_root)
+    print(f"OWNER_PERF_STAGE_DONE=speaker_model_load elapsed_seconds={time.monotonic()-speaker_model_t0:.3f}",flush=True)
     normalized={}
     original_sources={}
     embeddings={}
     metrics={}
+    reference_embedding_t0=time.monotonic()
+    print(f"OWNER_PERF_STAGE_START=reference_embeddings count={len(refs)}",flush=True)
     for row in refs:
         rid=str(int(row["telegram_input_id"]))
         original=Path(row["runtime_path"]).resolve()
@@ -615,6 +642,7 @@ def main()->int:
         metrics[rid]=pcm16_quality_metrics(wav)
         embeddings[rid]=_embedding(classifier,wav)
 
+    print(f"OWNER_PERF_STAGE_DONE=reference_embeddings elapsed_seconds={time.monotonic()-reference_embedding_t0:.3f}",flush=True)
     profile=calibrate_owner_identity_profile(embeddings)
     centroid_floor=float(profile["clone_centroid_min_similarity"])
     inlier_ids=set(str(x) for x in profile["inlier_ids"])
@@ -1004,7 +1032,16 @@ def main()->int:
     import soundfile as sf
     from qwen_tts import Qwen3TTSModel
 
-    torch.set_num_threads(4)
+    # Respect Linux CPU affinity on hosted runners; avoid oversubscription.
+    # Preserve model, precision, prompts and all identity/ASR quality gates.
+    available_cpus=(len(os.sched_getaffinity(0)) if hasattr(os,"sched_getaffinity")
+                    else (os.cpu_count() or 1))
+    owner_cpu_threads=max(1,min(4,available_cpus))
+    torch.set_num_threads(owner_cpu_threads)
+    torch.set_num_interop_threads(1)
+    print(f"OWNER_QWEN_CPU_THREADS={owner_cpu_threads} AVAILABLE_CPUS={available_cpus}",flush=True)
+    qwen_load_t0=time.monotonic()
+    print("OWNER_PERF_STAGE_START=qwen_model_load",flush=True)
     qwen_snapshot=_prepare_qwen_model(cache_root/"qwen3-tts")
     model=Qwen3TTSModel.from_pretrained(
         str(qwen_snapshot),
@@ -1012,6 +1049,9 @@ def main()->int:
         dtype=torch.float32,
         attn_implementation="sdpa",
     )
+    print(f"OWNER_PERF_STAGE_DONE=qwen_model_load elapsed_seconds={time.monotonic()-qwen_load_t0:.3f}",flush=True)
+    prompt_t0=time.monotonic()
+    print("OWNER_PERF_STAGE_START=owner_prompt_build",flush=True)
     anchor_prompt_items=model.create_voice_clone_prompt(
         ref_audio=str(canonical24),
         ref_text=anchor_ref_text,
@@ -1101,7 +1141,10 @@ def main()->int:
         return 0
 
     print("QWEN_REFERENCE_AUDIO_LINEAGE="+qwen_reference_audio_lineage)
-    pronunciation_segments=build_gta6_pronunciation_batches(SHORT_TEXT)
+    pronunciation_segments=(
+        critical_batches if is_critical_audition
+        else build_gta6_pronunciation_batches(SHORT_TEXT)
+    )
     if not pronunciation_segments:
         raise RuntimeError("GTA6_PRONUNCIATION_SEGMENT_PLAN_EMPTY")
     segment_texts=[str(row["spoken_text"]) for row in pronunciation_segments]
@@ -1110,11 +1153,16 @@ def main()->int:
         raise RuntimeError("GTA6_PRONUNCIATION_SEGMENT_LANGUAGE_AUTO_FORBIDDEN")
     print("GTA6_PRONUNCIATION_SEGMENT_COUNT="+str(len(pronunciation_segments)))
     print("GTA6_PRONUNCIATION_SEGMENT_LANGUAGES="+",".join(segment_languages))
+    coherent_anchor_only=os.environ.get("BR_OWNER_COHERENT_ANCHOR_ONLY")=="1"
     segment_prompts=[]
     for row in pronunciation_segments:
         language=str(row["language"])
         canonical_text=str(row["canonical_text"])
-        if VICE_CITY_TERM in canonical_text:
+        if coherent_anchor_only:
+            # Select the canonical Telegram owner prompt BEFORE any optional
+            # pronunciation-only source can block a legitimate audition.
+            segment_prompts.append(anchor_prompt)
+        elif VICE_CITY_TERM in canonical_text:
             if vice_city_prompt is None:
                 raise RuntimeError("OWNER_VICE_CITY_PRONUNCIATION_REFERENCE_REQUIRED")
             segment_prompts.append(vice_city_prompt)
@@ -1125,11 +1173,33 @@ def main()->int:
         else:
             segment_prompts.append(anchor_prompt)
 
+    # REA V24: Qwen3-TTS upstream explicitly recommends a single coherent
+    # ref_audio across all utterances to avoid unstable speaker identity.
+    # This is a separately scoped, opt-in recovery candidate only. Owner-only
+    # references still control pronunciation verification and cannot turn into
+    # a preset/fallback speaker. Keep identity calibration and human review.
+    if coherent_anchor_only:
+        from app.services.owner_voice_prompt_consistency_service import (
+            select_single_owner_prompt_for_segments,
+        )
+        segment_prompts=select_single_owner_prompt_for_segments(
+            anchor_prompt=anchor_prompt,
+            segment_count=len(pronunciation_segments),
+            canonical_reference_sha256=str(canonical["sha256"]),
+        )
+        qwen_reference_audio_lineage="SINGLE_COHERENT_OWNER_CANONICAL_REFERENCE"
+        print("QWEN_OWNER_REFERENCE_PER_SEGMENT=CANONICAL_ONLY")
+        print("OWNER_SPEAKER_IDENTITY_THRESHOLDS=UNCHANGED")
+    else:
+        print("QWEN_OWNER_REFERENCE_PER_SEGMENT=LEGACY_MIXED_INDEPENDENT")
+
     # Qwen official API accepts single-item batches. Avoid one unobservable,
     # long multi-segment generation call, and keep each output as a private
     # scratch checkpoint; never reuse older rejected audition segments.
     from app.services.owner_voice_serial_generation_v11 import generate_one_private_audition
 
+    print(f"OWNER_PERF_STAGE_DONE=owner_prompt_build elapsed_seconds={time.monotonic()-prompt_t0:.3f}",flush=True)
+    print("OWNER_PERF_STAGE_START=qwen_segment_generation",flush=True)
     wavs,sample_rate,generation_seconds,segment_timing_receipts=generate_one_private_audition(
         generate=model.generate_voice_clone,
         heartbeat=_run_with_generation_heartbeat,
@@ -1138,6 +1208,7 @@ def main()->int:
         segment_prompts=segment_prompts,
         workspace=workspace,
     )
+    print(f"OWNER_PERF_STAGE_DONE=qwen_segment_generation elapsed_seconds={generation_seconds:.3f}",flush=True)
     if len(wavs)!=len(segment_texts) or int(sample_rate)<=0:
         raise RuntimeError("QWEN3_TTS_SEGMENT_BATCH_OUTPUT_INVALID")
     print("OWNER_QWEN_SEGMENT_MEASURED_COUNT="+str(len(segment_timing_receipts)))
@@ -1177,21 +1248,16 @@ def main()->int:
         )
         segment_embedding=_embedding(classifier,segment_identity16)
         canonical_text=str(row["canonical_text"])
-        if VICE_CITY_TERM in canonical_text:
-            if pronunciation_reference_embedding is None:
-                raise RuntimeError("OWNER_VICE_CITY_IDENTITY_REFERENCE_REQUIRED")
-            reference_embedding=pronunciation_reference_embedding
-            gate_language="pt"
-        elif language=="Portuguese":
-            reference_embedding=canonical_embedding
-            gate_language="pt"
-        elif language=="English":
-            if pronunciation_reference_embedding is None:
-                raise RuntimeError("OWNER_ENGLISH_IDENTITY_REFERENCE_REQUIRED")
-            reference_embedding=pronunciation_reference_embedding
-            gate_language="en"
-        else:
-            raise RuntimeError("OWNER_CLONE_SEGMENT_LANGUAGE_UNSUPPORTED")
+        from app.services.owner_voice_prompt_consistency_service import (
+            owner_reference_for_identity_measurement,
+        )
+        reference_embedding,gate_language=owner_reference_for_identity_measurement(
+            canonical_embedding=canonical_embedding,
+            pronunciation_embedding=pronunciation_reference_embedding,
+            coherent_anchor_only=coherent_anchor_only,
+            language=language,
+            contains_vice_city=VICE_CITY_TERM in canonical_text,
+        )
         segment_identity_rows.append({
             "position":position,
             "language":gate_language,
@@ -1314,7 +1380,17 @@ def main()->int:
         identity_gate=identity_gate,
         content_audio_prescreen=content_audio_prescreen,
     )
-    print("AUDITION_DELIVERY_ELIGIBLE=PASS")
+    targeted_delivery_allowed=(
+        not is_critical_audition
+        or (identity_gate=="PASS" and content_audio_prescreen=="PASS")
+    )
+    audition_delivery_eligible=(
+        bool(review_decision["audition_delivery_eligible"])
+        and targeted_delivery_allowed
+    )
+    print("AUDITION_DELIVERY_ELIGIBLE="+(
+        "PASS" if audition_delivery_eligible else "BLOCKED_QUALITY_GATES"
+    ))
     print("RUNTIME_ACTIVATION=BLOCKED_PENDING_HUMAN_REVIEW")
 
     anchor_source_row=next(
@@ -1356,7 +1432,10 @@ def main()->int:
         "clone_sha256":clone_sha,
         "clone_identity_gate":identity_gate,
         "content_audio_prescreen":content_audio_prescreen,
-        "audition_delivery_eligible":review_decision["audition_delivery_eligible"],
+        "audition_delivery_eligible":audition_delivery_eligible,
+        "pronunciation_scope":(
+            targeted_scope if is_critical_audition else "LEGACY"
+        ),
         "human_review_required":review_decision["human_review_required"],
         "human_review":review_decision["human_review"],
         "runtime_activation":review_decision["runtime_activation"],
@@ -1367,34 +1446,44 @@ def main()->int:
         "clone_reference_threshold":global_identity["reference_min_similarity"],
         "global_identity_diagnostic":global_identity,
         "language_matched_segment_identity":segmented_identity,
-        "text":SHORT_TEXT,
+        "text":(
+            ". ".join(str(row["canonical_text"]) for row in critical_batches)+"."
+            if is_critical_audition else SHORT_TEXT
+        ),
         "generation":{
             "engine":"QWEN3_TTS",
             "model_id":QWEN_MODEL_ID,
             "model_revision":QWEN_MODEL_REVISION,
             "qwen_tts_version":QWEN_TTS_VERSION,
             "language":"MULTILINGUAL",
-            "language_mode":"EXPLICIT_SEGMENTED_MULTILINGUAL",
+            "language_mode":(
+                "OWNER_GTA6_CRITICAL_PTBR_SERIAL" if is_critical_audition
+                else "EXPLICIT_SEGMENTED_MULTILINGUAL"
+            ),
             "clone_mode":"TRANSCRIPT_CONDITIONED_ICL",
             "x_vector_only_mode":False,
             "ref_audio_source":"TELEGRAM_HUMAN_OWNER",
             "ref_audio_lineage":qwen_reference_audio_lineage,
             "prompt_component_authority":(
-                "ANCHOR_SPK_PLUS_PRONUNCIATION_CODE"
-                if pronunciation_canonical is not None
-                else "ANCHOR_ONLY"
+                "COHERENT_ANCHOR_ONLY"
+                if qwen_reference_audio_lineage=="SINGLE_COHERENT_OWNER_CANONICAL_REFERENCE"
+                else "SEPARATE_COHERENT_OWNER_REFERENCES"
             ),
             "ref_text_private_only":True,
-            "generate_call_count":1,
+            "generate_call_count":len(segment_timing_receipts),
         },
     }
     manifest_path=workspace/"single-clone-manifest.json"
     manifest_path.write_text(json.dumps(manifest,sort_keys=True,indent=2)+"\n",encoding="utf-8")
     out=str(os.environ.get("GITHUB_OUTPUT") or "").strip()
-    if out:
-        with open(out,"a",encoding="utf-8") as stream:
-            stream.write(f"manifest_path={manifest_path}\n")
-            stream.write(f"clone_id={clone_id}\n")
+    if not out:
+        raise RuntimeError("OWNER_CLONE_GITHUB_OUTPUT_REQUIRED")
+    write_delivery_step_outputs(
+        output_path=Path(out), manifest_path=manifest_path,
+        clone_id=clone_id,
+        send_eligible=bool(manifest["audition_delivery_eligible"]),
+        critical_scope=is_critical_audition,
+    )
     print(f"OWNER_REFERENCE_COUNT={profile['reference_count']}")
     print(f"OWNER_INTRA_SPEAKER_SIMILARITY_MEDIAN={profile['intra_speaker_similarity_median']}")
     print(f"OWNER_INTRA_SPEAKER_SIMILARITY_P10={profile['intra_speaker_similarity_p10']}")

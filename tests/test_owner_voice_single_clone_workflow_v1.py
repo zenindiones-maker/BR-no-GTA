@@ -106,7 +106,15 @@ def test_auto_gate_failure_blocks_activation_but_not_human_audition_delivery():
     assert "build_human_review_delivery_decision" in source
     assert 'raise RuntimeError("OWNER_CLONE_IDENTITY_MISMATCH")' not in source
     assert 'raise RuntimeError("OWNER_SINGLE_CLONE_CONTENT_QA_FAILED")' not in source
-    assert '"audition_delivery_eligible":review_decision["audition_delivery_eligible"]' in source
+    # The current manifest also enforces the independent critical-term gate.
+    # A failed critical-name candidate cannot be sent merely because a general
+    # human-review policy considers ordinary auditions reviewable.
+    assert 'audition_delivery_eligible=(' in source
+    assert 'bool(review_decision["audition_delivery_eligible"])' in source
+    assert 'and targeted_delivery_allowed' in source
+    assert '(identity_gate=="PASS" and content_audio_prescreen=="PASS")' in source
+    assert '"audition_delivery_eligible":audition_delivery_eligible' in source
+    assert 'send_eligible=bool(manifest["audition_delivery_eligible"])' in source
     assert 'payload.get("clone_identity_gate") not in {"PASS","FAIL"}' in delivery
     assert 'payload.get("runtime_activation") is not False' in delivery
     assert "Runtime activation: BLOQUEADA até aprovação humana." in delivery
@@ -476,36 +484,38 @@ def test_production_voice_capability_has_no_chatterbox_binding():
     assert '"qwen3-tts"' in source
 
 
-def test_production_pronunciation_uses_governed_qwen_code_switch_not_portuguese_respellings():
-    lexicon=Path("config/pronunciation_lexicon.json").read_text(encoding="utf-8")
-    assert "Váis Síti" not in lexicon
-    assert "Lucía" not in lexicon
-    assert "Leônida" not in lexicon
-    assert '"governed_foreign_chunks_only": true' in lexicon
-    assert '"foreign_language_chunks_forbidden": false' in lexicon
+def test_production_pronunciation_stays_blocked_until_owner_acoustic_certification():
+    # Production lexicon deliberately has no approved entries. A source-only
+    # test must not turn unapproved English chunks into active synthesis spans.
+    import json
+    lexicon=json.loads(Path("config/pronunciation_lexicon.json").read_text(encoding="utf-8"))
+    assert lexicon["policy"]["governed_foreign_chunks_only"] is True
+    assert lexicon["policy"]["foreign_language_chunks_forbidden"] is True
+    assert lexicon["policy"]["arbitrary_foreign_chunks_forbidden"] is True
+    assert lexicon["policy"]["acoustic_reference_required"] is True
+    assert lexicon["entries"] == []
 
-    plan=resolve_synthesis_plan(
-        "BR no GTA 6 chega a Vice City com Lucia Caminos e Jason Duval."
+    canonical="BR no GTA 6 chega a Vice City com Lucia Caminos e Jason Duval."
+    plan=resolve_synthesis_plan(canonical)
+    assert plan.canonical_text_preserved is True
+    assert plan.rendered_text==canonical
+    assert plan.lexicon_hits==()
+    assert plan.foreign_span_count==0
+    assert all(span.locale=="pt-BR" for span in plan.spans)
+
+    # Separate BR_OWNER_V1 audition code has a governed pronunciation
+    # challenge. It is not an authorization to activate production lexicon.
+    batches=build_gta6_pronunciation_batches(canonical)
+    assert any(
+        row["spoken_text"]=="vaicy siti" and row["language"]=="Portuguese"
+        for row in batches
     )
-    by_id={
-        span.pronunciation_identity:span
-        for span in plan.spans
-        if span.pronunciation_identity
-    }
-    assert by_id["gta-6"].locale=="pt-BR"
-    assert by_id["gta-6"].synthesis_text=="Gê Tê A seis"
-    assert by_id["vice-city"].locale=="pt-BR"
-    assert by_id["vice-city"].synthesis_text=="vaicy siti"
-    assert by_id["lucia-caminos"].locale=="en-US"
-    assert by_id["lucia-caminos"].synthesis_text=="Lucia Caminos"
-    assert by_id["jason-duval"].locale=="en-US"
-    assert by_id["jason-duval"].synthesis_text.rstrip(".,!?;:")=="Jason Duval"
-
+    assert any(
+        "Lucia Caminos" in row["spoken_text"] and row["language"]=="English"
+        for row in batches
+    )
     caps=provider_capabilities("qwen3-tts",provider_version="0.1.1",voice="BR_OWNER_V1")
-    assert caps.supports_isolated_multilingual_chunks is True
-    assert caps.supports_same_voice_multilingual is True
     validate_provider_plan(plan,caps)
-
 
 def test_production_pronunciation_keeps_arbitrary_foreign_chunks_fail_closed():
     plan=resolve_synthesis_plan(
@@ -532,8 +542,16 @@ def test_multilingual_identity_gate_is_language_matched_not_whole_clone_cross_li
     assert "evaluate_language_matched_segment_identity_gate" in source
     assert "pronunciation_reference_embedding" in source
     assert "segment_identity_rows=[]" in source
-    assert 'reference_embedding=canonical_embedding' in source
-    assert 'reference_embedding=pronunciation_reference_embedding' in source
+    # The reference choice was extracted to a typed helper so a coherent
+    # canonical-only trial can keep valid speaker QA without a fresh Vice City
+    # recording. Check both identity baselines, not obsolete inline spelling.
+    assert "owner_reference_for_identity_measurement(" in source
+    ref_selector=Path(
+        "app/services/owner_voice_prompt_consistency_service.py"
+    ).read_text(encoding="utf-8")
+    assert "if coherent_anchor_only:" in ref_selector
+    assert "return canonical_embedding, gate_language" in ref_selector
+    assert "return pronunciation_embedding,gate_language" in ref_selector
     assert "LANGUAGE_MATCHED_OWNER_REFERENCE_P10" in Path(
         "app/services/owner_voice_speaker_identity_service.py"
     ).read_text(encoding="utf-8")
@@ -638,3 +656,41 @@ def test_qwen_generation_emits_periodic_heartbeat_without_changing_audio_contrac
     assert "segment_texts=segment_texts" in generation
     assert "segment_languages=segment_languages" in generation
     assert "segment_prompts=segment_prompts" in generation
+
+
+def test_delivery_eligibility_receipt_uses_exact_manifest_decision():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert 'audition_delivery_eligible=(' in source
+    assert 'bool(review_decision["audition_delivery_eligible"])' in source
+    assert 'and targeted_delivery_allowed' in source
+    assert '"PASS" if audition_delivery_eligible else "BLOCKED_QUALITY_GATES"' in source
+    assert '"audition_delivery_eligible":audition_delivery_eligible' in source
+    assert '"PASS" if targeted_delivery_allowed else "BLOCKED_QUALITY_GATES"' not in source
+
+
+def test_source_only_changes_cannot_request_new_owner_clone():
+    workflow=WORKFLOW.read_text(encoding="utf-8")
+    assert 'REQUEST_CHANGED=false' in workflow
+    assert 'if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then' in workflow
+    assert 'target=".run/br-owner-v1-single-human-clone.request.json"' in workflow
+    assert 'if [ "$REQUEST_CHANGED" = true ]' in workflow
+
+
+def test_qwen_cpu_parallelism_respects_runner_affinity_and_preserves_fidelity():
+    source=ORCHESTRATOR.read_text(encoding="utf-8")
+    assert 'os.sched_getaffinity(0)' in source
+    assert 'owner_cpu_threads=max(1,min(4,available_cpus))' in source
+    assert 'torch.set_num_threads(owner_cpu_threads)' in source
+    assert 'torch.set_num_interop_threads(1)' in source
+    assert 'dtype=torch.float32' in source
+    assert 'x_vector_only_mode=False' in source
+    assert 'evaluate_language_matched_segment_identity_gate(' in source
+    assert 'send_eligible=bool(manifest["audition_delivery_eligible"])' in source
+
+
+def test_source_push_never_authorizes_telegram_audition():
+    workflow=WORKFLOW.read_text(encoding="utf-8")
+    assert 'REQUEST_CHANGED=false' in workflow
+    assert 'if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then' in workflow
+    assert 'needs.contract.outputs.clone_requested == \'true\'' in workflow
+    assert 'cancel-in-progress: false' in workflow

@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shlex
+import time
 from pathlib import Path
 import subprocess
 import tempfile
@@ -187,10 +188,10 @@ class OwnerVoiceAuditionGitLedgerStore:
         return self._push_candidate_bounded(expected_head_sha=expected_head_sha,candidate=candidate)
 
     def _push_candidate_bounded(self,*,expected_head_sha:str,candidate:str)->str:
-        """Retry once only for GitHub commit_refs failures after exact remote readback.
+        """Retry GitHub backend commit_refs only with strict CAS remote readback.
 
-        This is a ledger Git push only. It cannot retry or authorize Telegram
-        media sends and cannot force-push a changed branch.
+        This changes no scope or credentials. Never force-push, invent a
+        successful receipt, or repeat Telegram sending on ambiguous egress.
         """
         if (not isinstance(expected_head_sha,str) or not _GIT_OID.fullmatch(expected_head_sha)
             or not isinstance(candidate,str) or not _GIT_OID.fullmatch(candidate)
@@ -201,7 +202,10 @@ class OwnerVoiceAuditionGitLedgerStore:
             raise CasConflict(
                 f"CAS_CONFLICT:EXPECTED_OLD_OID:{expected_head_sha}!={observed_before}"
             )
-        for attempt in range(2):
+        # Retry only a verifiable GitHub backend commit_refs transaction failure;
+        # each retry checks the remote ref again, and reuses the exact candidate
+        # commit so no new ledger event/version can be emitted twice.
+        for attempt in range(3):
             cp=subprocess.run(
                 ["git","push",self.repository_ssh,f"{candidate}:{ALLOWED_LEDGER_REF}"],
                 cwd=self.repo,env=self._env(),text=True,capture_output=True,check=False,
@@ -217,14 +221,16 @@ class OwnerVoiceAuditionGitLedgerStore:
             transient_commit_refs=(
                 cp.returncode!=0 and "fatal error in commit_refs" in stderr.lower()
             )
-            if attempt==0 and transient_commit_refs:
-                # No force, no new commit, no blind Telegram operation.
-                continue
             if transient_commit_refs:
-                raise RuntimeError("LEDGER_TRANSIENT_COMMIT_REFS_EXHAUSTED")
+                if attempt>=2:
+                    raise RuntimeError("LEDGER_GITHUB_COMMIT_REFS_BACKEND_UNAVAILABLE")
+                # GitHub backend may recover after a short bounded delay.
+                # No force, no new commit, no Telegram retry in this path.
+                time.sleep((1.0,3.0)[attempt])
+                continue
             if cp.returncode==0:
                 raise RuntimeError("LEDGER_REMOTE_READBACK_MISMATCH")
-            raise RuntimeError("LEDGER_FAST_FORWARD_PUSH_REJECTED:"+stderr[:1000])
+            raise RuntimeError("LEDGER_PUSH_NONTRANSIENT_ERROR:"+stderr[:1000])
         raise RuntimeError("LEDGER_PUSH_LOOP_UNREACHABLE")
 
 
