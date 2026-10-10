@@ -167,6 +167,18 @@ class TelegramSingleCloneApi:
         return int(result["message_id"])
 
 
+def _valid_generation_contract(generation:Any)->bool:
+    if not isinstance(generation,dict):
+        return False
+    try:
+        count=int(generation.get("generate_call_count") or 0)
+    except (TypeError,ValueError):
+        return False
+    if generation.get("engine")=="QWEN3_TTS" and generation.get("language_mode")=="EXPLICIT_SEGMENTED_MULTILINGUAL":
+        return count==7
+    return count==1
+
+
 def _load_manifest(path:Path)->dict[str,Any]:
     payload=json.loads(path.read_text(encoding="utf-8"))
     if payload.get("schema_version")=="OwnerVoiceSingleCloneControlReconciliation/v1":
@@ -191,7 +203,7 @@ def _load_manifest(path:Path)->dict[str,Any]:
         or payload.get("human_review_required") is not True
         or payload.get("human_review")!="PENDING"
         or payload.get("runtime_activation") is not False
-        or int(payload.get("generation",{}).get("generate_call_count") or 0)!=1
+        or not _valid_generation_contract(payload.get("generation"))
     ):
         raise RuntimeError("SINGLE_CLONE_MANIFEST_CONTRACT_INVALID")
     clone_path=Path(str(payload.get("clone_path") or "")).resolve()
