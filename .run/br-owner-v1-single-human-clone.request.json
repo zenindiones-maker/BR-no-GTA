@@ -4,9 +4,9 @@
   "reference_source": "TELEGRAM_HUMAN_OWNER",
   "one_candidate_only": true,
   "runtime_activation": false,
-  "recovery_attempt_id": "owner-gta6-eighteen-critical-audio-proof-001",
-  "recovery_from_run_id": 38018878725,
-  "recovery_reason": "One bounded public-repo standard Ubuntu hosted run for 18 individually generated critical GTA VI names in BR_OWNER_V1 using existing real Telegram human identity references only. Send one private audio only on independent PASS identity + content gate. No alternate voice, dubbed video voice, public artifact, training, paid runner, or runtime promotion.",
+  "recovery_attempt_id": "owner-gta6-eighteen-critical-audio-proof-002",
+  "recovery_from_run_id": 38055112746,
+  "recovery_reason": "Previous 38055112746 contract blocked BEFORE generation because obsolete tests expected a populated active lexicon; exact-scope fail-closed tests now cover empty active lexicon, 18 owner-only names, identity and audio QA, and durable single-audio Telegram send. One bounded public-repo standard Actions retry only.",
   "human_approval_required": true,
   "production_activated": false,
   "pronunciation_scope": "OWNER_GTA6_CRITICAL_NAMES_ONLY_V1"
