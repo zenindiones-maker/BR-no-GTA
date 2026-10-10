@@ -72,6 +72,16 @@ class Run001OwnerOnlyProducts(unittest.TestCase):
         with self.assertRaises(OwnerVoiceAdmissionBlocked):
             require_owner_voice_admission(a)
 
+    def test_historically_human_rejected_extended_look_candidate_is_not_video_b(self):
+        from app.services.run001_owner_only_product_recovery import reject_rejected_editorial_package
+        source=json.loads(
+            (ROOT/"content/research/video-a-extended-look-editorial-package-v2.json").read_text()
+        )
+        self.assertEqual(source["human_rejection_basis"]["script_editorial_quality"],"FAIL")
+        self.assertEqual(source["human_voice_review"],"REJECTED")
+        with self.assertRaisesRegex(RecoveryBlocked,"HUMAN_REJECTED"):
+            reject_rejected_editorial_package(source)
+
     def test_rejects_unverified_script_and_phony_cloned_approval(self):
         a=json.loads(json.dumps(self.old))
         a["script_sections"]=[]
