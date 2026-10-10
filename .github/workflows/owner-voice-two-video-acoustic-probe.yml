@@ -5,6 +5,10 @@ on:
     paths:
       - 'scripts/owner_voice_two_video_acoustic_probe.py'
       - 'scripts/owner_voice_two_video_acoustic_review.py'
+      - 'scripts/owner_voice_survey_telegram_delivery.py'
+      - 'scripts/owner_voice_survey_telegram_remote_control.py'
+      - 'tests/test_owner_voice_survey_telegram_delivery.py'
+      - 'tests/test_owner_voice_survey_telegram_remote_control.py'
       - 'tests/test_owner_voice_two_video_acoustic_review.py'
       - 'scripts/owner_voice_two_video_review_remote_control.py'
       - 'tests/test_owner_voice_two_video_review_remote_control.py'
@@ -41,8 +45,12 @@ jobs:
           ffmpeg -version | head -n 1
           python3 -m py_compile scripts/owner_voice_two_video_acoustic_probe.py
           python3 -m py_compile scripts/owner_voice_two_video_acoustic_review.py
+          python3 -m py_compile scripts/owner_voice_survey_telegram_delivery.py
+          python3 -m py_compile scripts/owner_voice_survey_telegram_remote_control.py
           python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_acoustic_probe.py' -v
           python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_acoustic_review.py' -v
+          python3 -m unittest discover -s tests -p 'test_owner_voice_survey_telegram_delivery.py' -v
+          python3 -m unittest discover -s tests -p 'test_owner_voice_survey_telegram_remote_control.py' -v
           python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_review_remote_control.py' -v
           python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_codespace_launcher.py' -v
           python3 -m unittest discover -s tests -p 'test_owner_voice_two_video_codespace_env.py' -v
