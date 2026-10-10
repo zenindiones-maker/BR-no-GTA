@@ -58,7 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check -q \
-            "faster-whisper==1.2.0" "av==18.0.0"
+            "faster-whisper==1.2.0" "av==18.0.0" "requests>=2.32,<3"
           python -m pip check
       - name: Prove PyAV decode of real generated PCM WAV
         shell: bash
