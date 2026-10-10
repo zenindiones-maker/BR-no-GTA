@@ -10,7 +10,9 @@ def valid_candidate():
     return {
         "video_id": "f8IZhKcuEts",
         "voice_identity": "BR_OWNER_V1",
-        "reference_role": "pronunciation_and_prosody_only",\n        "reference_speaker_audio_used_for_synthesis": False,\n        "voice_clone_reference_identity": "BR_OWNER_V1",
+        "reference_role": "pronunciation_and_prosody_only",
+        "reference_speaker_audio_used_for_synthesis": False,
+        "voice_clone_reference_identity": "BR_OWNER_V1",
         "acoustic_review": "VERIFIED",
         "owner_approval": "APPROVED",
         "canonical_text": "Vice City",
@@ -31,7 +33,9 @@ def test_admits_owner_locked_reading_without_runtime_activation():
 @pytest.mark.parametrize("field,value", [
     ("video_id", "unknown"),
     ("voice_identity", "OTHER"),
-    ("reference_role", "speaker_clone"),\n    ("reference_speaker_audio_used_for_synthesis", True),\n    ("voice_clone_reference_identity", "DUBBING_ACTOR"),
+    ("reference_role", "speaker_clone"),
+    ("reference_speaker_audio_used_for_synthesis", True),
+    ("voice_clone_reference_identity", "DUBBING_ACTOR"),
     ("acoustic_review", "TRANSCRIPT_ONLY"),
     ("owner_approval", "PENDING"),
     ("spoken_text", "vice city"),
