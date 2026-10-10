@@ -17,12 +17,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: br-artcraft-film-effect-native-\${{ github.ref }}
+  group: br-artcraft-film-effect-native-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   native-builds:
-    name: Native pinned CLI build \${{ matrix.project }}
+    name: Native pinned CLI build ${{ matrix.project }}
     runs-on: ubuntu-24.04
     timeout-minutes: 43
     strategy:
@@ -46,15 +46,15 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/artcraft_validate_seven.py \
-            --project "\${{ matrix.project }}" \
+            --project "${{ matrix.project }}" \
             --output artcraft-native-build \
             --cli-timeout 950
       - name: Preserve exact build status, CLI bytes and logs for both projects
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: artcraft-real-native-\${{ matrix.project }}
-          path: artcraft-native-build/\${{ matrix.project }}/
+          name: artcraft-real-native-${{ matrix.project }}
+          path: artcraft-native-build/${{ matrix.project }}/
           if-no-files-found: warn
           retention-days: 30
           compression-level: 1
