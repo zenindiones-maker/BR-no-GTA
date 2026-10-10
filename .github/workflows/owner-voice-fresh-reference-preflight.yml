@@ -1,0 +1,51 @@
+name: BR_OWNER_V1 Fresh Reference Private Preflight
+on:
+  push:
+    branches:
+      - work/owner-voice-safe-ingress-recovery-20261010
+    paths:
+      - ".github/workflows/owner-voice-fresh-reference-preflight.yml"
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Verify approved private references newer than prior review
+        env:
+          BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64 }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os,json,hashlib,base64
+          secret=os.environ.get("BR_OWNER_TELEGRAM_REFERENCE_ENVELOPE_B64","").strip()
+          if not secret:
+              print("OWNER_FRESH_REFERENCE_PREFLIGHT=BLOCKED_NO_SECRET")
+              raise SystemExit(2)
+          try:
+              idx=json.loads(base64.urlsafe_b64decode(secret))
+              unsigned={k:v for k,v in idx.items() if k!="index_sha256"}
+              digest=hashlib.sha256(json.dumps(unsigned,sort_keys=True,ensure_ascii=False,
+                  separators=(",",":")).encode()).hexdigest()
+              assert idx["index_sha256"]==digest
+              assert idx["voice_identity_id"]=="BR_OWNER_V1"
+              refs=idx["references"]
+              assert len(refs)==idx["reference_count"] and len(refs)>=3
+              assert len({int(r["telegram_chat_id"]) for r in refs})==1
+              eligible=[r for r in refs
+                  if r.get("remote_verified") is True
+                  and r.get("input_kind") in ("voice","audio")
+                  and int(r["telegram_message_id"])>637]
+              assert eligible
+          except Exception:
+              # Do not log raw reference identifiers or provider payloads.
+              print("OWNER_FRESH_REFERENCE_PREFLIGHT=BLOCKED")
+              raise SystemExit(3)
+          print("OWNER_INDEX_SHA256="+digest)
+          print("OWNER_VERIFIED_REFERENCE_COUNT="+str(len(refs)))
+          print("OWNER_FRESH_REFERENCE_COUNT="+str(len(eligible)))
+          print("OWNER_FRESH_REFERENCE_PREFLIGHT=PASS")
+          print("TELEGRAM_GETUPDATES_ATTEMPTED=FALSE")
+          print("TELEGRAM_SEND_ATTEMPTED=FALSE")
+          PY
