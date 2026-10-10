@@ -1,0 +1,299 @@
+{
+  "product_label": "B",
+  "product_version": "leonida-geography-and-sound-20261010-v1",
+  "product_profile": "professional_ptbr_v1",
+  "mission_id": "run001-video-b-leonida-20261010",
+  "goal_id": "goal-video-b-leonida-world-20261010",
+  "execution_id": "run001-video-b-leonida-v1",
+  "brain_decision_id": "harness-video-b-leonida-v1",
+  "render_job_id": 920102,
+  "video_id": 920102,
+  "content_item_id": 920102,
+  "script_id": 920102,
+  "idea_id": 920102,
+  "target_language": "pt-BR",
+  "target_wpm": 125,
+  "youtube_publication": false,
+  "production_release_authorized": false,
+  "human_editorial_approval": "PENDING",
+  "research_evidence": [
+    {
+      "evidence_id": "S_LEONIDA",
+      "url": "https://www.rockstargames.com/VI/only-in-leonida",
+      "authority": "official"
+    },
+    {
+      "evidence_id": "S_EXT",
+      "url": "https://www.rockstargames.com/VI/an-extended-look",
+      "authority": "official"
+    },
+    {
+      "evidence_id": "S_MUSIC",
+      "url": "https://www.rockstargames.com/VI/music",
+      "authority": "official"
+    },
+    {
+      "evidence_id": "S_ROCKSTAR_NEWS",
+      "url": "https://www.rockstargames.com/newswire/article/4k138k8okkk483/grand-theft-auto-vi-an-extended-look-now-playing",
+      "authority": "official"
+    }
+  ],
+  "fact_check": {
+    "status": "PENDING_INDEPENDENT_REVIEW",
+    "checks": []
+  },
+  "editorial_qa": {
+    "status": "PENDING_INDEPENDENT_REVIEW",
+    "anti_padding": "REQUIRES_REAL_VOICE_AND_FRAME_EVIDENCE"
+  },
+  "sources": [
+    {
+      "source_id": "S_LEONIDA",
+      "url": "https://www.rockstargames.com/VI/only-in-leonida",
+      "source_type": "official-page",
+      "source_authority": "Rockstar Games"
+    },
+    {
+      "source_id": "S_EXT",
+      "url": "https://www.rockstargames.com/VI/an-extended-look",
+      "source_type": "official-page",
+      "source_authority": "Rockstar Games"
+    },
+    {
+      "source_id": "S_MUSIC",
+      "url": "https://www.rockstargames.com/VI/music",
+      "source_type": "official-page",
+      "source_authority": "Rockstar Games"
+    },
+    {
+      "source_id": "S_ROCKSTAR_NEWS",
+      "url": "https://www.rockstargames.com/newswire/article/4k138k8okkk483/grand-theft-auto-vi-an-extended-look-now-playing",
+      "source_type": "official-page",
+      "source_authority": "Rockstar Games"
+    }
+  ],
+  "content_strategy": {
+    "title": "GTA 6: uma viagem por Leonida — regiões, personagens e músicas",
+    "unique_angle": "Análise de ambientação, cultura e identidade sonora de Leonida",
+    "status": "RESEARCH_DRAFT"
+  },
+  "narration": {
+    "language": "pt-BR",
+    "voice": "BR_OWNER_V1",
+    "voice_identity_id": "BR_OWNER_V1",
+    "generic_voice_fallback": false,
+    "single_voice_only": true,
+    "alternative_voice_casting_enabled": false,
+    "human_quality_baseline": "BR_OWNER_V1",
+    "segment_strategy": "semantic-section-v1",
+    "rate_locked": true,
+    "target_wpm": 125,
+    "runtime_activation": "PENDING_HUMAN_REVIEW",
+    "identity_gate": "PENDING",
+    "approved_clone_audio_sha256": null,
+    "independent_approval_ledger_ref": null
+  },
+  "media_sources": [
+    {
+      "asset_ref": "remote://media-worker/gta6-extended-look-official-20260827",
+      "source_url": "https://www.youtube.com/watch?v=tJbzMqJGH4k",
+      "rights_review": "PENDING",
+      "provenance": "Rockstar Games official Extended Look"
+    }
+  ],
+  "script_sections": [
+    {
+      "section_id": "B01",
+      "heading": "O método da nossa viagem",
+      "role": "hook",
+      "classification": "OFFICIAL_FACT",
+      "evidence_ids": [
+        "S_EXT"
+      ],
+      "narration": "O primeiro desafio de analisar Grand Theft Auto VI antes do lançamento é não confundir três coisas: aquilo que a Rockstar confirmou, aquilo que conseguimos observar em uma imagem e aquilo que imaginamos acontecer quando o controle estiver nas nossas mãos. Este vídeo vai percorrer Leonida pelo lado da ambientação, das pessoas e da música. Não é a mesma investigação geral do nosso vídeo sobre fatos e rumores. Aqui a pergunta é diferente: como um mundo ficcional passa a parecer um lugar com identidade própria? A Rockstar publicou An Extended Look em agosto de dois mil e vinte e seis e afirmou que as imagens foram capturadas dentro do jogo no PlayStation 5. Isso estabelece a origem da captura. Não estabelece sozinho uma lista completa de mecânicas ou uma garantia de desempenho final. Sempre que analisarmos enquadramentos, cores e ambientes, estaremos fazendo leitura audiovisual. Sempre que apresentarmos um lugar ou personagem, usaremos a informação oficial correspondente. Um vídeo profissional não precisa prever tudo para ser interessante. Pelo contrário, reconhecer limites permite observar melhor. Vamos começar pelo cartão-postal mais famoso e depois sair da cidade, encontrar regiões diferentes, relacionar personagens e estudar a identidade sonora divulgada em outubro. Nossa travessia não depende de imagens inventadas, música copiada sem licença nem promessas de gameplay que ninguém demonstrou.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
+      "section_id": "B02",
+      "heading": "Vice City além do cartão-postal",
+      "role": "analysis",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S_LEONIDA"
+      ],
+      "narration": "Vice City costuma ser lembrada pela associação entre sol, cores fortes e vida noturna. Na apresentação oficial de GTA VI, porém, a cidade aparece integrada a uma rede mais ampla de pessoas e interesses. Ao olhar apenas para fachadas, perdemos o aspecto mais importante de uma ambientação: quem ocupa aquele espaço e o que cada pessoa deseja alcançar. A Rockstar descreve negócios, relações pessoais e ambições que passam pela música, pela propriedade e pelo crime. Nada disso confirma uma quantidade específica de interiores visitáveis ou um simulador de economia. São elementos de construção de mundo. A diferença importa porque um cenário pode parecer impressionante e ainda não oferecer uma determinada interação. A pergunta editorial deve ser mais rigorosa: que tipo de história essa paisagem parece preparada para receber? Em termos de linguagem visual, a oposição entre luxo e precariedade pode criar tensões. Em termos de narrativa, uma mesma rua pode representar oportunidade para alguém e obrigação para outra pessoa. Não precisamos apresentar essa análise como mecânica anunciada. A cidade pode ser lida como uma personagem coletiva, cheia de interesses que convivem sem necessariamente se harmonizar. Por isso, em vez de listar vitrines e veículos como quem preenche um catálogo, observaremos como a identidade de Vice City se relaciona com os personagens descritos oficialmente e com outras partes do estado de Leonida.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
+      "section_id": "B03",
+      "heading": "O estado inteiro importa",
+      "role": "analysis",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S_LEONIDA"
+      ],
+      "narration": "A Rockstar não limita a apresentação de Leonida à área urbana de Vice City. Sua página oficial introduz localidades como Leonida Keys, Grassrivers, Port Gellhorn, Ambrosia e Mount Kalaga. A existência desses nomes é confirmada. Já a extensão final do mapa, a densidade de interações em cada região e o tempo necessário para cruzá-las não estão automaticamente provados pela lista de localidades. Aqui está uma distinção valiosa para qualquer análise de mundo aberto: variedade geográfica não é sinônimo de uma quantidade específica de atividades. O interesse da variedade está em oferecer contextos diferentes para encontros, deslocamentos e conflitos. Um personagem pode se sentir importante no centro da cidade e completamente deslocado em outra região. O ambiente altera a maneira como interpretamos uma cena, mesmo que nenhuma regra de gameplay tenha sido anunciada. É tentador recorrer a mapas produzidos por comunidades para preencher as lacunas; essas reconstruções podem demonstrar dedicação e método, mas continuam sendo hipóteses. Nossa análise mantém os dados da Rockstar como referência principal. O resultado é uma visão mais clara do que já conhecemos e do que continua aberto. Leonida ganha escala na apresentação pública não por um número exato de quilômetros, mas porque seus lugares recebem nomes, características e relações humanas próprias, que podem sustentar diferentes atmosferas.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
+      "section_id": "B04",
+      "heading": "Leonida Keys e relações de dependência",
+      "role": "analysis",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S_LEONIDA"
+      ],
+      "narration": "As Leonida Keys fazem parte da geografia oficial e surgem associadas à trajetória de Jason e a personagens que carregam um passado problemático. Brian Heder, por exemplo, é apresentado pela Rockstar como uma figura antiga do contrabando e alguém ligado ao círculo de Jason. Essa descrição torna o cenário interessante por um motivo mais profundo do que a presença de barcos ou paisagens bonitas. Um lugar que parece refúgio pode funcionar, na história, como espaço de dívidas e favores. Há uma tensão natural entre a ideia de liberdade oferecida pelo horizonte e as obrigações sociais das quais uma pessoa não consegue escapar. É importante não extrapolar. O perfil de Brian não confirma uma atividade de contrabando jogável; uma imagem de embarcação não promete que todos os modelos poderão ser usados. Nosso objetivo é examinar como a Rockstar estrutura expectativas narrativas a partir de personagens e ambientes apresentados publicamente. Em uma análise visual cuidadosa, água, estradas e construções podem servir para discutir isolamento ou circulação, dependendo do contexto. Essas interpretações devem ser assumidas como interpretações. Quando falamos de Leonida Keys, portanto, não estamos anunciando recursos inéditos. Estamos acompanhando como um território é associado a vínculos humanos que podem tornar a promessa de vida tranquila muito mais complicada do que parece à primeira vista.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
+      "section_id": "B05",
+      "heading": "Grassrivers e outros ritmos de paisagem",
+      "role": "analysis",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S_LEONIDA"
+      ],
+      "narration": "Grassrivers é um dos lugares nomeados pela Rockstar para compor Leonida. A simples existência da região já ajuda a entender que a identidade do estado não se limita à arquitetura de uma grande cidade. A mudança de paisagem também representa uma mudança possível de ritmo. Em uma avenida movimentada, o espectador observa movimento, fachadas, propaganda e disputas por atenção. Em um ambiente associado a rios e vegetação, a percepção de distância e de orientação espacial pode ganhar outro peso. Não sabemos, apenas pela apresentação pública da região, quais sistemas de fauna serão controláveis ou quais veículos terão acesso a cada área. Também não podemos supor que fotografias promocionais representem todos os caminhos navegáveis. Essa prudência não diminui o valor da análise; ela protege a distinção entre direção artística e funcionalidade. Uma produção audiovisual pode mostrar o contraste entre regiões sem prometer atividades inexistentes. Nosso vídeo deve procurar imagens oficiais efetivamente comprovadas, registrar a origem e evitar uma montagem que invente geografia para parecer mais extensa. Grassrivers permite discutir a relação entre ambiente e atmosfera de modo concreto. O estado anunciado pela Rockstar parece interessado em mostrar múltiplas identidades locais. O que isso significará para as missões e para o comportamento do mundo dependerá de evidência posterior, não de nossa vontade de adivinhar.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
+      "section_id": "B06",
+      "heading": "Port Gellhorn e a mudança de contexto",
+      "role": "analysis",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S_LEONIDA"
+      ],
+      "narration": "Port Gellhorn também faz parte dos lugares apresentados oficialmente. Ao pensar numa região assim, devemos resistir à tentação de atribuir imediatamente funções detalhadas a cada edifício ou estrada. Um nome no material promocional é um ponto de partida para observar a ficção, não um certificado de que certo comércio será acessível. Em mundos abertos, localidades distintas podem ajudar a construir a sensação de que a história pertence a um estado inteiro, com pessoas que não vivem sob as mesmas regras sociais. Isso amplia a variedade de encontros narrativos e de referências culturais, ao menos como possibilidade de ambientação. Mas essa possibilidade precisa permanecer separada de qualquer promessa sobre tarefas do jogador. Outra armadilha comum é buscar equivalência exata entre cada região fictícia e um endereço real. Referências do mundo real podem inspirar elementos artísticos, mas Leonida continua sendo uma geografia própria. A comparação é útil quando explica linguagem e contexto; torna-se problemática quando apresenta medidas ou fronteiras não divulgadas. Nosso percurso por Port Gellhorn serve para mostrar que a identidade de um lugar depende de relações humanas, sons, luz e história, e não apenas de sua posição em um mapa. É esse conjunto que merece investigação, preferencialmente com cenas oficiais e janelas de vídeo verificadas antes da edição final.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
+      "section_id": "B07",
+      "heading": "Ambrosia e o tecido social",
+      "role": "analysis",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S_LEONIDA"
+      ],
+      "narration": "Ambrosia aparece entre as regiões identificadas nas páginas oficiais de GTA VI. O nome por si só não fornece um guia de atividades nem confirma uma lista de negócios que poderão ser administrados. Ainda assim, localizar diferentes áreas dentro do mesmo estado tem valor narrativo. Uma história criminal precisa convencer o público de que existem relações, oportunidades e conflitos para além do círculo imediato de seus protagonistas. Em uma obra audiovisual, cenários com linguagens distintas contribuem para essa sensação de mundo. Pense em como a iluminação, o ritmo dos deslocamentos e a presença de grupos sociais podem alterar a leitura de uma cena. Esses elementos não precisam se transformar automaticamente em sistemas jogáveis complexos para terem importância artística. A Rockstar já ofereceu identidades regionais suficientes para justificar perguntas sobre contraste, mas não respostas definitivas sobre densidade ou escala. Nosso compromisso é não confundir essas duas etapas da investigação. Ambrosia será tratada como parte da apresentação pública de Leonida e analisada apenas dentro da evidência disponível. Quando faltarem imagens adequadas ou provas de uso, a montagem deve assumir a lacuna em vez de substituí-la por footage desconectado. Um vídeo sério não se torna melhor porque parece provar mais do que realmente sabe. Ele melhora quando cada afirmação pode ser rastreada e cada conclusão respeita a natureza da fonte.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
+      "section_id": "B08",
+      "heading": "Mount Kalaga e o sentido do horizonte",
+      "role": "analysis",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S_LEONIDA"
+      ],
+      "narration": "Mount Kalaga está incluída no conjunto de destinos oficiais de Leonida. Sua presença na apresentação do estado estabelece um contraste com a identidade costeira de Vice City. Isso não confirma, entretanto, que haverá uma missão de escalada específica, um sistema de sobrevivência ou uma altitude máxima conhecida. Nosso interesse é interpretar a função estética de ambientes distintos. No cinema e nos jogos, a escala de um cenário muda a maneira como percebemos as pessoas. Uma figura pequena diante de um horizonte amplo transmite sensações diferentes de alguém cercado por fachadas e trânsito. Essa relação entre corpo e espaço pode ajudar a construir expectativa sem revelar ainda o funcionamento exato do jogo. A origem in-game do Extended Look é confirmada pela Rockstar, mas qualquer leitura sobre intenção de câmera permanece crítica audiovisual. É uma diferença necessária. Ao discutir a variedade de ambientes, podemos perguntar como um estado tão diverso será conectado pela narrativa; não podemos apresentar o resultado como dado já divulgado. Também precisamos separar análises de imagens de anúncios técnicos de desempenho, porque uma composição bonita não informa automaticamente a resolução interna, a taxa final de quadros ou a estabilidade de cada plataforma. Mount Kalaga permite explorar, com cuidado, a relação entre horizonte, contraste e identidade visual de Leonida, sem transformar atmosfera em promessa de mecânica.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
+      "section_id": "B09",
+      "heading": "Jason, Lucia e dois olhares para Leonida",
+      "role": "analysis",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S_LEONIDA"
+      ],
+      "narration": "Os perfis oficiais de Jason Duval e Lucia Caminos apresentam duas histórias pessoais que se encontram dentro de um ambiente de risco. A Rockstar descreve Jason como alguém que tenta construir uma vida menos complicada, mas permanece ligado a contatos e atividades problemáticas. Lucia aparece marcada por uma trajetória difícil e por decisões que procura tomar com maior precisão. Essas informações podem ser analisadas sem inventar acontecimentos ainda não publicados. O ponto central para nosso vídeo é o modo como pessoas diferentes enxergam o mesmo espaço. Uma estrada pode representar saída para uma pessoa e obrigação para outra. Uma cidade pode parecer vitrine para quem sonha com ascensão, mas uma armadilha para quem depende de relações perigosas. A Rockstar também situa o casal dentro de uma conspiração criminal após um golpe que não sai como planejado. Essa é a premissa divulgada; não temos base para antecipar finais, traições ou estruturas completas de missões. Ao observar Leonida por meio de seus protagonistas, o cenário ganha dimensão emocional. O mundo não existe apenas para ser explorado visualmente: na história apresentada, ele guarda consequências para escolhas humanas. Essa interpretação não depende de descobrir cada mecânica antes da hora. Depende de ler com cuidado as informações públicas e reconhecer o que elas sugerem, sem atribuir à Rockstar promessas que ela ainda não fez.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
+      "section_id": "B10",
+      "heading": "Negócios, reputação e personagens secundários",
+      "role": "analysis",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S_LEONIDA"
+      ],
+      "narration": "A Rockstar introduziu outras figuras importantes para a ambientação: Cal Hampton, Boobie Ike, Dre'Quan Priest, Real Dimez, Raul Bautista e Brian Heder. A lista seria pouco interessante se cada nome fosse tratado somente como curiosidade. Os perfis oficiais mostram interesses variados, incluindo música, negócios, fama, convivência e atividades criminosas. Cal está relacionado ao círculo de Jason e a uma maneira particular de interpretar o mundo. Boobie aparece conectado a empreendimentos em Vice City. Dre'Quan manifesta ambições dentro da indústria musical. Real Dimez acrescenta uma camada de cultura popular. Raul traz experiência com operações arriscadas, enquanto Brian representa conexões mais antigas. Nada disso confirma uma campanha individual controlável para cada pessoa. É um conjunto de informações sobre personagens, não um catálogo de sistemas jogáveis. O aspecto mais interessante é a possibilidade de enxergar o estado a partir de redes diferentes. Para alguém, uma gravadora pode simbolizar reconhecimento; para outra pessoa, um negócio pode ser maneira de consolidar influência. Esses contrastes ajudam a tornar uma cidade mais convincente. O vídeo deve destacar relações explicitamente documentadas e marcar as leituras interpretativas como análise. Também precisa evitar montar imagens fora de contexto como se comprovassem encontros específicos que ainda não foram mostrados. A qualidade nasce dessa disciplina entre quem é apresentado, o que foi anunciado e o que ainda pertence à imaginação.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
+      "section_id": "B11",
+      "heading": "A música dentro da história",
+      "role": "analysis",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S_LEONIDA"
+      ],
+      "narration": "Boobie Ike e Dre'Quan Priest são dois exemplos especialmente úteis para compreender a relação entre cultura e negócio na ficção de Vice City. As informações oficiais ligam Boobie a diferentes empreendimentos e Dre'Quan à ambição de construir um caminho no universo musical. Real Dimez aparece nesse ecossistema. Isso permite discutir a presença da música como componente da identidade social de Leonida. Não demonstra, por si só, que o jogador poderá administrar uma gravadora, lançar canções próprias ou controlar todas as etapas da indústria musical. A interpretação precisa respeitar essa fronteira. Em termos narrativos, a busca por reconhecimento pode ser tão decisiva quanto a busca por dinheiro. A cidade oferece lugares onde esses objetivos se misturam, e os perfis publicados sugerem relações que vão além de cenas de ação. Esse recorte também diferencia nosso segundo vídeo do primeiro: não estamos tentando inventariar todas as notícias de GTA VI, mas entender como espaços, personagens e sons formam uma cultura ficcional. As rádios oficiais divulgadas posteriormente tornam essa discussão ainda mais relevante. No entanto, a existência de um canal musical confirmado não prova participação direta de qualquer personagem específico em sua programação. Precisamos apresentar separadamente o dado sobre a rádio e o dado sobre a biografia, mantendo clara a natureza da relação que estamos sugerindo.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
+      "section_id": "B12",
+      "heading": "A atualização das rádios em outubro",
+      "role": "analysis",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S_MUSIC"
+      ],
+      "narration": "Em outubro de dois mil e vinte e seis, a Rockstar ampliou a apresentação pública da música de GTA VI. A página oficial reúne estações de rádio e podcasts do universo do jogo. Entre os nomes apresentados estão Cocoteo, Back Country, AfroBank FM e The Chamber, com propostas musicais variadas. Não é necessário incorporar gravações comerciais à nossa produção para explicar a relevância desse anúncio. Podemos observar o contraste entre gêneros e identidades, porque ele ajuda a compreender como uma cidade ficcional pode soar culturalmente diversa. Uma estação ligada a referências latinas não comunica a mesma atmosfera que um espaço dedicado ao metal, e ambas diferem de outras tradições musicais. Essas diferenças oferecem pistas sobre o alcance artístico do mundo apresentado. Mas não comprovam, sozinhas, como funcionará cada rádio dentro de um veículo ou qual será a duração de um programa. Também não autorizam afirmar recursos interativos que não foram descritos. A atualização musical é importante porque oferece uma camada adicional de informação oficial sobre Leonida. Ela permite discutir curadoria, identidade cultural e a relação entre som e espaço, temas muitas vezes deixados em segundo plano quando a atenção está concentrada apenas na tecnologia visual. É por isso que nosso segundo vídeo dedica um capítulo próprio a esse material, respeitando sua origem e seus limites.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
+      "section_id": "B13",
+      "heading": "Som, ambiente e direitos autorais",
+      "role": "analysis",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S_MUSIC"
+      ],
+      "narration": "Quando pensamos em uma cidade, lembramos de suas imagens, mas o som também constrói percepção. Uma mesma avenida pode parecer diferente dependendo de vozes, movimento e repertórios culturais associados ao lugar. Em GTA VI, a Rockstar divulgou uma variedade de rádios e podcasts que alimentam essa dimensão do universo ficcional. É legítimo observar a existência dessas escolhas e discutir seu potencial para criar contrastes. Não seria legítimo, contudo, afirmar que conhecemos o funcionamento técnico completo do áudio dinâmico do jogo. Não sabemos apenas pela página de músicas quais efeitos serão aplicados a cada ambiente ou como a reprodução responderá a situações específicas. Há ainda um ponto operacional importante para nosso canal: uma música que aparece em um anúncio oficial não passa a ser livre para reutilização em um vídeo independente. A montagem precisa conservar trilhas autorizadas e narração original, sem transformar cópias de gravações comerciais em preenchimento de duração. Essa postura mantém a análise centrada em ideias e evidências. Em vez de tentar simular a experiência final com arquivos sem licença, podemos explicar como a direção sonora dialoga com personagens, paisagens e expectativas culturais. Essa abordagem preserva a originalidade do trabalho e evita confundir comentário crítico com autorização de exploração de um fonograma.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
+      "section_id": "B14",
+      "heading": "O álbum e o calendário oficial",
+      "role": "analysis",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S_MUSIC"
+      ],
+      "narration": "As comunicações públicas da Rockstar também apresentam o projeto Grand Theft Auto VI: The Album. O anúncio relaciona o material musical ao calendário do jogo e reforça a importância da trilha na estratégia de apresentação do universo. Esse é um dado que pode ser citado com sua origem e data, sem transformar informação promocional em garantia sobre cada situação jogável. Também precisamos lembrar que datas anunciadas podem mudar. A página principal de GTA VI informa atualmente dezenove de novembro de dois mil e vinte e seis para PlayStation 5 e Xbox Series X e S. Nosso vídeo deve refletir essa informação como data vigente no momento da pesquisa, não como verdade imutável. Da mesma forma, rumores sobre artistas, faixas ou participações precisam de confirmação própria. É fácil encontrar montagens que misturam notícias verdadeiras e nomes inventados, produzindo a impressão de que tudo pertence ao mesmo anúncio. Uma investigação cuidadosa recusa essa mistura. O álbum interessa ao nosso tema porque conecta a dimensão cultural do jogo à comunicação oficial, mas não será usado como pretexto para inserir músicas sem permissão. O resultado procurado é um comentário original sobre a construção sonora e narrativa de Leonida, com fontes identificáveis e sem antecipar informações que a própria Rockstar ainda não apresentou.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
+      "section_id": "B15",
+      "heading": "O limite das imagens no PlayStation 5",
+      "role": "analysis",
+      "classification": "ANALYSIS",
+      "evidence_ids": [
+        "S_EXT"
+      ],
+      "narration": "A Rockstar descreve An Extended Look como material capturado inteiramente dentro do jogo em um PlayStation 5. Essa declaração ajuda a estabelecer a procedência das imagens. Não estabelece, por si só, a qualidade final de cada recurso técnico, o desempenho em todas as situações ou os modos opcionais disponíveis no lançamento. Análises independentes podem identificar fenômenos visuais interessantes, mas precisamos separar observação de confirmação de especificação. Um quadro isolado não prova uma taxa de quadros sustentada durante uma sequência inteira. Uma paisagem extensa não confirma quantos quilômetros quadrados existirão no mapa final. Uma cena com muitas pessoas não descreve automaticamente o comportamento de cada personagem fora daquele contexto. Essas distinções não devem ser vistas como falta de entusiasmo; são requisitos para uma análise confiável. O conteúdo oficial já oferece material suficiente para discutir composição visual, referências culturais e relações entre personagens. Não precisamos completar as lacunas com promessas técnicas. Nosso segundo vídeo procura demonstrar que olhar com atenção pode produzir conclusões mais interessantes do que simplesmente multiplicar especulações. Quando os detalhes finais forem divulgados ou puderem ser testados no jogo, haverá novas evidências. Até lá, cada hipótese permanece sinalizada como hipótese, e cada confirmação fica ligada à fonte correspondente.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    },
+    {
+      "section_id": "B16",
+      "heading": "Conclusão: um mundo que ainda estamos aprendendo a ler",
+      "role": "cta",
+      "classification": "OFFICIAL_FACT",
+      "evidence_ids": [
+        "S_LEONIDA"
+      ],
+      "narration": "Depois dessa viagem, Leonida aparece como mais do que a cidade de um cartão-postal. A Rockstar já apresentou localidades distintas, personagens com objetivos variados e uma direção musical cuja diversidade foi ampliada nas comunicações de outubro. Isso não significa que conhecemos todos os sistemas jogáveis ou que podemos antecipar acontecimentos da história. Significa que dispomos de material público suficiente para observar a identidade do mundo com mais profundidade. O método é sempre o mesmo: uma informação oficial é identificada pela fonte, uma interpretação audiovisual continua sendo interpretação e uma lacuna não é preenchida com fantasia apresentada como fato. O próximo passo da investigação é acompanhar novas divulgações, conferir o que elas realmente acrescentam e comparar as promessas artísticas com as experiências que o jogo oferecer quando estiver disponível. Este vídeo deve ser narrado por uma voz humana aprovada, com visual autorizado e verificável, não por um áudio improvisado ou por uma repetição artificial de cenas. O objetivo não é apenas alcançar um número de minutos. É entregar uma história editorialmente diferente, sustentada por pesquisa e agradável de acompanhar. Se novos detalhes sobre lugares, personagens ou rádios forem confirmados, eles entrarão em nossa linha do tempo com data e origem. E BR não dorme em Vice City.",
+      "visual_candidates": [],
+      "visual_qa": "PENDING_REAL_MEDIA_SEGMENT_PROVENANCE"
+    }
+  ],
+  "render_production_admission": "BLOCKED_FACT_VOICE_AND_MEDIA_REVIEW"
+}
