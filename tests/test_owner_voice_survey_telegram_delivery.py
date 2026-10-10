@@ -70,7 +70,9 @@ class SurveyTelegramReviewContracts(unittest.TestCase):
                 delivery.validate_bundle(folder)
             m["clips"][0]["source_speaker_identity"]="NOT_BR_OWNER_V1"
             delivery.atomic_json(folder/"manifest.json",m)
-            (folder/m["clips"][0]["file"]).write_bytes(b"TAMPER")
+            damaged=folder/m["clips"][0]["file"]
+            original_size=damaged.stat().st_size
+            damaged.write_bytes(b"TAMPER"+bytes(original_size-6))
             with self.assertRaisesRegex(delivery.ReviewBlocked,"CLIP_HASH"):
                 delivery.validate_bundle(folder)
 
