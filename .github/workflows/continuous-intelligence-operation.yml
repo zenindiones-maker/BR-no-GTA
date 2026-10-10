@@ -165,7 +165,17 @@ jobs:
         run: |
           set -euo pipefail
           title="Continuous Execute $CYCLE_ID"
-          count="$(gh run list             --repo "$GITHUB_REPOSITORY"             --workflow continuous-intelligence-executor.yml             --limit 100             --json displayTitle,status,conclusion             --jq "[.[] | select(.displayTitle == \"$title\")] | length" 2>/dev/null || echo 0)"
+          if ! recent_runs="$(gh run list             --repo "$GITHUB_REPOSITORY"             --workflow continuous-intelligence-executor.yml             --limit 100             --json displayTitle,status,conclusion)"; then
+            echo "DUPLICATE_RECONCILIATION_UNAVAILABLE_BLOCKED" >&2
+            exit 42
+          fi
+          # A bounded result window cannot establish absence if it fills up.
+          fetched="$(jq 'length' <<<"$recent_runs")"
+          if (( fetched >= 100 )); then
+            echo "DUPLICATE_RECONCILIATION_WINDOW_TRUNCATED_BLOCKED" >&2
+            exit 43
+          fi
+          count="$(jq --arg title "$title" '[.[] | select(.displayTitle == $title)] | length' <<<"$recent_runs")"
           if [[ "$count" =~ ^[0-9]+$ ]] && (( count > 0 )); then
             echo "duplicate=true" >> "$GITHUB_OUTPUT"
             echo "DUPLICATE_DISPATCH=SUPPRESSED"
