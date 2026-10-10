@@ -1,0 +1,71 @@
+{
+  "schema": "BRArtCraftPinnedSourceStudy/v1",
+  "date": "2026-10-09",
+  "source_account": "storytold",
+  "scope": "seven Crafting Apps shown in owner reference image, no unrelated repositories",
+  "policy": {
+    "license": "Apache-2.0",
+    "usage": "source-only read-only study; no automatic third-party execution; no copying into production; no API tokens; no A15 compute",
+    "snapshot": "git archive of each exact immutable commit, not full Git history, no submodules or LFS content",
+    "integration": "Research evidence only. Any design or code adaptation requires independent safety, attribution, regression validation and human approval.",
+    "retention": "30 days of GitHub Actions artifact retention; commit manifest permanent"
+  },
+  "projects": [
+    {
+      "name": "photocraft",
+      "repository": "storytold/photocraft",
+      "clone_url": "https://github.com/storytold/photocraft.git",
+      "commit_sha": "69b1379781a4d7e12774b9768cab44b35db6231b",
+      "license": "Apache-2.0",
+      "purpose": "image editor / Photoshop-inspired"
+    },
+    {
+      "name": "vectorcraft",
+      "repository": "storytold/vectorcraft",
+      "clone_url": "https://github.com/storytold/vectorcraft.git",
+      "commit_sha": "866ea5878a7f6db7dd3d6b1287f9a9bb3a241c33",
+      "license": "Apache-2.0",
+      "purpose": "vector illustration / Illustrator-inspired"
+    },
+    {
+      "name": "filmcraft",
+      "repository": "storytold/filmcraft",
+      "clone_url": "https://github.com/storytold/filmcraft.git",
+      "commit_sha": "7b6c134472287db4367fca80bcb498240ba36567",
+      "license": "Apache-2.0",
+      "purpose": "nonlinear video editor / Premiere-inspired"
+    },
+    {
+      "name": "lightcraft",
+      "repository": "storytold/lightcraft",
+      "clone_url": "https://github.com/storytold/lightcraft.git",
+      "commit_sha": "88ea1a804b35709e1fe436e3792adf0428b97daa",
+      "license": "Apache-2.0",
+      "purpose": "raw photo library / Lightroom-inspired"
+    },
+    {
+      "name": "pdfcraft",
+      "repository": "storytold/pdfcraft",
+      "clone_url": "https://github.com/storytold/pdfcraft.git",
+      "commit_sha": "c110c579a24800bb841b5d643e2e34e161e81f13",
+      "license": "Apache-2.0",
+      "purpose": "PDF editor / Acrobat-inspired"
+    },
+    {
+      "name": "effectcraft",
+      "repository": "storytold/effectcraft",
+      "clone_url": "https://github.com/storytold/effectcraft.git",
+      "commit_sha": "30aaddf7c23329dcdfc72a5bf65b55747bbd6be1",
+      "license": "Apache-2.0",
+      "purpose": "motion graphics and VFX / After Effects-inspired"
+    },
+    {
+      "name": "designcraft",
+      "repository": "storytold/designcraft",
+      "clone_url": "https://github.com/storytold/designcraft.git",
+      "commit_sha": "66c7ce7e96ec286a091878cc2541ee8369aa79d6",
+      "license": "Apache-2.0",
+      "purpose": "page publishing / InDesign-inspired"
+    }
+  ]
+}
