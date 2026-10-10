@@ -5,9 +5,11 @@ Tests exercise only local files; they are not ARTEX runtime or E2E evidence.
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import subprocess
+import tarfile
 from pathlib import Path
 import tempfile
 import unittest
@@ -85,6 +87,52 @@ class ArtexQuarantineTests(unittest.TestCase):
             (payload / "build.sh").write_text("#!/bin/sh\nexit 0\n")
             # The historical staging loses executable bits: reconstruct pin.
             self.assertEqual(artex._git_tree_oid(payload), actual)
+
+    def test_git_archive_crlf_export_matches_pinned_git_tree(self):
+        """Replicate the upstream .gitattributes and archive workflow exactly."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo = root / "fixture"
+            repo.mkdir()
+            (repo / ".gitattributes").write_text(
+                "*.bat text eol=crlf\n*.sh  text eol=lf\n",
+                encoding="utf-8",
+            )
+            (repo / "start.bat").write_bytes(b"@echo off\r\necho test\r\n")
+            (repo / "readme.txt").write_text("research-only\n")
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+            subprocess.run(
+                ["git", "-C", str(repo), "-c", "user.name=Test",
+                 "-c", "user.email=test@example.invalid",
+                 "commit", "-qm", "pinned"],
+                check=True,
+            )
+            expected = subprocess.check_output(
+                ["git", "-C", str(repo), "rev-parse", "HEAD^{tree}"],
+                text=True,
+            ).strip()
+            archive = subprocess.check_output(
+                ["git", "-C", str(repo), "archive", "--format=tar", "HEAD"],
+            )
+            payload = root / "payload"
+            payload.mkdir()
+            with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as bundle:
+                for member in bundle:
+                    if member.isfile():
+                        target = payload / member.name
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        stream = bundle.extractfile(member)
+                        self.assertIsNotNone(stream)
+                        target.write_bytes(stream.read())
+            self.assertIn(b"\r\n", (payload / "start.bat").read_bytes())
+            committed_blob = subprocess.check_output(
+                ["git", "-C", str(repo), "show", "HEAD:start.bat"],
+            )
+            self.assertNotIn(b"\r\n", committed_blob)
+            self.assertEqual(artex._git_tree_oid(payload), expected)
+            (payload / "start.bat").write_bytes(b"@echo off\r\necho hacked\r\n")
+            self.assertNotEqual(artex._git_tree_oid(payload), expected)
 
     def test_receipt_cannot_mask_tampering(self):
         with tempfile.TemporaryDirectory() as temp:
