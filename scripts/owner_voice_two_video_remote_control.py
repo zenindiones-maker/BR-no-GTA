@@ -35,6 +35,13 @@ def find_authorized_target(entries):
         if repository != REPO:
             raise ControlBlocked("TARGET_REPOSITORY_MISMATCH")
         state = entry.get("state")
+        if state == "Shutdown":
+            raise ControlBlocked(
+                "TARGET_NOT_RUNNING_NO_AUTO_START_Shutdown; "
+                "CHECK_FREE_QUOTA in GitHub Settings > Billing & Licensing; "
+                "RESUME_EXISTING_MANUALLY at https://github.com/codespaces; "
+                "then rerun this controller. No paid resources started."
+            )
         if state not in ("Available", "Running"):
             raise ControlBlocked("TARGET_NOT_RUNNING_NO_AUTO_START_" + str(state))
         return CODESPACE
