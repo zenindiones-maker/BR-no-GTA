@@ -174,6 +174,9 @@ def _valid_generation_contract(generation:Any)->bool:
         count=int(generation.get("generate_call_count") or 0)
     except (TypeError,ValueError):
         return False
+    if generation.get("engine")=="QWEN3_TTS" and generation.get("language_mode")=="OWNER_GTA6_CRITICAL_PTBR_SERIAL":
+        from app.services.gta6_owner_audio_dictionary_service import REQUIRED_TERMS
+        return count==len(REQUIRED_TERMS)
     if generation.get("engine")=="QWEN3_TTS" and generation.get("language_mode")=="EXPLICIT_SEGMENTED_MULTILINGUAL":
         return count==7
     return count==1
@@ -203,6 +206,14 @@ def _load_manifest(path:Path)->dict[str,Any]:
         or payload.get("human_review_required") is not True
         or payload.get("human_review")!="PENDING"
         or payload.get("runtime_activation") is not False
+        or (
+            payload.get("pronunciation_scope")=="OWNER_GTA6_CRITICAL_NAMES_ONLY_V1"
+            and (
+                payload.get("clone_identity_gate")!="PASS"
+                or payload.get("content_audio_prescreen")!="PASS"
+                or payload.get("generation",{}).get("language_mode")!="OWNER_GTA6_CRITICAL_PTBR_SERIAL"
+            )
+        )
         or not _valid_generation_contract(payload.get("generation"))
     ):
         raise RuntimeError("SINGLE_CLONE_MANIFEST_CONTRACT_INVALID")
