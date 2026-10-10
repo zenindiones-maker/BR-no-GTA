@@ -165,13 +165,15 @@ jobs:
         run: |
           set -euo pipefail
           title="Continuous Execute $CYCLE_ID"
-          if ! recent_runs="$(gh run list             --repo "$GITHUB_REPOSITORY"             --workflow continuous-intelligence-executor.yml             --limit 100             --json displayTitle,status,conclusion)"; then
+          since="$(date -u -d "7 days ago" +%Y-%m-%dT%H:%M:%SZ)"
+          if ! recent_runs="$(gh run list             --repo "$GITHUB_REPOSITORY"             --workflow continuous-intelligence-executor.yml             --created ">=$since"             --limit 1000             --json displayTitle,status,conclusion)"; then
             echo "DUPLICATE_RECONCILIATION_UNAVAILABLE_BLOCKED" >&2
             exit 42
           fi
-          # A bounded result window cannot establish absence if it fills up.
+          # The query scopes to a seven-day admissible cycle window; if the
+          # bounded response fills, absence is still unproven and dispatch stops.
           fetched="$(jq 'length' <<<"$recent_runs")"
-          if (( fetched >= 100 )); then
+          if (( fetched >= 1000 )); then
             echo "DUPLICATE_RECONCILIATION_WINDOW_TRUNCATED_BLOCKED" >&2
             exit 43
           fi
