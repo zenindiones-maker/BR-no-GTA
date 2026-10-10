@@ -65,6 +65,8 @@ class CodespaceEnvironmentContracts(unittest.TestCase):
                         (root / "bin").mkdir(parents=True)
                         (root / "bin/python").write_text("fake")
                         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+                    if args[1:4] == ["-m", "pip", "--version"]:
+                        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
                     if "pip" in args:
                         self.assertIn("--only-binary=:all:", args)
                         return subprocess.CompletedProcess(args, 1, stdout="",
@@ -142,6 +144,33 @@ class CodespaceEnvironmentContracts(unittest.TestCase):
             self.assertEqual(result, str(root / "bin/python"))
             self.assertIn("--without-pip", steps[1])
             self.assertEqual(len(steps), 4)
+
+    def test_partial_venv_uses_documented_host_pip_python_without_global_install(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / ".asr-venv"
+            (root / "bin").mkdir(parents=True)
+            (root / "bin/python").write_text("pip-free venv")
+            commands = []
+            def fake_run(args, **kwargs):
+                commands.append(args)
+                if args[1:4] == ["-m", "pip", "--version"]:
+                    return subprocess.CompletedProcess(
+                        args, 0 if args[0] == "python3.12" else 1,
+                        stdout="", stderr=""
+                    )
+                if args[0:5] == ["python3.12", "-m", "pip", "--python", str(root)]:
+                    self.assertIn("--only-binary=:all:", args)
+                    return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+                raise AssertionError(repr(args))
+            with patch.object(envtool, "select_base_python", return_value="python3.12"):
+                with patch.object(envtool.shutil, "which", return_value=None):
+                    with patch.object(envtool.subprocess, "run", side_effect=fake_run):
+                        with patch.object(envtool, "probe_python",
+                                          return_value={"status":"PASS"}):
+                            actual = envtool.bootstrap_private_venv(root)
+            self.assertEqual(actual, str(root / "bin/python"))
+            self.assertFalse(any("venv" in args[1:3] for args in commands))
+            self.assertEqual(len(commands), 3)
 
     def test_no_bootstrap_tool_produces_specific_diagnostic(self):
         with tempfile.TemporaryDirectory() as d:
