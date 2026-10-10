@@ -340,6 +340,7 @@ def main()->int:
         safe_clone_path=str(encode_private_opus(
             Path(str(manifest["clone_path"])),
             workspace / "telegram-voice",
+            private_workspace=workspace,
         ))
     result=deliver_single_clone_durable(
         api,ledger=ledger,clone_path=safe_clone_path
