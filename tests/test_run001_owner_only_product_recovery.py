@@ -1,0 +1,66 @@
+"""Source-verified RUN001 A/B restoration; no simulated owner approval."""
+from __future__ import annotations
+import json
+import unittest
+from pathlib import Path
+
+from app.services.run001_owner_only_product_recovery import (
+    prepare_owner_only_product,verify_distinct_scripts,RecoveryBlocked,
+)
+
+ROOT=Path(__file__).resolve().parents[1]
+
+
+class Run001OwnerOnlyProducts(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.old=json.loads((ROOT/".run001/video-a-investigative-longform.json").read_text())
+
+    def test_preserves_real_editorial_a_without_resurrecting_voice_b(self):
+        candidate=prepare_owner_only_product(self.old,expected_label="A")
+        self.assertEqual(candidate["product_label"],"A")
+        self.assertEqual(len(candidate["script_sections"]),16)
+        self.assertEqual(candidate["narration"]["voice"],"BR_OWNER_V1")
+        self.assertEqual(candidate["narration"]["human_quality_baseline"],"BR_OWNER_V1")
+        self.assertEqual(candidate["narration"]["runtime_activation"],"PENDING_HUMAN_REVIEW")
+        self.assertEqual(candidate["narration"]["identity_gate"],"PENDING")
+        self.assertIsNone(candidate["narration"]["approved_clone_audio_sha256"])
+        self.assertIsNone(candidate["narration"]["independent_approval_ledger_ref"])
+        self.assertFalse(candidate["narration"]["generic_voice_fallback"])
+        self.assertFalse(candidate["narration"]["alternative_voice_casting_enabled"])
+        self.assertEqual(candidate["script_sections"][0]["narration"],self.old["script_sections"][0]["narration"])
+        self.assertNotIn("thalita",json.dumps(candidate).lower())
+        self.assertNotIn("voice b",json.dumps(candidate).lower())
+
+    def test_b_must_have_independent_editorial_source(self):
+        with self.assertRaisesRegex(RecoveryBlocked,"SECOND_EDITORIAL_SOURCE_REQUIRED"):
+            verify_distinct_scripts(prepare_owner_only_product(self.old,expected_label="A"),None)
+
+    def test_duplicate_a_relabelled_b_cannot_count_as_second_video(self):
+        a=prepare_owner_only_product(self.old,expected_label="A")
+        b=json.loads(json.dumps(a))
+        b["product_label"]="B"
+        with self.assertRaisesRegex(RecoveryBlocked,"DUPLICATE"):
+            verify_distinct_scripts(a,b)
+
+    def test_voice_production_stays_blocked_until_real_human_approval(self):
+        from app.services.run001_owner_voice_admission_service import (
+            require_owner_voice_admission, OwnerVoiceAdmissionBlocked,
+        )
+        a=prepare_owner_only_product(self.old,expected_label="A")
+        with self.assertRaises(OwnerVoiceAdmissionBlocked):
+            require_owner_voice_admission(a)
+
+    def test_rejects_unverified_script_and_phony_cloned_approval(self):
+        a=json.loads(json.dumps(self.old))
+        a["script_sections"]=[]
+        with self.assertRaisesRegex(RecoveryBlocked,"SOURCE_SCRIPT"):
+            prepare_owner_only_product(a,expected_label="A")
+        a=json.loads(json.dumps(self.old))
+        a["narration"]["runtime_activation"]="HUMAN_APPROVED"
+        with self.assertRaisesRegex(RecoveryBlocked,"SOURCE_VOICE"):
+            prepare_owner_only_product(a,expected_label="A")
+
+
+if __name__=="__main__":
+    unittest.main()
