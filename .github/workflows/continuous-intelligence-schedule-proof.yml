@@ -1,9 +1,15 @@
-name: Continuous Intelligence Schedule Proof
-run-name: Continuous Schedule Proof ${{ github.run_id }}
+name: Continuous Intelligence Manual Proof
+run-name: Continuous Manual Proof ${{ inputs.request_id }}
 
+# Research/learning proof requires a fresh official source; it is not a
+# periodic scheduler. The six-hour continuous operational scheduler stays on.
 on:
-  schedule:
-    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Explicit owner-reviewed proof request identity (8–80 safe characters)
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -27,7 +33,7 @@ jobs:
       - name: Resolve exact promoted deployment
         id: deployment
         env:
-          REQUEST_ID: schedule-proof-${{ github.run_id }}
+          REQUEST_ID: ${{ inputs.request_id }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -37,6 +43,9 @@ jobs:
           import re
           from pathlib import Path
 
+          request_id=os.environ.get("REQUEST_ID", "").strip()
+          if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{7,79}", request_id):
+              raise SystemExit("PROOF_REQUEST_ID_INVALID_OR_MISSING")
           deployment=json.loads(
               Path("config/continuous_operation_deployment.json").read_text(
                   encoding="utf-8"
@@ -81,7 +90,7 @@ jobs:
               h.write(f"policy_sha256={policy_sha}\n")
               h.write(f"workflow_contract_version={contract}\n")
               h.write(f"cycle_id={cycle_id}\n")
-          print("REAL_SCHEDULE_EVENT=PASS")
+          print("EXPLICIT_MANUAL_PROOF_ADMISSION=PASS")
           print("SCHEDULE_HOST_DEFAULT_BRANCH=PASS")
           print("SCHEDULER_BUSINESS_LOGIC=0")
           print("DEPLOYMENT_BINDING=PASS")
@@ -132,9 +141,9 @@ jobs:
             -f expected_target_sha="$EXPECTED_SHA" \
             -f expected_policy_sha256="$POLICY_SHA256" \
             -f logical_cycle_id="$CYCLE_ID" \
-            -f trigger_kind="schedule" \
+            -f trigger_kind="workflow_dispatch" \
             -f mode="proof" \
             -f scheduler_run_id="$GITHUB_RUN_ID" \
             -f workflow_contract_version="$CONTRACT_VERSION"
-          echo "REAL_SCHEDULE_DISPATCH=PASS"
+          echo "EXPLICIT_PROOF_DISPATCH=PASS"
           echo "DISPATCH_IDENTITY=$CYCLE_ID"
