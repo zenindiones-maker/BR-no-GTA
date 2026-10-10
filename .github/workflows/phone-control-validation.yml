@@ -68,11 +68,23 @@ jobs:
 
       - name: Diff and secret guard
         env:
-          BASE_SHA: 5412ed0b63a3ea577734e00b78a7f9c6dabd65f5
+          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
         run: |
-          git diff --check "${BASE_SHA}..HEAD"
-          test -z "$(git diff --name-only "${BASE_SHA}..HEAD" | grep -Ei 'job.?18' || true)"
-          ! git diff "${BASE_SHA}..HEAD" -- . ':!tests/test_phone_control_service.py' ':!tests/test_phone_control_mcp_boundary.py' | grep -E 'BR_PHONE_PORTAL_TOKEN[[:space:]]*=[[:space:]]*[^"'"'"']+'
+          set -euo pipefail
+          # A historical hard-coded base included unrelated old documentation.
+          # Compare only the current event's introduced changes, with the same
+          # whitespace, path and secret guards still enforced.
+          base="${EVENT_BASE_SHA}"
+          if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]] || [[ "$base" =~ ^0{40}$ ]]; then
+            base="$(git rev-parse HEAD^)"
+          fi
+          git cat-file -e "${base}^{commit}"
+          common="$(git merge-base "${base}" HEAD)"
+          test -n "$common"
+          echo "PHONE_REVIEW_DIFF_BASE=$common"
+          git diff --check "${common}..HEAD"
+          test -z "$(git diff --name-only "${common}..HEAD" | grep -Ei 'job.?18' || true)"
+          ! git diff "${common}..HEAD" -- . ':!tests/test_phone_control_service.py' ':!tests/test_phone_control_mcp_boundary.py' | grep -E 'BR_PHONE_PORTAL_TOKEN[[:space:]]*=[[:space:]]*[^"'"']+'
 
       - name: Canonical full application suite
         run: .venv/bin/python -m pytest -q tests/
