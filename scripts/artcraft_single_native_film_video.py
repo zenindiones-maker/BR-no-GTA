@@ -30,10 +30,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     for k in ("manifest", "binary", "build-receipt", "out"):
         parser.add_argument("--" + k, type=Path, required=True)
+    parser.add_argument("--with-audio", action="store_true")
     a = parser.parse_args()
     report = {"schema": "BRArtCraftFilmCraftRealVideoExport/v1", "gate": "FAIL",
               "native_executed": False, "production_approved": False,
-              "harness_authority": "NONE", "source_sha": FILM_SHA}
+              "harness_authority": "NONE", "source_sha": FILM_SHA,
+              "audio_requested": a.with_audio}
     try:
         check_manifest(a.manifest)
         d = json.loads(a.build_receipt.read_text())
@@ -52,9 +54,12 @@ def main() -> int:
         video = a.out / "real-filmcraft-five-seconds.mp4"
         report["binary_sha256"] = rec["sha256"]
         report["native_executed"] = True
-        report["command_contract"] = "filmcraft-cli --demo export [mp4] --format h264 --start 0 --end 5 --scale 0.2 --no-audio"
-        run([str(binary), "--demo", "export", str(video), "--format", "h264",
-             "--start", "0", "--end", "5", "--scale", "0.2", "--no-audio"],
+        cmd = [str(binary), "--demo", "export", str(video), "--format", "h264",
+               "--start", "0", "--end", "5", "--scale", "0.2"]
+        if not a.with_audio:
+            cmd.append("--no-audio")
+        report["command_contract"] = "FilmCraft exact --demo 5s H264 " + ("with audio" if a.with_audio else "video only")
+        run(cmd,
             300, a.out / "native-export-cli.log")
         if video.is_symlink() or not video.is_file() or not 0 < video.stat().st_size < 65_000_000:
             raise BoundaryError("NATIVE_EXPORT_NOT_BOUNDED_MP4")
@@ -62,7 +67,7 @@ def main() -> int:
         report["video"] = {"bytes": video.stat().st_size, "sha256": sha256(video)}
         pp = subprocess.run([
             "ffprobe", "-v", "error", "-count_frames", "-show_entries",
-            "stream=codec_type,codec_name,width,height,pix_fmt,nb_read_frames,r_frame_rate:format=duration",
+            "stream=codec_type,codec_name,width,height,pix_fmt,nb_read_frames,r_frame_rate,sample_rate,channels:format=duration",
             "-of", "json", str(video)],
             capture_output=True, timeout=40, check=False,
         )
@@ -72,6 +77,14 @@ def main() -> int:
         vids = [x for x in probe.get("streams", []) if x.get("codec_type") == "video"]
         if len(vids) != 1:
             raise BoundaryError("EXPORT_VIDEO_STREAM_MISSING")
+        auds = [x for x in probe.get("streams", []) if x.get("codec_type") == "audio"]
+        if a.with_audio:
+            if len(auds) != 1 or auds[0].get("codec_name") != "aac":
+                raise BoundaryError("EXPORT_AAC_AUDIO_STREAM_MISSING")
+            if auds[0].get("sample_rate") != "48000" or int(auds[0].get("channels", 0)) != 2:
+                raise BoundaryError("EXPORT_AUDIO_SAMPLE_RATE_OR_STEREO_INVALID")
+        elif auds:
+            raise BoundaryError("UNAUTHORIZED_AUDIO_TRACK_IN_VIDEO_ONLY_TEST")
         v = vids[0]
         if v.get("codec_name") != "h264":
             raise BoundaryError("EXPORT_H264_REQUIRED")
@@ -85,6 +98,8 @@ def main() -> int:
             raise BoundaryError("EXPORT_DURATION_INVALID:" + str(dur))
         report["video"].update({"codec": "h264", "width": v["width"], "height": v["height"],
                                 "pix_fmt": v.get("pix_fmt"), "frames": frames, "duration": dur})
+        if auds:
+            report["audio"] = {"codec": "aac", "sample_rate": 48000, "channels": 2}
         frame = a.out / "real-film-export-2s.png"
         cv = subprocess.run(["ffmpeg", "-hide_banner", "-v", "error", "-nostdin",
                              "-ss", "2", "-i", str(video), "-frames:v", "1", "-y", str(frame)],
