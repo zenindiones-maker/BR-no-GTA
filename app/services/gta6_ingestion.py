@@ -24,9 +24,9 @@ def ingest_gta6_source_item(
         }
 
         memory_event_id = ingest_gta6_knowledge_memory_event(result)
-    if not isinstance(memory_event_id, int) or isinstance(memory_event_id, bool) or memory_event_id <= 0:
-        raise RuntimeError("GTA6_INGESTION_MEMORY_EVENT_ID_INVALID")
-    result["memory_event_id"] = memory_event_id
+        if not isinstance(memory_event_id, int) or isinstance(memory_event_id, bool) or memory_event_id <= 0:
+            raise RuntimeError("GTA6_INGESTION_MEMORY_EVENT_ID_INVALID")
+        result["memory_event_id"] = memory_event_id
 
         return result
 
