@@ -37,8 +37,8 @@ def _arrange(monkeypatch, tmp_path):
     monkeypatch.setenv("BR_GITHUB_BRANCH", "work/gate6f-analytics-learning")
     monkeypatch.setenv("TELEGRAM_ALLOWED_USER_ID", "77")
     monkeypatch.setattr(handoff, "configured_allowed_chat_ids", lambda state: {-100123})
-    monkeypatch.setattr(handoff, "list_recent_telegram_user_inputs",
-                        lambda limit: [_fake_owner_audio()])
+    monkeypatch.setattr(handoff, "list_verified_owner_voice_inputs",
+                        lambda *, owner_user_id, allowed_chat_ids, limit: [_fake_owner_audio()])
     monkeypatch.setattr(handoff, "_git_value", lambda *args: "a" * 40)
     index = build_owner_voice_reference_index(
         records=[_fake_owner_audio()],
