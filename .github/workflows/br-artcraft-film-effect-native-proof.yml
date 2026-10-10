@@ -86,6 +86,8 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           import json
+          import hashlib
+          import hmac
           from pathlib import Path
           expected={
               'filmcraft': '7b6c134472287db4367fca80bcb498240ba36567',
@@ -100,8 +102,14 @@ jobs:
               assert d['tests_status']=='success'
               assert d['cli_status']=='success'
               assert d['compiled_artifact']['filename']==name+'-cli'
-              assert (folder/(name+'-cli')).is_file()
-              print('PINNED_NATIVE_BUILD_RECEIPT=PASS', name, sha)
+              assert d['compiled_artifact']['debug_stripped'] is True
+              assert d['cli_smoke_status']=='success'
+              binary=folder/(name+'-cli')
+              assert binary.is_file() and not binary.is_symlink()
+              assert binary.stat().st_size==d['compiled_artifact']['bytes']
+              observed=hashlib.file_digest(binary.open('rb'),'sha256').hexdigest()
+              assert hmac.compare_digest(observed,d['compiled_artifact']['sha256'])
+              print('PINNED_NATIVE_BUILD_DIGEST=PASS', name, sha, observed)
           PY
           chmod u+x artcraft-native-bin/filmcraft/filmcraft-cli
           chmod u+x artcraft-native-bin/effectcraft/effectcraft-cli

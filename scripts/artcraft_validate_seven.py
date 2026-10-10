@@ -250,7 +250,7 @@ def main() -> int:
             "pkg-config libasound2-dev libudev-dev libx11-dev "
             "libxkbcommon-dev libxcursor-dev libxrandr-dev libxi-dev "
             "libgl1-mesa-dev libwayland-dev libfontconfig1-dev "
-            "libfreetype6-dev libdbus-1-dev libgtk-3-dev libvulkan-dev "
+            "libfreetype6-dev libdbus-1-dev libgtk-3-dev libvulkan-dev binutils "
             "&& rm -rf /var/lib/apt/lists/*\n",
             encoding="utf-8",
         )
@@ -314,20 +314,41 @@ def main() -> int:
             report["cli_status"] = result["status"]
             save()
             candidate = target / "debug" / cli
-            if result["status"] == "success" and candidate.is_file():
+            if result["status"] == "success":
+                if not candidate.is_file() or candidate.is_symlink():
+                    raise RuntimeError("BUILT_CLI_NOT_REGULAR_FILE")
+                report["cli_unstripped_bytes"] = candidate.stat().st_size
+                # Rust dev builds retain large DWARF sections. Strip only debug
+                # symbols in the same no-network sandbox, never on the host.
+                strip = docker_args(src=src, cargo=cargo, target=target,
+                                    project=project, stage="cli-strip", network="none")
+                stripped = run_command(strip + ["strip", "--strip-debug",
+                                                f"/target/debug/{cli}"],
+                                       cwd=ROOT, log=out / "cli_strip.log", timeout=75)
+                report["stages"]["cli_strip"] = stripped
+                save()
+                if stripped["status"] != "success":
+                    raise RuntimeError("CLI_DEBUG_STRIP_FAILED")
                 binary_bytes = candidate.stat().st_size
-                if binary_bytes <= 180_000_000:
-                    safe_binary = out / cli
-                    shutil.copyfile(candidate, safe_binary)
-                    safe_binary.chmod(0o644)  # never executable in downloadable report
-                    report["compiled_artifact"] = {
-                        "filename": cli, "bytes": binary_bytes,
-                        "sha256": hashlib.sha256(safe_binary.read_bytes()).hexdigest(),
-                        "not_executed_on_host": True,
-                    }
+                report["cli_stripped_bytes"] = binary_bytes
+                if not 0 < binary_bytes <= 180_000_000:
+                    raise RuntimeError("CLI_ARTIFACT_TOO_LARGE_AFTER_STRIP")
+                safe_binary = out / cli
+                shutil.copyfile(candidate, safe_binary)
+                safe_binary.chmod(0o644)  # downloaded executable requires explicit chmod
+                report["compiled_artifact"] = {
+                    "filename": cli, "bytes": binary_bytes,
+                    "sha256": hashlib.sha256(safe_binary.read_bytes()).hexdigest(),
+                    "not_executed_on_host": True,
+                    "debug_stripped": True,
+                }
+                save()
+                # FilmCraft parser treats --help as an option and expects the
+                # positional "help" subcommand; EffectCraft supports --help.
+                help_arg = "help" if project == "filmcraft" else "--help"
                 probe = docker_args(src=src, cargo=cargo, target=target,
                                     project=project, stage="cli-smoke", network="none")
-                result = run_command(probe + [f"/target/debug/{cli}", "--help"],
+                result = run_command(probe + [f"/target/debug/{cli}", help_arg],
                                      cwd=ROOT, log=out / "cli_help.log", timeout=18)
                 report["stages"]["cli_help"] = result
                 report["cli_smoke_status"] = result["status"]
@@ -368,6 +389,7 @@ def main() -> int:
         report["build_status"] == "success"
         and report["tests_status"] == "success"
         and report["cli_status"] in {"success", "not_present"}
+        and (report["cli_status"] == "not_present" or "compiled_artifact" in report)
         and report.get("cli_smoke_status", "success") == "success"
     )
     print("ARTCRAFT_ISOLATED_TECHNICAL_GATE=" + ("PASS" if accepted else "FAIL"))
