@@ -66,7 +66,10 @@ jobs:
             tests/test_owner_voice_critical_audio_telegram_delivery.py \
             tests/test_owner_voice_single_clone_workflow_v1.py \
             tests/test_owner_voice_prompt_consistency_service.py \
-            tests/test_owner_voice_mission_outcome_contract.py
+            tests/test_owner_voice_mission_outcome_contract.py \
+            tests/test_owner_canonical_selection_fidelity.py \
+            tests/test_owner_segment_duration_calibrated_gate.py \
+            tests/test_owner_voice_serial_generation_v11.py
           echo 'TARGETED_OWNER_VOICE_CONTRACT=PASS'
           echo 'LEGACY_POPULATED_LEXICON_CONTRACT=NOT_CLAIMED'
       - name: Detect explicit single-clone request
