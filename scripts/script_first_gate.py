@@ -260,6 +260,10 @@ def write_editorial_script(result: dict[str, Any], *, goal_id: str | None = None
             raise ScriptGateError(f"SCRIPT_ID_COLLISION: {script_id}")
         return existing
     urls = [s.get("url") for s in (result.get("sources") or []) if s.get("url")]
+    try:
+        urls += [u for u in json.loads(os.environ.get("BR_EDITORIAL_VERIFIED_SOURCES") or "[]") if u]
+    except ValueError:
+        raise ScriptGateError("BR_EDITORIAL_VERIFIED_SOURCES must be a JSON list")
     urls += [sc["source_url"] for sc in scenes if sc.get("source_url")]
     sources = [{"url": u, "kind": "official" if _is_official(u) else "other"} for u in dict.fromkeys(urls)]
     rec = {"schema": "br-roteiro/v1", "script_id": script_id, "episode_slug": script_id,

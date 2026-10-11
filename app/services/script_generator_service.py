@@ -22,6 +22,19 @@ LONGFORM_SCRIPT_PLANNING_WPM = 132.0
 LONGFORM_MIN_DEVELOPMENT_SECTIONS = 8
 MAX_EDITORIAL_GENERATION_ATTEMPTS = 3
 MAX_MALFORMED_PROVIDER_RETRIES = 1
+# Longform (>= 20 min): geração em partes. A primeira chamada pede só a abertura
+# e as primeiras seções (~6 min); as sequências seguintes vêm em lotes menores,
+# cada um dentro do timeout por chamada (Luiz, 11/10/2026).
+LONGFORM_INITIAL_CHUNK_SECONDS = 360.0
+LONGFORM_MAX_CHUNKS = 10
+LONGFORM_CHUNKED_MIN_SECONDS = 1440.0  # 24 min: produto principal do canal
+
+
+def initial_chunk_duration_seconds(target_duration_seconds: float | None) -> float | None:
+    if target_duration_seconds is None:
+        return None
+    target = float(target_duration_seconds)
+    return min(target, LONGFORM_INITIAL_CHUNK_SECONDS) if target >= LONGFORM_CHUNKED_MIN_SECONDS else target
 
 
 class EditorialSequence(TypedDict):
@@ -1093,7 +1106,7 @@ def _generate_ai_structure(
         description=description,
         research_context=research_context,
         editorial_context=editorial_context,
-        target_duration_seconds=target_duration_seconds,
+        target_duration_seconds=initial_chunk_duration_seconds(target_duration_seconds),
     )
     target_words = _requested_word_count(target_duration_seconds)
     minimum_sections = _minimum_development_sections(target_duration_seconds)
@@ -1140,9 +1153,10 @@ def _generate_ai_structure(
             video_plan=video_plan,
             current_structure=assembly,
             target_duration_seconds=float(target_duration_seconds),
-            pass_budget=max(
-                0,
-                MAX_EDITORIAL_GENERATION_ATTEMPTS - 1,
+            pass_budget=(
+                LONGFORM_MAX_CHUNKS
+                if float(target_duration_seconds) >= LONGFORM_CHUNKED_MIN_SECONDS
+                else max(0, MAX_EDITORIAL_GENERATION_ATTEMPTS - 1)
             ),
         )
         generated_batches: list[dict[str, Any]] = []
