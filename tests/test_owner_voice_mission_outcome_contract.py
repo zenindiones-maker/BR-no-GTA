@@ -14,6 +14,6 @@ def test_delivery_must_be_confirmed_before_audition_step_can_pass():
     workflow = Path(".github/workflows/owner-voice-single-human-clone.yml").read_text()
     assert "id: reference_delivery" in workflow
     assert "id: critical_delivery" in workflow
-    assert 'test "$CRITICAL_DELIVERY_RESULT" = success' in workflow
-    assert 'test "$REFERENCE_DELIVERY_RESULT" = success' in workflow
+    assert 'if [ "$CRITICAL_DELIVERY_RESULT" != success ]; then' in workflow
+    assert 'if [ "$REFERENCE_DELIVERY_RESULT" != success ]; then' in workflow
     assert 'GENERATION_RESULT: ${{ steps.generate.outcome }}' in workflow
