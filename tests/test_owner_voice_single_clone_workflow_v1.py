@@ -97,7 +97,7 @@ def test_qwen_reference_preserves_original_telegram_bandwidth_before_24k_clone_p
     source=ORCHESTRATOR.read_text(encoding="utf-8")
     # Identity prompt clips are loudness-normalized from the ORIGINAL Telegram
     # source straight to 24 kHz (never upsampled from the 16 kHz ECAPA copy).
-    assert 'original_sources[str(r["reference_id"])]' in source
+    assert 'original_sources[rid]' in source  # v5g composite parts cut from original bandwidth
     assert "OWNER_TOP_CENTROID_COMPOSITE_LOUDNORM_24K" in source
     assert "loudnorm=I=-20" in source
     assert '_ffmpeg(canonical16,workspace/"canonical-owner-reference-24k.wav",24000)' not in source

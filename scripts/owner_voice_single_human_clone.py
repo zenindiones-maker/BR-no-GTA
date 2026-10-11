@@ -999,91 +999,102 @@ def main()->int:
         raise RuntimeError("CANONICAL_REFERENCE_SIMILARITY_RECOMPUTE_DRIFT")
     if canonical_similarity<centroid_floor:
         raise RuntimeError("CANONICAL_REFERENCE_IDENTITY_MATCH_FAILED")
-    identity_prompt_rows=select_identity_prompt_references(identity_verified,profile)
+    # v5g: 20-30 s composite of 2-3 VAD-bounded windows from DIFFERENT owner
+    # clips (each >=0.90 vs centroid), maximizing composite embedding sim.
     from app.services.owner_voice_reference_window_service import (
-        candidate_reference_windows,choose_reference_window,
+        COMPOSITE_PART_MAX_SECONDS,COMPOSITE_PART_MIN_SECONDS,
+        candidate_reference_windows,choose_composite_windows,
         validate_composite_total,validate_qwen_reference,
     )
-    use_composite=bool(
-        len(identity_prompt_rows)>=2
-        and str(identity_prompt_rows[0]["reference_id"])==cid
-    )
-    if use_composite:
-        try:
-            validate_composite_total(
-                [float(r["duration_seconds"]) for r in identity_prompt_rows],gap_seconds=0.20)
-        except RuntimeError:
-            use_composite=False
-    if use_composite:
-        print("OWNER_IDENTITY_PROMPT_MODE=TOP_CENTROID_COMPOSITE")
-        identity24s=[
-            _ffmpeg_loudnorm_24k(
-                original_sources[str(r["reference_id"])],
-                workspace/f"identity-owner-reference-{i}-24k-loudnorm.wav",
-            )
-            for i,r in enumerate(identity_prompt_rows,1)
-        ]
-        canonical24=_compose_pronunciation_reference_audio(
-            identity24s,workspace/"identity-owner-reference-composite-24k.wav",
-        )
-        reference_window_similarity=None
-    else:
-        # v5d: single canonical owner clip, bounded to a 10-20 s window cut
-        # inside silence gaps, identity re-verified, never another voice.
-        identity_prompt_rows=[dict(canonical,verified_ref_text=anchor_ref_text,
-            identity_similarity_to_centroid=float(
-                profile["reference_similarity_to_centroid"][cid]))]
-        print("OWNER_IDENTITY_PROMPT_MODE=SINGLE_CANONICAL_WINDOW")
-        canonical_seconds=float(canonical.get("duration_seconds") or 0.0)
-        source_original=original_sources[cid]
-        if canonical_seconds<=20.0:
-            window=(0.0,canonical_seconds)
-            reference_window_similarity=float(canonical_similarity)
-            canonical24=_ffmpeg_loudnorm_24k(
-                source_original,workspace/"identity-owner-reference-window-24k.wav")
-        else:
-            from faster_whisper import decode_audio
-            from faster_whisper.vad import VadOptions,get_speech_timestamps
-            vad_audio=decode_audio(str(canonical16),sampling_rate=16000)
-            spans=[(float(t["start"])/16000.0,float(t["end"])/16000.0)
-                   for t in get_speech_timestamps(vad_audio,VadOptions(min_silence_duration_ms=250))]
-            windows=candidate_reference_windows(spans,len(vad_audio)/16000.0)
-            print(f"OWNER_QWEN_REFERENCE_WINDOW_CANDIDATES={len(windows)}")
-
-            def _cut(src:Path,win,target:Path,rate:int)->Path:
-                subprocess.run(
-                    ["ffmpeg","-y","-v","error","-i",str(src),"-ss",f"{win[0]:.3f}","-to",f"{win[1]:.3f}",
-                     "-vn","-ac","1","-ar",str(rate),"-c:a","pcm_s16le",str(target)],
-                    check=True,capture_output=True)
-                return target
-
-            def _window_similarity(win)->float:
-                cut=_cut(canonical16,win,workspace/f"identity-window-{win[0]:.3f}-{win[1]:.3f}-16k.wav",16000)
-                try:
-                    return float(cosine_similarity(_embedding(classifier,cut),profile["centroid"]))
-                finally:
-                    cut.unlink(missing_ok=True)
-
-            window,reference_window_similarity=choose_reference_window(
-                windows,_window_similarity,min_similarity=0.90)
-            raw_window=_cut(source_original,window,workspace/"identity-owner-reference-window-raw.wav",24000)
-            canonical24=_ffmpeg_loudnorm_24k(
-                raw_window,workspace/"identity-owner-reference-window-24k.wav")
-            raw_window.unlink(missing_ok=True)
-        print("OWNER_QWEN_REFERENCE_WINDOW_SECONDS="+str(round(window[1]-window[0],3)))
-        print("OWNER_QWEN_REFERENCE_WINDOW_SIMILARITY_TO_CENTROID="+str(round(reference_window_similarity,6)))
-    # ref_text is the ASR transcript of exactly the audio handed to Qwen.
     import soundfile as _sf_ref
+    import numpy as _np_ref
+    from faster_whisper import decode_audio
+    from faster_whisper.vad import VadOptions,get_speech_timestamps
+
+    def _cut(src:Path,win,target:Path,rate:int)->Path:
+        subprocess.run(
+            ["ffmpeg","-y","-v","error","-i",str(src),"-ss",f"{win[0]:.3f}","-to",f"{win[1]:.3f}",
+             "-vn","-ac","1","-ar",str(rate),"-c:a","pcm_s16le",str(target)],
+            check=True,capture_output=True)
+        return target
+
+    clip_sims=dict(profile["reference_similarity_to_centroid"])
+    composite_clip_rows=sorted(
+        [r for r in identity_verified if float(clip_sims.get(str(r["reference_id"]),-1.0))>=0.90],
+        key=lambda r:-float(clip_sims[str(r["reference_id"])]))[:5]
+    rows_by_id={str(r["reference_id"]):r for r in composite_clip_rows}
+    window_cache={}
+    candidates_by_clip={}
+    for r in composite_clip_rows:
+        rid=str(r["reference_id"])
+        vad_audio=decode_audio(str(normalized[rid]),sampling_rate=16000)
+        spans=[(float(t["start"])/16000.0,float(t["end"])/16000.0)
+               for t in get_speech_timestamps(vad_audio,VadOptions(min_silence_duration_ms=250))]
+        wins=candidate_reference_windows(spans,len(vad_audio)/16000.0,
+            min_seconds=COMPOSITE_PART_MIN_SECONDS,max_seconds=COMPOSITE_PART_MAX_SECONDS)[:4]
+        scored=[]
+        for w in wins:
+            cut=_cut(normalized[rid],w,workspace/f"identity-part-{rid}-{w[0]:.3f}-{w[1]:.3f}-16k.wav",16000)
+            window_cache[(rid,w)]=cut
+            scored.append((w,float(cosine_similarity(_embedding(classifier,cut),profile["centroid"]))))
+        candidates_by_clip[rid]=scored
+
+    def _concat16(parts,target:Path)->Path:
+        chunks=[]
+        gap=_np_ref.zeros(int(0.20*16000),dtype="float32")
+        for i,(rid,w) in enumerate(parts):
+            audio,_r=_sf_ref.read(str(window_cache[(rid,w)]),dtype="float32")
+            if i:
+                chunks.append(gap)
+            chunks.append(audio.reshape(-1))
+        _sf_ref.write(str(target),_np_ref.concatenate(chunks),16000,subtype="PCM_16")
+        return target
+
+    def _composite_similarity(parts)->float:
+        path=_concat16(parts,workspace/"identity-composite-probe-16k.wav")
+        try:
+            return float(cosine_similarity(_embedding(classifier,path),profile["centroid"]))
+        finally:
+            path.unlink(missing_ok=True)
+
+    composite_parts,composite_similarity=choose_composite_windows(
+        candidates_by_clip,_composite_similarity,min_window_similarity=0.90,gap_seconds=0.20)
+    part_seconds=[w[1]-w[0] for _rid,w in composite_parts]
+    validate_composite_total(part_seconds,gap_seconds=0.20)
+    use_composite=True
+    multi_clip_composite=True
+    reference_clip_ids={rid for rid,_w in composite_parts}
+    print("OWNER_IDENTITY_PROMPT_MODE=MULTI_CLIP_VAD_WINDOW_COMPOSITE")
+    part_sims=dict(((rid,w),sim) for rid,c in candidates_by_clip.items() for w,sim in c)
+    print("OWNER_QWEN_COMPOSITE_PARTS="+json.dumps(
+        [{"seconds":round(w[1]-w[0],3),"window_similarity_to_centroid":round(part_sims[(rid,w)],6),
+          "clip_similarity_to_centroid":round(float(clip_sims[rid]),6)} for rid,w in composite_parts],
+        separators=(",",":")))
+    print("OWNER_QWEN_COMPOSITE_SIMILARITY_TO_CENTROID="+str(round(composite_similarity,6)))
+    identity24s=[]
+    window_transcripts=[]
+    for i,(rid,w) in enumerate(composite_parts,1):
+        raw=_cut(original_sources[rid],w,workspace/f"identity-owner-part-{i}-raw.wav",24000)
+        part24=_ffmpeg_loudnorm_24k(raw,workspace/f"identity-owner-part-{i}-24k-loudnorm.wav")
+        raw.unlink(missing_ok=True)
+        ptbr,_vad,_lang,text=_reference_asr_metrics(stt,part24,w[1]-w[0],beam_size=5)
+        if ptbr<0.90 or not text.strip():
+            raise RuntimeError("OWNER_QWEN_COMPOSITE_PART_ASR_INVALID")
+        identity24s.append(part24)
+        window_transcripts.append(text.strip())
+    for cut in window_cache.values():
+        cut.unlink(missing_ok=True)
+    canonical24=_compose_pronunciation_reference_audio(
+        identity24s,workspace/"identity-owner-reference-composite-24k.wav")
+    anchor_ref_text=" ".join(window_transcripts)
     reference_seconds=float(_sf_ref.info(str(canonical24)).duration)
-    ref_ptbr,_ref_vad,_ref_lang,ref_transcript=_reference_asr_metrics(
-        stt,canonical24,reference_seconds,beam_size=5)
-    if ref_ptbr<0.90:
-        raise RuntimeError("OWNER_QWEN_REFERENCE_NOT_PTBR")
-    anchor_ref_text=ref_transcript
     validate_qwen_reference(
-        duration_seconds=reference_seconds,ref_text=anchor_ref_text,asr_transcript=ref_transcript)
+        duration_seconds=reference_seconds,ref_text=anchor_ref_text,
+        asr_transcript=" ".join(window_transcripts))
+    identity_prompt_rows=[dict(rows_by_id[rid],identity_similarity_to_centroid=float(clip_sims[rid]))
+                          for rid,_w in composite_parts]
     print("OWNER_QWEN_REFERENCE_SECONDS="+str(round(reference_seconds,3)))
-    print("OWNER_QWEN_REF_TEXT_ALIGNMENT=ASR_OF_EXACT_REFERENCE_AUDIO")
+    print("OWNER_QWEN_REF_TEXT_ALIGNMENT=ASR_OF_EACH_EXACT_WINDOW_CONCATENATED")
     print("OWNER_QWEN_REF_TEXT_WORDS="+str(len(anchor_ref_text.split())))
     # Segment-vs-reference identity uses the embedding of the exact audio
     # handed to Qwen (trimmed window), not the full canonical clip.
@@ -1104,6 +1115,8 @@ def main()->int:
     human_review_reference=canonical
     qwen_reference_audio_lineage=("OWNER_TOP_CENTROID_COMPOSITE_LOUDNORM_24K" if use_composite
         else "OWNER_SINGLE_CANONICAL_VAD_WINDOW_LOUDNORM_24K")
+    if multi_clip_composite:
+        qwen_reference_audio_lineage="MULTI_CLIP_VAD_WINDOW_COMPOSITE_LOUDNORM_24K"
     pronunciation24_by_input_id={}
     if pronunciation_canonical is not None:
         pronunciation24s=[]
@@ -1440,7 +1453,7 @@ def main()->int:
             classifier,normalized[rid],profile["centroid"],window_seconds))
     reference_window_sims=[]
     for rid in sorted(inlier_ids):
-        if rid!=cid:
+        if rid not in reference_clip_ids:
             reference_window_sims.extend(_segment_window_centroid_similarities(
                 classifier,normalized[rid],qwen_reference_embedding,window_seconds))
     binding_segment_identity={"passed":False,"segments":[]}

@@ -72,7 +72,8 @@ jobs:
             tests/test_owner_voice_serial_generation_v11.py \
             tests/test_owner_reference_window_v5d.py \
             tests/test_owner_candidate_b_binding_gate_v5e.py \
-            tests/test_owner_calibrated_reference_v5f.py
+            tests/test_owner_calibrated_reference_v5f.py \
+            tests/test_owner_composite_reference_v5g.py
           echo 'TARGETED_OWNER_VOICE_CONTRACT=PASS'
           echo 'LEGACY_POPULATED_LEXICON_CONTRACT=NOT_CLAIMED'
       - name: Detect explicit single-clone request

@@ -70,6 +70,6 @@ def test_composite_total_must_be_20_to_30s():
 def test_clone_script_enforces_reference_bound_before_prompt_build():
     src=Path("scripts/owner_voice_single_human_clone.py").read_text()
     assert "validate_qwen_reference(" in src
-    assert "choose_reference_window(" in src
-    assert "OWNER_QWEN_REFERENCE_WINDOW_SECONDS=" in src
+    assert "choose_composite_windows(" in src  # v5g: multi-clip composite
+    assert "OWNER_QWEN_COMPOSITE_PARTS=" in src
     assert src.index("validate_qwen_reference(")<src.index("model.create_voice_clone_prompt(\n        ref_audio=str(canonical24)")
