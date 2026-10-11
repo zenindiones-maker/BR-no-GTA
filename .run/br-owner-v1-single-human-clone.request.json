@@ -4,9 +4,9 @@
   "reference_source": "TELEGRAM_HUMAN_OWNER",
   "one_candidate_only": true,
   "runtime_activation": false,
-  "recovery_attempt_id": "owner-gta6-connected-ptbr-pr37-20261010-v3-git-diff-trigger",
-  "recovery_from_run_id": 38101536142,
-  "recovery_reason": "Fresh explicit owner request on PR37: GitHub action 38101536142 incorrectly classified modified intent as source-only; corrected by exact Git commit diff with fetch-depth 2 and fail-closed SHA match. Prior delivery ledger reconciled without unconfirmed critical-send mission. Start authentic 18 connected Portuguese utterances, keep real identity/ASR thresholds and no auto delivery on failure.",
+  "recovery_attempt_id": "owner-gta6-connected-ptbr-pr37-20261010-v4-contract-green",
+  "recovery_from_run_id": 38101607165,
+  "recovery_reason": "PR37 contract success 38101653594; explicitly authorize exactly one runner-bound Qwen BR_OWNER_V1 audition using 18 connected PTBR phrases, unchanged identity+content thresholds and ledger reconciliation-before-send. No prior v3 audio synthesis executed (contract failed before request detection). Gate failure must fail workflow, do not activate or duplicate Telegram.",
   "human_approval_required": true,
   "production_activated": false,
   "pronunciation_scope": "OWNER_GTA6_CRITICAL_NAMES_ONLY_V1"
