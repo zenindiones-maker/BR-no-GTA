@@ -209,6 +209,17 @@ jobs:
           set -euo pipefail
           /tmp/br-owner-single-clone-venv/bin/python scripts/owner_voice_critical_audio_telegram_delivery.py
 
+      - name: Enforce audition delivery outcome
+        if: ${{ always() }}
+        env:
+          SEND_ELIGIBLE: ${{ steps.generate.outputs.send_eligible }}
+        run: |
+          if [ "$SEND_ELIGIBLE" != true ]; then
+            echo "MISSION_FAILED_QUALITY_GATES"
+            exit 1
+          fi
+          echo "MISSION_COMPLETE=FALSE"
+
       - name: Remove ephemeral owner biometric and clone material
         if: ${{ always() }}
         run: |
