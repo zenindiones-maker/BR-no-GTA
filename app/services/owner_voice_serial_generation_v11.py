@@ -29,6 +29,23 @@ CANDIDATE_A_SAMPLING = {
     "subtalker_top_p": 0.9, "subtalker_top_k": 50,
 }
 CANDIDATE_A_BASE_SEED = 424242
+# Candidate B (stability): lower entropy + mild repetition penalty
+# (qwen-tts 0.1.1 default repetition_penalty=1.05).
+CANDIDATE_B_SAMPLING = {
+    "do_sample": True, "temperature": 0.55, "top_p": 0.85, "top_k": 30,
+    "repetition_penalty": 1.1,
+    "subtalker_dosample": True, "subtalker_temperature": 0.55,
+    "subtalker_top_p": 0.85, "subtalker_top_k": 30,
+}
+CANDIDATE_B_BASE_SEED = 515151
+
+
+def sampling_for_candidate(candidate: str) -> tuple[dict[str,Any],int]:
+    if candidate=="A":
+        return dict(CANDIDATE_A_SAMPLING),CANDIDATE_A_BASE_SEED
+    if candidate=="B":
+        return dict(CANDIDATE_B_SAMPLING),CANDIDATE_B_BASE_SEED
+    raise RuntimeError("OWNER_QWEN_SAMPLING_CANDIDATE_INVALID")
 
 # Runaway-generation bound (run 38140235735: segment 3 emitted 49.84 s for
 # ~6 s of text and segment 7 hung > 60 min). qwen-tts 0.1.1 defaults
