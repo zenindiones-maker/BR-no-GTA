@@ -5,6 +5,8 @@ on:
     paths:
       - .github/workflows/owner-voice-single-human-clone.yml
       - tests/test_owner_voice_mission_outcome_contract.py
+      - app/services/gta6_owner_audio_dictionary_service.py
+      - tests/test_owner_voice_critical_audio_dictionary_execution.py
   workflow_dispatch:
   push:
     branches:
@@ -18,6 +20,8 @@ on:
       - scripts/owner_voice_single_clone_delivery.py
       - tests/test_owner_voice_single_clone_workflow_v1.py
       - tests/test_owner_voice_mission_outcome_contract.py
+      - app/services/gta6_owner_audio_dictionary_service.py
+      - tests/test_owner_voice_critical_audio_dictionary_execution.py
       - config/pronunciation_lexicon.json
 
 concurrency:
