@@ -23,10 +23,16 @@ class OwnerCriticalPronunciationTests(unittest.TestCase):
         self.assertTrue(all(x["language"]=="Portuguese" for x in items))
         self.assertTrue(all(x["approved_audio"] is False for x in items))
         self.assertEqual(items[2]["canonical_text"],"Vice City")
-        self.assertEqual(items[2]["spoken_text"],"vaicy siti")
+        self.assertIn("vaicy siti",items[2]["spoken_text"])
         for x in items:
+            # Speaker verification requires connected human speech, not isolated
+            # 1-2 word names scored against 10-20 second owner references.
+            self.assertGreaterEqual(len(x["spoken_text"].split()),9)
+            self.assertTrue(x["spoken_text"].startswith("Agora vamos entender "))
             if x["canonical_text"] not in ("Vice City","GTA 6"):
-                self.assertEqual(x["spoken_text"],x["canonical_text"])
+                self.assertIn(x["canonical_text"],x["spoken_text"])
+            if x["canonical_text"]=="GTA 6":
+                self.assertIn("Gê Tê A seis",x["spoken_text"])
 
     def test_explicit_scope_is_required_before_voice_generation(self):
         manifest=load_candidate()
