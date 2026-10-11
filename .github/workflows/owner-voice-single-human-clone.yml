@@ -47,7 +47,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install focused test dependencies
-        run: python -m pip install --disable-pip-version-check -q pytest packaging "python-dotenv==1.2.3"
+        run: python -m pip install --disable-pip-version-check -q pytest packaging "python-dotenv==1.2.3" "numpy==2.3.3"
       - name: Prove current fail-closed owner clone and critical-dictionary contracts
         run: |
           set -euo pipefail
