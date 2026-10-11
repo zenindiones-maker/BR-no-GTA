@@ -6,12 +6,14 @@ on:
     branches:
       - work/br-owner-voice-serial-audition-v11
       - work/br-owner-voice-coherent-qa-recovery-v1
+      - work/br-owner-voice-mission-state-failclosed-v1
     paths:
       - .run/br-owner-v1-single-human-clone.request.json
       - .github/workflows/owner-voice-single-human-clone.yml
       - scripts/owner_voice_single_human_clone.py
       - scripts/owner_voice_single_clone_delivery.py
       - tests/test_owner_voice_single_clone_workflow_v1.py
+      - tests/test_owner_voice_mission_outcome_contract.py
       - config/pronunciation_lexicon.json
 
 concurrency:
