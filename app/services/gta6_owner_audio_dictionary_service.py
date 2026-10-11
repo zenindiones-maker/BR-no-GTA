@@ -129,7 +129,7 @@ def candidate_summary(path:Path|None=None)->dict[str,Any]:
     }
 
 def owner_critical_ptbr_batches(path:Path|None=None)->tuple[dict[str,Any],...]:
-    """One private short owner-conditioned generation per name, no English voice.
+    """One private owner-conditioned connected-PTBR utterance per name.
 
     The only spelling-to-speech rewrite is the owner's explicit Vice City
     reading; all other terms remain unapproved until real acoustics reviewed.
@@ -138,9 +138,13 @@ def owner_critical_ptbr_batches(path:Path|None=None)->tuple[dict[str,Any],...]:
     return tuple({
         "canonical_text":row["term"],
         "spoken_text":(
-            "Gê Tê A seis" if row["term"]=="GTA 6"
-            else "vaicy siti" if row["term"]=="Vice City"
-            else row["term"]
+            "Agora vamos entender "
+            + (
+                "Gê Tê A seis" if row["term"]=="GTA 6"
+                else "vaicy siti" if row["term"]=="Vice City"
+                else row["term"]
+            )
+            + ", com calma e atenção aos detalhes desta história."
         ),
         "language":"Portuguese",
         "is_pronunciation_target":True,

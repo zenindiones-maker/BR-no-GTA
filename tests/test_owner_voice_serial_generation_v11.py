@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import stat
 import wave
 from pathlib import Path
@@ -109,4 +110,51 @@ def test_generation_exception_never_prints_success_or_creates_unapproved_audio(t
     with pytest.raises(RuntimeError,match="QWEN_GENERATION_ABORTED"):
         _run(tmp_path,generate)
     assert "OWNER_QWEN_SINGLE_CANDIDATE_SEGMENTED=PASS" not in capsys.readouterr().out
+    assert not list(tmp_path.glob("private-qwen-segment-*.wav"))
+
+
+# --- Runaway generation bound (run 38140235735: seg 3 = 49.84s for ~6s text, seg 7 hung >60 min)
+from app.services import owner_voice_serial_generation_v11 as v11
+
+
+def test_generate_receives_max_new_tokens_bounded_by_text_length(tmp_path):
+    calls=[]
+    def generate(**kwargs):
+        calls.append(kwargs)
+        return [np.ones(4800,dtype=np.float32)*0.15],24000
+    _run(tmp_path,generate)
+    for call,text in zip(calls,_input()["segment_texts"]):
+        cap=call["max_new_tokens"]
+        assert isinstance(cap,int) and 0<cap<2048
+        assert cap==v11.max_new_tokens_for_text(text)
+        expected=v11.expected_seconds_for_text(text)
+        assert cap>=math.ceil(expected*v11.RUNAWAY_DURATION_FACTOR*v11.QWEN_CODEC_FRAMES_PER_SECOND)
+    long_text="a"*600
+    assert v11.max_new_tokens_for_text(long_text)>v11.max_new_tokens_for_text("curto")
+
+
+def test_caller_cannot_override_token_bound_with_unbounded_value(tmp_path):
+    calls=[]
+    def generate(**kwargs):
+        calls.append(kwargs)
+        return [np.ones(4800,dtype=np.float32)*0.15],24000
+    generate_one_private_audition(generate=generate,heartbeat=lambda fn,**kw:fn(**kw),
+        workspace=tmp_path,sampling_kwargs={"max_new_tokens":2048,"temperature":0.7},**_input())
+    assert all(c["max_new_tokens"]<2048 for c in calls)
+
+
+def test_runaway_duration_fails_closed_and_is_not_checkpointed(tmp_path,capsys):
+    def generate(**kwargs):
+        return [np.ones(int(49.84*24000),dtype=np.float32)*0.1],24000
+    with pytest.raises(RuntimeError,match="OWNER_SERIAL_SEGMENT_RUNAWAY_DURATION"):
+        _run(tmp_path,generate)
+    assert not list(tmp_path.glob("private-qwen-segment-*.wav"))
+    assert "OWNER_QWEN_SINGLE_CANDIDATE_SEGMENTED=PASS" not in capsys.readouterr().out
+
+
+def test_segment_wall_clock_guard_fails_closed(tmp_path,monkeypatch):
+    ticks=iter([0.0,0.0,10_000.0,10_000.0,10_000.0,10_000.0])
+    monkeypatch.setattr(v11.time,"monotonic",lambda:next(ticks))
+    with pytest.raises(RuntimeError,match="OWNER_SERIAL_SEGMENT_WALL_CLOCK_EXCEEDED"):
+        _run(tmp_path,lambda **kw:([np.ones(4800,dtype=np.float32)*0.1],24000))
     assert not list(tmp_path.glob("private-qwen-segment-*.wav"))

@@ -21,6 +21,54 @@ SCHEMA = "BROwnerVoicePrivateSegmentCheckpoint/v1"
 MAX_SEGMENTS = 64
 MAX_SEGMENT_SECONDS = 90.0
 MAX_SEGMENT_TEXT_CHARS = 800
+# Candidate A (reference fidelity): lower-entropy sampling than the pinned
+# generation_config defaults (temperature 0.9, top_p 1.0) for both stages.
+CANDIDATE_A_SAMPLING = {
+    "do_sample": True, "temperature": 0.7, "top_p": 0.9, "top_k": 50,
+    "subtalker_dosample": True, "subtalker_temperature": 0.7,
+    "subtalker_top_p": 0.9, "subtalker_top_k": 50,
+}
+CANDIDATE_A_BASE_SEED = 424242
+# Candidate B (stability): lower entropy + mild repetition penalty
+# (qwen-tts 0.1.1 default repetition_penalty=1.05).
+CANDIDATE_B_SAMPLING = {
+    "do_sample": True, "temperature": 0.55, "top_p": 0.85, "top_k": 30,
+    "repetition_penalty": 1.1,
+    "subtalker_dosample": True, "subtalker_temperature": 0.55,
+    "subtalker_top_p": 0.85, "subtalker_top_k": 30,
+}
+CANDIDATE_B_BASE_SEED = 515151
+
+
+def sampling_for_candidate(candidate: str) -> tuple[dict[str,Any],int]:
+    if candidate=="A":
+        return dict(CANDIDATE_A_SAMPLING),CANDIDATE_A_BASE_SEED
+    if candidate=="B":
+        return dict(CANDIDATE_B_SAMPLING),CANDIDATE_B_BASE_SEED
+    raise RuntimeError("OWNER_QWEN_SAMPLING_CANDIDATE_INVALID")
+
+# Runaway-generation bound (run 38140235735: segment 3 emitted 49.84 s for
+# ~6 s of text and segment 7 hung > 60 min). qwen-tts 0.1.1 defaults
+# max_new_tokens=2048 (_merge_generate_kwargs); the Qwen3-TTS-Tokenizer-12Hz
+# codec emits 12.5 frames/s, so 2048 tokens ~= 164 s of audio per call.
+QWEN_CODEC_FRAMES_PER_SECOND = 12.5
+# Conservative (slow) PT-BR narration rate so legit speech is never truncated.
+PTBR_MIN_CHARS_PER_SECOND = 10.0
+MIN_EXPECTED_SECONDS = 1.5
+RUNAWAY_DURATION_FACTOR = 2.5
+# Token cap sits above the runaway threshold so a truncated runaway is still
+# detected as runaway instead of passing as plausible speech.
+TOKEN_CAP_HEADROOM = 1.2
+SEGMENT_WALL_CLOCK_SECONDS = 900.0
+
+
+def expected_seconds_for_text(text: str) -> float:
+    return max(MIN_EXPECTED_SECONDS,len(" ".join(str(text).split()))/PTBR_MIN_CHARS_PER_SECOND)
+
+
+def max_new_tokens_for_text(text: str) -> int:
+    seconds=expected_seconds_for_text(text)*RUNAWAY_DURATION_FACTOR*TOKEN_CAP_HEADROOM
+    return int(min(2047,math.ceil(seconds*QWEN_CODEC_FRAMES_PER_SECOND)))
 
 
 def _digest(value: bytes) -> str:
@@ -74,6 +122,10 @@ def generate_one_private_audition(
     segment_languages: list[str],
     segment_prompts: list[Any],
     workspace: Path,
+    sampling_kwargs: dict[str,Any] | None = None,
+    seed_setter: Callable[[int],Any] | None = None,
+    base_seed: int | None = None,
+    segment_wall_clock_seconds: float = SEGMENT_WALL_CLOCK_SECONDS,
 ) -> tuple[list[Any],int,float,tuple[dict,...]]:
     """Produce one candidate from one prompt-conditioned synthesis per segment."""
     if not (isinstance(workspace,Path) and workspace.is_absolute()
@@ -106,14 +158,26 @@ def generate_one_private_audition(
     ):
         t0=time.monotonic()
         print(f"OWNER_QWEN_SERIAL_SEGMENT_START={ordinal}/{len(segment_texts)}",flush=True)
+        if seed_setter is not None and base_seed is not None:
+            seed_setter(int(base_seed)+ordinal-1)
+        token_cap=max_new_tokens_for_text(spoken)
+        expected_seconds=expected_seconds_for_text(spoken)
+        kwargs=dict(sampling_kwargs or {})
+        kwargs["max_new_tokens"]=min(int(kwargs.get("max_new_tokens") or token_cap),token_cap)
+        print(f"OWNER_QWEN_SERIAL_SEGMENT_BOUND={ordinal}/{len(segment_texts)} "
+              f"expected_seconds={expected_seconds:.2f} max_new_tokens={kwargs['max_new_tokens']}",flush=True)
         generated,sample_rate=heartbeat(
             generate,
+            **kwargs,
             text=[spoken],
             language=[language],
             voice_clone_prompt=[prompt],
             non_streaming_mode=True,
         )
         elapsed=max(0.000001,time.monotonic()-t0)
+        if elapsed>float(segment_wall_clock_seconds):
+            print(f"OWNER_QWEN_SERIAL_SEGMENT_WALL_CLOCK_EXCEEDED={ordinal} elapsed={elapsed:.1f}",flush=True)
+            raise RuntimeError("OWNER_SERIAL_SEGMENT_WALL_CLOCK_EXCEEDED")
         if (not isinstance(generated,(list,tuple)) or len(generated)!=1
             or isinstance(sample_rate,bool) or not isinstance(sample_rate,int)
             or sample_rate<=0):
@@ -125,6 +189,10 @@ def generate_one_private_audition(
         if (audio.size<=0 or not np.isfinite(audio).all()
             or not 0.12<=audio.size/rate<=MAX_SEGMENT_SECONDS):
             raise RuntimeError("OWNER_SERIAL_SEGMENT_GENERATED_AUDIO_INVALID")
+        if audio.size/rate>expected_seconds*RUNAWAY_DURATION_FACTOR:
+            print(f"OWNER_QWEN_SERIAL_SEGMENT_RUNAWAY={ordinal}/{len(segment_texts)} "
+                  f"audio_seconds={audio.size/rate:.2f} limit_seconds={expected_seconds*RUNAWAY_DURATION_FACTOR:.2f}",flush=True)
+            raise RuntimeError("OWNER_SERIAL_SEGMENT_RUNAWAY_DURATION")
         wav_path=workspace/f"private-qwen-segment-{ordinal:02d}.wav"
         wav_sha=_save_segment_private(wav_path,audio,rate)
         seconds=audio.size/rate
