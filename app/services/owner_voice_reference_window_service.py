@@ -149,3 +149,26 @@ def dedupe_reference_pool(
         kept.append(r)
     return kept,{"candidates":len(rows),"exact_duplicates":exact,
                  "near_duplicates":near,"distinct_qualifying":len(kept)}
+
+
+# v5i: run 38158052098 transcribed only 6 of 39 eligible clips and stopped at
+# 3 "verified" rows that were the same audio. Bound CPU ASR to distinct content.
+COMPOSITE_POOL_ASR_BUDGET = 12
+
+
+def plan_composite_asr_pool(rows: Sequence[dict], similarities: dict, *, min_similarity: float) -> list[dict]:
+    """Rank-preserving, content-deduplicated (SHA-256), >= floor, bounded pool."""
+    seen=set();out=[]
+    for r in rows:
+        sha=str(r.get("sha256") or "")
+        if not sha:
+            raise RuntimeError("OWNER_REFERENCE_SHA256_REQUIRED")
+        if sha in seen:
+            continue
+        seen.add(sha)
+        if float(similarities.get(str(r["reference_id"]),-1.0))<float(min_similarity):
+            continue
+        out.append(r)
+        if len(out)>=COMPOSITE_POOL_ASR_BUDGET:
+            break
+    return out

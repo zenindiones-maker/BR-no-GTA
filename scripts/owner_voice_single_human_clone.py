@@ -788,6 +788,14 @@ def main()->int:
     print(f"OWNER_CANONICAL_PRE_ASR_ELIGIBLE_COUNT={len(pre_asr)}")
     if not pre_asr:
         raise RuntimeError("NO_CANONICAL_OWNER_REFERENCE_PRE_ASR_ELIGIBLE")
+    from app.services.owner_voice_reference_window_service import (
+        COMPOSITE_POOL_ASR_BUDGET,plan_composite_asr_pool,
+    )
+    composite_asr_pool=plan_composite_asr_pool(
+        pre_asr,profile["reference_similarity_to_centroid"],min_similarity=IDENTITY_PROMPT_MIN_SIMILARITY)
+    print(f"OWNER_COMPOSITE_POOL_ASR_PLANNED={len(composite_asr_pool)}",flush=True)
+    if composite_asr_pool:
+        pre_asr=composite_asr_pool
 
     stt=_load_stt(cache_root)
     asr_count=0
@@ -829,13 +837,13 @@ def main()->int:
                     canonical=select_canonical_reference([row],profile)
                     anchor_ref_text=strong_text
         if canonical is not None and (
-            len(identity_verified)>=IDENTITY_PROMPT_MAX_REFERENCES
-            or len(evaluated)>=IDENTITY_PROMPT_ASR_BUDGET
+            len(evaluated)>=COMPOSITE_POOL_ASR_BUDGET
             or float(profile["reference_similarity_to_centroid"].get(
                 str(row["reference_id"]),-1.0))<IDENTITY_PROMPT_MIN_SIMILARITY
         ):
             break
     print(f"OWNER_CANONICAL_REFERENCE_ASR_COUNT={asr_count}")
+    print("OWNER_COMPOSITE_POOL_PTBR_VERIFIED_DISTINCT="+str(len({str(r["sha256"]) for r in identity_verified})),flush=True)
     print(f"OWNER_CANONICAL_PTBR_COUNT={sum(1 for row in evaluated if float(row['ptbr_probability'])>=0.90)}")
     print(f"OWNER_CANONICAL_VAD_SPEECH_COUNT={sum(1 for row in evaluated if float(row['speech_ratio'])>=0.55)}")
     if canonical is None or not anchor_ref_text:
