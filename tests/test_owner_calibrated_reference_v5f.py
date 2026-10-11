@@ -50,7 +50,7 @@ def test_script_uses_exact_qwen_reference_embedding_for_segments():
     assert "OWNER_QWEN_REFERENCE_EMBEDDING_SOURCE=EXACT_QWEN_REF_AUDIO" in SRC
     assert "window_similarities_to_reference=reference_window_sims" in SRC
     # owner windows from the canonical clip itself are excluded (window was cut from it)
-    assert "if rid!=cid" in SRC
+    assert "if rid not in reference_clip_ids" in SRC
 
 
 def test_agents_md_documents_reference_calibration_authorization():
