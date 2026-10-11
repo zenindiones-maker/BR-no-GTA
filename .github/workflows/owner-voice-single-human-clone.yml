@@ -231,7 +231,9 @@ jobs:
           else
             exit 1
           fi
+          echo "AUDITION_DELIVERY_STEP=PASS"
           echo "MISSION_COMPLETE=FALSE"
+          echo "HUMAN_APPROVAL=PENDING"
 
       - name: Remove ephemeral owner biometric and clone material
         if: ${{ always() }}
