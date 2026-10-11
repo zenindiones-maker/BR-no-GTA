@@ -4,9 +4,9 @@
   "reference_source": "TELEGRAM_HUMAN_OWNER",
   "one_candidate_only": true,
   "runtime_activation": false,
-  "recovery_attempt_id": "owner-gta6-eighteen-critical-audio-proof-003-guarded-route",
-  "recovery_from_run_id": 38055226524,
-  "recovery_reason": "One human-authorized, bounded critical 18-name Qwen voice clone on GitHub Actions; previous 38055226524 failed on 18 vs 12 segment limit before generation, now 122 regression tests PASS on f0740afe and typed delivery outputs are strictly fail-closed; never send unless both identity and content gates PASS; ledger reconcile before send; no blind reruns, no runtime activation or production.",
+  "recovery_attempt_id": "owner-gta6-connected-ptbr-pr37-20261010-v1",
+  "recovery_from_run_id": 38094520428,
+  "recovery_reason": "Owner explicit PR 37 run request: replace 18 isolated 1-2-word critical names with 18 connected PT-BR utterances to generate duration-calibrated identity evidence; retain Qwen 1.7B, real ECAPA/ASR gate thresholds and all ledger/Telegram fail-closed protections. No blind side-effect retries. Human approval remains required, no production activation.",
   "human_approval_required": true,
   "production_activated": false,
   "pronunciation_scope": "OWNER_GTA6_CRITICAL_NAMES_ONLY_V1"
