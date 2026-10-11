@@ -12,7 +12,6 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WF = ROOT / ".github" / "workflows"
 VIDEO_WORKFLOWS = [
-    "render-worker.yml",
     "video-a-current-product-e2e.yml",
     "new-video-current-render-resume.yml",
     "new-video-e2e-benchmark.yml",
@@ -191,16 +190,35 @@ def test_video_workflows_share_global_concurrency(name):
     assert c.get("cancel-in-progress") is False, name
 
 
+def test_render_worker_single_global_render_group():
+    # Grupo irmão: o render é disparado pelo orquestrador (br-video-production);
+    # mesmo grupo causaria deadlock.
+    c = _wf("render-worker.yml").get("concurrency") or {}
+    assert c.get("group") == "br-video-production-render"
+    assert c.get("cancel-in-progress") is False
+
+
+@pytest.mark.parametrize("name", ["video-a-current-product-e2e.yml", "new-video-current-render-resume.yml"])
+def test_orchestrators_gate_and_checkpoint_match(name):
+    text = (WF / name).read_text(encoding="utf-8")
+    assert "script_first_gate.py check" in text
+    assert "script_first_gate.py checkpoint" in text
+
+
 def test_render_worker_runs_script_first_gate_first():
     wf = _wf("render-worker.yml")
     on = wf.get("on") or wf.get(True)
     inputs = on["workflow_dispatch"]["inputs"]
     assert inputs["script_id"]["required"] is True
     assert inputs["script_sha256"]["required"] is True
-    job = next(iter(wf["jobs"].values()))
-    runs = [s.get("run", "") for s in job["steps"]]
-    first_python = next(i for i, r in enumerate(runs) if "python" in r)
-    assert "script_first_gate.py" in runs[first_python]
+    jobs = wf["jobs"]
+    first = next(iter(jobs))
+    assert first == "script-first-gate"
+    runs = [s.get("run", "") for s in jobs[first]["steps"]]
+    assert any("script_first_gate.py check" in r for r in runs)
+    for name, job in jobs.items():
+        if name != first:
+            assert job.get("needs") == first, name
 
 
 @pytest.mark.parametrize("name", ["video-a-current-product-e2e.yml", "new-video-current-render-resume.yml"])

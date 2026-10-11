@@ -10,7 +10,8 @@ on:
 
 permissions: {}
 concurrency:
-  group: run001-e2e-canary-${{ github.ref }}
+  # Diretriz do proprietário 11/10/2026: um vídeo por vez no repositório inteiro.
+  group: br-video-production
   cancel-in-progress: false
 
 jobs:

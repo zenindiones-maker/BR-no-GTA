@@ -1,5 +1,23 @@
 from typing import Any
 from copy import deepcopy
+import os
+
+
+def _enforce_script_first_gate(spec: dict[str, Any]) -> None:
+    """Diretriz do proprietário (11/10/2026): sem roteiro aprovado e único, sem render.
+
+    Fail-closed por padrão. Apenas a suíte legada de testes unitários define
+    BR_SCRIPT_FIRST_GATE_ENFORCE=0 (tests/conftest.py); workflows de produção nunca.
+    """
+    if os.environ.get("BR_SCRIPT_FIRST_GATE_ENFORCE", "1") == "0":
+        return
+    from scripts.script_first_gate import ScriptGateError, check
+
+    script_id = spec.get("script_id")
+    script_sha = spec.get("script_sha256")
+    if not script_id or not script_sha:
+        raise ScriptGateError("SCRIPT_SHA256_REQUIRED")
+    check(script_id=str(script_id), script_sha256=str(script_sha))
 
 
 def create_render_job(
@@ -28,6 +46,8 @@ def create_render_job(
         raise ValueError(
             "O video execution spec informado é inválido."
         )
+
+    _enforce_script_first_gate(video_execution_spec)
 
     required_fields = [
         "content_item_id",
@@ -177,6 +197,9 @@ def create_render_job(
     ):
         if field in video_execution_spec:
             render_job[field] = video_execution_spec[field]
+
+    if video_execution_spec.get("script_sha256"):
+        render_job["script_sha256"] = video_execution_spec["script_sha256"]
 
     if video_id is not None:
         render_job["video_id"] = video_id
