@@ -672,7 +672,8 @@ def test_source_only_changes_cannot_request_new_owner_clone():
     workflow=WORKFLOW.read_text(encoding="utf-8")
     assert 'REQUEST_CHANGED=false' in workflow
     assert 'if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then' in workflow
-    assert 'target=".run/br-owner-v1-single-human-clone.request.json"' in workflow
+    assert 'REQUEST_PATH=".run/br-owner-v1-single-human-clone.request.json"' in workflow
+    assert 'git diff --name-only HEAD^ HEAD -- "$REQUEST_PATH"' in workflow
     assert 'if [ "$REQUEST_CHANGED" = true ]' in workflow
 
 
