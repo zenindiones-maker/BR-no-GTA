@@ -25,7 +25,7 @@ on:
       - config/pronunciation_lexicon.json
 
 concurrency:
-  group: br-owner-v1-single-human-clone-ledger
+  group: br-owner-v1-single-human-clone-${{ github.event_name }}
   cancel-in-progress: false
 
 permissions:
