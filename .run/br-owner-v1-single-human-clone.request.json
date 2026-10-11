@@ -4,9 +4,9 @@
   "reference_source": "TELEGRAM_HUMAN_OWNER",
   "one_candidate_only": true,
   "runtime_activation": false,
-  "recovery_attempt_id": "owner-gta6-connected-ptbr-pr37-20261010-v1",
-  "recovery_from_run_id": 38094520428,
-  "recovery_reason": "Owner explicit PR 37 run request: replace 18 isolated 1-2-word critical names with 18 connected PT-BR utterances to generate duration-calibrated identity evidence; retain Qwen 1.7B, real ECAPA/ASR gate thresholds and all ledger/Telegram fail-closed protections. No blind side-effect retries. Human approval remains required, no production activation.",
+  "recovery_attempt_id": "owner-gta6-connected-ptbr-pr37-20261010-v2-concurrency-safe",
+  "recovery_from_run_id": 38101464466,
+  "recovery_reason": "Explicit owner-authorized PR37 Qwen BR_OWNER_V1 acoustic run, following verified RED/GREEN tests; 18 longer natural PTBR phrases for matched-duration ECAPA evaluation, non-bypass identity and content gates, new run only because previous request push 38101464466 was cancelled before any job. Separate concurrency for PR contract vs side-effecting push; auditable ledger required before Telegram. No blind resend, no activation.",
   "human_approval_required": true,
   "production_activated": false,
   "pronunciation_scope": "OWNER_GTA6_CRITICAL_NAMES_ONLY_V1"
