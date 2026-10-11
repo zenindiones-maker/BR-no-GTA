@@ -1085,6 +1085,11 @@ def main()->int:
     print("OWNER_QWEN_REFERENCE_SECONDS="+str(round(reference_seconds,3)))
     print("OWNER_QWEN_REF_TEXT_ALIGNMENT=ASR_OF_EXACT_REFERENCE_AUDIO")
     print("OWNER_QWEN_REF_TEXT_WORDS="+str(len(anchor_ref_text.split())))
+    # Segment-vs-reference identity uses the embedding of the exact audio
+    # handed to Qwen (trimmed window), not the full canonical clip.
+    qwen_reference16=_ffmpeg(canonical24,workspace/"identity-qwen-reference-16k.wav",16000)
+    qwen_reference_embedding=_embedding(classifier,qwen_reference16)
+    print("OWNER_QWEN_REFERENCE_EMBEDDING_SOURCE=EXACT_QWEN_REF_AUDIO")
     print(f"OWNER_IDENTITY_PROMPT_REFERENCE_COUNT={len(identity_prompt_rows)}")
     print("OWNER_IDENTITY_PROMPT_TOTAL_SECONDS="
           +str(round(sum(float(r["duration_seconds"]) for r in identity_prompt_rows),3)))
@@ -1402,7 +1407,7 @@ def main()->int:
             owner_reference_for_identity_measurement,
         )
         reference_embedding,gate_language=owner_reference_for_identity_measurement(
-            canonical_embedding=canonical_embedding,
+            canonical_embedding=qwen_reference_embedding,
             pronunciation_embedding=pronunciation_reference_embedding,
             coherent_anchor_only=coherent_anchor_only,
             language=language,
@@ -1433,10 +1438,16 @@ def main()->int:
     for rid in sorted(inlier_ids):
         window_sims.extend(_segment_window_centroid_similarities(
             classifier,normalized[rid],profile["centroid"],window_seconds))
+    reference_window_sims=[]
+    for rid in sorted(inlier_ids):
+        if rid!=cid:
+            reference_window_sims.extend(_segment_window_centroid_similarities(
+                classifier,normalized[rid],qwen_reference_embedding,window_seconds))
     binding_segment_identity={"passed":False,"segments":[]}
     try:
         segment_calibration=calibrate_segment_identity_threshold(
-            window_sims,window_seconds=window_seconds)
+            window_sims,window_seconds=window_seconds,
+            window_similarities_to_reference=reference_window_sims)
         shadow=evaluate_language_matched_segment_identity_gate(
             profile,segments=segment_identity_rows,segment_calibration=segment_calibration)
         print("OWNER_SEGMENT_DURATION_CALIBRATION="+json.dumps(

@@ -69,6 +69,15 @@ Unchanged: the per-segment reference floor (clone_reference_min_similarity)
 and the whole-audio centroid gate 0.868594, which is also binding. Any other
 threshold change still requires new explicit owner authorization.
 
+OWNER_AUTHORIZED_20261011_SEGMENT_REFERENCE_P10_BINDING: on 11/10/2026 the
+owner (Luiz) explicitly authorized, in chat: (1) per-segment speaker
+similarity "to reference" is measured against the embedding of the exact
+ref_audio given to Qwen (the trimmed owner window), not the full canonical
+clip; (2) the per-segment reference floor is the p10 of his real
+duration-matched (5-7 s) voice windows vs that same embedding (windows from
+the canonical clip itself excluded), and is BINDING. The whole-audio centroid
+gate 0.868594 stays binding and unchanged.
+
 Keep BR_OWNER_V1 single-human voice thresholds untouched; canonical script
 names remain unchanged with controlled spoken "vaicy siti". No recovery push
 may trigger owner fine-tuning. Production begins only after a new, delivered

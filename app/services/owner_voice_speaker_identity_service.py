@@ -200,6 +200,7 @@ def calibrate_segment_identity_threshold(
     window_similarities_to_centroid: Sequence[float],
     *,
     window_seconds: float,
+    window_similarities_to_reference: Sequence[float] | None = None,
 ) -> dict[str,Any]:
     """P10 of REAL owner windows (duration-matched to TTS segments) vs centroid.
 
@@ -213,13 +214,22 @@ def calibrate_segment_identity_threshold(
     values=[float(x) for x in window_similarities_to_centroid]
     if len(values)<SEGMENT_WINDOW_MIN_COUNT or not all(-1.0<=x<=1.0 for x in values):
         raise ValueError("OWNER_SEGMENT_WINDOW_CALIBRATION_INSUFFICIENT")
-    return {
+    out={
         "calibration":"OWNER_DURATION_MATCHED_WINDOW_P10",
         "window_seconds":seconds,
         "window_count":len(values),
         "window_similarity_median":float(median(values)),
         "centroid_min_similarity":float(_quantile(values,0.10)),
     }
+    if window_similarities_to_reference is not None:
+        # OWNER_AUTHORIZED_20261011_SEGMENT_REFERENCE_P10_BINDING
+        refs=[float(x) for x in window_similarities_to_reference]
+        if len(refs)<SEGMENT_WINDOW_MIN_COUNT or not all(-1.0<=x<=1.0 for x in refs):
+            raise ValueError("OWNER_SEGMENT_REFERENCE_WINDOW_CALIBRATION_INSUFFICIENT")
+        out["reference_window_count"]=len(refs)
+        out["reference_window_similarity_median"]=float(median(refs))
+        out["reference_min_similarity"]=float(_quantile(refs,0.10))
+    return out
 
 
 def rank_identity_anchor_candidates(
@@ -298,6 +308,8 @@ def evaluate_language_matched_segment_identity_gate(
         if segment_calibration.get("calibration")!="OWNER_DURATION_MATCHED_WINDOW_P10":
             raise ValueError("OWNER_SEGMENT_CALIBRATION_INVALID")
         centroid_min=float(segment_calibration["centroid_min_similarity"])
+        if "reference_min_similarity" in segment_calibration:
+            reference_min=float(segment_calibration["reference_min_similarity"])
         calibration_name="OWNER_DURATION_MATCHED_WINDOW_P10"
     evidence=[]
     for raw in segments:
