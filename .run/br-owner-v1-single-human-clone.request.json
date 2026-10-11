@@ -4,11 +4,11 @@
   "reference_source": "TELEGRAM_HUMAN_OWNER",
   "one_candidate_only": true,
   "runtime_activation": false,
-  "recovery_attempt_id": "owner-gta6-connected-ptbr-pr37-20261011-v5e-candidate-b-stability",
-  "recovery_from_run_id": 38148278499,
-  "recovery_reason": "Run 38148278499 (candidate A, bounded 18.406 s owner window sim 0.961956) generated all 18 segments without runaway but failed identity: whole-audio 0.861748 < 0.868594; segments 0.690-0.798 vs centroid. Exactly one candidate B stability audition (temp/top_p/top_k 0.55/0.85/30, repetition_penalty 1.1, subtalker 0.55/0.85, fixed seed 515151), same reference. Owner-authorized 11/10/2026: per-segment centroid floor = p10 of owner 5-7 s windows, BINDING; reference floor and whole-audio 0.868594 unchanged and binding. Ledger reconciliation before any send.",
+  "recovery_attempt_id": "owner-gta6-connected-ptbr-pr37-20261011-v5f-candidate-a-calibrated-ref",
+  "recovery_from_run_id": 38150618714,
+  "recovery_reason": "Run 38150618714 (candidate B) failed identity (whole-audio 0.837857; 0/18 segments, all on reference floor 0.793141 measured vs the full 36 s clip). Exactly one candidate A audition (0.7/0.9/50, seed 424242), same 18.406 s owner window. Owner-authorized 11/10/2026: segment-vs-reference uses the exact Qwen ref window embedding; reference floor = p10 of owner 5-7 s windows vs that embedding (binding); centroid p10 binding; whole-audio 0.868594 binding and unchanged. Ledger reconciliation before any send.",
   "human_approval_required": true,
   "production_activated": false,
   "pronunciation_scope": "OWNER_GTA6_CRITICAL_NAMES_ONLY_V1",
-  "sampling_candidate": "B"
+  "sampling_candidate": "A"
 }
