@@ -113,3 +113,39 @@ def choose_composite_windows(
         if best is None or sim>best[1]:
             best=(parts,sim)
     return best
+
+
+NEAR_DUPLICATE_EMBEDDING_SIMILARITY = 0.995
+
+
+def _cos(a: Sequence[float], b: Sequence[float]) -> float:
+    num=sum(float(x)*float(y) for x,y in zip(a,b))
+    da=sum(float(x)**2 for x in a)**0.5
+    db=sum(float(y)**2 for y in b)**0.5
+    return num/(da*db) if da and db else 0.0
+
+
+def dedupe_reference_pool(
+    rows: Sequence[dict], embeddings: dict, similarities: dict, *, min_similarity: float,
+) -> tuple[list[dict], dict[str,int]]:
+    """Owner clips for a multi-clip composite: one per audio content (SHA-256),
+    near-duplicate embeddings (cos > 0.995) dropped, each >= min_similarity."""
+    for r in rows:
+        if not str(r.get("sha256") or ""):
+            raise RuntimeError("OWNER_REFERENCE_SHA256_REQUIRED")
+    ordered=sorted(rows,key=lambda r:-float(similarities.get(str(r["reference_id"]),-1.0)))
+    seen=set();kept=[];exact=near=0
+    for r in ordered:
+        rid=str(r["reference_id"]);sha=str(r["sha256"])
+        if sha in seen:
+            exact+=1
+            continue
+        seen.add(sha)
+        if float(similarities.get(rid,-1.0))<float(min_similarity):
+            continue
+        if any(_cos(embeddings[rid],embeddings[str(k["reference_id"])])>NEAR_DUPLICATE_EMBEDDING_SIMILARITY for k in kept):
+            near+=1
+            continue
+        kept.append(r)
+    return kept,{"candidates":len(rows),"exact_duplicates":exact,
+                 "near_duplicates":near,"distinct_qualifying":len(kept)}

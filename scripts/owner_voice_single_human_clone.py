@@ -1019,9 +1019,12 @@ def main()->int:
         return target
 
     clip_sims=dict(profile["reference_similarity_to_centroid"])
-    composite_clip_rows=sorted(
-        [r for r in identity_verified if float(clip_sims.get(str(r["reference_id"]),-1.0))>=0.90],
-        key=lambda r:-float(clip_sims[str(r["reference_id"])]))[:5]
+    from app.services.owner_voice_reference_window_service import dedupe_reference_pool
+    distinct_rows,dedup_stats=dedupe_reference_pool(
+        identity_verified,embeddings,clip_sims,min_similarity=0.90)
+    print("OWNER_QWEN_COMPOSITE_POOL_DEDUP="+json.dumps(dedup_stats,sort_keys=True,separators=(",",":")))
+    print("OWNER_QWEN_COMPOSITE_DISTINCT_QUALIFYING_CLIPS="+str(dedup_stats["distinct_qualifying"]),flush=True)
+    composite_clip_rows=distinct_rows[:5]
     rows_by_id={str(r["reference_id"]):r for r in composite_clip_rows}
     window_cache={}
     candidates_by_clip={}
@@ -1064,6 +1067,10 @@ def main()->int:
     use_composite=True
     multi_clip_composite=True
     reference_clip_ids={rid for rid,_w in composite_parts}
+    part_shas=[str(rows_by_id[rid]["sha256"]) for rid,_w in composite_parts]
+    print("OWNER_QWEN_COMPOSITE_PARTS_DISTINCT_CONTENT="+str(len(set(part_shas))==len(part_shas)).upper())
+    if len(set(part_shas))!=len(part_shas):
+        raise RuntimeError("OWNER_QWEN_COMPOSITE_DUPLICATE_CONTENT")
     print("OWNER_IDENTITY_PROMPT_MODE=MULTI_CLIP_VAD_WINDOW_COMPOSITE")
     part_sims=dict(((rid,w),sim) for rid,c in candidates_by_clip.items() for w,sim in c)
     print("OWNER_QWEN_COMPOSITE_PARTS="+json.dumps(
