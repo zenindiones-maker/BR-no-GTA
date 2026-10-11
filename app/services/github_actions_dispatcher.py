@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import re
 from dataclasses import dataclass
 from typing import Callable, Sequence
@@ -103,6 +105,13 @@ class GitHubActionsDispatcher:
             raise ValueError(
                 "A referência Git é obrigatória."
             )
+
+        if workflow == "render-worker.yml" and os.environ.get("BR_SCRIPT_FIRST_GATE_ENFORCE", "1") != "0":
+            from scripts.script_first_gate import ScriptGateError
+
+            payload = inputs or {}
+            if not payload.get("script_id") or not payload.get("script_sha256"):
+                raise ScriptGateError("SCRIPT_SHA256_REQUIRED: render-worker exige script_id/script_sha256")
 
         command: list[str] = [
             "gh",

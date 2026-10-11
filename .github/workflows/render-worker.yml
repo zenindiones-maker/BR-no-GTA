@@ -4,6 +4,14 @@ run-name: Render Worker · ${{ inputs.execution_id }}
 on:
   workflow_dispatch:
     inputs:
+      script_id:
+        description: "ID do roteiro aprovado em content/roteiros/<script_id> (diretriz 11/10/2026)"
+        required: true
+        type: string
+      script_sha256:
+        description: "sha256 do roteiro aprovado pelo Luiz; render recusa se divergir"
+        required: true
+        type: string
       render_job:
         description: "RenderJob completo autorizado pelo Harness (#2/#4); use vazio quando render_job_descriptor for usado"
         required: false
@@ -68,8 +76,54 @@ permissions:
   contents: read
   actions: read
 
+# Um render por vez em todo o repositório. Os orquestradores usam o grupo
+# br-video-production; o render (disparado por eles) usa o grupo irmão abaixo
+# para não entrar em deadlock esperando o próprio orquestrador.
+concurrency:
+  group: br-video-production-render
+  cancel-in-progress: false
+  # Docs GitHub: com queue=single um run pendente é cancelado ao chegar outro; max = fila FIFO.
+  queue: max
+
 jobs:
+  script-first-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      PYTHONPATH: .
+    outputs:
+      script_id: ${{ steps.gate.outputs.script_id }}
+      script_sha256: ${{ steps.gate.outputs.script_sha256 }}
+      edl_sha256: ${{ steps.gate.outputs.edl_sha256 }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Script-first gate (roteiro aprovado, único e original)
+        id: gate
+        env:
+          SCRIPT_ID: ${{ inputs.script_id }}
+          SCRIPT_SHA256: ${{ inputs.script_sha256 }}
+        run: |
+          set -euo pipefail
+          python scripts/script_first_gate.py check --script-id "$SCRIPT_ID" --script-sha256 "$SCRIPT_SHA256" --edl-out runtime/script-first/scene-decision-list.json | tee runtime-gate.json
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          d = json.load(open("runtime-gate.json"))
+          print("script_id=" + d["script_id"])
+          print("script_sha256=" + d["script_sha256"])
+          print("edl_sha256=" + d["edl_sha256"])
+          PY
+      - name: Upload scene decision list (content-addressed)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: scene-decision-list-${{ github.run_id }}
+          path: runtime/script-first/scene-decision-list.json
+          if-no-files-found: error
+          retention-days: 30
+
   audiovisual:
+    needs: script-first-gate
     if: inputs.post_branding_artifact_id == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 240
@@ -930,6 +984,7 @@ jobs:
           retention-days: 30
 
   finalize-post-branding:
+    needs: script-first-gate
     if: inputs.post_branding_artifact_id != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 90

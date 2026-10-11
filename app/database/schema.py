@@ -2372,6 +2372,24 @@ def _migrate_openai_agents_dd2(connection) -> None:
             )
 
 
+def _migrate_scripts_script_first_gate(connection) -> None:
+    """Script-first gate (owner directive 11/10/2026): hash + aprovação humana."""
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(scripts)").fetchall()
+    }
+    for column in ("content_sha256", "approved_by", "approved_at"):
+        if column not in columns:
+            connection.execute(f"ALTER TABLE scripts ADD COLUMN {column} TEXT")
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_scripts_content_sha256
+        ON scripts(content_sha256)
+        WHERE content_sha256 IS NOT NULL
+        """
+    )
+
+
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
 
@@ -2396,6 +2414,7 @@ def initialize_schema() -> None:
         _migrate_media_knowledge(connection)
         _migrate_speech_analysis(connection)
         _migrate_gta6_knowledge_source_name(connection)
+        _migrate_scripts_script_first_gate(connection)
         _migrate_gta6_monitor_state(connection)
         _migrate_gta6_monitor_events(connection)
         _migrate_gta6_monitor_runs(connection)

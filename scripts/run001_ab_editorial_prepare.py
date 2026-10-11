@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 
@@ -24,6 +25,9 @@ FROZEN_JOB_ID = 18
 FROZEN_EXECUTION_ID = "run-001-canary-render-18"
 CANARY_JOB_ID = 19
 TARGET_DURATION_SECONDS = 1500.0
+# DEPRECATED 11/10/2026 (diretriz do proprietário: um vídeo por vez, roteiro
+# próprio por vídeo). Mantido só como histórico; main() processa UM goal por
+# execução via --goal-id e nunca itera A e B juntos.
 GOALS = (
     ("A", "93f99ddc-09c7-474b-8849-6981aa78d60c"),
     ("B", "10ea70fb-8255-4f89-a6ce-6d2ffced3982"),
@@ -87,7 +91,12 @@ def _recover_interrupted_targeted_claim(*, label: str, goal_id: str) -> None:
     )
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Prepara o roteiro editorial de UM vídeo.")
+    parser.add_argument("--goal-id", required=True)
+    parser.add_argument("--label", default="")
+    args = parser.parse_args(argv)
+    selected = [(args.label or args.goal_id[:8], args.goal_id)]
     initialize_application()
     frozen = get_render_job(FROZEN_JOB_ID)
     if not frozen or frozen.get("status") != "running":
@@ -99,7 +108,7 @@ def main() -> int:
         raise RuntimeError("Job19 must be completed before A/B editorial preparation")
 
     outputs = []
-    for label, goal_id in GOALS:
+    for label, goal_id in selected:
         _recover_interrupted_targeted_claim(label=label, goal_id=goal_id)
         print(
             json.dumps(

@@ -9,8 +9,11 @@ on:
 
 permissions: {}
 concurrency:
-  group: video-a-current-product-e2e
+  # Diretriz do proprietário 11/10/2026: um vídeo por vez no repositório inteiro.
+  group: br-video-production
   cancel-in-progress: false
+  # Docs GitHub: com queue=single um run pendente é cancelado ao chegar outro; max = fila FIFO.
+  queue: max
 
 jobs:
   deliver:
@@ -23,7 +26,7 @@ jobs:
       PYTHONPATH: .
       GH_TOKEN: ${{ github.token }}
       GITHUB_ACTIONS_REPOSITORY: ${{ github.repository }}
-      GITHUB_ACTIONS_RENDER_REF: work/gate6f-analytics-learning
+      GITHUB_ACTIONS_RENDER_REF: ${{ github.ref_name }}  # render no mesmo branch revisado
       BR_RENDER_EXECUTOR: github_actions
       BR_TEST_DATABASE: ${{ github.workspace }}/runtime/checkpoint/mission.db
       BR_PERFORMANCE_TRACE_FILE: ${{ github.workspace }}/runtime/product-delivery/performance-trace.jsonl
@@ -60,7 +63,26 @@ jobs:
           print("reconcile_upload=" + ("true" if reconcile_upload else "false"))
           print("resume_artifact_id=" + str(d.get("resume_from_e2e_artifact_id") or ""))
           print("resume_run_id=" + str(d.get("resume_from_e2e_run_id") or ""))
+          # DEPRECATED 11/10/2026: IDs fixos de checkpoint saíram do workflow. O
+          # histórico continua em git; agora o request precisa nomeá-los e o
+          # checkpoint precisa carregar o mesmo script_id/script_sha256.
+          for key in ("product_db_artifact_id","product_db_run_id","media_knowledge_artifact_id",
+                      "media_knowledge_run_id","historical_render_artifact_id","historical_render_artifact_run_id"):
+              print(key + "=" + str(d.get(key) or ""))
+          print("script_id=" + str(d.get("script_id") or ""))
+          print("script_sha256=" + str(d.get("script_sha256") or ""))
           PY
+      - name: Script-first gate (roteiro aprovado, único, um vídeo por vez)
+        env:
+          SCRIPT_ID: ${{ steps.recovery_mode.outputs.script_id }}
+          SCRIPT_SHA256: ${{ steps.recovery_mode.outputs.script_sha256 }}
+        run: |
+          set -euo pipefail
+          python scripts/script_first_gate.py check --script-id "$SCRIPT_ID" --script-sha256 "$SCRIPT_SHA256"
+          python scripts/script_first_gate.py start --script-id "$SCRIPT_ID" --script-sha256 "$SCRIPT_SHA256"
+          # Dispatchers do render-worker leem a identidade do roteiro daqui.
+          echo "SCRIPT_ID=$SCRIPT_ID" >> "$GITHUB_ENV"
+          echo "SCRIPT_SHA256=$SCRIPT_SHA256" >> "$GITHUB_ENV"
       - name: Restore existing Job2 E2E checkpoint
         if: steps.recovery_mode.outputs.resume == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -74,8 +96,8 @@ jobs:
         if: steps.recovery_mode.outputs.resume != 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          artifact-ids: "10589535732"
-          run-id: "35458162169"
+          artifact-ids: ${{ steps.recovery_mode.outputs.product_db_artifact_id }}  # legacy: 10589535732
+          run-id: ${{ steps.recovery_mode.outputs.product_db_run_id }}  # legacy: 35458162169
           github-token: ${{ github.token }}
           path: runtime/checkpoint
           merge-multiple: true
@@ -83,8 +105,8 @@ jobs:
         if: steps.recovery_mode.outputs.resume != 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          artifact-ids: "10590341059"
-          run-id: "35460016361"
+          artifact-ids: ${{ steps.recovery_mode.outputs.media_knowledge_artifact_id }}  # legacy: 10590341059
+          run-id: ${{ steps.recovery_mode.outputs.media_knowledge_run_id }}  # legacy: 35460016361
           github-token: ${{ github.token }}
           path: runtime/media-knowledge-source
           merge-multiple: true
@@ -92,15 +114,19 @@ jobs:
         if: steps.recovery_mode.outputs.resume != 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          artifact-ids: "10590247951"
-          run-id: "35463603082"
+          artifact-ids: ${{ steps.recovery_mode.outputs.historical_render_artifact_id }}  # legacy: 10590247951
+          run-id: ${{ steps.recovery_mode.outputs.historical_render_artifact_run_id }}  # legacy: 35463603082
           github-token: ${{ github.token }}
           path: runtime/historical
           merge-multiple: true
       - name: Reuse Product Package and MediaKnowledge preflight
         if: steps.recovery_mode.outputs.resume != 'true'
+        env:
+          SCRIPT_ID: ${{ steps.recovery_mode.outputs.script_id }}
+          SCRIPT_SHA256: ${{ steps.recovery_mode.outputs.script_sha256 }}
         run: |
           set -euo pipefail
+          python scripts/script_first_gate.py checkpoint --checkpoint runtime/checkpoint/product-quality-e2e.json --script-id "$SCRIPT_ID" --script-sha256 "$SCRIPT_SHA256"
           python scripts/continue_product_to_human_review.py preflight             --product runtime/checkpoint/product-quality-e2e.json             --media-knowledge-dir runtime/media-knowledge-source/product-delivery/media-knowledge             --media-descriptor .run001/media-knowledge-checkpoints/gta6-extended-look-official-20260827.json             --out runtime/product-delivery
           echo "CHECKPOINT_REUSE=YES"
           echo "RESEARCH_RECOMPUTED=NO"
@@ -247,6 +273,7 @@ jobs:
           set -euo pipefail
           python scripts/continue_product_to_human_review.py reconcile-upload --publication-id "$PUBLICATION_ID" --out runtime/product-delivery
           python scripts/continue_product_to_human_review.py final --publication-id "$PUBLICATION_ID" --out runtime/product-delivery
+          python scripts/script_first_gate.py deliver --script-id "$SCRIPT_ID" --script-sha256 "$SCRIPT_SHA256" --delivery-json runtime/product-delivery/final.json
           python - <<'PY'
           import json
           from pathlib import Path
@@ -298,5 +325,7 @@ jobs:
             runtime/checkpoint/product-quality-e2e.json
             runtime/checkpoint/mission.db
             runtime/youtube-upload/results/
+            content/roteiros/
+            content/videos/
           if-no-files-found: warn
           retention-days: 30

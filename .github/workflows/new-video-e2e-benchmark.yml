@@ -10,8 +10,11 @@ on:
 
 permissions: {}
 concurrency:
-  group: new-video-e2e-benchmark-novo-1
+  # Diretriz do proprietário 11/10/2026: um vídeo por vez no repositório inteiro.
+  group: br-video-production
   cancel-in-progress: false
+  # Docs GitHub: com queue=single um run pendente é cancelado ao chegar outro; max = fila FIFO.
+  queue: max
 
 jobs:
   benchmark:
@@ -24,7 +27,7 @@ jobs:
       PYTHONPATH: .
       GH_TOKEN: ${{ github.token }}
       GITHUB_ACTIONS_REPOSITORY: ${{ github.repository }}
-      GITHUB_ACTIONS_RENDER_REF: work/gate6f-analytics-learning
+      GITHUB_ACTIONS_RENDER_REF: ${{ github.ref_name }}  # render no mesmo branch revisado
       BR_RENDER_EXECUTOR: github_actions
       BR_TEST_DATABASE: ${{ github.workspace }}/runtime/new-video-benchmark/mission.db
       BR_PERFORMANCE_TRACE_FILE: ${{ github.workspace }}/runtime/new-video-benchmark/performance-trace.jsonl

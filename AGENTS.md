@@ -246,3 +246,27 @@ cotas gratuitas, separação A15/infraestrutura remota, exigência de um único
 `BR_OWNER_V1`, aprovação acústica humana, render 20–25 minutos ou aprovação
 privada de publicação. Não misturar Hazewave ou qualquer outro repositório no
 escopo deste documento.
+
+## Script-first, um vídeo por vez (diretriz do proprietário Luiz, 11/10/2026)
+
+Ordem do proprietário: **um vídeo por vez**; cada vídeo tem **roteiro próprio e
+distinto**; vídeo só é criado a partir de roteiro produzido pelo agente editorial
+(GTA6 Master Agent / `br_editorial_process_next`) e aprovado pelo Luiz. Só conteúdo
+oficial de GTA VI (Rockstar/Take-Two); nada de vazamento ou especulação.
+
+- Fonte única dos roteiros: `content/roteiros/<script_id>/` (ver README lá).
+- `scripts/script_first_gate.py` é obrigatório antes de qualquer render
+  (`render-worker.yml` job `script-first-gate`, `render_job_service.create_render_job`,
+  e os orquestradores). Recusa sem `script_id` + `script_sha256`, sem aprovação do
+  Luiz sobre o mesmo hash, sem fonte oficial, com outro roteiro `em_producao`, ou
+  com duplicação/reuso > 5% de 8-gramas contra roteiros anteriores.
+- Concorrência global: orquestradores no grupo `br-video-production`, render no
+  grupo `br-video-production-render`, ambos `cancel-in-progress: false`.
+- Proibido gerar "vídeo B" duplicando cenas/roteiro do A, ou iterar A/B no mesmo
+  processo. Checkpoints de retomada precisam do mesmo `script_id`/`script_sha256`.
+- IDs fixos de checkpoint em workflows estão depreciados; o request nomeia o checkpoint.
+- O vídeo segue o roteiro aprovado **cena por cena** (ordem, narração, visual); o
+  render recusa divergência. Dispatchers do `render-worker` passam `script_id` /
+  `script_sha256` (via `render_dispatch_inputs()`); o dispatcher recusa sem eles.
+- Filas de vídeo usam `queue: max` (FIFO) para nenhum run pendente ser cancelado.
+- Não desligar `BR_SCRIPT_FIRST_GATE_ENFORCE` fora da suíte legada de testes.
