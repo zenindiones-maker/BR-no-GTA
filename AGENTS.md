@@ -60,6 +60,15 @@ The audited Munder upstream must use ephemeral proxy-addr 2.0.8 and must not
 run as an authorized runtime while newly discovered high-severity advisories
 remain unresolved. Never add vulnerabilities to an allowlist to silence CI.
 
+OWNER_AUTHORIZED_20261011_SEGMENT_GATE_P10_BINDING: on 11/10/2026 the owner
+(Luiz) explicitly authorized, in chat, one policy change: the BR_OWNER_V1
+per-segment identity gate's centroid floor is the p10 of his real
+duration-matched (5-7 s) voice windows vs the owner centroid, recomputed per
+run from consented Telegram references, and is BINDING (no longer shadow).
+Unchanged: the per-segment reference floor (clone_reference_min_similarity)
+and the whole-audio centroid gate 0.868594, which is also binding. Any other
+threshold change still requires new explicit owner authorization.
+
 Keep BR_OWNER_V1 single-human voice thresholds untouched; canonical script
 names remain unchanged with controlled spoken "vaicy siti". No recovery push
 may trigger owner fine-tuning. Production begins only after a new, delivered

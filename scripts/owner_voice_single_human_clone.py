@@ -1097,7 +1097,8 @@ def main()->int:
 
     pronunciation_prompt_audio=None
     human_review_reference=canonical
-    qwen_reference_audio_lineage="OWNER_TOP_CENTROID_COMPOSITE_LOUDNORM_24K"
+    qwen_reference_audio_lineage=("OWNER_TOP_CENTROID_COMPOSITE_LOUDNORM_24K" if use_composite
+        else "OWNER_SINGLE_CANONICAL_VAD_WINDOW_LOUDNORM_24K")
     pronunciation24_by_input_id={}
     if pronunciation_canonical is not None:
         pronunciation24s=[]
@@ -1329,10 +1330,11 @@ def main()->int:
     # long multi-segment generation call, and keep each output as a private
     # scratch checkpoint; never reuse older rejected audition segments.
     from app.services.owner_voice_serial_generation_v11 import (
-        CANDIDATE_A_BASE_SEED,
-        CANDIDATE_A_SAMPLING,
         generate_one_private_audition,
+        sampling_for_candidate,
     )
+    sampling_candidate=str(request_payload.get("sampling_candidate") or "A")
+    candidate_sampling,candidate_seed=sampling_for_candidate(sampling_candidate)
     import random as _random
 
     def _set_generation_seed(seed:int)->None:
@@ -1340,8 +1342,8 @@ def main()->int:
         np.random.seed(seed)
         torch.manual_seed(seed)
 
-    print("OWNER_QWEN_SAMPLING_CANDIDATE=A "+json.dumps(CANDIDATE_A_SAMPLING,sort_keys=True,separators=(",",":")))
-    print(f"OWNER_QWEN_BASE_SEED={CANDIDATE_A_BASE_SEED}")
+    print("OWNER_QWEN_SAMPLING_CANDIDATE="+sampling_candidate+" "+json.dumps(candidate_sampling,sort_keys=True,separators=(",",":")))
+    print(f"OWNER_QWEN_BASE_SEED={candidate_seed}")
 
     print(f"OWNER_PERF_STAGE_DONE=owner_prompt_build elapsed_seconds={time.monotonic()-prompt_t0:.3f}",flush=True)
     print("OWNER_PERF_STAGE_START=qwen_segment_generation",flush=True)
@@ -1352,9 +1354,9 @@ def main()->int:
         segment_languages=segment_languages,
         segment_prompts=segment_prompts,
         workspace=workspace,
-        sampling_kwargs=CANDIDATE_A_SAMPLING,
+        sampling_kwargs=candidate_sampling,
         seed_setter=_set_generation_seed,
-        base_seed=CANDIDATE_A_BASE_SEED,
+        base_seed=candidate_seed,
     )
     print(f"OWNER_PERF_STAGE_DONE=qwen_segment_generation elapsed_seconds={generation_seconds:.3f}",flush=True)
     if len(wavs)!=len(segment_texts) or int(sample_rate)<=0:
@@ -1422,14 +1424,16 @@ def main()->int:
             "OWNER_CLONE_SEGMENT_IDENTITY="
             +json.dumps(row,sort_keys=True,separators=(",",":"))
         )
-    # Duration-matched calibration is SHADOW/diagnostic only: AGENTS.md keeps
-    # BR_OWNER_V1 thresholds untouched; the binding gate above is unchanged.
+    # OWNER_AUTHORIZED_20261011_SEGMENT_GATE_P10_BINDING (see AGENTS.md):
+    # per-segment centroid floor = p10 of the owner's real duration-matched
+    # (5-7 s) windows vs centroid. Reference floor and whole-audio gate unchanged.
     segment_seconds=[float(len(w))/float(sample_rate) for w in wavs]
     window_seconds=min(7.0,max(5.0,float(np.median(segment_seconds))))
     window_sims=[]
     for rid in sorted(inlier_ids):
         window_sims.extend(_segment_window_centroid_similarities(
             classifier,normalized[rid],profile["centroid"],window_seconds))
+    binding_segment_identity={"passed":False,"segments":[]}
     try:
         segment_calibration=calibrate_segment_identity_threshold(
             window_sims,window_seconds=window_seconds)
@@ -1438,13 +1442,23 @@ def main()->int:
         print("OWNER_SEGMENT_DURATION_CALIBRATION="+json.dumps(
             {k:(round(v,6) if isinstance(v,float) else v) for k,v in segment_calibration.items()},
             sort_keys=True,separators=(",",":")))
-        print("OWNER_SEGMENT_DURATION_CALIBRATED_SHADOW_PASS_COUNT="
+        binding_segment_identity=shadow
+        for r in shadow["segments"]:
+            reasons=[]
+            if r["similarity_to_centroid"]<r["centroid_min_similarity"]:
+                reasons.append("CENTROID")
+            if r["similarity_to_language_reference"]<r["reference_min_similarity"]:
+                reasons.append("REFERENCE")
+            print(f"OWNER_SEGMENT_CALIBRATED_GATE_ROW={r['position']} passed={r['passed']} fail_reasons={','.join(reasons) or 'NONE'}")
+        print("OWNER_SEGMENT_DURATION_CALIBRATED_PASS_COUNT="
               +str(sum(1 for r in shadow["segments"] if r["passed"]))+"/"+str(len(shadow["segments"])))
-        print("OWNER_SEGMENT_DURATION_CALIBRATED_SHADOW_GATE="+("PASS" if shadow["passed"] else "FAIL"))
+        print("OWNER_SEGMENT_DURATION_CALIBRATED_GATE="+("PASS" if shadow["passed"] else "FAIL"))
     except ValueError as exc:
         print("OWNER_SEGMENT_DURATION_CALIBRATION=UNAVAILABLE "+str(exc))
-    print("OWNER_SEGMENT_DURATION_CALIBRATION_MODE=SHADOW_NOT_BINDING")
-    identity_gate="PASS" if segmented_identity["passed"] is True else "FAIL"
+    print("OWNER_SEGMENT_DURATION_CALIBRATION_MODE=BINDING_OWNER_AUTHORIZED_20261011")
+    print("OWNER_LEGACY_UNCALIBRATED_SEGMENT_GATE="+("PASS" if segmented_identity["passed"] else "FAIL")+" (diagnostic)")
+    print("OWNER_WHOLE_AUDIO_IDENTITY_GATE="+("PASS" if global_identity["passed"] else "FAIL"))
+    identity_gate="PASS" if (binding_segment_identity["passed"] is True and global_identity["passed"] is True) else "FAIL"
     print("CLONE_IDENTITY_GATE="+identity_gate)
     print("QWEN3_TTS_IDENTITY_MATCH="+identity_gate)
 

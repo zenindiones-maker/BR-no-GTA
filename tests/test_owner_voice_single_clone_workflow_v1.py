@@ -51,7 +51,7 @@ def test_single_clone_runtime_has_real_identity_profile_and_no_placeholder_simil
     assert "x_vector_only_mode=False" in source
     assert "segment_languages=segment_languages" in source
     assert "TRANSCRIPT_CONDITIONED_ICL" in source
-    assert 'identity_gate="PASS" if segmented_identity["passed"] is True else "FAIL"' in source
+    assert 'identity_gate="PASS" if (binding_segment_identity["passed"] is True and global_identity["passed"] is True) else "FAIL"' in source  # owner-authorized 20261011
     assert 'print("CLONE_IDENTITY_GATE="+identity_gate)' in source
     assert 'print("QWEN3_TTS_IDENTITY_MATCH="+identity_gate)' in source
     assert "Chatterbox" not in source
@@ -558,7 +558,7 @@ def test_multilingual_identity_gate_is_language_matched_not_whole_clone_cross_li
     assert "LANGUAGE_MATCHED_OWNER_REFERENCE_P10" in Path(
         "app/services/owner_voice_speaker_identity_service.py"
     ).read_text(encoding="utf-8")
-    assert 'identity_gate="PASS" if segmented_identity["passed"] is True else "FAIL"' in source
+    assert 'identity_gate="PASS" if (binding_segment_identity["passed"] is True and global_identity["passed"] is True) else "FAIL"' in source  # owner-authorized 20261011
     assert "OWNER_CLONE_GLOBAL_IDENTITY_DIAGNOSTIC=" in source
     assert "OWNER_CLONE_SEGMENT_IDENTITY=" in source
 
