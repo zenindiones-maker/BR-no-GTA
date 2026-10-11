@@ -229,9 +229,15 @@ jobs:
             exit 1
           fi
           if [ "$CRITICAL_SCOPE" = true ]; then
-            test "$CRITICAL_DELIVERY_RESULT" = success || exit 1
+            if [ "$CRITICAL_DELIVERY_RESULT" != success ]; then
+              echo "MISSION_FAILED_CRITICAL_DELIVERY"
+              exit 1
+            fi
           elif [ "$CRITICAL_SCOPE" = false ]; then
-            test "$REFERENCE_DELIVERY_RESULT" = success || exit 1
+            if [ "$REFERENCE_DELIVERY_RESULT" != success ]; then
+              echo "MISSION_FAILED_REFERENCE_DELIVERY"
+              exit 1
+            fi
           else
             exit 1
           fi
