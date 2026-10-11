@@ -95,8 +95,11 @@ def test_single_clone_audio_decode_does_not_depend_on_torchcodec():
 
 def test_qwen_reference_preserves_original_telegram_bandwidth_before_24k_clone_prompt():
     source=ORCHESTRATOR.read_text(encoding="utf-8")
-    assert "original_sources[cid]" in source
-    assert "ORIGINAL_TELEGRAM_TO_24K_DIRECT" in source
+    # Identity prompt clips are loudness-normalized from the ORIGINAL Telegram
+    # source straight to 24 kHz (never upsampled from the 16 kHz ECAPA copy).
+    assert 'original_sources[str(r["reference_id"])]' in source
+    assert "OWNER_TOP_CENTROID_COMPOSITE_LOUDNORM_24K" in source
+    assert "loudnorm=I=-20" in source
     assert '_ffmpeg(canonical16,workspace/"canonical-owner-reference-24k.wav",24000)' not in source
 
 

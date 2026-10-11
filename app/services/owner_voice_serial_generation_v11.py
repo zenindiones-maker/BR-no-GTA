@@ -21,6 +21,14 @@ SCHEMA = "BROwnerVoicePrivateSegmentCheckpoint/v1"
 MAX_SEGMENTS = 64
 MAX_SEGMENT_SECONDS = 90.0
 MAX_SEGMENT_TEXT_CHARS = 800
+# Candidate A (reference fidelity): lower-entropy sampling than the pinned
+# generation_config defaults (temperature 0.9, top_p 1.0) for both stages.
+CANDIDATE_A_SAMPLING = {
+    "do_sample": True, "temperature": 0.7, "top_p": 0.9, "top_k": 50,
+    "subtalker_dosample": True, "subtalker_temperature": 0.7,
+    "subtalker_top_p": 0.9, "subtalker_top_k": 50,
+}
+CANDIDATE_A_BASE_SEED = 424242
 
 
 def _digest(value: bytes) -> str:
@@ -74,6 +82,9 @@ def generate_one_private_audition(
     segment_languages: list[str],
     segment_prompts: list[Any],
     workspace: Path,
+    sampling_kwargs: dict[str,Any] | None = None,
+    seed_setter: Callable[[int],Any] | None = None,
+    base_seed: int | None = None,
 ) -> tuple[list[Any],int,float,tuple[dict,...]]:
     """Produce one candidate from one prompt-conditioned synthesis per segment."""
     if not (isinstance(workspace,Path) and workspace.is_absolute()
@@ -106,8 +117,11 @@ def generate_one_private_audition(
     ):
         t0=time.monotonic()
         print(f"OWNER_QWEN_SERIAL_SEGMENT_START={ordinal}/{len(segment_texts)}",flush=True)
+        if seed_setter is not None and base_seed is not None:
+            seed_setter(int(base_seed)+ordinal-1)
         generated,sample_rate=heartbeat(
             generate,
+            **dict(sampling_kwargs or {}),
             text=[spoken],
             language=[language],
             voice_clone_prompt=[prompt],
