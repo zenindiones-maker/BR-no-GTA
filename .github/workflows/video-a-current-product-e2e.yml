@@ -12,6 +12,8 @@ concurrency:
   # Diretriz do proprietário 11/10/2026: um vídeo por vez no repositório inteiro.
   group: br-video-production
   cancel-in-progress: false
+  # Docs GitHub: com queue=single um run pendente é cancelado ao chegar outro; max = fila FIFO.
+  queue: max
 
 jobs:
   deliver:
@@ -77,6 +79,10 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/script_first_gate.py check --script-id "$SCRIPT_ID" --script-sha256 "$SCRIPT_SHA256"
+          python scripts/script_first_gate.py start --script-id "$SCRIPT_ID" --script-sha256 "$SCRIPT_SHA256"
+          # Dispatchers do render-worker leem a identidade do roteiro daqui.
+          echo "SCRIPT_ID=$SCRIPT_ID" >> "$GITHUB_ENV"
+          echo "SCRIPT_SHA256=$SCRIPT_SHA256" >> "$GITHUB_ENV"
       - name: Restore existing Job2 E2E checkpoint
         if: steps.recovery_mode.outputs.resume == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -267,6 +273,7 @@ jobs:
           set -euo pipefail
           python scripts/continue_product_to_human_review.py reconcile-upload --publication-id "$PUBLICATION_ID" --out runtime/product-delivery
           python scripts/continue_product_to_human_review.py final --publication-id "$PUBLICATION_ID" --out runtime/product-delivery
+          python scripts/script_first_gate.py deliver --script-id "$SCRIPT_ID" --script-sha256 "$SCRIPT_SHA256" --delivery-json runtime/product-delivery/final.json
           python - <<'PY'
           import json
           from pathlib import Path
@@ -318,5 +325,7 @@ jobs:
             runtime/checkpoint/product-quality-e2e.json
             runtime/checkpoint/mission.db
             runtime/youtube-upload/results/
+            content/roteiros/
+            content/videos/
           if-no-files-found: warn
           retention-days: 30

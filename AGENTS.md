@@ -265,4 +265,8 @@ oficial de GTA VI (Rockstar/Take-Two); nada de vazamento ou especulação.
 - Proibido gerar "vídeo B" duplicando cenas/roteiro do A, ou iterar A/B no mesmo
   processo. Checkpoints de retomada precisam do mesmo `script_id`/`script_sha256`.
 - IDs fixos de checkpoint em workflows estão depreciados; o request nomeia o checkpoint.
+- O vídeo segue o roteiro aprovado **cena por cena** (ordem, narração, visual); o
+  render recusa divergência. Dispatchers do `render-worker` passam `script_id` /
+  `script_sha256` (via `render_dispatch_inputs()`); o dispatcher recusa sem eles.
+- Filas de vídeo usam `queue: max` (FIFO) para nenhum run pendente ser cancelado.
 - Não desligar `BR_SCRIPT_FIRST_GATE_ENFORCE` fora da suíte legada de testes.

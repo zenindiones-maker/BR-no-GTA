@@ -8,7 +8,7 @@ on:
     paths:
       - "scripts/script_first_gate.py"
       - "content/roteiros/**"
-      - "tests/test_script_first_single_video.py"
+      - "tests/test_script_first_*.py"
   workflow_dispatch:
 
 permissions:
@@ -37,7 +37,8 @@ jobs:
       - name: Script-first tests + regression on touched modules
         run: |
           set -euo pipefail
-          python -m pytest -q tests/test_script_first_single_video.py \
+          python -m pytest -q tests/test_script_first_single_video.py tests/test_script_first_scene_lineage.py \
+            tests/test_owner_voice_dubbing_reference_policy.py tests/test_github_actions_dispatcher.py \
             tests/test_render_job_service.py tests/test_render_orchestration_service.py \
             tests/test_app_edit_plan_transport.py tests/test_render_worker_pipeline.py \
             tests/test_render_pipeline_fake_executor.py tests/test_telegram_brand_render_pipeline.py

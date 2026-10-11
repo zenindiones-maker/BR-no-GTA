@@ -39,10 +39,12 @@ def test_database(tmp_path, monkeypatch, initialized_database_template):
 
 
 @pytest.fixture(autouse=True)
-def _legacy_script_first_gate_off(monkeypatch):
+def _legacy_script_first_gate_off(monkeypatch, tmp_path):
     """Legacy unit fixtures predate the script-first gate (11/10/2026).
 
     Production code is fail-closed; gate behaviour is covered explicitly in
     tests/test_script_first_single_video.py which re-enables enforcement.
     """
     monkeypatch.setenv("BR_SCRIPT_FIRST_GATE_ENFORCE", "0")
+    # Nunca gravar roteiros de teste em content/roteiros do repositório.
+    monkeypatch.setenv("BR_ROTEIROS_ROOT", str(tmp_path / "roteiros-test"))

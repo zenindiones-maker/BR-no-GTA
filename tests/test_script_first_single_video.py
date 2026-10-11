@@ -50,6 +50,9 @@ def _write(root, script_id, text, status="aprovado_humano", approve=True, source
         "status": status,
         "author_agent": "GTA6 Master Agent",
         "sha256": sha or digest,
+        "scenes": [{"order": 1, "narrative_block": "unico", "visual_type": "official",
+                    "visual_description": "material oficial", "narration": text,
+                    "duration_seconds": 10.0}],
         "sources": sources if sources is not None else [
             {"url": "https://www.rockstargames.com/VI", "kind": "official"}],
         "approval": {"approved_by": "Luiz", "approved_at": "2026-10-11T14:00:00-03:00",

@@ -55,7 +55,7 @@ def enforced(tmp_path, monkeypatch):
 def _spec(sid, sha, scenes):
     return {"content_item_id": 1, "script_id": sid, "script_sha256": sha, "idea_id": 1,
             "objective": "x", "format": "longform", "estimated_duration_seconds": 17,
-            "scenes": [dict(s) for s in scenes], "audio_requirements": [],
+            "scenes": [dict(s, execution_requirements=[]) for s in scenes], "audio_requirements": [],
             "visual_requirements": [], "render": RENDER}
 
 
@@ -195,3 +195,46 @@ def test_harness_editorial_calls_writer():
     src = (ROOT / "app/integrations/deepseek_harness/server.py").read_text(encoding="utf-8")
     body = src.split("def br_editorial_process_next(")[1].split("\ndef ")[0]
     assert "write_editorial_script(" in body
+
+
+# --- Boas práticas pesquisadas (docs GitHub Actions concurrency/queue; OTIO/EDL) ---
+
+@pytest.mark.parametrize("name", [
+    "render-worker.yml", "video-a-current-product-e2e.yml", "new-video-current-render-resume.yml",
+    "new-video-e2e-benchmark.yml", "run001-e2e-canary.yml"])
+def test_video_concurrency_queues_fifo_instead_of_cancelling_pending(name):
+    # Docs: com queue=single (padrão) um run pendente é CANCELADO quando outro entra.
+    import yaml
+    c = yaml.safe_load((ROOT / ".github/workflows" / name).read_text(encoding="utf-8"))["concurrency"]
+    assert c.get("queue") == "max", name
+    assert c.get("cancel-in-progress") is False
+
+
+def test_scene_decision_list_is_content_addressed_timeline():
+    g = _g()
+    edl = g.scene_decision_list("ep-001", "a" * 64, SCENES, fps=30)
+    assert edl["schema"] == "br-scene-decision-list/v1" and edl["fps"] == 30
+    ev = edl["events"]
+    assert [e["order"] for e in ev] == [1, 2]
+    assert ev[0]["record_in_frame"] == 0 and ev[0]["record_out_frame"] == 240
+    assert ev[1]["record_in_frame"] == 240 and ev[1]["record_out_frame"] == 510
+    assert ev[0]["narration_sha256"] == g.script_sha256(SCENES[0]["narration"])
+    again = g.scene_decision_list("ep-001", "a" * 64, SCENES, fps=30)
+    assert again["edl_sha256"] == edl["edl_sha256"]
+
+
+def test_render_job_carries_edl_hash(enforced):
+    from app.services.render_job_service import create_render_job
+    sha = _write(enforced)
+    job = create_render_job(_spec("ep-001", sha, SCENES))
+    assert len(job["scene_decision_list_sha256"]) == 64
+    assert [s["narration_sha256"] for s in job["scenes"]] == [
+        _g().script_sha256(s["narration"]) for s in SCENES]
+
+
+def test_render_worker_gate_exposes_job_outputs_and_edl_artifact():
+    import yaml
+    wf = yaml.safe_load((ROOT / ".github/workflows/render-worker.yml").read_text(encoding="utf-8"))
+    gate = wf["jobs"]["script-first-gate"]
+    assert set(gate["outputs"]) >= {"script_id", "script_sha256", "edl_sha256"}
+    assert any("upload-artifact" in str(s.get("uses", "")) for s in gate["steps"])

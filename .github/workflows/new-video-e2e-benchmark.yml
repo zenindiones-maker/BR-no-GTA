@@ -13,6 +13,8 @@ concurrency:
   # Diretriz do proprietário 11/10/2026: um vídeo por vez no repositório inteiro.
   group: br-video-production
   cancel-in-progress: false
+  # Docs GitHub: com queue=single um run pendente é cancelado ao chegar outro; max = fila FIFO.
+  queue: max
 
 jobs:
   benchmark:

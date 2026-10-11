@@ -375,6 +375,19 @@ def br_editorial_process_next(
         }
     else:
         result = dict(result)
+        # Script-first (Luiz, 11/10/2026): todo roteiro do agente editorial vira
+        # content/roteiros/<script_id> em editorial_ok, com sha256 também no DB.
+        # Aprovação (aprovado_humano) continua exclusiva do Luiz.
+        if (result.get("production_plan") or {}).get("scenes"):
+            from scripts.script_first_gate import write_editorial_script
+
+            roteiro = write_editorial_script(result, goal_id=goal_id)
+            result["roteiro"] = {
+                "script_id": roteiro["script_id"],
+                "sha256": roteiro["sha256"],
+                "status": roteiro["status"],
+                "path": f"content/roteiros/{roteiro['script_id']}",
+            }
 
     result["harness_routing"] = {
         "decision": routing.to_dict(),

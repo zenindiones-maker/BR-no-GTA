@@ -12,6 +12,8 @@ concurrency:
   # Diretriz do proprietário 11/10/2026: um vídeo por vez no repositório inteiro.
   group: br-video-production
   cancel-in-progress: false
+  # Docs GitHub: com queue=single um run pendente é cancelado ao chegar outro; max = fila FIFO.
+  queue: max
 
 jobs:
   resume:
@@ -68,6 +70,10 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/script_first_gate.py check --script-id "$SCRIPT_ID" --script-sha256 "$SCRIPT_SHA256"
+          python scripts/script_first_gate.py start --script-id "$SCRIPT_ID" --script-sha256 "$SCRIPT_SHA256"
+          # Dispatchers do render-worker leem a identidade do roteiro daqui.
+          echo "SCRIPT_ID=$SCRIPT_ID" >> "$GITHUB_ENV"
+          echo "SCRIPT_SHA256=$SCRIPT_SHA256" >> "$GITHUB_ENV"
 
       - name: Restore existing Video/RenderJob control checkpoint
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -207,6 +213,7 @@ jobs:
           print(f"TELEGRAM_MESSAGE_ID={d['TELEGRAM_MESSAGE_ID']}")
           print("HUMAN_REVIEW_STATUS=PENDING")
           PY
+          python scripts/script_first_gate.py deliver --script-id "$SCRIPT_ID" --script-sha256 "$SCRIPT_SHA256" --delivery-json runtime/new-video-benchmark/delivery/final.json
 
       - name: Upload resume evidence
         if: always()
@@ -217,5 +224,7 @@ jobs:
             runtime/new-video-benchmark/delivery/
             runtime/new-video-benchmark/mission.db
             runtime/youtube-upload/results/
+            content/roteiros/
+            content/videos/
           if-no-files-found: warn
           retention-days: 30
