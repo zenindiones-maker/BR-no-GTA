@@ -4,10 +4,11 @@
   "reference_source": "TELEGRAM_HUMAN_OWNER",
   "one_candidate_only": true,
   "runtime_activation": false,
-  "recovery_attempt_id": "owner-gta6-connected-ptbr-pr37-20261011-v5d-candidate-a-fidelity",
-  "recovery_from_run_id": 38147026694,
-  "recovery_reason": "Run 38147026694 failed closed: segment 3 runaway (24.24 s > 20.25 s limit, hit max_new_tokens 304) with a single 36.014 s canonical owner ref (sim 0.97429) above the 30 s composite bound. Exactly one candidate A re-audition with Qwen ref_audio bounded: best VAD-bounded 10-20 s window of the canonical clip (ECAPA sim to centroid re-verified >=0.90) or 20-30 s composite; ref_text = faster-whisper ASR of exactly that audio. Same sampling/seed; thresholds unchanged; ledger reconciliation before any send.",
+  "recovery_attempt_id": "owner-gta6-connected-ptbr-pr37-20261011-v5e-candidate-b-stability",
+  "recovery_from_run_id": 38148278499,
+  "recovery_reason": "Run 38148278499 (candidate A, bounded 18.406 s owner window sim 0.961956) generated all 18 segments without runaway but failed identity: whole-audio 0.861748 < 0.868594; segments 0.690-0.798 vs centroid. Exactly one candidate B stability audition (temp/top_p/top_k 0.55/0.85/30, repetition_penalty 1.1, subtalker 0.55/0.85, fixed seed 515151), same reference. Owner-authorized 11/10/2026: per-segment centroid floor = p10 of owner 5-7 s windows, BINDING; reference floor and whole-audio 0.868594 unchanged and binding. Ledger reconciliation before any send.",
   "human_approval_required": true,
   "production_activated": false,
-  "pronunciation_scope": "OWNER_GTA6_CRITICAL_NAMES_ONLY_V1"
+  "pronunciation_scope": "OWNER_GTA6_CRITICAL_NAMES_ONLY_V1",
+  "sampling_candidate": "B"
 }
