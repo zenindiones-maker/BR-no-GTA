@@ -4,9 +4,9 @@
   "reference_source": "TELEGRAM_HUMAN_OWNER",
   "one_candidate_only": true,
   "runtime_activation": false,
-  "recovery_attempt_id": "owner-gta6-connected-ptbr-pr37-20261011-v5-candidate-a-fidelity",
-  "recovery_from_run_id": 38101681132,
-  "recovery_reason": "Run 38101681132 failed SPEAKER_SIMILARITY (whole-audio centroid 0.822943 < 0.868594). Exactly one authorized candidate A audition: fidelity-first anchor ranking, top-centroid composite owner ref (loudnorm -20 LUFS, 24k), temp/top_p 0.7/0.9 seeded. Thresholds unchanged; duration-matched segment calibration is shadow-only. Ledger reconciliation before any send; gate failure fails workflow.",
+  "recovery_attempt_id": "owner-gta6-connected-ptbr-pr37-20261011-v5b-candidate-a-fidelity",
+  "recovery_from_run_id": 38139077173,
+  "recovery_reason": "Run 38101681132 failed SPEAKER_SIMILARITY (whole-audio centroid 0.822943 < 0.868594). Run 38139077173 never synthesized (contract job lacked numpy). Exactly one authorized candidate A audition: fidelity-first anchor ranking, top-centroid composite owner ref (loudnorm -20 LUFS, 24k), temp/top_p 0.7/0.9 seeded. Thresholds unchanged; duration-matched segment calibration is shadow-only. Ledger reconciliation before any send; gate failure fails workflow.",
   "human_approval_required": true,
   "production_activated": false,
   "pronunciation_scope": "OWNER_GTA6_CRITICAL_NAMES_ONLY_V1"
