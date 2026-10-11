@@ -4,9 +4,9 @@
   "reference_source": "TELEGRAM_HUMAN_OWNER",
   "one_candidate_only": true,
   "runtime_activation": false,
-  "recovery_attempt_id": "owner-gta6-connected-ptbr-pr37-20261011-v5c-candidate-a-fidelity",
-  "recovery_from_run_id": 38140235735,
-  "recovery_reason": "Run 38140235735 (candidate A) reached canonical owner ref sim 0.97429 but was cancelled at job timeout: Qwen runaway generation (segment 3 emitted 49.84 s for ~8 s text; segment 7 hung > 60 min) because generate_voice_clone ran with qwen-tts default max_new_tokens=2048. Exactly one candidate A re-audition with per-segment max_new_tokens bound from text length at 12.5 Hz codec, fail-closed runaway duration gate (>2.5x expected), per-segment wall-clock guard, 70-min step timeout. Same sampling/seed/reference; thresholds unchanged; ledger reconciliation before any send.",
+  "recovery_attempt_id": "owner-gta6-connected-ptbr-pr37-20261011-v5d-candidate-a-fidelity",
+  "recovery_from_run_id": 38147026694,
+  "recovery_reason": "Run 38147026694 failed closed: segment 3 runaway (24.24 s > 20.25 s limit, hit max_new_tokens 304) with a single 36.014 s canonical owner ref (sim 0.97429) above the 30 s composite bound. Exactly one candidate A re-audition with Qwen ref_audio bounded: best VAD-bounded 10-20 s window of the canonical clip (ECAPA sim to centroid re-verified >=0.90) or 20-30 s composite; ref_text = faster-whisper ASR of exactly that audio. Same sampling/seed; thresholds unchanged; ledger reconciliation before any send.",
   "human_approval_required": true,
   "production_activated": false,
   "pronunciation_scope": "OWNER_GTA6_CRITICAL_NAMES_ONLY_V1"
