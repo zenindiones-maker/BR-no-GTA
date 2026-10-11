@@ -1,6 +1,10 @@
 name: BR_OWNER_V1 Single Human Clone
 
 on:
+  pull_request:
+    paths:
+      - .github/workflows/owner-voice-single-human-clone.yml
+      - tests/test_owner_voice_mission_outcome_contract.py
   workflow_dispatch:
   push:
     branches:
