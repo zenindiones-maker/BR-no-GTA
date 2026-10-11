@@ -190,6 +190,7 @@ jobs:
           /tmp/br-owner-single-clone-venv/bin/python scripts/owner_voice_single_human_clone.py
 
       - name: Deliver reference clone and control
+        id: reference_delivery
         if: ${{ steps.generate.outputs.send_eligible == 'true' && steps.generate.outputs.critical_scope == 'false' }}
         env:
           PYTHONPATH: ${{ github.workspace }}
@@ -200,6 +201,7 @@ jobs:
           /tmp/br-owner-single-clone-venv/bin/python scripts/owner_voice_single_clone_delivery.py
 
       - name: Deliver one protected critical-name audio only
+        id: critical_delivery
         if: ${{ steps.generate.outputs.send_eligible == 'true' && steps.generate.outputs.critical_scope == 'true' }}
         env:
           PYTHONPATH: ${{ github.workspace }}
@@ -213,9 +215,20 @@ jobs:
         if: ${{ always() }}
         env:
           SEND_ELIGIBLE: ${{ steps.generate.outputs.send_eligible }}
+          GENERATION_RESULT: ${{ steps.generate.outcome }}
+          CRITICAL_SCOPE: ${{ steps.generate.outputs.critical_scope }}
+          REFERENCE_DELIVERY_RESULT: ${{ steps.reference_delivery.outcome }}
+          CRITICAL_DELIVERY_RESULT: ${{ steps.critical_delivery.outcome }}
         run: |
-          if [ "$SEND_ELIGIBLE" != true ]; then
+          if [ "$GENERATION_RESULT" != success ] || [ "$SEND_ELIGIBLE" != true ]; then
             echo "MISSION_FAILED_QUALITY_GATES"
+            exit 1
+          fi
+          if [ "$CRITICAL_SCOPE" = true ]; then
+            test "$CRITICAL_DELIVERY_RESULT" = success || exit 1
+          elif [ "$CRITICAL_SCOPE" = false ]; then
+            test "$REFERENCE_DELIVERY_RESULT" = success || exit 1
+          else
             exit 1
           fi
           echo "MISSION_COMPLETE=FALSE"
