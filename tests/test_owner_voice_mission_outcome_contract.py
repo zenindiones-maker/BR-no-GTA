@@ -25,3 +25,12 @@ def test_pr_checks_cannot_replace_a_pending_authorized_delivery_run():
     # GitHub concurrency 'cancel-in-progress: false' alone does not protect it.
     assert "group: br-owner-v1-single-human-clone-${{ github.event_name }}" in workflow
     assert "cancel-in-progress: false" in workflow
+
+
+def test_explicit_request_detection_reads_checkout_diff_not_truncated_event():
+    workflow = Path(".github/workflows/owner-voice-single-human-clone.yml").read_text()
+    # GitHub App-created pushes may omit changed paths from the event payload;
+    # only a proven change to the exact authorized request can start inference.
+    assert "fetch-depth: 2" in workflow
+    assert "git diff --name-only HEAD^ HEAD" in workflow
+    assert 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' in workflow
