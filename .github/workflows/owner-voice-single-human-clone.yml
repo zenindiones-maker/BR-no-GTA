@@ -220,7 +220,11 @@ jobs:
           REFERENCE_DELIVERY_RESULT: ${{ steps.reference_delivery.outcome }}
           CRITICAL_DELIVERY_RESULT: ${{ steps.critical_delivery.outcome }}
         run: |
-          if [ "$GENERATION_RESULT" != success ] || [ "$SEND_ELIGIBLE" != true ]; then
+          if [ "$GENERATION_RESULT" != success ]; then
+            echo "MISSION_FAILED_GENERATION"
+            exit 1
+          fi
+          if [ "$SEND_ELIGIBLE" != true ]; then
             echo "MISSION_FAILED_QUALITY_GATES"
             exit 1
           fi
