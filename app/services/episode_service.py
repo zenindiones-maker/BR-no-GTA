@@ -18,9 +18,9 @@ class Episode:
     """
 
     title: str
-    target_duration_seconds: float = 900.0
-    min_duration_seconds: float = 840.0
-    max_duration_seconds: float = 960.0
+    target_duration_seconds: float = 810.0
+    min_duration_seconds: float = 795.0
+    max_duration_seconds: float = 820.0
     status: str = "draft"
 
     def __post_init__(self) -> None:
@@ -75,19 +75,19 @@ class Episode:
 def create_episode(
     *,
     title: str,
-    target_duration_seconds: float = 900.0,
-    min_duration_seconds: float = 840.0,
-    max_duration_seconds: float = 960.0,
+    target_duration_seconds: float = 810.0,
+    min_duration_seconds: float = 795.0,
+    max_duration_seconds: float = 820.0,
     status: str = "draft",
 ) -> dict[str, Any]:
     """
     Cria uma especificação de Episode em memória.
 
-    O padrão representa aproximadamente 15 minutos:
+    O padrão é a Política Editorial V2, cerca de 13 minutos e meio:
 
-        alvo = 900s
-        mínimo = 840s
-        máximo = 960s
+        alvo = 810s (13:30)
+        mínimo = 795s (13:15)
+        máximo = 820s (13:40)
 
     Nenhum banco, renderizador ou publisher é utilizado.
     """
@@ -185,9 +185,9 @@ from app.database.episode_repository import (
 def create_and_persist_episode(
     *,
     title: str,
-    target_duration_seconds: float = 900.0,
-    min_duration_seconds: float = 840.0,
-    max_duration_seconds: float = 960.0,
+    target_duration_seconds: float = 810.0,
+    min_duration_seconds: float = 795.0,
+    max_duration_seconds: float = 820.0,
     status: str = "draft",
 ) -> dict[str, Any]:
     """

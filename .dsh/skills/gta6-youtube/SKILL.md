@@ -24,6 +24,8 @@ A thumbnail deve complementar o título.
 
 O hook deve estabelecer rapidamente uma razão para continuar assistindo.
 
+Duração padrão: 13:15–13:40. Não mirar 25 minutos e não forçar 13:00.
+
 Evite:
 
 - clickbait enganoso;

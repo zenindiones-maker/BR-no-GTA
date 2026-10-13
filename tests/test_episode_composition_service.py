@@ -161,12 +161,12 @@ def test_validate_episode_composition_rejects_long_episode():
 
 def test_compose_episode_persists_episode_and_segments():
     segment_a = create_content_segment_for_test(
-        duration_seconds=420,
+        duration_seconds=395,
         segment_order=0,
     )
 
     segment_b = create_content_segment_for_test(
-        duration_seconds=480,
+        duration_seconds=415,
         segment_order=0,
     )
 
@@ -180,7 +180,7 @@ def test_compose_episode_persists_episode_and_segments():
 
     assert result["status"] == "composed"
     assert result["segment_count"] == 2
-    assert result["duration_seconds"] == 900.0
+    assert result["duration_seconds"] == 810.0
     assert result["duration_valid"] is True
 
     episodes = list_episodes()
@@ -200,17 +200,17 @@ def test_compose_episode_persists_episode_and_segments():
 
     assert episode_segments[1]["content_segment_id"] == segment_b
     assert episode_segments[1]["segment_order"] == 1
-    assert episode_segments[1]["start_offset_seconds"] == 420.0
+    assert episode_segments[1]["start_offset_seconds"] == 395.0
 
 
 def test_compose_episode_preserves_requested_order():
     segment_a = create_content_segment_for_test(
-        duration_seconds=300,
+        duration_seconds=395,
         segment_order=0,
     )
 
     segment_b = create_content_segment_for_test(
-        duration_seconds=540,
+        duration_seconds=415,
         segment_order=0,
     )
 
@@ -222,7 +222,7 @@ def test_compose_episode_preserves_requested_order():
         ],
     )
 
-    assert result["duration_seconds"] == 840.0
+    assert result["duration_seconds"] == 810.0
 
     episode = result["episode"]
     episode_segments = result["episode_segments"]
@@ -231,9 +231,9 @@ def test_compose_episode_preserves_requested_order():
     assert episode_segments[1]["content_segment_id"] == segment_a
 
     assert episode_segments[0]["start_offset_seconds"] == 0.0
-    assert episode_segments[1]["start_offset_seconds"] == 540.0
+    assert episode_segments[1]["start_offset_seconds"] == 415.0
 
-    assert episode["target_duration_seconds"] == 900.0
+    assert episode["target_duration_seconds"] == 810.0
 
 
 def test_compose_episode_rejects_empty_selection():

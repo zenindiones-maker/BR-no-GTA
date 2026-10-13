@@ -128,9 +128,9 @@ def compose_episode(
     *,
     title: str,
     content_segment_ids: list[int],
-    target_duration_seconds: float = 900.0,
-    min_duration_seconds: float = 840.0,
-    max_duration_seconds: float = 960.0,
+    target_duration_seconds: float = 810.0,
+    min_duration_seconds: float = 795.0,
+    max_duration_seconds: float = 820.0,
     status: str = "draft",
 ) -> dict[str, Any]:
     """

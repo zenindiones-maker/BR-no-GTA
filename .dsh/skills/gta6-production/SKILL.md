@@ -26,6 +26,8 @@ Considere:
 - duração;
 - retenção.
 
+Duração padrão do vídeo: 13:15–13:40.
+
 Cada bloco do roteiro deve possuir uma função.
 
 Quando apropriado, produza uma especificação que permita ao pipeline

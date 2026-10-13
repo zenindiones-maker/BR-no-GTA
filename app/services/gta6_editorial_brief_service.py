@@ -103,7 +103,7 @@ def create_editorial_brief(
     facts: list[str] | tuple[str, ...],
     evidence_requirements: list[str] | tuple[str, ...],
     media_requirements: list[str] | tuple[str, ...],
-    target_duration_seconds: float = 900.0,
+    target_duration_seconds: float = 810.0,
     priority_score: float = 0.0,
     trend_score: float = 0.0,
 ) -> GTA6EditorialBrief:

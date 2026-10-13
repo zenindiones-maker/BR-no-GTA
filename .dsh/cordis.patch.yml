@@ -251,58 +251,61 @@
 
       Este post é especializado em notícia e análise jornalística.
 
-      REGRA DE DURAÇÃO:
-      A duração NÃO é fixa cegamente.
+      REGRA DE DURAÇÃO — POLÍTICA EDITORIAL V2:
 
-      Notícia simples:
-      aproximadamente 10–12 minutos no máximo quando houver material suficiente.
+      Faixa operacional padrão: 13:15 a 13:40.
+      Nunca forçar 13:00 exatos.
+      A duração resulta da narração, do gameplay relevante e da análise.
+      Não encher com repetição para bater um número.
 
-      Se a informação for pequena, NÃO adicionar enrolação para atingir duração.
+      Exceção de 18–20 minutos somente para missão completa, análise
+      abrangente do mapa ou história completa de personagem, quando o
+      conteúdo justificar. Fora isso, reprovar entrega fora de 13:15–13:40.
 
-      Se o assunto justificar profundidade excepcional, transformar a pauta
-      em ANÁLISE PROFUNDA.
+      25 minutos deixa de ser alvo. Notícia seca de 25 minutos continua
+      proibida. Gameplay também não usa mais 22–28 minutos.
 
-      Exemplos:
-      - analisar o mapa inteiro;
-      - analisar uma grande quantidade de gameplay;
-      - comparar sistemas inteiros;
-      - investigar uma mudança importante com múltiplas evidências.
+      ESTRUTURA PREFERENCIAL:
 
-      Portanto:
-      25 minutos de notícia seca é PROIBIDO.
-      25 minutos só é aceitável quando o conteúdo realmente for uma análise
-      profunda e possuir evidência/material suficiente.
-
-      ESTRUTURA PREFERENCIAL DE NOTÍCIA:
-
-      0:00–0:30
+      0:00–0:07
       HOOK:
-      pergunta forte ou afirmação provocativa baseada nos fatos,
-      seguida da promessa do que o espectador descobrirá.
+      gancho limpo e promessa clara.
+      Sem tiroteio, sangue ou atropelamento nesse intervalo.
 
-      0:30–2:00
+      0:30–3:00
       CONTEXTO:
-      explicar rapidamente o que aconteceu.
+      explicar o que aconteceu, sem enrolação.
 
-      2:00–5:30
-      EVIDÊNCIA:
-      apresentar prints, gameplay, fala de desenvolvedor, fonte oficial
-      ou outras evidências disponíveis.
+      3:00–8:30
+      CONTEÚDO PRINCIPAL:
+      gameplay relevante e narração original.
 
-      5:30–6:00
-      MID-ROLL 1 / PAUSA NATURAL:
-      criar uma transição orgânica antes da parte mais importante.
+      aproximadamente 8:30
+      VIRADA EDITORIAL:
+      transição natural para o segundo bloco.
+      Planejar a inserção sem cortar uma cena importante.
+      Inserção é planejamento de edição, não garantia de anúncio
+      nem de monetização.
 
-      6:00–9:00
+      8:30–12:00
       ANÁLISE:
-      explicar o impacto no GTA6 e, quando relevante, comparar com GTA5.
+      evidências, segredos ou teorias.
+      Separar em voz fato confirmado e especulação.
 
-      9:00–10:30+
-      CONCLUSÃO:
-      síntese, implicações e CTA.
+      12:00 até o fim real
+      FECHAMENTO:
+      conclusão, CTA e gancho para o próximo vídeo.
 
-      Nunca preencher tempo com repetição.
-      A duração deve nascer da força da pauta.
+      ÁUDIO:
+      rádio de veículo desligado na captura.
+      Verificar música incidental, direitos autorais, inteligibilidade,
+      sincronização e pronúncia.
+
+      GATE:
+      medir a duração do arquivo final.
+      Conferir o roteiro contra o áudio efetivamente produzido.
+      Não declarar PASS só pelo roteiro ou pelo CI.
+      Não iniciar renderização longa sem esse gate.
 
       CLASSIFICAÇÃO DE CONFIANÇA:
 
@@ -366,11 +369,14 @@
 
       Este é o formato longo.
 
-      DURAÇÃO ALVO:
-      22–28 minutos.
+      DURAÇÃO:
+      A mesma Política Editorial V2 do post de notícias.
+      Faixa 13:15–13:40. Não mirar 22–28 nem 25 minutos.
 
-      Aqui uma duração próxima de 25 minutos é desejável quando existe
-      material suficiente.
+      ESTRUTURA:
+      A mesma estrutura V2: gancho limpo nos primeiros 7 segundos,
+      contexto até 3:00, principal até 8:30, virada por volta de 8:30,
+      análise até cerca de 12:00 e fechamento até a duração real.
 
       O conteúdo deve vir da pasta lógica GAMEPLAY_DO_DIA e do Knowledge Brain.
 
@@ -387,30 +393,9 @@
 
       ESTRUTURA PREFERENCIAL:
 
-      0:00–0:45
+      0:00–0:07
       HOOK:
-      promessa clara e benefício para o espectador.
-
-      0:45–7:00
-      PARTE 1
-
-      7:00
-      MID-ROLL 1
-
-      7:00–15:00
-      PARTE 2:
-      comparativo, frame a frame, lista ou investigação.
-
-      15:00
-      MID-ROLL 2
-
-      15:00–23:00
-      PARTE 3:
-      teoria, evidência adicional, easter egg ou descoberta.
-
-      23:00–25:00
-      FECHAMENTO:
-      conclusão e chamada para o conteúdo das 14:00 do dia seguinte.
+      promessa clara, sem violência gráfica.
 
       TÍTULO DE GAMEPLAY:
 
@@ -432,13 +417,12 @@
       - Sempre gerar título, descrição, tags e conceito de thumbnail.
       - Nunca inventar dados para completar roteiro.
       - Nunca aumentar artificialmente a duração.
-      - Notícia curta permanece curta.
-      - Análise profunda pode ser longa quando a evidência justificar.
-      - Gameplay é o formato naturalmente longo.
-      - Maximizar retenção sem sacrificar precisão.
-      - Objetivo editorial: retenção superior a 45% quando o conteúdo permitir.
-      - Vídeos longos devem considerar até 2 mid-rolls de forma natural.
-      - O benefício para o espectador é mais importante que duração artificial.
+      - Faixa padrão: 13:15–13:40. Nunca forçar 13:00.
+      - 18–20 minutos só com missão completa, mapa abrangente ou história
+        completa de personagem, e com justificativa.
+      - Um slot editorial por volta de 8:30. Não prometer quantidade de anúncios.
+      - Rádio de veículo desligado na captura.
+      - PASS só com a duração medida no arquivo final, não com o roteiro nem com o CI.
 
       REGRA DE DECISÃO:
 
