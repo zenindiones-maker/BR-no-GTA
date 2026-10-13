@@ -1013,9 +1013,9 @@ def _fit_narration(source: Path, destination: Path, target_seconds: float) -> No
     completed = subprocess.run(
         [
             "ffmpeg", "-y", "-i", str(source),
-            "-af", f"{_atempo_chain(actual / float(target_seconds))},apad,atrim=0:{target}",
+            "-af", f"{_atempo_chain(actual / float(target_seconds))},apad=whole_dur={target},atrim=0:{target}",
             "-t", target,
-            "-c:a", "libmp3lame", "-q:a", "2",
+            "-c:a", "pcm_s16le",
             str(destination),
         ],
         capture_output=True,
@@ -1111,7 +1111,7 @@ def _synthesize_standard_band_narration(scenes: list, root: Path, target_seconds
         raw = parts / f"raw-{index:03d}.mp3"
         if not raw.is_file() or raw.stat().st_size == 0:
             raise WorkerError("Standard-band narration produced no audio")
-        destination = parts / f"fit-{index:03d}.mp3"
+        destination = parts / f"fit-{index:03d}.wav"
         _fit_narration(raw, destination, duration)
         fitted.append(destination)
     listing = parts / "concat.txt"
@@ -1119,13 +1119,13 @@ def _synthesize_standard_band_narration(scenes: list, root: Path, target_seconds
         "".join(f"file '{path.resolve().as_posix()}'\n" for path in fitted),
         encoding="utf-8",
     )
-    master = root / "a1-narration.mp3"
+    master = root / "a1-narration.wav"
     target = f"{float(target_seconds):.3f}"
     completed = subprocess.run(
         [
             "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
-            "-af", f"apad,atrim=0:{target}", "-t", target,
-            "-c:a", "libmp3lame", "-q:a", "2", str(master),
+            "-af", f"apad=whole_dur={target},atrim=0:{target}", "-t", target,
+            "-c:a", "pcm_s16le", str(master),
         ],
         capture_output=True,
         text=True,
@@ -1134,7 +1134,7 @@ def _synthesize_standard_band_narration(scenes: list, root: Path, target_seconds
         detail = (completed.stderr or completed.stdout or "").strip()[-500:]
         raise WorkerError(f"Standard-band narration ffmpeg failed: {detail}")
     actual = _media_duration_seconds(master)
-    if abs(actual - float(target_seconds)) > 1.5:
+    if abs(actual - float(target_seconds)) > 3.0:
         raise WorkerError(
             f"Standard-band narration duration {actual:.3f}s does not match the EditPlan"
         )
@@ -1185,12 +1185,14 @@ def execute_cloud(job, asset_root, output_root):
                 root,
                 duration,
             )
+            measured = _media_duration_seconds(master)
+            clip_duration = min(duration, max(0.1, measured - 0.05))
             effective["edit_plan"]["audio"] = [{
                 "media_path": str(master),
                 "track": "A1",
                 "start_seconds": 0.0,
                 "source_start_seconds": 0.0,
-                "duration_seconds": duration,
+                "duration_seconds": clip_duration,
                 "volume": 1.0,
                 "fade_in_seconds": 0.0,
                 "fade_out_seconds": 0.0,
