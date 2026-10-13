@@ -23,7 +23,8 @@ def ingest_gta6_source_item(
             "duplicate": True,
         }
 
-        ingest_gta6_knowledge_memory_event(result)
+        memory_event_id = ingest_gta6_knowledge_memory_event(result)
+        result["memory_event_id"] = memory_event_id
 
         return result
 
@@ -39,7 +40,8 @@ def ingest_gta6_source_item(
 
     result["duplicate"] = False
 
-    ingest_gta6_knowledge_memory_event(result)
+    memory_event_id = ingest_gta6_knowledge_memory_event(result)
+    result["memory_event_id"] = memory_event_id
 
     return result
 
