@@ -403,7 +403,6 @@ def _compose_intro_without_content_reencode(
 
 def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
     operation_started = time.monotonic()
-    spoken_branding = validate_job_spoken_branding(job)
     folder = _brand_root(job, runtime_root)
     state = _load_json(folder / "brand-state.json")
     assets = state.get("assets") or []
@@ -420,8 +419,11 @@ def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
 
     evidence = _load_json(folder / "brand-assets.json")
     if not assets:
+        # Standard band has no official intro. Do not demand BR_OWNER_V1 here.
         write_json(render_folder / "brand-assets.json", evidence)
         return output
+
+    spoken_branding = validate_job_spoken_branding(job)
 
     prior_qa = _load_json(render_folder / "render-qa.json")
     if prior_qa.get("status") != "PASS":

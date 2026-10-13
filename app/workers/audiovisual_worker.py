@@ -899,6 +899,201 @@ def _runtime_relative(value: str, root: Path) -> str:
     return str(resolved.relative_to(root.resolve()))
 
 
+def _narration_tokens(text: str) -> list[str]:
+    return re.findall(r"[a-zà-ÿ0-9]+", text.casefold())
+
+
+def _narration_chunks(text: str, limit: int = 800) -> list[str]:
+    parts: list[str] = []
+    remaining = " ".join(text.split())
+    while remaining:
+        if len(remaining) <= limit:
+            parts.append(remaining)
+            break
+        cut = remaining.rfind(" ", 0, limit)
+        if cut < 200:
+            cut = limit
+        parts.append(remaining[:cut].strip())
+        remaining = remaining[cut:].strip()
+    return [part for part in parts if part]
+
+
+def _standard_band_script_sections(scenes: list) -> list[dict]:
+    """Group scene narration so semantic QA sees real spoken text, not a new script."""
+    sections = []
+    for scene in scenes:
+        text = str(scene.get("narration") or "").strip()
+        if text:
+            sections.append({"narration": text})
+    guard = 0
+    while any(len(_narration_tokens(item["narration"])) < 45 for item in sections):
+        guard += 1
+        if guard > 100 or len(sections) < 2:
+            break
+        index = next(
+            i for i, item in enumerate(sections)
+            if len(_narration_tokens(item["narration"])) < 45
+        )
+        if index + 1 < len(sections):
+            other = sections.pop(index + 1)
+            sections[index]["narration"] = f"{sections[index]['narration']} {other['narration']}".strip()
+        else:
+            other = sections.pop(index)
+            sections[index - 1]["narration"] = f"{sections[index - 1]['narration']} {other['narration']}".strip()
+    return sections
+
+
+def _media_duration_seconds(path: Path) -> float:
+    completed = subprocess.run(
+        [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=nw=1:nk=1",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip()[-300:]
+        raise WorkerError(f"ffprobe failed for narration: {detail}")
+    try:
+        duration = float(completed.stdout.strip())
+    except ValueError as exc:
+        raise WorkerError("narration duration is not numeric") from exc
+    if not math.isfinite(duration) or duration <= 0:
+        raise WorkerError("narration duration is invalid")
+    return duration
+
+
+def _atempo_chain(ratio: float) -> str:
+    """ffmpeg atempo stages, each inside 0.5–2.0. ratio>1 speeds the clip up."""
+    if not math.isfinite(ratio) or ratio <= 0:
+        raise WorkerError("invalid narration tempo")
+    factors: list[float] = []
+    remaining = ratio
+    while remaining > 2.0:
+        factors.append(2.0)
+        remaining /= 2.0
+    while remaining < 0.5:
+        factors.append(0.5)
+        remaining /= 0.5
+    factors.append(remaining)
+    return ",".join(f"atempo={factor:.6f}" for factor in factors)
+
+
+def _fit_narration(source: Path, destination: Path, target_seconds: float) -> None:
+    actual = _media_duration_seconds(source)
+    target = f"{float(target_seconds):.3f}"
+    completed = subprocess.run(
+        [
+            "ffmpeg", "-y", "-i", str(source),
+            "-af", f"{_atempo_chain(actual / float(target_seconds))},apad,atrim=0:{target}",
+            "-t", target,
+            "-c:a", "libmp3lame", "-q:a", "2",
+            str(destination),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0 or not destination.is_file() or destination.stat().st_size == 0:
+        detail = (completed.stderr or completed.stdout or "").strip()[-500:]
+        raise WorkerError(f"Standard-band narration fit failed: {detail}")
+
+
+def _synthesize_standard_band_narration(scenes: list, root: Path, target_seconds: float) -> Path:
+    """Write one explicit A1 track for the 13:15–13:40 band.
+
+    This is not BR_OWNER_V1. Each scene is spoken in pt-BR and fitted to that
+    scene's duration so the timeline has narration instead of source-video audio.
+    """
+    spoken = []
+    for scene in scenes:
+        text = str(scene.get("narration") or "").strip()
+        if not text:
+            raise WorkerError("No explicit audio track; scene narration is empty")
+        try:
+            duration = float(scene.get("duration_seconds") or 0)
+        except (TypeError, ValueError) as exc:
+            raise WorkerError("scene narration duration is invalid") from exc
+        if not math.isfinite(duration) or duration <= 0:
+            raise WorkerError("scene narration duration is invalid")
+        spoken.append((text, duration))
+    if abs(sum(duration for _, duration in spoken) - float(target_seconds)) > 1.5:
+        raise WorkerError("scene narration does not cover the EditPlan duration")
+    try:
+        import asyncio
+        import edge_tts
+    except ImportError as exc:
+        raise WorkerError("explicit narration track requires edge-tts") from exc
+
+    parts = root / "narration-parts"
+    parts.mkdir(parents=True, exist_ok=True)
+    voice = "pt-BR-AntonioNeural"
+
+    async def save() -> None:
+        for index, (text, _duration) in enumerate(spoken):
+            chunks = _narration_chunks(text)
+            if len(chunks) == 1:
+                destination = parts / f"raw-{index:03d}.mp3"
+                await edge_tts.Communicate(chunks[0], voice).save(str(destination))
+                continue
+            piece_paths = []
+            for piece, chunk in enumerate(chunks):
+                destination = parts / f"raw-{index:03d}-{piece:02d}.mp3"
+                await edge_tts.Communicate(chunk, voice).save(str(destination))
+                piece_paths.append(destination)
+            listing = parts / f"raw-{index:03d}.txt"
+            listing.write_text(
+                "".join(f"file '{path.as_posix()}'\n" for path in piece_paths),
+                encoding="utf-8",
+            )
+            raw = parts / f"raw-{index:03d}.mp3"
+            completed = subprocess.run(
+                ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", str(raw)],
+                capture_output=True,
+                text=True,
+            )
+            if completed.returncode != 0 or not raw.is_file():
+                detail = (completed.stderr or completed.stdout or "").strip()[-400:]
+                raise WorkerError(f"Standard-band narration concat failed: {detail}")
+
+    asyncio.run(save())
+    fitted = []
+    for index, (_text, duration) in enumerate(spoken):
+        raw = parts / f"raw-{index:03d}.mp3"
+        if not raw.is_file() or raw.stat().st_size == 0:
+            raise WorkerError("Standard-band narration produced no audio")
+        destination = parts / f"fit-{index:03d}.mp3"
+        _fit_narration(raw, destination, duration)
+        fitted.append(destination)
+    listing = parts / "concat.txt"
+    listing.write_text(
+        "".join(f"file '{path.as_posix()}'\n" for path in fitted),
+        encoding="utf-8",
+    )
+    master = root / "a1-narration.mp3"
+    target = f"{float(target_seconds):.3f}"
+    completed = subprocess.run(
+        [
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
+            "-af", f"apad,atrim=0:{target}", "-t", target,
+            "-c:a", "libmp3lame", "-q:a", "2", str(master),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0 or not master.is_file() or master.stat().st_size == 0:
+        detail = (completed.stderr or completed.stdout or "").strip()[-500:]
+        raise WorkerError(f"Standard-band narration ffmpeg failed: {detail}")
+    actual = _media_duration_seconds(master)
+    if abs(actual - float(target_seconds)) > 1.5:
+        raise WorkerError(
+            f"Standard-band narration duration {actual:.3f}s does not match the EditPlan"
+        )
+    return master
+
+
 def execute_cloud(job, asset_root, output_root):
     validate_job(job, allow_runtime_plan=True)
     remote = any(scene.get("asset_ref") for scene in job["scenes"])
@@ -933,6 +1128,27 @@ def execute_cloud(job, asset_root, output_root):
                 production_plan=hydrated,
                 brain_decision=job,
             ).to_dict()
+
+        script_sections = None
+        if not effective["edit_plan"].get("audio") and not _requires_a1_voice(effective):
+            qa["stage"] = "narration"
+            duration = float(effective["edit_plan"]["duration_seconds"])
+            master = _synthesize_standard_band_narration(
+                hydrated["scenes"],
+                root,
+                duration,
+            )
+            effective["edit_plan"]["audio"] = [{
+                "media_path": str(master),
+                "track": "A1",
+                "start_seconds": 0.0,
+                "source_start_seconds": 0.0,
+                "duration_seconds": duration,
+                "volume": 1.0,
+                "fade_in_seconds": 0.0,
+                "fade_out_seconds": 0.0,
+            }]
+            script_sections = _standard_band_script_sections(hydrated["scenes"])
 
         paths = {
             scene["asset_ref"]: scene["media_path"]
@@ -974,6 +1190,14 @@ def execute_cloud(job, asset_root, output_root):
             output_root,
             source_job=job,
         )
+        if script_sections:
+            write_json(folder / "script-ptbr.json", {
+                "language": "pt-BR",
+                "voice": "pt-BR-AntonioNeural",
+                "identity": "standard-band-explicit-track",
+                "owner_voice": False,
+                "sections": script_sections,
+            })
         write_json(folder / "assets.json", evidence)
         qa = {
             "status": "PASS",
