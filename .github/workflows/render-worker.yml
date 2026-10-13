@@ -232,7 +232,7 @@ jobs:
           print("RENDER_PYTHON_RUNTIME_CONTRACT=PASS")
           PY
           echo "$PWD/.venv-media/bin" >> "$GITHUB_PATH"
-          echo "COLD_START_PYTHON_DEPENDENCY_PROFILE=versioned-venv-cache-v2"
+          echo "COLD_START_PYTHON_DEPENDENCY_PROFILE=versioned-venv-cache-v3"
           echo "RENDER_PYTHON_RUNTIME_CACHE_HIT=$RENDER_RUNTIME_CACHE_HIT"
       - name: Validate job before media processing
         env:
