@@ -1092,7 +1092,7 @@ def _synthesize_standard_band_narration(scenes: list, root: Path, target_seconds
                 piece_paths.append(destination)
             listing = parts / f"raw-{index:03d}.txt"
             listing.write_text(
-                "".join(f"file '{path.as_posix()}'\n" for path in piece_paths),
+                "".join(f"file '{path.resolve().as_posix()}'\n" for path in piece_paths),
                 encoding="utf-8",
             )
             raw = parts / f"raw-{index:03d}.mp3"
@@ -1116,7 +1116,7 @@ def _synthesize_standard_band_narration(scenes: list, root: Path, target_seconds
         fitted.append(destination)
     listing = parts / "concat.txt"
     listing.write_text(
-        "".join(f"file '{path.as_posix()}'\n" for path in fitted),
+        "".join(f"file '{path.resolve().as_posix()}'\n" for path in fitted),
         encoding="utf-8",
     )
     master = root / "a1-narration.mp3"
