@@ -41,12 +41,18 @@ def finite(value, label, minimum=0):
     return float(value)
 
 
+# Faixa operacional padrão: 13:15–13:40. Acima disso é a exceção longa.
+STANDARD_BAND_MAX_SECONDS = 820.0
+
+
 def _requires_a1_voice(job: dict) -> bool:
     try:
         duration = float(job.get("estimated_duration_seconds") or 0)
     except (TypeError, ValueError):
         duration = 0.0
-    return job.get("qa_profile") == "professional-ptbr" or duration >= 300.0
+    if job.get("qa_profile") == "professional-ptbr":
+        return True
+    return duration > STANDARD_BAND_MAX_SECONDS
 
 
 def _validate_a1_voice_contract(job: dict, plan: EditPlan, duration: float) -> None:

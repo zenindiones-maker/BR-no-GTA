@@ -25,8 +25,9 @@ def full_blocks(t):
 def readiness(plan):
  s=plan["scenes"];n=len(s);g=sum("Visual relacionado diretamente ao tema" in str(x.get("visual_description","")) for x in s)/n;t=sum(x.get("visual_type")=="title_card" for x in s)/n;r=sum(bool(x.get("media_search_terms")) for x in s)/n;e=sum(bool(x.get("evidence_refs")) for x in s)/n;v=sum(len(str(x.get("visual_description","")).strip())>=120 and bool(x.get("media_search_terms")) for x in s)/n
  q={"generic_scene_ratio":g,"title_card_ratio":t,"media_resolvable_ratio":r,"evidence_to_scene_coverage":e,"visual_specificity":v};return q,g==0 and t<=.15 and r>=.95 and e>=.25 and v>=.95
+STANDARD_TARGET_SECONDS=810.0
 def _build_plan(product):
- content=dict(product["content_item"]);content["narrative_blocks"]=full_blocks(product["script"]["content"]);content["verified_claims"]=list(product.get("claims") or []);content["youtube_strategy"]=product.get("content_strategy");content["editorial_evidence_refs"]=list(product["youtube_package"]["evidence_refs"])
+ content=dict(product["content_item"]);content["estimated_duration_seconds"]=STANDARD_TARGET_SECONDS;content["narrative_blocks"]=full_blocks(product["script"]["content"]);content["verified_claims"]=list(product.get("claims") or []);content["youtube_strategy"]=product.get("content_strategy");content["editorial_evidence_refs"]=list(product["youtube_package"]["evidence_refs"])
  plan=create_production_plan(content);metrics,ok=readiness(plan)
  if not ok: raise RuntimeError("PRODUCTION_READINESS failed: "+json.dumps(metrics))
  if not update_production_plan(content_item_id=int(product["content_item_id"]),production_plan=plan): raise RuntimeError("ProductionPlan update failed")
