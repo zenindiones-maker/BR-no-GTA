@@ -599,6 +599,7 @@ def execute(job, asset_root, output_root, *, source_job=None):
     )
     folder.mkdir(parents=True, exist_ok=False)
     output = folder / f"{job['video_id']}.mp4"
+    started = time.monotonic()
     qa = {"status": "FAIL", "stage": "timeline"}
     try:
         write_json(
@@ -877,6 +878,26 @@ def execute(job, asset_root, output_root, *, source_job=None):
                 "sha256",
             ).hexdigest()
         write_json(folder / "render-manifest.json", manifest)
+        narration_calls = len(list((asset_root / "narration-parts").glob("raw-*.mp3")))
+        from app.services.operational_efficiency_policy import (
+            POLICY_ID,
+            validate_observability_event,
+        )
+        observability = validate_observability_event({
+            "operation_id": f"render:{job['execution_id']}:{job['render_job_id']}",
+            "capability_id": "production.render.execute",
+            "stage": "complete",
+            "elapsed_seconds": round(time.monotonic() - started, 3),
+            "cache_hit": 0,
+            "cache_miss": narration_calls,
+            "retry_count": 0,
+            "reused_artifacts": [],
+            "external_calls": narration_calls,
+            "output_artifact": output.name,
+            "policy_id": POLICY_ID,
+            "publication_authority": "NONE",
+        })
+        write_json(folder / "operation-observability.json", observability)
         return folder
     except Exception:
         qa["status"] = "FAIL"
