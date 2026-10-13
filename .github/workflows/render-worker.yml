@@ -1111,6 +1111,10 @@ jobs:
       - name: Prove long-form edit has no artificial padding
         run: |
           set -euo pipefail
+          if ! find runtime/render/output -name "edit-qa.json" -type f | grep -q .; then
+            echo "BLOCKED_MISSING_HISTORICAL_EDIT_QA:edit-qa.json absent from producer artifact"
+            exit 1
+          fi
           python scripts/run001_longform_no_padding_qa.py --artifact-root runtime/render/output
 
       - name: Finalize professional QA gates
