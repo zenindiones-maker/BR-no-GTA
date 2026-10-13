@@ -966,6 +966,31 @@ def _media_duration_seconds(path: Path) -> float:
     return duration
 
 
+def _redact_tts_error(message: str) -> str:
+    return re.sub(
+        r"(TrustedClientToken|Ocp-Apim-Subscription-Key|Sec-MS-GEC)=[^&\s']+",
+        r"\1=REDACTED",
+        message,
+    )
+
+
+def _use_current_edge_tts_endpoint(edge_tts_module) -> None:
+    """edge-tts 7.2.8 still targets speech.platform.bing.com, which now returns 403.
+
+    Microsoft Edge synthesizes on api.msedgeservices.com with the same public
+    token. The pinned package is unchanged; only this process's URL is.
+    """
+    communicate = edge_tts_module.communicate
+    current = str(getattr(communicate, "WSS_URL", ""))
+    if "api.msedgeservices.com" in current:
+        return
+    token = edge_tts_module.constants.TRUSTED_CLIENT_TOKEN
+    communicate.WSS_URL = (
+        "wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1"
+        f"?Ocp-Apim-Subscription-Key={token}"
+    )
+
+
 def _atempo_chain(ratio: float) -> str:
     """ffmpeg atempo stages, each inside 0.5–2.0. ratio>1 speeds the clip up."""
     if not math.isfinite(ratio) or ratio <= 0:
@@ -1027,21 +1052,43 @@ def _synthesize_standard_band_narration(scenes: list, root: Path, target_seconds
     except ImportError as exc:
         raise WorkerError("explicit narration track requires edge-tts") from exc
 
+    _use_current_edge_tts_endpoint(edge_tts)
     parts = root / "narration-parts"
     parts.mkdir(parents=True, exist_ok=True)
     voice = "pt-BR-AntonioNeural"
+
+    async def speak(text: str, destination: Path) -> None:
+        delay = 1.0
+        last = "no attempt"
+        for attempt in range(4):
+            try:
+                await edge_tts.Communicate(text, voice).save(str(destination))
+            except Exception as exc:
+                last = _redact_tts_error(str(exc))[-400:]
+                if destination.is_file():
+                    destination.unlink()
+                if attempt == 3 or ("403" not in last and "429" not in last):
+                    raise WorkerError(f"explicit narration track failed: {last}") from exc
+                await asyncio.sleep(delay)
+                delay *= 2
+                continue
+            if destination.is_file() and destination.stat().st_size > 0:
+                return
+            last = "empty audio"
+            await asyncio.sleep(delay)
+            delay *= 2
+        raise WorkerError(f"explicit narration track failed: {last}")
 
     async def save() -> None:
         for index, (text, _duration) in enumerate(spoken):
             chunks = _narration_chunks(text)
             if len(chunks) == 1:
-                destination = parts / f"raw-{index:03d}.mp3"
-                await edge_tts.Communicate(chunks[0], voice).save(str(destination))
+                await speak(chunks[0], parts / f"raw-{index:03d}.mp3")
                 continue
             piece_paths = []
             for piece, chunk in enumerate(chunks):
                 destination = parts / f"raw-{index:03d}-{piece:02d}.mp3"
-                await edge_tts.Communicate(chunk, voice).save(str(destination))
+                await speak(chunk, destination)
                 piece_paths.append(destination)
             listing = parts / f"raw-{index:03d}.txt"
             listing.write_text(
