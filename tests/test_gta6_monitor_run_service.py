@@ -88,6 +88,11 @@ def test_first_run_ingests_changed_content(monkeypatch):
         "record_gta6_monitor_change",
         lambda **kwargs: events.append(kwargs),
     )
+    monkeypatch.setattr(
+        gta6_monitor_run_service,
+        "_process_gta6_knowledge_brain",
+        lambda *, item, ingestion_result: {"intelligence": []},
+    )
 
     result = gta6_monitor_run_service.run_gta6_monitor_once()
 
@@ -231,6 +236,11 @@ def test_changed_run_counts_duplicates(monkeypatch):
         lambda url, content_hash: saved_states.append(
             (url, content_hash)
         ),
+    )
+    monkeypatch.setattr(
+        gta6_monitor_run_service,
+        "_process_gta6_knowledge_brain",
+        lambda *, item, ingestion_result: {"intelligence": []},
     )
 
     result = gta6_monitor_run_service.run_gta6_monitor_once()

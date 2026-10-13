@@ -39,18 +39,18 @@ jobs:
       - name: Install DeepSeek Harness MCP client
         run: |
           echo "===== DSH MCP CLIENT ====="
-          npx --yes @deepseek-ai/dsh plugin --profile headless add @deepseek-ai/dsh-mcp-client@0.0.1-rc.1
-          npx --yes @deepseek-ai/dsh plugin --profile headless list
+          npx --yes @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile headless add @deepseek-ai/dsh-mcp-client@0.2.0-rc.2
+          npx --yes @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile headless list
 
       - name: DeepSeek Harness CLI
         run: |
           echo "===== DSH HELP ====="
-          npx --yes @deepseek-ai/dsh --help
+          npx --yes @deepseek-ai/dsh@0.2.0-rc.2 --help
 
       - name: DeepSeek Harness plugin manager
         run: |
           echo "===== DSH PLUGIN ====="
-          npx --yes @deepseek-ai/dsh plugin --profile headless list
+          npx --yes @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile headless list
 
       - name: DeepSeek Harness Package
         run: |
@@ -89,7 +89,7 @@ jobs:
           grep -A14 -B2 "mcp-br" .dsh/cordis.patch.yml
 
           echo "===== DSH CONFIG ====="
-          npx --yes @deepseek-ai/dsh \
+          npx --yes @deepseek-ai/dsh@0.2.0-rc.2 \
             --profile headless \
             --patch .dsh/cordis.patch.yml \
             --dump-config 2>&1 | tee /tmp/dsh-config.log
@@ -120,6 +120,7 @@ jobs:
 
                       expected = {
                           "br_observe",
+                          "br_knowledge_query",
                           "br_research_run",
                           "br_editorial_process_next",
                           "br_execution_run_once",
@@ -127,7 +128,7 @@ jobs:
                       }
 
                       assert set(names) == expected
-                      assert len(names) == 5
+                      assert len(names) == 6
 
                       print("MCP DISCOVERY: OK")
 
