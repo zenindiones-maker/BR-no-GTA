@@ -1138,9 +1138,11 @@ jobs:
           qa=json.loads((root/"render-qa.json").read_text(encoding="utf-8"))
           semantic=json.loads((root/"semantic-ptbr-audio-qa.json").read_text(encoding="utf-8"))
           padding=json.loads((root/"no-artificial-padding-qa.json").read_text(encoding="utf-8"))
+          audiovisual=json.loads((root/"audiovisual-qa.json").read_text(encoding="utf-8"))
           assert qa.get("status")=="PASS", qa
           assert semantic.get("status")=="PASS", semantic
           assert padding.get("status")=="PASS", padding
+          assert audiovisual.get("status")=="PASS", audiovisual
           print("RENDER_QA=PASS")
           print("POST_BRANDING_FINAL_QA_RESUME=PASS")
           PY
