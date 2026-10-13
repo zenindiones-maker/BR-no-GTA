@@ -1,0 +1,15 @@
+diff --git a/backend/vedit/store.py b/backend/vedit/store.py
+--- a/backend/vedit/store.py
++++ b/backend/vedit/store.py
+@@ -889,7 +889,10 @@ def update_text(self, clip_id: str, **values) -> Clip:
+     # ---- effetti -------------------------------------------------------
+     def add_effect(self, clip_id: str | None, effect: str, params: dict | None = None) -> Effect:
+         """clip_id=None applica l'effetto al master."""
+-        clean = fx.validate_effect(effect, params or {})
++        try:
++            clean = fx.validate_effect(effect, params or {})
++        except ValueError as exc:
++            raise EditError(str(exc)) from exc
+         if clip_id is not None:
+             self._effect_fits(clip_id, [effect])
+         target = self.project.master.effects if clip_id is None else self.clip_for_edit(clip_id)[1].effects
