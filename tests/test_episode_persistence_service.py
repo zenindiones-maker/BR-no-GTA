@@ -104,9 +104,9 @@ def test_create_and_persist_episode():
 
     assert episode["id"] > 0
     assert episode["title"] == "GTA 6 — Episódio 001"
-    assert episode["target_duration_seconds"] == 900.0
-    assert episode["min_duration_seconds"] == 840.0
-    assert episode["max_duration_seconds"] == 960.0
+    assert episode["target_duration_seconds"] == 810.0
+    assert episode["min_duration_seconds"] == 795.0
+    assert episode["max_duration_seconds"] == 820.0
     assert episode["status"] == "draft"
 
     persisted = get_episode(episode["id"])

@@ -248,6 +248,13 @@ mas também COMO transformar aquilo em vídeo.
 
 ## YouTube
 
+Duração padrão do vídeo: 13:15 a 13:40. Nunca forçar 13:00 nem mirar 25 minutos.
+18–20 minutos só com missão completa, mapa abrangente ou história completa de personagem, e com justificativa.
+Gancho limpo nos primeiros 7 segundos, sem violência gráfica.
+Um slot editorial por volta de 8:30. Inserção é planejamento, não garantia de anúncio.
+Rádio do veículo desligado na captura.
+PASS só com a duração medida no arquivo final.
+
 Para conteúdo destinado ao YouTube, analisar:
 
 ### Título

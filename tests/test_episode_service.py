@@ -8,15 +8,15 @@ from app.services.episode_service import (
 )
 
 
-def test_create_episode_defaults_to_15_minutes():
+def test_create_episode_defaults_to_v2_band():
     episode = create_episode(
         title="GTA 6 — Notícias da Semana",
     )
 
     assert episode["title"] == "GTA 6 — Notícias da Semana"
-    assert episode["target_duration_seconds"] == 900.0
-    assert episode["min_duration_seconds"] == 840.0
-    assert episode["max_duration_seconds"] == 960.0
+    assert episode["target_duration_seconds"] == 810.0
+    assert episode["min_duration_seconds"] == 795.0
+    assert episode["max_duration_seconds"] == 820.0
     assert episode["status"] == "draft"
 
 
@@ -88,11 +88,11 @@ def test_validate_episode_rejects_missing_field():
 @pytest.mark.parametrize(
     ("duration", "expected"),
     [
-        (840, True),
-        (900, True),
-        (960, True),
-        (839.99, False),
-        (960.01, False),
+        (795, True),
+        (810, True),
+        (820, True),
+        (794.99, False),
+        (820.01, False),
     ],
 )
 def test_episode_duration_window(
