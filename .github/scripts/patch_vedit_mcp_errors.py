@@ -43,6 +43,11 @@ mcp = VeditMCPServer(
 )"""
 
 if old_server not in s:
+    if "ToolError" in s and ("_strumento" in s or "class VeditMCPServer" in s):
+        print("===== VEDIT MCP PATCH =====")
+        print("Upstream ja converte erro de dominio para ToolError. Patch ignorado.")
+        print("===== END VEDIT MCP PATCH =====")
+        raise SystemExit(0)
     raise SystemExit("ERRO: bloco MCPServer esperado não encontrado.")
 
 s = s.replace(old_import, new_import, 1)

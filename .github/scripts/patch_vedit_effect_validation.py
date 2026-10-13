@@ -20,6 +20,15 @@ new = """    def add_effect(self, clip_id: str | None, effect: str, params: dict
 """
 
 if old not in s:
+    if "fx.validate_effect" in s and (
+        "except (ValueError, KeyError)" in s
+        or "except ValueError as exc:" in s
+        or "_PREVISTI = (ValueError, KeyError, FileNotFoundError)" in Path("backend/vedit/mcp_server.py").read_text()
+    ):
+        print("===== VEDIT EFFECT VALIDATION PATCH =====")
+        print("Upstream ja trata ValueError/KeyError de efeito na fronteira MCP. Patch ignorado.")
+        print("===== END VEDIT EFFECT VALIDATION PATCH =====")
+        raise SystemExit(0)
     raise SystemExit(
         "ERRO: bloco Store.add_effect esperado não encontrado."
     )

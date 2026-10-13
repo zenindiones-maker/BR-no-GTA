@@ -11,6 +11,15 @@ matches = [
 ]
 
 if len(matches) != 1:
+    already = any(
+        'richiesti: {rimedio}' in line
+        for line in lines
+    )
+    if already:
+        print("===== VEDIT PATCH =====")
+        print("Upstream ja usa a linha de duracao compativel com Python 3.11. Patch ignorado.")
+        print("===== END VEDIT PATCH =====")
+        raise SystemExit(0)
     raise SystemExit(
         f"Expected exactly one Vedit timing line, found {len(matches)}."
     )
