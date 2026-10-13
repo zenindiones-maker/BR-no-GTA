@@ -1188,7 +1188,7 @@ def execute_cloud(job, asset_root, output_root):
             measured = _media_duration_seconds(master)
             clip_duration = min(duration, max(0.1, measured - 0.05))
             effective["edit_plan"]["audio"] = [{
-                "media_path": str(master),
+                "media_path": master.resolve().relative_to(root.resolve()).as_posix(),
                 "track": "A1",
                 "start_seconds": 0.0,
                 "source_start_seconds": 0.0,
