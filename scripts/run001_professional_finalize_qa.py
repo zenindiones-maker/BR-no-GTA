@@ -119,8 +119,19 @@ def main() -> int:
     folder = single_folder(Path(args.artifact_root))
     job = load(folder / "render-job.json")
     if job.get("product_profile") != "professional_ptbr_v1":
-        print("PROFESSIONAL_FINAL_QA=SKIPPED")
-        return 0
+        receipt = {
+            "status": "BLOCKED",
+            "stage": "professional_final_branded",
+            "reason": "BLOCKED_INCOMPATIBLE_PRODUCT_PROFILE",
+            "product_profile": job.get("product_profile"),
+            "human_editorial_approval": "PENDING",
+            "youtube_publication_authority": "BLOCKED_PENDING_HUMAN_APPROVAL",
+        }
+        (folder / "audiovisual-qa.json").write_text(
+            json.dumps(receipt, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        print("PROFESSIONAL_FINAL_QA=BLOCKED: BLOCKED_INCOMPATIBLE_PRODUCT_PROFILE")
+        return 2
     gates = {
         "EDITORIAL_QA": load(folder / "editorial-qa.json").get("status"),
         "VOICE_QA": load(folder / "voice-qa.json").get("status"),

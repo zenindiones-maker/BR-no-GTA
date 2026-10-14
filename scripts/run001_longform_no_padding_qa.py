@@ -30,7 +30,10 @@ def single_folder(root: Path) -> Path:
 
 def validate_no_padding(*, job: dict[str, Any], edit_qa: dict[str, Any]) -> dict[str, Any]:
     if job.get("product_profile") != "professional_ptbr_v1":
-        return {"status": "SKIPPED", "reason": "not a professional long-form product"}
+        raise RuntimeError(
+            "BLOCKED_INCOMPATIBLE_PRODUCT_PROFILE: "
+            f"{job.get('product_profile')!r}"
+        )
     if job.get("render_job_id") in {18, 20}:
         raise RuntimeError("forbidden historical RenderJob cannot pass long-form QA")
     if job.get("youtube_publication") is not False:
@@ -124,13 +127,22 @@ def main() -> int:
     parser.add_argument("--artifact-root", required=True, type=Path)
     args = parser.parse_args()
     folder = single_folder(args.artifact_root)
-    result = validate_no_padding(job=load(folder / "render-job.json"), edit_qa=load(folder / "edit-qa.json"))
+    try:
+        result = validate_no_padding(
+            job=load(folder / "render-job.json"),
+            edit_qa=load(folder / "edit-qa.json"),
+        )
+    except RuntimeError as exc:
+        result = {"status": "BLOCKED", "reason": str(exc)}
+        (folder / "no-artificial-padding-qa.json").write_text(
+            json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        print(f"LONG_FORM_NO_PADDING_QA=BLOCKED: {exc}")
+        return 2
+
     (folder / "no-artificial-padding-qa.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    if result.get("status") == "SKIPPED":
-        print("LONG_FORM_NO_PADDING_QA=SKIPPED")
-        return 0
     print("LONG_FORM_NO_PADDING_QA=PASS")
     print("NO_ARTIFICIAL_PADDING=PASS")
     print("JOB18_UNCHANGED=YES")

@@ -113,14 +113,36 @@ def _transcription_confidence(segments) -> float:
     return (sum(values) / len(values)) if values else 0.0
 
 
-def build_human_review_caption(*, label: str) -> str:
+def build_human_review_caption(
+    *, label: str, automatic_qa_status: str = "PASS"
+) -> str:
     normalized = str(label or "").strip().upper()
+    status = str(automatic_qa_status or "").strip().upper()
     if normalized not in {"A", "B", "C"}:
         raise ValueError("OWNER_PTBR_AUDITION_LABEL_INVALID")
+    if status not in {"PASS", "FAIL"}:
+        raise ValueError("OWNER_PTBR_AUDITION_QA_STATUS_INVALID")
+    if status == "PASS":
+        return (
+            f"Teste {normalized} da sua voz em Português do Brasil. "
+            "QA automático: PASS. A identidade vocal e a naturalidade "
+            "ainda precisam da sua avaliação. Ouça e escolha abaixo."
+        )
     return (
         f"Teste {normalized} da sua voz em Português do Brasil. "
-        "Ouça e escolha abaixo."
+        "QA automático: FAIL. Amostra enviada para audição diagnóstica; "
+        "não está liberada para produção. Ouça e indique os ajustes."
     )
+
+
+def select_human_audition_candidates(reviewed):
+    """Keep every generated, inspected candidate available for human listening."""
+    return [
+        row for row in reviewed
+        if isinstance(row, dict)
+        and isinstance(row.get("qa"), dict)
+        and row["qa"].get("status") in {"PASS", "FAIL"}
+    ]
 
 
 def build_human_review_markup(*, label: str) -> dict[str, Any]:
@@ -319,15 +341,19 @@ def main() -> int:
         reviewed.append({**dict(row), "qa": qa})
 
     passing = [row for row in reviewed if row["qa"]["status"] == "PASS"]
-    if not passing:
-        raise RuntimeError("OWNER_PTBR_AUDITION_NO_AUTOMATIC_PASS")
+    candidates = select_human_audition_candidates(reviewed)
+    if not candidates:
+        raise RuntimeError("OWNER_PTBR_AUDITION_OUTPUTS_EMPTY")
 
     deliveries: list[dict[str, Any]] = []
     labels = ("A", "B", "C")
-    for row in passing:
+    for row in candidates:
         variant = int(row["variant"])
         label = labels[variant - 1]
-        caption = build_human_review_caption(label=label)
+        caption = build_human_review_caption(
+            label=label,
+            automatic_qa_status=str(row["qa"]["status"]),
+        )
         voice_note = _convert_to_voice_note(
             row["path"],
             runner_temp / "br-owner-voice" / "voice-notes" / f"BR_OWNER_V1_PTBR_{label}.ogg",
@@ -360,6 +386,8 @@ def main() -> int:
         "model_id": MODEL_ID,
         "model_revision": MODEL_REVISION,
         "automatic_pass_count": len(passing),
+        "automatic_fail_count": len(reviewed) - len(passing),
+        "delivery_count": len(deliveries),
         "deliveries": deliveries,
         "human_voice_identity_review": "PENDING",
         "human_brazilian_accent_review": "PENDING",
@@ -378,6 +406,7 @@ def main() -> int:
         pass
 
     print(f"OWNER_PTBR_AUTOMATIC_PASS_COUNT={len(passing)}")
+    print(f"OWNER_PTBR_AUTOMATIC_FAIL_COUNT={len(reviewed) - len(passing)}")
     print(f"OWNER_PTBR_TELEGRAM_DELIVERY_COUNT={len(deliveries)}")
     print("OWNER_PTBR_OBSERVED_TRANSCRIPT_LOGGED=NO")
     print("HUMAN_VOICE_IDENTITY_REVIEW=PENDING")
