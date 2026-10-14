@@ -1,0 +1,80 @@
+{
+  "schema": "br-no-gta-shared-pronunciation-sources/v1",
+  "version": "2026.10.13.1",
+  "scope": "BR-no-GTA",
+  "purpose": "Canonical shared source registry for PT-BR pronunciation research consumed by research, scripting, narration, QA, and review workflows.",
+  "authority_policy": {
+    "source_audio_is_evidence_not_automatic_approval": true,
+    "asr_never_auto_approves_pronunciation": true,
+    "human_review_required_for_new_or_uncertain_targets": true,
+    "research_coverage_is_not_acoustic_validation": true,
+    "synthetic_or_owner_voice_audio_is_not_a_source_reference": true,
+    "do_not_reuse_historical_run_as_new_generation_proof": true
+  },
+  "sources": [
+    {
+      "source_id": "youtube-ptbr-reference-f8IZhKcuEts",
+      "platform": "youtube",
+      "url": "https://www.youtube.com/watch?v=f8IZhKcuEts",
+      "local_copy_path": "/home/codespace/.local/share/br-no-gta/owner-voice-dubbing-input/f8IZhKcuEts.mp4",
+      "sha256": "b4e981094e468a2ca5f5d270ff2a5338187df935a8d177971a2640bcc28f34be",
+      "duration_seconds": 176.294,
+      "audio": {
+        "codec": "opus",
+        "sample_rate_hz": 48000,
+        "channels": 2
+      },
+      "availability_status": "REMOTE_FILE_PRESENT_METADATA_VERIFIED",
+      "identity_status": "HISTORICAL_CANDIDATE_UNVERIFIED",
+      "acoustic_analysis_status": "PENDING",
+      "human_pronunciation_approval_status": "PENDING",
+      "notes": "Presence and media metadata were checked in the Codespace. Local-origin hash comparison and title/channel confirmation remain outstanding."
+    },
+    {
+      "source_id": "youtube-ptbr-reference-K6rVM6gn6k4",
+      "platform": "youtube",
+      "url": "https://www.youtube.com/watch?v=K6rVM6gn6k4",
+      "local_copy_path": "/home/codespace/.local/share/br-no-gta/owner-voice-dubbing-input/K6rVM6gn6k4.mp4",
+      "sha256": "ec4645c92e41be73a077f33f04159e45b9abc35c7843d5c7a35be7ccd75a1e52",
+      "duration_seconds": 167.354,
+      "audio": {
+        "codec": "opus",
+        "sample_rate_hz": 48000,
+        "channels": 2
+      },
+      "availability_status": "REMOTE_FILE_PRESENT_METADATA_VERIFIED",
+      "identity_status": "HISTORICAL_CANDIDATE_UNVERIFIED",
+      "acoustic_analysis_status": "PENDING",
+      "human_pronunciation_approval_status": "PENDING",
+      "notes": "Presence and media metadata were checked in the Codespace. Local-origin hash comparison and title/channel confirmation remain outstanding."
+    }
+  ],
+  "required_pipeline": [
+    "verify_source_identity_and_provenance",
+    "verify_source_file_hash_and_audio_stream",
+    "extract_audio_without_reencoding_source",
+    "transcribe_and_align_relevant_pronunciation_windows",
+    "store_timestamped_evidence_per_term",
+    "update_research_and_evidence_registry_without_promoting_unapproved_candidates",
+    "synthesize_a_new_owner_voice_audition_from_current_approved_script",
+    "run_pronunciation_and_voice_identity_gates",
+    "deliver_voice_audition_to_telegram_for_human_review",
+    "record_review_result_and_artifact_hash"
+  ],
+  "consumers": [
+    "research",
+    "script_generation",
+    "pronunciation_resolution",
+    "owner_voice_synthesis",
+    "audio_quality_assurance",
+    "human_review",
+    "release_gates"
+  ],
+  "release_constraints": {
+    "old_run_counts_as_new_audition": false,
+    "youtube_video_is_sent_to_telegram": false,
+    "telegram_delivery_is_for_voice_audition_only": true,
+    "final_video_destination": "YouTube private HD after required approvals",
+    "paid_fallback_allowed": false
+  }
+}
