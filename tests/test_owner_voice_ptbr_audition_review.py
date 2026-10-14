@@ -58,10 +58,29 @@ def test_variant_qa_rejects_non_portuguese_or_unintelligible_output():
 
 def test_human_review_delivery_is_clean_voice_note_ui():
     caption = build_human_review_caption(label="B")
-    assert caption == "Teste B da sua voz em Português do Brasil. Ouça e escolha abaixo."
+    assert caption.startswith("Teste B da sua voz em Português do Brasil.")
+    assert "QA automático: PASS" in caption
+    assert "identidade vocal" in caption
     assert "CFG=" not in caption
-    assert "HUMAN_REVIEW" not in caption
     assert "sha" not in caption.casefold()
+
+    failed_caption = build_human_review_caption(
+        label="C", automatic_qa_status="FAIL"
+    )
+    assert "QA automático: FAIL" in failed_caption
+    assert "não está liberada para produção" in failed_caption
+
+    from scripts.owner_voice_ptbr_audition_review import (
+        select_human_audition_candidates,
+    )
+    reviewed = [
+        {"variant": 1, "qa": {"status": "PASS"}},
+        {"variant": 2, "qa": {"status": "FAIL"}},
+    ]
+    assert select_human_audition_candidates(reviewed) == reviewed
+
+    with pytest.raises(ValueError, match="QA_STATUS_INVALID"):
+        build_human_review_caption(label="A", automatic_qa_status="UNKNOWN")
 
     markup = build_human_review_markup(label="B")
     buttons = [button for row in markup["inline_keyboard"] for button in row]
