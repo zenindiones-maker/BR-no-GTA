@@ -147,6 +147,7 @@ jobs:
           python -m venv /tmp/br-owner-stt-venv
           /tmp/br-owner-stt-venv/bin/python -m pip install --disable-pip-version-check -q \
             "faster-whisper==1.2.0" \
+            "av<19" \
             "requests>=2.32,<3"
 
       - name: Quality-rank all real Telegram owner references
