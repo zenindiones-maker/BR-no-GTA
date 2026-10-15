@@ -1124,15 +1124,28 @@ jobs:
       - name: Start resumed final QA performance clock
         run: python scripts/render_pipeline_stage_clock.py start final_qa --path runtime/render/pipeline-stage-clock.json
 
-      - name: Validate required edit checkpoint before expensive final QA
+      - name: Validate required edit checkpoint identity before expensive final QA
+        env:
+          EXPECTED_EXECUTION_ID: ${{ inputs.execution_id }}
         run: |
           set -euo pipefail
-          if ! find runtime/render/output -name "edit-qa.json" -type f -print -quit | grep -q .; then
-            echo "BLOCKED_INCOMPLETE_RENDER_CHECKPOINT: edit-qa.json is absent; producer artifact is diagnostic/incomplete and cannot be resumed as a QA checkpoint."
-            find runtime/render/output -maxdepth 3 -type f -printf "CHECKPOINT_FILE=%P\\n" | sort | head -n 80
-            exit 1
-          fi
-          echo "REQUIRED_EDIT_QA_CHECKPOINT=PASS"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from scripts.edit_checkpoint_guard import CheckpointValidationError, validate_edit_checkpoint
+
+          roots = sorted({p.parent for p in Path("runtime/render/output").rglob("*.mp4") if p.is_file()})
+          if len(roots) != 1:
+              raise SystemExit(f"BLOCKED_AMBIGUOUS_RENDER_OUTPUT_ROOTS:{len(roots)}")
+          try:
+              result = validate_edit_checkpoint(roots[0], os.environ["EXPECTED_EXECUTION_ID"])
+          except CheckpointValidationError as exc:
+              print(f"BLOCKED_INCOMPLETE_OR_MISMATCHED_EDIT_CHECKPOINT:{exc}")
+              raise SystemExit(1) from None
+          print(f"REQUIRED_EDIT_QA_CHECKPOINT=PASS:{result['checkpoint']}")
+          print(f"EDIT_CHECKPOINT_EXECUTION_ID={result['execution_id']}")
+          print(f"EDIT_CHECKPOINT_RENDER_JOB_ID={result['render_job_id']}")
+          PY
 
       - name: Prove spoken audio is Brazilian Portuguese
         run: |
