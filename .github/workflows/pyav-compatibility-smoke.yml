@@ -1,6 +1,9 @@
 name: PyAV Compatibility Smoke Test
 
 on:
+  push:
+    branches:
+      - fix/ptbr-pyav-runtime-and-recovery-v1
   workflow_dispatch:
 
 permissions:
