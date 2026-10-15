@@ -62,3 +62,8 @@ jobs:
           print("FASTER_WHISPER_DECODE_SMOKE=PASS")
           print(f"DECODED_SAMPLES={len(decoded)}")
           PYTEST
+
+      - name: Run bounded edit checkpoint identity regression tests
+        run: |
+          set -euo pipefail
+          python -m unittest tests/test_edit_checkpoint_guard.py -v
