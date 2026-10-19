@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 from typing import Any, TypedDict
 
@@ -205,6 +206,29 @@ def _merge_complementary_longform_structure(
     return merged
 
 
+_PT_WEEKDAYS = ("segunda-feira", "terça-feira", "quarta-feira", "quinta-feira",
+                "sexta-feira", "sábado", "domingo")
+
+
+def _editorial_today():
+    """Data de referência do roteiro (America/Sao_Paulo); BR_EDITORIAL_TODAY=AAAA-MM-DD fixa."""
+    import datetime as _dt
+    raw = (os.environ.get("BR_EDITORIAL_TODAY") or "").strip()
+    if raw:
+        return _dt.date.fromisoformat(raw)
+    from zoneinfo import ZoneInfo
+    return _dt.datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+
+
+def _time_anchor_text() -> str:
+    today = _editorial_today()
+    return (
+        f"Data de hoje: {today.strftime('%d/%m/%Y')} ({_PT_WEEKDAYS[today.weekday()]}), "
+        "fuso America/Sao_Paulo. Calcule 'faltam X dias', 'este ano' e 'ano que vem' "
+        "a partir desta data."
+    )
+
+
 def _build_ai_prompt(
     *,
     title: str,
@@ -289,9 +313,16 @@ CONTEXTO DE PESQUISA
 {editorial_text}
 {duration_instruction}
 
+DATA DE REFERÊNCIA
+{_time_anchor_text()}
+
 REGRAS
 - Não invente fatos.
 - Não apresente especulação como confirmação.
+- Canal de conteúdo OFICIAL: não especule, não use "talvez"/"provavelmente" para preencher.
+- Não cite dia da semana de uma data, a menos que esteja nas evidências.
+- Não use a memória do modelo: nada de histórico de outros jogos, adiamentos passados,
+  bastidores ou números que não estejam nas evidências fornecidas.
 - Use somente as informações fornecidas e as claims explicitamente verificadas.
 - Considere o contexto editorial do YouTube Department quando fornecido, mas ele não pode substituir evidência factual.
 - Escreva em português brasileiro.
