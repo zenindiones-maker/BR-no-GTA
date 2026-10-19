@@ -119,8 +119,26 @@ def test_workflow_is_asr_only_and_request_gated():
     assert "readonly_telegram_api_call" in script
 
 
-def test_no_armed_request_is_committed():
-    assert not REQUEST.exists()
+def test_armed_request_if_present_is_one_shot_asr_only():
+    """An owner-approved request may be armed; it must be ASR-only and one-shot.
+
+    Absent is valid (contract-only). Present must match the workflow guard and
+    must not reuse a request_id already consumed (no silent re-run).
+    """
+    if not REQUEST.exists():
+        return
+    d = json.loads(REQUEST.read_text(encoding="utf-8"))
+    assert d["schema_version"] == "OwnerVoiceReferenceAsrSurveyRequest/v1"
+    assert d["voice_identity_id"] == "BR_OWNER_V1"
+    assert d["asr_only"] is True and d["synthesis"] is False and d["telegram_send"] is False
+    assert d.get("telegram_methods") == ["getFile"]
+    assert d.get("one_run_only") is True and d.get("thresholds_changed") is False
+    assert d.get("selection_authority") == "NONE_HUMAN_OWNER_REVIEW_REQUIRED"
+    rid = d.get("request_id")
+    assert isinstance(rid, str) and rid
+    consumed = ROOT / ".run/consumed"
+    for f in consumed.glob("br-owner-v1-reference-asr-survey*.json"):
+        assert json.loads(f.read_text(encoding="utf-8")).get("request_id") != rid
 
 
 def test_script_end_to_end_with_fake_runtime(tmp_path, monkeypatch):
