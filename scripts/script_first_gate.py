@@ -65,6 +65,18 @@ def _is_official(url: str) -> bool:
     return any(host == d or host.endswith("." + d) for d in OFFICIAL_DOMAINS)
 
 
+PLATFORM_DOMAINS = ("playstation.com", "xbox.com")
+
+
+def _source_kind(url: str) -> str:
+    if _is_official(url):
+        return "official"
+    host = (urlparse(url).hostname or "").casefold()
+    if urlparse(url).scheme == "https" and any(host == d or host.endswith("." + d) for d in PLATFORM_DOMAINS):
+        return "official_platform"
+    return "other"
+
+
 def transition(record: dict[str, Any], new_status: str, *, actor: str = "", approved_at: str = "") -> dict[str, Any]:
     cur = record.get("status")
     if new_status not in STATUSES or new_status not in TRANSITIONS.get(cur, set()):
@@ -233,8 +245,51 @@ def deliver(*, script_id: str, script_sha256: str, videos_root: Path | str | Non
     return rec
 
 
+def _lint_evidence_rows(evidence: list[Any] | None) -> list[dict[str, Any]] | None:
+    if evidence is None:
+        return None
+    rows: list[dict[str, Any]] = []
+    for item in evidence:
+        if isinstance(item, dict):
+            status = item.get("verification_status")
+            if status not in (None, "VERIFIED"):
+                continue
+            statement = str(item.get("statement") or item.get("text") or "").strip()
+            urls = [u for u in (item.get("source_urls") or ()) if u]
+        else:
+            statement, urls = str(item or "").strip(), []
+        if statement:
+            rows.append({"statement": statement, "source_urls": urls})
+    return rows
+
+
+def lint_or_raise(text: str, evidence: list[Any] | None, *, script_id: str, digest: str) -> dict[str, Any]:
+    """Lint determinístico pré-editorial_ok; grava relatório em BR_SCRIPT_LINT_REPORT."""
+    from app.services.editorial_script_lint import format_findings, lint_script
+
+    rows = _lint_evidence_rows(evidence)
+    findings = lint_script(text, evidence=rows)
+    report = {
+        "schema": "br-roteiro-lint/v1", "script_id": script_id, "sha256": digest,
+        "status": "FAIL" if findings else "PASS",
+        "evidence_checked": rows is not None,
+        "evidence_claim_count": len(rows or ()),
+        "findings": findings,
+    }
+    target = os.environ.get("BR_SCRIPT_LINT_REPORT")
+    if target:
+        path = Path(target)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({**report, "draft_text": text}, ensure_ascii=False, indent=2),
+                        encoding="utf-8")
+    if findings:
+        raise ScriptGateError(f"SCRIPT_LINT_FAILED ({len(findings)}): {format_findings(findings)}")
+    return report
+
+
 def write_editorial_script(result: dict[str, Any], *, goal_id: str | None = None,
-                           root: Path | str | None = None) -> dict[str, Any]:
+                           root: Path | str | None = None,
+                           evidence: list[Any] | None = None) -> dict[str, Any]:
     """Grava o roteiro do agente editorial em content/roteiros (rascunho -> editorial_ok)
     e preenche scripts.content_sha256. Nunca aprova: aprovação é só do Luiz."""
     plan = result.get("production_plan") or {}
@@ -266,12 +321,18 @@ def write_editorial_script(result: dict[str, Any], *, goal_id: str | None = None
     except ValueError:
         raise ScriptGateError("BR_EDITORIAL_VERIFIED_SOURCES must be a JSON list")
     urls += [sc["source_url"] for sc in scenes if sc.get("source_url")]
-    sources = [{"url": u, "kind": "official" if _is_official(u) else "other"} for u in dict.fromkeys(urls)]
+    sources = [{"url": u, "kind": _source_kind(u)} for u in dict.fromkeys(urls)]
+    # Lint determinístico ANTES de editorial_ok (Luiz, 18/10/2026): nada é
+    # gravado em content/roteiros se houver especulação, comparação fora da
+    # evidência, dia da semana errado ou número/data sem fonte.
+    lint_report = lint_or_raise(text, evidence, script_id=script_id, digest=digest)
     rec = {"schema": "br-roteiro/v1", "script_id": script_id, "episode_slug": script_id,
            "title": script.get("title") or "", "goal_id": goal_id, "db_script_id": db_id,
            "status": "rascunho", "author_agent": "br_editorial_process_next", "sha256": digest,
            "target_duration_seconds": plan.get("estimated_duration_seconds"),
            "scenes": scenes, "sources": sources, "approval": None, "package": None,
+           "lint": {k: lint_report[k] for k in ("status", "evidence_checked", "evidence_claim_count")},
+           "evidence_claims": _lint_evidence_rows(evidence) or [],
            **_duration_fields(text)}
     check_duration(rec, text)
     rec = transition(rec, "editorial_ok", actor="br_editorial_process_next")

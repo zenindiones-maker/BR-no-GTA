@@ -323,6 +323,10 @@ REGRAS
 - Não cite dia da semana de uma data, a menos que esteja nas evidências.
 - Não use a memória do modelo: nada de histórico de outros jogos, adiamentos passados,
   bastidores ou números que não estejam nas evidências fornecidas.
+- Um lint automático REJEITA o roteiro inteiro se houver: talvez, provavelmente,
+  possivelmente, pode ser que, rumores; nome de outro jogo/filme fora das evidências;
+  dia da semana que não bata com o calendário; número ou data que não esteja nas
+  evidências (exceto a data de hoje e a contagem de dias até uma data das evidências).
 - Use somente as informações fornecidas e as claims explicitamente verificadas.
 - Considere o contexto editorial do YouTube Department quando fornecido, mas ele não pode substituir evidência factual.
 - Escreva em português brasileiro.

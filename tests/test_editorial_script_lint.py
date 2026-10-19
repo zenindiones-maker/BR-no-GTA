@@ -71,7 +71,7 @@ def test_unsourced_numbers_and_dates_rejected():
 
 def test_findings_report_offending_line():
     findings = lint.lint_script("Linha boa no PS5.\n\nTalvez saia no PC.", evidence=EVIDENCE)
-    assert findings and findings[0]["line"] == 2
+    assert findings and findings[0]["line"] == 3 and findings[0]["scene"] == 2
     assert "Talvez saia no PC." in findings[0]["text"]
 
 

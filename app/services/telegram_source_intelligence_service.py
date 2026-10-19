@@ -160,6 +160,39 @@ def _extract_claims(text: str, *, limit: int = 4) -> list[str]:
     return selected[:limit]
 
 
+MAX_PACKET_CLAIMS = 40
+
+
+def _packet_claims(packet: dict[str, Any]) -> list[str]:
+    """Claims da fonte submetida + claims literais de cada fonte oficial lida.
+
+    As fontes oficiais (Rockstar, PlayStation, Xbox, Take-Two) entram com a URL
+    de origem no packet; o fact-check abaixo exige que o texto esteja no excerpt
+    oficial (sobreposição), então nada entra sem suporte oficial.
+    """
+    submitted = packet.get("submitted_source")
+    submitted_text = (
+        str(submitted.get("content_excerpt") or "")
+        if isinstance(submitted, dict) and submitted.get("resolution_status") == "PASS"
+        else ""
+    )
+    selected: list[str] = []
+    seen: set[str] = set()
+    candidates = list(_extract_claims(submitted_text))
+    for item in packet.get("official_claims") or ():
+        if isinstance(item, dict):
+            candidates.append(" ".join(str(item.get("statement") or "").split()))
+    for statement in candidates:
+        key = statement.casefold()
+        if not statement or key in seen:
+            continue
+        seen.add(key)
+        selected.append(statement)
+        if len(selected) >= MAX_PACKET_CLAIMS:
+            break
+    return selected
+
+
 def _editorial_topic(claims: list[dict[str, Any]]) -> str:
     statements = [
         str(item.get("statement") or "").strip()
@@ -286,13 +319,7 @@ def _dossier(
     sources = _research_sources(packet)
     if len(sources) < 3:
         return None
-    submitted = packet.get("submitted_source")
-    submitted_text = (
-        str(submitted.get("content_excerpt") or "")
-        if isinstance(submitted, dict) and submitted.get("resolution_status") == "PASS"
-        else ""
-    )
-    claims = tuple(_extract_claims(submitted_text))
+    claims = tuple(_packet_claims(packet))
     dossier_id = _stable(
         "dossier",
         f"{candidate['candidate_id']}:{execution_id}:{packet.get('checked_at')}",
@@ -1076,9 +1103,7 @@ def process_telegram_source_intelligence(
         execution_id=str(getattr(fresh_evidence, "execution_id", "")),
     )
     dossier_id = dossier.mission_id if dossier is not None else None
-    claims_text = list(dossier.claims_extracted) if dossier is not None else _extract_claims(
-        str(submitted.get("content_excerpt") or "")
-    )
+    claims_text = list(dossier.claims_extracted) if dossier is not None else _packet_claims(packet)
     candidate = source_repository.transition_source_candidate(
         candidate["candidate_id"],
         state="CLAIMS_EXTRACTED",

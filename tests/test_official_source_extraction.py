@@ -109,3 +109,10 @@ def test_collect_fetches_every_official_url_with_per_claim_source(monkeypatch):
 def test_worker_cli_accepts_official_urls_b64():
     body = Path(worker.__file__).read_text(encoding="utf-8")
     assert "--official-urls-b64" in body
+
+
+def test_synergy_workflow_feeds_every_official_url_into_the_research_packet():
+    body = (Path(__file__).resolve().parents[1] / ".github/workflows/real-multi-agent-synergy.yml").read_text()
+    assert '--official-urls-b64 "$OFFICIAL_B64"' in body
+    assert "BR_SCRIPT_LINT_REPORT: runtime/real-multi-agent-synergy/script-lint.json" in body
+    assert "runtime/real-multi-agent-synergy/script-lint.json" in body.split("Upload auditable synergy evidence")[1]

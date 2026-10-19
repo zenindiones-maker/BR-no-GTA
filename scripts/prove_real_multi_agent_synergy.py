@@ -237,6 +237,14 @@ def _claim_context(intelligence: dict[str, Any]) -> list[dict[str, Any]]:
             "fact_check_result": fact.get("verdict"),
             "fact_check_confidence": fact.get("confidence"),
             "evidence_refs": list(item.get("evidence_refs") or ())[:12],
+            # URL oficial de onde o claim foi extraído/sustentado (por claim).
+            "source_urls": list(dict.fromkeys(
+                str(ref) for ref in [
+                    *(item.get("source_refs") or ()),
+                    *(item.get("evidence_refs") or ()),
+                ]
+                if str(ref).startswith("https://")
+            ))[:6],
         })
     return rows
 

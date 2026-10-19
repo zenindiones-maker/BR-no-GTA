@@ -39,3 +39,12 @@ def test_official_claim_gets_official_support_and_source_url():
     evidence, hierarchy = svc._evidence_for_claim(statement, packet)
     assert hierarchy["official_support"] is True
     assert any(e["source_ref"] == PS and e["stance"] == "supporting" for e in evidence)
+
+
+def test_claim_context_carries_source_urls_per_claim():
+    from scripts.prove_real_multi_agent_synergy import _claim_context
+    rows = _claim_context({"claims": [{
+        "claim_id": "c1", "statement": "x", "verification_status": "VERIFIED",
+        "source_refs": [], "evidence_refs": ["fetch:abc", PS, f"fact-check-routing:r"],
+    }]})
+    assert rows[0]["source_urls"] == [PS]

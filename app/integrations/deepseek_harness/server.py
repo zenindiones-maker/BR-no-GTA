@@ -450,7 +450,10 @@ def br_editorial_process_next(
         if (result.get("production_plan") or {}).get("scenes"):
             from scripts.script_first_gate import write_editorial_script
 
-            roteiro = write_editorial_script(result, goal_id=goal_id)
+            claims = (editorial_context or {}).get("verified_claims")
+            roteiro = write_editorial_script(result, goal_id=goal_id, evidence=(
+                list(claims) if isinstance(claims, list) else None
+            ))
             result["roteiro"] = {
                 "script_id": roteiro["script_id"],
                 "sha256": roteiro["sha256"],
