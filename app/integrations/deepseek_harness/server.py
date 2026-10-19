@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 from dataclasses import asdict, is_dataclass
@@ -276,6 +277,71 @@ def br_route(
     )
 
 
+
+def _build_resilient_editorial_provider(
+    *,
+    decision,
+    authorization,
+    lineage: dict,
+    routing_request: HarnessRoutingRequest,
+):
+    """Wrap the Harness-selected editorial provider (Luiz, 11/10/2026).
+
+    Shared by every editorial route (the package ``__init__`` overrides
+    ``_route_editorial_provider``), so retry/timeout/checkpoint/fallback are
+    active on the route that really runs.  The reserve is never chosen here:
+    a new Harness routing decision excludes the exhausted provider/model pair
+    under ``zero_cost_operation`` and gets a fresh typed authorization.
+    """
+    request_timeout = float(os.getenv("BR_EDITORIAL_REQUEST_TIMEOUT_SECONDS") or 240.0)
+    _, primary = select_harness_ai_provider(
+        routing_decision=decision,
+        authorization=authorization,
+        request_timeout_seconds=request_timeout,
+    )
+    exhausted = (str(decision.selected_provider), str(decision.selected_model))
+
+    def _governed_zero_cost_fallback():
+        fb_decision = route_harness_request(
+            dataclasses.replace(
+                routing_request,
+                intent="editorial fallback after primary provider/model exhausted",
+                exhausted_provider_model_pairs=(exhausted,),
+                fallback_allowed=True,
+                zero_cost_operation=True,
+            )
+        )
+        pair = (str(fb_decision.selected_provider), str(fb_decision.selected_model))
+        if not fb_decision.selected_provider or pair == exhausted:
+            raise RuntimeError(
+                "Harness did not route a distinct zero-cost editorial fallback"
+            )
+        fb_auth = issue_harness_authorization(
+            authorized_action="EDITORIAL",
+            subject=f"provider:{fb_decision.selected_provider}",
+            lineage={
+                **lineage,
+                "fallback_of": "/".join(exhausted),
+                "routing_id": fb_decision.routing_id,
+                "selected_provider": fb_decision.selected_provider,
+                "selected_model": fb_decision.selected_model,
+            },
+        )
+        _, fb = select_harness_ai_provider(
+            routing_decision=fb_decision,
+            authorization=fb_auth,
+            request_timeout_seconds=request_timeout,
+        )
+        return fb
+
+    return ResilientEditorialProvider(
+        primary,
+        fallback_factory=_governed_zero_cost_fallback,
+        max_retries=int(os.getenv("BR_EDITORIAL_PROVIDER_RETRIES") or 2),
+        backoff_seconds=float(os.getenv("BR_EDITORIAL_PROVIDER_BACKOFF_SECONDS") or 5.0),
+        checkpoint_dir=os.getenv("BR_EDITORIAL_CHECKPOINT_DIR") or None,
+    )
+
 def _route_editorial_provider(
     goal_id: str | None = None,
     target_duration_seconds: float | None = None,
@@ -285,17 +351,16 @@ def _route_editorial_provider(
     target_duration_seconds = _normalize_optional_target_duration_seconds(
         target_duration_seconds
     )
-    decision = route_harness_request(
-        HarnessRoutingRequest(
-            intent="process next GTA6 editorial queue item with AI reasoning",
-            authorized_action="EDITORIAL",
-            domain="editorial",
-            required_capability_id="editorial.process",
-            provider_required=True,
-            provider_domain="ai",
-            fallback_allowed=False,
-        )
+    routing_request = HarnessRoutingRequest(
+        intent="process next GTA6 editorial queue item with AI reasoning",
+        authorized_action="EDITORIAL",
+        domain="editorial",
+        required_capability_id="editorial.process",
+        provider_required=True,
+        provider_domain="ai",
+        fallback_allowed=False,
     )
+    decision = route_harness_request(routing_request)
     if not decision.selected_provider:
         raise RuntimeError("Harness routing did not select the editorial AI provider")
 
@@ -315,51 +380,11 @@ def _route_editorial_provider(
         subject=f"provider:{decision.selected_provider}",
         lineage=lineage,
     )
-    request_timeout = float(os.getenv("BR_EDITORIAL_REQUEST_TIMEOUT_SECONDS") or 240.0)
-    _, primary = select_harness_ai_provider(
-        routing_decision=decision,
+    provider = _build_resilient_editorial_provider(
+        decision=decision,
         authorization=authorization,
-        request_timeout_seconds=request_timeout,
-    )
-
-    def _governed_opencode_fallback():
-        # Fallback só pelo Harness: nova decisão de roteamento restrita a
-        # opencode (big-pickle, custo zero) e nova autorização tipada.
-        fb_decision = route_harness_request(
-            HarnessRoutingRequest(
-                intent="editorial fallback after primary provider exhausted",
-                authorized_action="EDITORIAL",
-                domain="editorial",
-                required_capability_id="editorial.process",
-                provider_required=True,
-                provider_domain="ai",
-                preferred_providers=("opencode",),
-                allowed_providers=("opencode",),
-                unavailable_provider_ids=(str(decision.selected_provider),),
-                fallback_allowed=True,
-                zero_cost_operation=True,
-            )
-        )
-        if fb_decision.selected_provider != "opencode":
-            raise RuntimeError("Harness did not route editorial fallback to opencode")
-        fb_auth = issue_harness_authorization(
-            authorized_action="EDITORIAL",
-            subject="provider:opencode",
-            lineage={**lineage, "fallback_of": decision.selected_provider,
-                     "routing_id": fb_decision.routing_id},
-        )
-        _, fb = select_harness_ai_provider(
-            routing_decision=fb_decision, authorization=fb_auth,
-            request_timeout_seconds=request_timeout,
-        )
-        return fb
-
-    provider = ResilientEditorialProvider(
-        primary,
-        fallback_factory=_governed_opencode_fallback,
-        max_retries=int(os.getenv("BR_EDITORIAL_PROVIDER_RETRIES") or 2),
-        backoff_seconds=float(os.getenv("BR_EDITORIAL_PROVIDER_BACKOFF_SECONDS") or 5.0),
-        checkpoint_dir=os.getenv("BR_EDITORIAL_CHECKPOINT_DIR") or None,
+        lineage=lineage,
+        routing_request=routing_request,
     )
     return decision, authorization, provider
 

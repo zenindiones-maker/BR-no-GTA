@@ -998,7 +998,43 @@ def _build_sequence_batch_prompt(
         "transição ao espectador.\n"
     )
 
-def _generate_provider_structure(*, ai_provider: AIProvider, prompt: str) -> dict[str, Any]:
+def _validate_ai_batch_structure(structure: Any) -> dict[str, Any]:
+    """Validate one longform expansion batch (Luiz, 11/10/2026).
+
+    A batch covers only the story beats it was given, so it needs at least one
+    development block.  hook/introduction/conclusion/cta are scaffolding that
+    the assembly never uses; they are optional here.  The full-script contract
+    (>= 3 blocks + all fields) stays in ``_validate_ai_structure``.
+    """
+    if not isinstance(structure, dict):
+        raise AIProviderError("AI batch response must contain a JSON object.")
+    development = structure.get("development")
+    if not isinstance(development, list) or len(development) < 1:
+        raise AIProviderError(
+            "AI batch response development must contain at least 1 section."
+        )
+    for section in development:
+        if not isinstance(section, dict):
+            raise AIProviderError("AI batch development sections must be objects.")
+        heading = section.get("heading")
+        body = section.get("body")
+        if not isinstance(heading, str) or not heading.strip():
+            raise AIProviderError("AI batch development heading must be non-empty.")
+        if not isinstance(body, str) or not body.strip():
+            raise AIProviderError("AI batch development body must be non-empty.")
+    out = dict(structure)
+    for field in ("hook", "introduction", "conclusion", "cta"):
+        value = out.get(field)
+        out[field] = value if isinstance(value, str) else ""
+    return out
+
+
+def _generate_provider_structure(
+    *,
+    ai_provider: AIProvider,
+    prompt: str,
+    validator: Any = None,
+) -> dict[str, Any]:
     malformed_prompt = prompt
     parsed: dict[str, Any] | None = None
     for malformed_retry in range(MAX_MALFORMED_PROVIDER_RETRIES + 1):
@@ -1029,7 +1065,7 @@ def _generate_provider_structure(*, ai_provider: AIProvider, prompt: str) -> dic
             code="malformed_structured_output",
             retryable=False,
         )
-    return _validate_ai_structure(parsed)
+    return (validator or _validate_ai_structure)(parsed)
 
 
 def _story_assembly_metadata(*, structure: dict[str, Any], video_plan: VideoPlan) -> StoryAssembly:
@@ -1178,6 +1214,7 @@ def _generate_ai_structure(
             generated = _generate_provider_structure(
                 ai_provider=ai_provider,
                 prompt=batch_prompt,
+                validator=_validate_ai_batch_structure,
             )
             before_words = _structure_word_count(assembly)
             assembly = _merge_complementary_longform_structure(

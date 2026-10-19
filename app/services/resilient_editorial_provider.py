@@ -27,6 +27,7 @@ class ResilientEditorialProvider:
         self.backoff_seconds = float(backoff_seconds)
         self.checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else None
         self._fallback: Any = None
+        self._primary_exhausted = False
         self.events: list[dict[str, Any]] = []
         for attr in ("provider_name", "model", "last_performance_metrics"):
             if hasattr(primary, attr):
@@ -34,7 +35,7 @@ class ResilientEditorialProvider:
 
     def __getattr__(self, name: str) -> Any:
         # Delegação transparente (métricas, nome do provider etc.).
-        if name in {"primary", "__setstate__"}:
+        if name in {"primary", "__setstate__", "_primary_exhausted", "_fallback"}:
             raise AttributeError(name)
         return getattr(self.primary, name)
 
@@ -68,8 +69,11 @@ class ResilientEditorialProvider:
             d = json.loads(path.read_text(encoding="utf-8"))
             self.events.append({"provider": "checkpoint", "status": "resumed"})
             return AIResponse(text=d["text"], provider=d.get("provider"), model=d.get("model"))
-        resp = self._attempt(self.primary, prompt, "primary")
+        # Depois que o primário se esgota, os próximos trechos do mesmo roteiro
+        # vão direto à reserva governada (sem repetir 3 timeouts por trecho).
+        resp = None if self._primary_exhausted else self._attempt(self.primary, prompt, "primary")
         if resp is None:
+            self._primary_exhausted = True
             if self._fallback is None:
                 self._fallback = self.fallback_factory()
             resp = self._attempt(self._fallback, prompt, "fallback")

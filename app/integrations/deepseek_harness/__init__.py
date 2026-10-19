@@ -8,7 +8,7 @@ provider boundary.
 """
 
 from app.services.harness_authorization_service import issue_harness_authorization
-from app.services.harness_ai_provider_service import select_harness_ai_provider
+from app.services.harness_ai_provider_service import select_harness_ai_provider  # noqa: F401 (patch point)
 from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
@@ -32,17 +32,16 @@ def _route_editorial_ai_provider(
     target_duration_seconds = _server._normalize_optional_target_duration_seconds(
         target_duration_seconds
     )
-    decision = route_harness_request(
-        HarnessRoutingRequest(
-            intent="provide AI reasoning for the next GTA6 editorial queue item",
-            authorized_action="EDITORIAL",
-            domain="ai",
-            required_capability_id="ai.reasoning.text",
-            provider_required=True,
-            provider_domain="ai",
-            fallback_allowed=False,
-        )
+    routing_request = HarnessRoutingRequest(
+        intent="provide AI reasoning for the next GTA6 editorial queue item",
+        authorized_action="EDITORIAL",
+        domain="ai",
+        required_capability_id="ai.reasoning.text",
+        provider_required=True,
+        provider_domain="ai",
+        fallback_allowed=False,
     )
+    decision = route_harness_request(routing_request)
     if not decision.selected_provider:
         raise RuntimeError("Harness routing did not select the editorial AI provider")
 
@@ -64,9 +63,13 @@ def _route_editorial_ai_provider(
         subject=f"provider:{decision.selected_provider}",
         lineage=lineage,
     )
-    _, provider = select_harness_ai_provider(
-        routing_decision=decision,
+    # Luiz 11/10/2026: retry, timeout do workflow, checkpoint parcial e reserva
+    # gratuita roteada pelo Harness valem nesta rota, que é a que roda.
+    provider = _server._build_resilient_editorial_provider(
+        decision=decision,
         authorization=authorization,
+        lineage=lineage,
+        routing_request=routing_request,
     )
     return decision, authorization, provider
 

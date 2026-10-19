@@ -111,10 +111,13 @@ def test_longform_generated_in_chunks():
 
 
 def test_harness_editorial_wraps_resilient_provider():
+    # Checagem estática complementar; o comportamento real (rota do pacote)
+    # está em tests/test_editorial_real_route_resilience.py.
     src = (ROOT / "app/integrations/deepseek_harness/server.py").read_text(encoding="utf-8")
     body = src.split("def _route_editorial_provider(")[1].split("\ndef ")[0]
-    assert "ResilientEditorialProvider(" in body
-    assert '"opencode"' in body
+    assert "_build_resilient_editorial_provider(" in body
+    init = (ROOT / "app/integrations/deepseek_harness/__init__.py").read_text(encoding="utf-8")
+    assert "_build_resilient_editorial_provider(" in init
 
 
 def test_editorial_writer_uses_research_verified_sources(tmp_path, monkeypatch):

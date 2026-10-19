@@ -11,7 +11,7 @@ on:
       source_urls:
         description: "URLs oficiais separadas por espaço; a primeira é a fonte primária"
         required: false
-        default: "https://www.rockstargames.com/VI https://www.take2games.com/ https://store.playstation.com/pt-br/ https://www.xbox.com/pt-BR/games/store"
+        default: "https://www.rockstargames.com/VI https://www.playstation.com/pt-br/games/grand-theft-auto-vi/ https://www.xbox.com/pt-BR/games/grand-theft-auto-vi https://www.take2games.com/"
         type: string
       target_duration_seconds:
         description: "Duração-alvo do roteiro em segundos (24-26 min = 1440-1560)"
