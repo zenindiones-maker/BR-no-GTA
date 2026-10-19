@@ -34,6 +34,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install FFmpeg (apt, open source)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version | head -1
+          ffprobe -version | head -1
+
       - name: Create isolated test venv
         run: |
           python -m venv .venv
