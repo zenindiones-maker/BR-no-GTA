@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import re
+from scripts.script_first_gate import render_dispatch_inputs
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -568,6 +569,7 @@ def dispatch_handoff(
         workflow="render-worker.yml",
         ref=os.environ.get("GITHUB_ACTIONS_RENDER_REF", "work/gate6f-analytics-learning"),
         inputs={
+            **render_dispatch_inputs(),
             "render_job": "",
             "render_job_descriptor": descriptor_compact,
             "brain_decision_id": str(job["brain_decision_id"]),

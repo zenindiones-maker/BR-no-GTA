@@ -22,6 +22,10 @@ from app.services.fresh_research_dispatch_contract import (
     decode_fresh_research_query_b64,
 )
 from app.services.performance_telemetry_service import PerformanceSpan
+from app.services.official_source_extraction import (
+    extract_official_evidence,
+    is_official_url,
+)
 
 
 OFFICIAL_SOURCES = (
@@ -200,12 +204,18 @@ def _fetch_text_conditional(
     }
 
 
-def _fetch_text(url: str, *, timeout: int = 25) -> tuple[str, str]:
+def _fetch_raw(
+    url: str,
+    *,
+    timeout: int = 25,
+    accept_language: str = "pt-BR,pt;q=0.9,en-US;q=0.8",
+) -> tuple[str, str]:
+    """HTML bruto (com <script>) para extração de JSON-LD/meta/JSON embutido."""
     request = urllib.request.Request(
         url,
         headers={
             "User-Agent": USER_AGENT,
-            "Accept-Language": "en-US,en;q=0.9,pt-BR;q=0.8",
+            "Accept-Language": accept_language,
             "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.5",
         },
     )
@@ -223,7 +233,13 @@ def _fetch_text(url: str, *, timeout: int = 25) -> tuple[str, str]:
         perf.set(network_ms=perf.elapsed_ms(), output_size=len(raw_bytes), attempt_count=1)
     if "text/" not in content_type and "json" not in content_type and content_type:
         raise ValueError("submitted source is not textual")
-    raw = raw_bytes.decode("utf-8", errors="replace")
+    return raw_bytes.decode("utf-8", errors="replace"), final_url
+
+
+def _fetch_text(url: str, *, timeout: int = 25) -> tuple[str, str]:
+    raw, final_url = _fetch_raw(
+        url, timeout=timeout, accept_language="en-US,en;q=0.9,pt-BR;q=0.8"
+    )
     raw = re.sub(r"<script\b[^>]*>.*?</script>", " ", raw, flags=re.I | re.S)
     raw = re.sub(r"<style\b[^>]*>.*?</style>", " ", raw, flags=re.I | re.S)
     raw = re.sub(r"<[^>]+>", " ", raw)
@@ -380,6 +396,17 @@ def _relevant_excerpt(text: str, query: str, *, limit: int = MAX_OFFICIAL_TEXT) 
     return rendered[:limit]
 
 
+def _interleave_claims(official: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Claims de todas as fontes, alternando fonte a fonte (nenhuma domina o corte)."""
+    queues = [list(item.get("claims") or ()) for item in official]
+    out: list[dict[str, Any]] = []
+    while any(queues):
+        for queue in queues:
+            if queue:
+                out.append(dict(queue.pop(0)))
+    return out
+
+
 def collect(
     query: str,
     *,
@@ -391,6 +418,7 @@ def collect(
     classification: str = "",
     input_kind: str = "",
     memory_event_id: str = "",
+    official_source_urls: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     checked_at = datetime.now(timezone.utc).isoformat()
     submitted_source = (
@@ -405,33 +433,76 @@ def collect(
     official: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
 
-    for source_name, url in OFFICIAL_SOURCES:
-        try:
-            text, resolved_url = _fetch_text(url)
-        except Exception as exc:
-            errors.append({"source": source_name, "url": url, "error": type(exc).__name__})
-            continue
-        if _source_hierarchy(resolved_url) != "OFFICIAL_PRIMARY":
-            errors.append({
-                "source": source_name,
-                "url": url,
-                "error": "OFFICIAL_SOURCE_REDIRECTED_OUTSIDE_PRIMARY_DOMAIN",
-            })
-            continue
-        official.append(
-            {
-                "source_name": source_name,
-                "url": url,
-                "authority": "official",
-                "source_hierarchy": "OFFICIAL_PRIMARY",
-                "original_source": True,
-                "resolved_url": resolved_url,
-                "checked_at": checked_at,
-                "independent_group": _root_domain(url),
-                "content_fingerprint": _content_fingerprint(_relevant_excerpt(text, query)),
-                "content_excerpt": _relevant_excerpt(text, query),
-            }
-        )
+    requested = [
+        str(u).strip() for u in (official_source_urls or ()) if str(u or "").strip()
+    ]
+    if requested:
+        # Diretriz do Luiz (18/10/2026): ler TODAS as fontes oficiais informadas
+        # (Rockstar, PlayStation, Xbox, Take-Two), com URL por claim.
+        for url in dict.fromkeys(requested):
+            if not is_official_url(url):
+                errors.append({"source": url, "url": url, "error": "NOT_AN_OFFICIAL_SOURCE"})
+                continue
+            try:
+                raw, resolved_url = _fetch_raw(url)
+            except Exception as exc:
+                errors.append({"source": url, "url": url, "error": type(exc).__name__})
+                continue
+            if not is_official_url(resolved_url):
+                errors.append({
+                    "source": url,
+                    "url": url,
+                    "error": "OFFICIAL_SOURCE_REDIRECTED_OUTSIDE_PRIMARY_DOMAIN",
+                })
+                continue
+            extracted = extract_official_evidence(raw, url)
+            if not extracted["claims"]:
+                errors.append({"source": url, "url": url, "error": "NO_GTA_VI_EVIDENCE_EXTRACTED"})
+            official.append(
+                {
+                    "source_name": urllib.parse.urlparse(url).hostname,
+                    "url": url,
+                    "authority": "official",
+                    "source_hierarchy": "OFFICIAL_PRIMARY",
+                    "original_source": True,
+                    "resolved_url": resolved_url,
+                    "checked_at": checked_at,
+                    "independent_group": _root_domain(url),
+                    "content_fingerprint": _content_fingerprint(extracted["content_excerpt"]),
+                    "content_excerpt": extracted["content_excerpt"],
+                    "claims": extracted["claims"],
+                    "extraction_methods": extracted["extraction_methods"],
+                }
+            )
+    else:
+        for source_name, url in OFFICIAL_SOURCES:
+            try:
+                text, resolved_url = _fetch_text(url)
+            except Exception as exc:
+                errors.append({"source": source_name, "url": url, "error": type(exc).__name__})
+                continue
+            if _source_hierarchy(resolved_url) != "OFFICIAL_PRIMARY":
+                errors.append({
+                    "source": source_name,
+                    "url": url,
+                    "error": "OFFICIAL_SOURCE_REDIRECTED_OUTSIDE_PRIMARY_DOMAIN",
+                })
+                continue
+            official.append(
+                {
+                    "source_name": source_name,
+                    "url": url,
+                    "authority": "official",
+                    "source_hierarchy": "OFFICIAL_PRIMARY",
+                    "original_source": True,
+                    "resolved_url": resolved_url,
+                    "checked_at": checked_at,
+                    "independent_group": _root_domain(url),
+                    "content_fingerprint": _content_fingerprint(_relevant_excerpt(text, query)),
+                    "content_excerpt": _relevant_excerpt(text, query),
+                }
+            )
+    official_claims = _interleave_claims(official)
 
     secondary: list[dict[str, Any]] = []
     try:
@@ -472,6 +543,8 @@ def collect(
         "official_source_count": len(official),
         "secondary_source_count": len(secondary),
         "official_sources": official,
+        "official_claims": official_claims,
+        "official_claim_count": len(official_claims),
         "secondary_sources": secondary,
         "source_errors": errors,
         "policy": {
@@ -496,6 +569,11 @@ def main() -> int:
     parser.add_argument("--classification", default="")
     parser.add_argument("--input-kind", default="")
     parser.add_argument("--memory-event-id", default="")
+    parser.add_argument(
+        "--official-urls-b64",
+        default="",
+        help="base64 de URLs oficiais separadas por espaço (todas viram evidência)",
+    )
     parser.add_argument("--output", default="runtime/gta6-fresh-research/result.json")
     args = parser.parse_args()
 
@@ -504,6 +582,7 @@ def main() -> int:
         raise ValueError("research query is required")
 
     explicit_source_url = _decode_optional(args.source_url_b64)
+    official_urls = _decode_optional(args.official_urls_b64).split()
     result = collect(
         query,
         execution_id=args.execution_id,
@@ -527,12 +606,14 @@ def main() -> int:
             args.memory_event_id
             or str(embedded_context.get("memory_event_id") or "")
         ),
+        official_source_urls=official_urls,
     )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"FRESH_RESEARCH_STATUS={result['status']}")
     print(f"OFFICIAL_SOURCE_COUNT={result['official_source_count']}")
+    print(f"OFFICIAL_CLAIM_COUNT={result['official_claim_count']}")
     print(f"SECONDARY_SOURCE_COUNT={result['secondary_source_count']}")
     print(f"CHECKED_AT={result['checked_at']}")
     print(f"SOURCE_CONTENT_RESOLUTION={result['source_content_resolution']}")

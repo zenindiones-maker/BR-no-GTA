@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from scripts.script_first_gate import render_dispatch_inputs
 from pathlib import Path
 from typing import Any
 
@@ -148,6 +149,7 @@ def dispatch_retry(request_path: Path,out:Path,artifact_id:int,artifact_name:str
         workflow="render-worker.yml",
         ref=os.environ["GITHUB_ACTIONS_RENDER_REF"],
         inputs={
+            **render_dispatch_inputs(),
             "render_job":"",
             "render_job_descriptor":json.dumps(descriptor,ensure_ascii=False,separators=(",",":")),
             "brain_decision_id":str(job["brain_decision_id"]),
@@ -239,6 +241,7 @@ def dispatch_post_branding(request_path: Path, out: Path) -> None:
         workflow="render-worker.yml",
         ref=os.environ["GITHUB_ACTIONS_RENDER_REF"],
         inputs={
+            **render_dispatch_inputs(),
             "render_job":"",
             "render_job_descriptor":"",
             "brain_decision_id":str(persisted["brain_decision_id"]),

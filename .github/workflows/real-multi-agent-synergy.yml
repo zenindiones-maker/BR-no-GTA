@@ -2,6 +2,27 @@ name: Real Multi-Agent Synergy Proof
 
 on:
   workflow_dispatch:
+    inputs:
+      theme:
+        description: "Tema editorial (só conteúdo oficial de GTA VI)"
+        required: false
+        default: "Quais fatos oficiais atuais sobre GTA VI podem sustentar uma pauta editorial do BR no GTA 6?"
+        type: string
+      source_urls:
+        description: "URLs oficiais separadas por espaço; a primeira é a fonte primária"
+        required: false
+        default: "https://www.rockstargames.com/VI https://www.playstation.com/pt-br/games/grand-theft-auto-vi/ https://www.xbox.com/pt-BR/games/grand-theft-auto-vi https://www.take2games.com/"
+        type: string
+      target_duration_seconds:
+        description: "Duração-alvo em segundos (primeiro vídeo: 960 = 16 min; longo: 1500)"
+        required: false
+        default: "960"
+        type: string
+      duration_window:
+        description: "Janela aceita: primeiro_video_13_18 (780-1080 s), longform_24_26 (1440-1560 s) ou MIN-MAX"
+        required: false
+        default: "primeiro_video_13_18"
+        type: string
   push:
     branches:
       - work/gate6f-analytics-learning
@@ -53,10 +74,10 @@ concurrency:
 jobs:
   prove:
     permissions:
-      contents: write
+      contents: read
       actions: write
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 150
     env:
       PYTHONPATH: .
       BR_TEST_DATABASE: ${{ github.workspace }}/runtime/real-multi-agent-synergy/mission.db
@@ -74,6 +95,14 @@ jobs:
       BR_E2E_RESEARCH_FRESHNESS_SECONDS: "900"
       BR_E2E_FORCE_FULL: "${{ contains(github.event.head_commit.message, '[full-proof]') }}"
       NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+      BR_EDITORIAL_THEME: ${{ inputs.theme || 'Quais fatos oficiais atuais sobre GTA VI podem sustentar uma pauta editorial do BR no GTA 6?' }}
+      BR_EDITORIAL_SOURCE_URLS: ${{ inputs.source_urls || 'https://www.rockstargames.com/VI' }}
+      BR_SCRIPT_LINT_REPORT: runtime/real-multi-agent-synergy/script-lint.json
+      BR_TARGET_DURATION_SECONDS: ${{ inputs.target_duration_seconds || '960' }}
+      BR_EDITORIAL_DURATION_WINDOW: ${{ inputs.duration_window || 'primeiro_video_13_18' }}
+      BR_EDITORIAL_REQUEST_TIMEOUT_SECONDS: "240"
+      BR_EDITORIAL_PROVIDER_RETRIES: "2"
+      BR_EDITORIAL_CHECKPOINT_DIR: runtime/real-multi-agent-synergy/editorial-checkpoints
 
     steps:
       - name: Checkout exact branch state
@@ -247,9 +276,19 @@ jobs:
         if: steps.resume.outputs.reuse_upstream != 'true'
         run: |
           set -euo pipefail
-          QUERY_B64="$(printf '%s' 'Quais fatos oficiais atuais sobre GTA VI podem sustentar uma pauta editorial do BR no GTA 6?' | base64 -w0)"
-          SOURCE_B64="$(printf '%s' 'https://www.rockstargames.com/VI' | base64 -w0)"
-          python scripts/gta6_fresh_research_worker.py             --query-b64 "$QUERY_B64"             --source-url-b64 "$SOURCE_B64"             --execution-id "real-multi-agent-synergy-${GITHUB_RUN_ID}"             --output runtime/real-multi-agent-synergy/fresh-research.json
+          QUERY_B64="$(printf '%s' "$BR_EDITORIAL_THEME" | base64 -w0)"
+          read -r -a URLS <<< "$BR_EDITORIAL_SOURCE_URLS"
+          SOURCE_B64="$(printf '%s' "${URLS[0]}" | base64 -w0)"
+          # Todas as URLs oficiais informadas viram evidência (claim + URL por claim):
+          # Rockstar, PlayStation, Xbox, Take-Two. JS-heavy: texto estático + JSON-LD
+          # + meta + JSON embutido; custo zero, sem API paga.
+          OFFICIAL_B64="$(printf '%s' "$BR_EDITORIAL_SOURCE_URLS" | base64 -w0)"
+          python scripts/gta6_fresh_research_worker.py \
+            --query-b64 "$QUERY_B64" \
+            --source-url-b64 "$SOURCE_B64" \
+            --official-urls-b64 "$OFFICIAL_B64" \
+            --execution-id "real-multi-agent-synergy-${GITHUB_RUN_ID}" \
+            --output runtime/real-multi-agent-synergy/fresh-research.json
           python - <<'PY'
           import json
           from pathlib import Path
@@ -260,7 +299,16 @@ jobs:
           assert d["submitted_source"]["original_source_retrieved"] is True, d
           print("REAL_ROCKSTAR_SOURCE=PASS")
           print("SOURCE_CONTENT_RESOLUTION=PASS")
+          for s in d["official_sources"]:
+              print(f"OFFICIAL_SOURCE {s['url']} claims={len(s.get('claims') or [])} methods={s.get('extraction_methods')}")
+          for e in d.get("source_errors") or []:
+              print(f"SOURCE_ERROR {e}")
+          print(f"OFFICIAL_CLAIM_COUNT={d.get('official_claim_count')}")
           PY
+          # Só entram no roteiro as fontes oficiais que renderam claims.
+          VERIFIED="$(python -c 'import json;d=json.load(open("runtime/real-multi-agent-synergy/fresh-research.json"));u=[d["submitted_source"]["url"]]+[s["url"] for s in d["official_sources"] if s.get("claims")];print(json.dumps(list(dict.fromkeys(u))))')"
+          echo "BR_EDITORIAL_VERIFIED_SOURCES=$VERIFIED" >> "$GITHUB_ENV"
+          echo "VERIFIED_OFFICIAL_SOURCES=$VERIFIED"
 
       - name: Execute real governed multi-agent mission
         if: steps.resume.outputs.reuse_upstream != 'true'
@@ -328,7 +376,8 @@ jobs:
           else
             python scripts/youtube_product_quality_e2e.py \
               --synergy-proof runtime/real-multi-agent-synergy/multi-agent-proof.json \
-              --output runtime/real-multi-agent-synergy/product-quality-e2e.json
+              --output runtime/real-multi-agent-synergy/product-quality-e2e.json \
+              --target-duration-seconds "$BR_TARGET_DURATION_SECONDS"
           fi
           python - <<'PY'
           import json
@@ -398,6 +447,9 @@ jobs:
             runtime/real-multi-agent-synergy/opencode-artifacts/
             runtime/real-multi-agent-synergy/performance-trace.jsonl
             runtime/real-multi-agent-synergy/performance-report.json
+            runtime/real-multi-agent-synergy/editorial-checkpoints/
+            runtime/real-multi-agent-synergy/script-lint.json
+            content/roteiros/
             runtime/real-multi-agent-synergy/resume-state.json
           if-no-files-found: warn
           retention-days: 30

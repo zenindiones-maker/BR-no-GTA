@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 from typing import Any, TypedDict
 
@@ -22,6 +23,19 @@ LONGFORM_SCRIPT_PLANNING_WPM = 132.0
 LONGFORM_MIN_DEVELOPMENT_SECTIONS = 8
 MAX_EDITORIAL_GENERATION_ATTEMPTS = 3
 MAX_MALFORMED_PROVIDER_RETRIES = 1
+# Longform (>= 20 min): geração em partes. A primeira chamada pede só a abertura
+# e as primeiras seções (~6 min); as sequências seguintes vêm em lotes menores,
+# cada um dentro do timeout por chamada (Luiz, 11/10/2026).
+LONGFORM_INITIAL_CHUNK_SECONDS = 360.0
+LONGFORM_MAX_CHUNKS = 10
+LONGFORM_CHUNKED_MIN_SECONDS = 1440.0  # 24 min: produto principal do canal
+
+
+def initial_chunk_duration_seconds(target_duration_seconds: float | None) -> float | None:
+    if target_duration_seconds is None:
+        return None
+    target = float(target_duration_seconds)
+    return min(target, LONGFORM_INITIAL_CHUNK_SECONDS) if target >= LONGFORM_CHUNKED_MIN_SECONDS else target
 
 
 class EditorialSequence(TypedDict):
@@ -192,6 +206,29 @@ def _merge_complementary_longform_structure(
     return merged
 
 
+_PT_WEEKDAYS = ("segunda-feira", "terça-feira", "quarta-feira", "quinta-feira",
+                "sexta-feira", "sábado", "domingo")
+
+
+def _editorial_today():
+    """Data de referência do roteiro (America/Sao_Paulo); BR_EDITORIAL_TODAY=AAAA-MM-DD fixa."""
+    import datetime as _dt
+    raw = (os.environ.get("BR_EDITORIAL_TODAY") or "").strip()
+    if raw:
+        return _dt.date.fromisoformat(raw)
+    from zoneinfo import ZoneInfo
+    return _dt.datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+
+
+def _time_anchor_text() -> str:
+    today = _editorial_today()
+    return (
+        f"Data de hoje: {today.strftime('%d/%m/%Y')} ({_PT_WEEKDAYS[today.weekday()]}), "
+        "fuso America/Sao_Paulo. Calcule 'faltam X dias', 'este ano' e 'ano que vem' "
+        "a partir desta data."
+    )
+
+
 def _build_ai_prompt(
     *,
     title: str,
@@ -276,9 +313,20 @@ CONTEXTO DE PESQUISA
 {editorial_text}
 {duration_instruction}
 
+DATA DE REFERÊNCIA
+{_time_anchor_text()}
+
 REGRAS
 - Não invente fatos.
 - Não apresente especulação como confirmação.
+- Canal de conteúdo OFICIAL: não especule, não use "talvez"/"provavelmente" para preencher.
+- Não cite dia da semana de uma data, a menos que esteja nas evidências.
+- Não use a memória do modelo: nada de histórico de outros jogos, adiamentos passados,
+  bastidores ou números que não estejam nas evidências fornecidas.
+- Um lint automático REJEITA o roteiro inteiro se houver: talvez, provavelmente,
+  possivelmente, pode ser que, rumores; nome de outro jogo/filme fora das evidências;
+  dia da semana que não bata com o calendário; número ou data que não esteja nas
+  evidências (exceto a data de hoje e a contagem de dias até uma data das evidências).
 - Use somente as informações fornecidas e as claims explicitamente verificadas.
 - Considere o contexto editorial do YouTube Department quando fornecido, mas ele não pode substituir evidência factual.
 - Escreva em português brasileiro.
@@ -985,7 +1033,43 @@ def _build_sequence_batch_prompt(
         "transição ao espectador.\n"
     )
 
-def _generate_provider_structure(*, ai_provider: AIProvider, prompt: str) -> dict[str, Any]:
+def _validate_ai_batch_structure(structure: Any) -> dict[str, Any]:
+    """Validate one longform expansion batch (Luiz, 11/10/2026).
+
+    A batch covers only the story beats it was given, so it needs at least one
+    development block.  hook/introduction/conclusion/cta are scaffolding that
+    the assembly never uses; they are optional here.  The full-script contract
+    (>= 3 blocks + all fields) stays in ``_validate_ai_structure``.
+    """
+    if not isinstance(structure, dict):
+        raise AIProviderError("AI batch response must contain a JSON object.")
+    development = structure.get("development")
+    if not isinstance(development, list) or len(development) < 1:
+        raise AIProviderError(
+            "AI batch response development must contain at least 1 section."
+        )
+    for section in development:
+        if not isinstance(section, dict):
+            raise AIProviderError("AI batch development sections must be objects.")
+        heading = section.get("heading")
+        body = section.get("body")
+        if not isinstance(heading, str) or not heading.strip():
+            raise AIProviderError("AI batch development heading must be non-empty.")
+        if not isinstance(body, str) or not body.strip():
+            raise AIProviderError("AI batch development body must be non-empty.")
+    out = dict(structure)
+    for field in ("hook", "introduction", "conclusion", "cta"):
+        value = out.get(field)
+        out[field] = value if isinstance(value, str) else ""
+    return out
+
+
+def _generate_provider_structure(
+    *,
+    ai_provider: AIProvider,
+    prompt: str,
+    validator: Any = None,
+) -> dict[str, Any]:
     malformed_prompt = prompt
     parsed: dict[str, Any] | None = None
     for malformed_retry in range(MAX_MALFORMED_PROVIDER_RETRIES + 1):
@@ -1016,7 +1100,7 @@ def _generate_provider_structure(*, ai_provider: AIProvider, prompt: str) -> dic
             code="malformed_structured_output",
             retryable=False,
         )
-    return _validate_ai_structure(parsed)
+    return (validator or _validate_ai_structure)(parsed)
 
 
 def _story_assembly_metadata(*, structure: dict[str, Any], video_plan: VideoPlan) -> StoryAssembly:
@@ -1045,8 +1129,13 @@ def _global_editorial_qa(
     video_plan: VideoPlan,
     evidence_gaps: list[SequenceEvidenceGap],
     target_duration_seconds: float,
+    minimum_supported_seconds: float | None = None,
+    accepted_window_seconds: tuple[float, float] | None = None,
 ) -> dict[str, Any]:
     assembly = _story_assembly_metadata(structure=structure, video_plan=video_plan)
+    floor_seconds = float(
+        target_duration_seconds if minimum_supported_seconds is None else minimum_supported_seconds
+    )
     signatures = [
         _normalized_section_signature(item)
         for item in structure.get("development") or ()
@@ -1067,7 +1156,10 @@ def _global_editorial_qa(
         "TRANSITION_NATURALNESS": "CANDIDATE_REQUIRES_REAL_REVIEW",
         "TOPIC_COHERENCE": "CANDIDATE_REQUIRES_REAL_REVIEW",
         "TOTAL_SUPPORTED_DURATION": (
-            "PASS" if supported_seconds >= float(target_duration_seconds) else "FAIL"
+            "PASS" if supported_seconds >= floor_seconds else "FAIL"
+        ),
+        "accepted_window_seconds": (
+            list(accepted_window_seconds) if accepted_window_seconds is not None else None
         ),
         "content_supported_duration_minutes": round(supported_seconds / 60.0, 3),
         "target_duration_minutes": round(float(target_duration_seconds) / 60.0, 3),
@@ -1093,10 +1185,27 @@ def _generate_ai_structure(
         description=description,
         research_context=research_context,
         editorial_context=editorial_context,
-        target_duration_seconds=target_duration_seconds,
+        target_duration_seconds=initial_chunk_duration_seconds(target_duration_seconds),
     )
     target_words = _requested_word_count(target_duration_seconds)
     minimum_sections = _minimum_development_sections(target_duration_seconds)
+    # Decisão do Luiz (18/10/2026): janela de aceitação configurável. O alvo
+    # pedido ao modelo continua sendo target; aceita-se a partir do mínimo da
+    # janela e recusa-se acima do máximo. Nunca há enchimento.
+    from app.services.editorial_duration_window import active_window
+    duration_window = active_window()
+    if duration_window is not None and target_duration_seconds is not None and not (
+        duration_window[0] <= float(target_duration_seconds) <= duration_window[1]
+    ):
+        raise ValueError("target_duration_seconds fora da janela de duração configurada")
+    accept_seconds = (
+        duration_window[0]
+        if duration_window is not None
+        else (float(target_duration_seconds) if target_duration_seconds is not None else None)
+    )
+    accept_words = (
+        _requested_word_count(accept_seconds) if duration_window is not None else target_words
+    )
     recovery_seed = (
         editorial_context.get("recovery_seed_structure")
         if isinstance(editorial_context, dict)
@@ -1116,6 +1225,14 @@ def _generate_ai_structure(
 
     if target_words is None:
         return initial
+    if duration_window is not None and _spoken_seconds_for_words(
+        _structure_word_count(initial)
+    ) > duration_window[1]:
+        raise AIProviderError(
+            "AI response exceeds the accepted duration window "
+            f"({_spoken_seconds_for_words(_structure_word_count(initial)) / 60.0:.2f} min > "
+            f"{duration_window[1] / 60.0:.2f} min); no automatic trimming."
+        )
     if (
         _structure_word_count(initial) >= target_words
         and len(initial.get("development") or ()) >= minimum_sections
@@ -1125,7 +1242,7 @@ def _generate_ai_structure(
     verified_claims = _editorial_verified_claims(editorial_context)
     if (
         target_duration_seconds is not None
-        and float(target_duration_seconds) >= 1200.0
+        and (float(target_duration_seconds) >= 1200.0 or duration_window is not None)
         and len(verified_claims) >= 2
     ):
         video_plan, evidence_gaps = _build_longform_video_plan(
@@ -1140,9 +1257,10 @@ def _generate_ai_structure(
             video_plan=video_plan,
             current_structure=assembly,
             target_duration_seconds=float(target_duration_seconds),
-            pass_budget=max(
-                0,
-                MAX_EDITORIAL_GENERATION_ATTEMPTS - 1,
+            pass_budget=(
+                LONGFORM_MAX_CHUNKS
+                if float(target_duration_seconds) >= LONGFORM_CHUNKED_MIN_SECONDS
+                else max(0, MAX_EDITORIAL_GENERATION_ATTEMPTS - 1)
             ),
         )
         generated_batches: list[dict[str, Any]] = []
@@ -1164,6 +1282,7 @@ def _generate_ai_structure(
             generated = _generate_provider_structure(
                 ai_provider=ai_provider,
                 prompt=batch_prompt,
+                validator=_validate_ai_batch_structure,
             )
             before_words = _structure_word_count(assembly)
             assembly = _merge_complementary_longform_structure(
@@ -1179,7 +1298,7 @@ def _generate_ai_structure(
             )
             realized_gaps = (
                 []
-                if aggregate_supported_seconds >= float(target_duration_seconds)
+                if aggregate_supported_seconds >= float(accept_seconds)
                 else _realized_sequence_duration_gaps(
                     batch=batch,
                     added_words=added_words,
@@ -1240,14 +1359,26 @@ def _generate_ai_structure(
             _structure_word_count(assembly)
         )
         blocking_evidence_gaps = list(factual_evidence_gaps)
-        if aggregate_supported_seconds < float(target_duration_seconds):
+        if aggregate_supported_seconds < float(accept_seconds):
             blocking_evidence_gaps.extend(duration_evidence_gaps)
         global_qa = _global_editorial_qa(
             structure=assembly,
             video_plan=video_plan,
             evidence_gaps=blocking_evidence_gaps,
             target_duration_seconds=float(target_duration_seconds),
+            minimum_supported_seconds=float(accept_seconds),
+            accepted_window_seconds=duration_window,
         )
+        if (
+            duration_window is not None
+            and aggregate_supported_seconds > duration_window[1]
+        ):
+            over = AIProviderError(
+                "AI response exceeds the accepted duration window "
+                f"({aggregate_supported_seconds / 60.0:.2f} min > {duration_window[1] / 60.0:.2f} min); "
+                "no automatic trimming."
+            )
+            raise over
         assembly["_internal_editorial_structure"] = {
             "schema": "evidence-bounded-story-assembly-candidate/v1",
             "video_plan": video_plan,
@@ -1319,13 +1450,13 @@ def _generate_ai_structure(
         )
         structure = _generate_provider_structure(ai_provider=ai_provider, prompt=attempt_prompt)
         if (
-            _structure_word_count(structure) >= target_words
+            _structure_word_count(structure) >= accept_words
             and len(structure.get("development") or ()) >= minimum_sections
         ):
             return structure
         previous_structure = _merge_complementary_longform_structure(previous_structure, structure)
         if (
-            _structure_word_count(previous_structure) >= target_words
+            _structure_word_count(previous_structure) >= accept_words
             and len(previous_structure.get("development") or ()) >= minimum_sections
         ):
             return previous_structure
