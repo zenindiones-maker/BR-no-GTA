@@ -113,3 +113,14 @@ def test_synergy_workflow_exposes_window_and_first_video_default():
 
 def test_agents_md_records_owner_decision():
     assert "owner decision 2026-10-18: first video 13-18 min" in (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+
+
+def test_master_render_qa_bounds_follow_window(monkeypatch):
+    from app.services import editorial_duration_window as w
+    monkeypatch.delenv("BR_EDITORIAL_DURATION_WINDOW", raising=False)
+    assert w.master_duration_bounds() == (1200.0, 1500.0)  # legado 20-25 min
+    monkeypatch.setenv("BR_EDITORIAL_DURATION_WINDOW", "primeiro_video_13_18")
+    assert w.master_duration_bounds() == (780.0, 1080.0)
+    for path in ("app/services/br_full_media_decode_v10b.py", "app/services/br_production_forensic_qa_v10.py"):
+        src = (ROOT / path).read_text(encoding="utf-8")
+        assert "master_duration_bounds()" in src and "1200<=" not in src.replace(" ", ""), path
