@@ -6,6 +6,7 @@ observation is separated from actual creative authorization.
 """
 from __future__ import annotations
 
+from app.services.editorial_duration_window import master_duration_bounds
 import hashlib
 import json
 import math
@@ -98,8 +99,8 @@ def _assess_metadata(doc: dict, profile: str) -> tuple[list[str],dict]:
     if len(audios)!=1:reasons.append("EXPECTED_ONE_AUDIO_STREAM")
     dur=_positive_finite(doc.get("format",{}).get("duration"))
     if dur is None:reasons.append("UNKNOWN_OR_INVALID_DURATION")
-    elif profile==PROFILE_MASTER and not (1200<=dur<=1500):
-        reasons.append("VIDEO_DURATION_NOT_20_TO_25_MINUTES")
+    elif profile==PROFILE_MASTER and not (master_duration_bounds()[0]<=dur<=master_duration_bounds()[1]):
+        reasons.append("VIDEO_DURATION_NOT_20_TO_25_MINUTES")  # código legado; limites = janela configurada
     elif profile==PROFILE_CANARY and not (0.5<=dur<=10):
         reasons.append("CANARY_DURATION_OUTSIDE_BOUNDS")
     if videos:

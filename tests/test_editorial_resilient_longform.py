@@ -20,7 +20,8 @@ def test_synergy_dispatch_inputs():
     on = _wf().get("on") or _wf().get(True)
     inputs = on["workflow_dispatch"]["inputs"]
     assert {"theme", "source_urls", "target_duration_seconds"} <= set(inputs)
-    assert str(inputs["target_duration_seconds"]["default"]) == "1500"
+    # Decisão do Luiz 18/10/2026: primeiro vídeo 13-18 min (alvo 960 s); 1500 segue suportado.
+    assert str(inputs["target_duration_seconds"]["default"]) == "960"
     urls = inputs["source_urls"]["default"].split()
     # Primária sempre a Rockstar; secundárias só páginas oficiais do próprio
     # GTA VI (a home genérica da Xbox Store não era confirmada pelo worker).

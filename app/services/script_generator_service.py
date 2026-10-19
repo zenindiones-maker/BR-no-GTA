@@ -1125,8 +1125,13 @@ def _global_editorial_qa(
     video_plan: VideoPlan,
     evidence_gaps: list[SequenceEvidenceGap],
     target_duration_seconds: float,
+    minimum_supported_seconds: float | None = None,
+    accepted_window_seconds: tuple[float, float] | None = None,
 ) -> dict[str, Any]:
     assembly = _story_assembly_metadata(structure=structure, video_plan=video_plan)
+    floor_seconds = float(
+        target_duration_seconds if minimum_supported_seconds is None else minimum_supported_seconds
+    )
     signatures = [
         _normalized_section_signature(item)
         for item in structure.get("development") or ()
@@ -1147,7 +1152,10 @@ def _global_editorial_qa(
         "TRANSITION_NATURALNESS": "CANDIDATE_REQUIRES_REAL_REVIEW",
         "TOPIC_COHERENCE": "CANDIDATE_REQUIRES_REAL_REVIEW",
         "TOTAL_SUPPORTED_DURATION": (
-            "PASS" if supported_seconds >= float(target_duration_seconds) else "FAIL"
+            "PASS" if supported_seconds >= floor_seconds else "FAIL"
+        ),
+        "accepted_window_seconds": (
+            list(accepted_window_seconds) if accepted_window_seconds is not None else None
         ),
         "content_supported_duration_minutes": round(supported_seconds / 60.0, 3),
         "target_duration_minutes": round(float(target_duration_seconds) / 60.0, 3),
@@ -1177,6 +1185,23 @@ def _generate_ai_structure(
     )
     target_words = _requested_word_count(target_duration_seconds)
     minimum_sections = _minimum_development_sections(target_duration_seconds)
+    # Decisão do Luiz (18/10/2026): janela de aceitação configurável. O alvo
+    # pedido ao modelo continua sendo target; aceita-se a partir do mínimo da
+    # janela e recusa-se acima do máximo. Nunca há enchimento.
+    from app.services.editorial_duration_window import active_window
+    duration_window = active_window()
+    if duration_window is not None and target_duration_seconds is not None and not (
+        duration_window[0] <= float(target_duration_seconds) <= duration_window[1]
+    ):
+        raise ValueError("target_duration_seconds fora da janela de duração configurada")
+    accept_seconds = (
+        duration_window[0]
+        if duration_window is not None
+        else (float(target_duration_seconds) if target_duration_seconds is not None else None)
+    )
+    accept_words = (
+        _requested_word_count(accept_seconds) if duration_window is not None else target_words
+    )
     recovery_seed = (
         editorial_context.get("recovery_seed_structure")
         if isinstance(editorial_context, dict)
@@ -1196,6 +1221,14 @@ def _generate_ai_structure(
 
     if target_words is None:
         return initial
+    if duration_window is not None and _spoken_seconds_for_words(
+        _structure_word_count(initial)
+    ) > duration_window[1]:
+        raise AIProviderError(
+            "AI response exceeds the accepted duration window "
+            f"({_spoken_seconds_for_words(_structure_word_count(initial)) / 60.0:.2f} min > "
+            f"{duration_window[1] / 60.0:.2f} min); no automatic trimming."
+        )
     if (
         _structure_word_count(initial) >= target_words
         and len(initial.get("development") or ()) >= minimum_sections
@@ -1205,7 +1238,7 @@ def _generate_ai_structure(
     verified_claims = _editorial_verified_claims(editorial_context)
     if (
         target_duration_seconds is not None
-        and float(target_duration_seconds) >= 1200.0
+        and (float(target_duration_seconds) >= 1200.0 or duration_window is not None)
         and len(verified_claims) >= 2
     ):
         video_plan, evidence_gaps = _build_longform_video_plan(
@@ -1261,7 +1294,7 @@ def _generate_ai_structure(
             )
             realized_gaps = (
                 []
-                if aggregate_supported_seconds >= float(target_duration_seconds)
+                if aggregate_supported_seconds >= float(accept_seconds)
                 else _realized_sequence_duration_gaps(
                     batch=batch,
                     added_words=added_words,
@@ -1322,14 +1355,26 @@ def _generate_ai_structure(
             _structure_word_count(assembly)
         )
         blocking_evidence_gaps = list(factual_evidence_gaps)
-        if aggregate_supported_seconds < float(target_duration_seconds):
+        if aggregate_supported_seconds < float(accept_seconds):
             blocking_evidence_gaps.extend(duration_evidence_gaps)
         global_qa = _global_editorial_qa(
             structure=assembly,
             video_plan=video_plan,
             evidence_gaps=blocking_evidence_gaps,
             target_duration_seconds=float(target_duration_seconds),
+            minimum_supported_seconds=float(accept_seconds),
+            accepted_window_seconds=duration_window,
         )
+        if (
+            duration_window is not None
+            and aggregate_supported_seconds > duration_window[1]
+        ):
+            over = AIProviderError(
+                "AI response exceeds the accepted duration window "
+                f"({aggregate_supported_seconds / 60.0:.2f} min > {duration_window[1] / 60.0:.2f} min); "
+                "no automatic trimming."
+            )
+            raise over
         assembly["_internal_editorial_structure"] = {
             "schema": "evidence-bounded-story-assembly-candidate/v1",
             "video_plan": video_plan,
@@ -1401,13 +1446,13 @@ def _generate_ai_structure(
         )
         structure = _generate_provider_structure(ai_provider=ai_provider, prompt=attempt_prompt)
         if (
-            _structure_word_count(structure) >= target_words
+            _structure_word_count(structure) >= accept_words
             and len(structure.get("development") or ()) >= minimum_sections
         ):
             return structure
         previous_structure = _merge_complementary_longform_structure(previous_structure, structure)
         if (
-            _structure_word_count(previous_structure) >= target_words
+            _structure_word_count(previous_structure) >= accept_words
             and len(previous_structure.get("development") or ()) >= minimum_sections
         ):
             return previous_structure

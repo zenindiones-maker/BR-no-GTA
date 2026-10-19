@@ -119,6 +119,7 @@ def check(*, script_id: str, script_sha256: str, root: Path | str | None = None)
     if not any(_is_official(s.get("url", "")) for s in rec.get("sources") or []):
         raise ScriptGateError("OFFICIAL_SOURCES_REQUIRED")
     scenes = validate_scenes(rec, text)
+    check_duration(rec, text)
     for other in _all_ids(root):
         if other != script_id and _load(root, other)[0].get("status") == "em_producao":
             raise ScriptGateError(f"ANOTHER_VIDEO_IN_PRODUCTION: {other}")
@@ -270,7 +271,9 @@ def write_editorial_script(result: dict[str, Any], *, goal_id: str | None = None
            "title": script.get("title") or "", "goal_id": goal_id, "db_script_id": db_id,
            "status": "rascunho", "author_agent": "br_editorial_process_next", "sha256": digest,
            "target_duration_seconds": plan.get("estimated_duration_seconds"),
-           "scenes": scenes, "sources": sources, "approval": None, "package": None}
+           "scenes": scenes, "sources": sources, "approval": None, "package": None,
+           **_duration_fields(text)}
+    check_duration(rec, text)
     rec = transition(rec, "editorial_ok", actor="br_editorial_process_next")
     d.mkdir(parents=True, exist_ok=True)
     (d / "roteiro.md").write_text(text, encoding="utf-8")
@@ -299,6 +302,7 @@ def human_decision(*, script_id: str, script_sha256: str, approver: str, approve
         raise ScriptGateError("HUMAN_APPROVAL_REQUIRED")
     if approve:
         validate_scenes(rec, text)
+        check_duration(rec, text)
         if not any(_is_official(s.get("url", "")) for s in rec.get("sources") or []):
             raise ScriptGateError("OFFICIAL_SOURCES_REQUIRED")
         originality(r, script_id, text, digest)
@@ -312,6 +316,27 @@ def human_decision(*, script_id: str, script_sha256: str, approver: str, approve
                             "github_actor": github_actor or None}
     _save(r, script_id, rec)
     return rec
+
+
+def _duration_fields(text: str) -> dict[str, Any]:
+    from app.services.editorial_duration_window import active_window, spoken_seconds
+    words = len(text.split())
+    window = active_window()
+    return {"word_count": words, "estimated_spoken_seconds": round(spoken_seconds(words), 1),
+            "duration_window_seconds": list(window) if window else None}
+
+
+def check_duration(rec: dict[str, Any], text: str) -> None:
+    """Decisão do Luiz (18/10/2026): o roteiro precisa caber na janela registrada."""
+    from app.services.editorial_duration_window import spoken_seconds
+    window = rec.get("duration_window_seconds")
+    if not window:
+        return
+    est = spoken_seconds(len(text.split()))
+    if not (float(window[0]) <= est <= float(window[1])):
+        raise ScriptGateError(
+            f"SCRIPT_DURATION_OUTSIDE_WINDOW: {est / 60.0:.1f} min fora de "
+            f"{float(window[0]) / 60.0:.0f}-{float(window[1]) / 60.0:.0f} min")
 
 
 def checkpoint_matches(checkpoint: dict[str, Any], script_id: str, script_sha256: str) -> None:

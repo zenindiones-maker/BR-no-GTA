@@ -55,7 +55,9 @@ def verify_full_decode(
     if duration is None:
         raise ValueError("FULL_DECODE_DURATION_UNKNOWN")
     profile=sampled["profile"]
-    if profile==PROFILE_MASTER and not 1200<=duration<=1500:
+    from app.services.editorial_duration_window import master_duration_bounds
+    _lo,_hi=master_duration_bounds()
+    if profile==PROFILE_MASTER and not _lo<=duration<=_hi:
         raise ValueError("FULL_DECODE_LONGFORM_LENGTH_INVALID")
     if profile==PROFILE_CANARY and not 0.5<=duration<=10:
         raise ValueError("FULL_DECODE_CANARY_LENGTH_INVALID")

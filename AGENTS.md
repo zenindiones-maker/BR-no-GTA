@@ -270,3 +270,6 @@ oficial de GTA VI (Rockstar/Take-Two); nada de vazamento ou especulação.
   `script_sha256` (via `render_dispatch_inputs()`); o dispatcher recusa sem eles.
 - Filas de vídeo usam `queue: max` (FIFO) para nenhum run pendente ser cancelado.
 - Não desligar `BR_SCRIPT_FIRST_GATE_ENFORCE` fora da suíte legada de testes.
+- owner decision 2026-10-18: first video 13-18 min (janela `primeiro_video_13_18` = 780–1080 s,
+  alvo 960 s; `BR_EDITORIAL_DURATION_WINDOW`). 24–26 min (`longform_24_26`) continua suportado.
+  A janela só muda a aceitação: sem enchimento, sem corte automático; roteiro fora dela é recusado.

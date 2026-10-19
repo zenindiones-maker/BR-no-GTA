@@ -14,9 +14,14 @@ on:
         default: "https://www.rockstargames.com/VI https://www.playstation.com/pt-br/games/grand-theft-auto-vi/ https://www.xbox.com/pt-BR/games/grand-theft-auto-vi https://www.take2games.com/"
         type: string
       target_duration_seconds:
-        description: "Duração-alvo do roteiro em segundos (24-26 min = 1440-1560)"
+        description: "Duração-alvo em segundos (primeiro vídeo: 960 = 16 min; longo: 1500)"
         required: false
-        default: "1500"
+        default: "960"
+        type: string
+      duration_window:
+        description: "Janela aceita: primeiro_video_13_18 (780-1080 s), longform_24_26 (1440-1560 s) ou MIN-MAX"
+        required: false
+        default: "primeiro_video_13_18"
         type: string
   push:
     branches:
@@ -92,7 +97,8 @@ jobs:
       NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
       BR_EDITORIAL_THEME: ${{ inputs.theme || 'Quais fatos oficiais atuais sobre GTA VI podem sustentar uma pauta editorial do BR no GTA 6?' }}
       BR_EDITORIAL_SOURCE_URLS: ${{ inputs.source_urls || 'https://www.rockstargames.com/VI' }}
-      BR_TARGET_DURATION_SECONDS: ${{ inputs.target_duration_seconds || '1500' }}
+      BR_TARGET_DURATION_SECONDS: ${{ inputs.target_duration_seconds || '960' }}
+      BR_EDITORIAL_DURATION_WINDOW: ${{ inputs.duration_window || 'primeiro_video_13_18' }}
       BR_EDITORIAL_REQUEST_TIMEOUT_SECONDS: "240"
       BR_EDITORIAL_PROVIDER_RETRIES: "2"
       BR_EDITORIAL_CHECKPOINT_DIR: runtime/real-multi-agent-synergy/editorial-checkpoints
