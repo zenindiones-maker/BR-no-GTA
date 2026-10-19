@@ -1,0 +1,14 @@
+{
+  "schema_version": "OwnerVoiceReferenceAsrSurveyRequest/v1",
+  "voice_identity_id": "BR_OWNER_V1",
+  "request_id": "owner-reference-asr-survey-54-inliers-20261019-v1",
+  "authorized_by": "OWNER_LUIZ_20261019_0132_BRT",
+  "asr_only": true,
+  "synthesis": false,
+  "telegram_send": false,
+  "telegram_methods": ["getFile"],
+  "one_run_only": true,
+  "selection_authority": "NONE_HUMAN_OWNER_REVIEW_REQUIRED",
+  "public_artifact": "SCALAR_METRICS_ONLY_NO_AUDIO_NO_EMBEDDINGS_NO_TRANSCRIPTS",
+  "thresholds_changed": false
+}
