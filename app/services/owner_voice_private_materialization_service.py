@@ -219,7 +219,26 @@ def materialize_telegram_owner_references(
 
     hydrated: list[dict[str, Any]] = []
     public_rows: list[dict[str, Any]] = []
-    for item in parsed["references"]:
+    # Duplicate rejection at index load (identity calibration dedup guard, C):
+    # earliest message wins; a re-sent Telegram file (same file_unique_id) is
+    # never fetched, and identical bytes (same sha256) are discarded.
+    rejected: list[dict[str, Any]] = []
+    seen_unique: dict[str, int] = {}
+    seen_sha: dict[str, int] = {}
+    order = {id(item): n for n, item in enumerate(parsed["references"])}
+    for item in sorted(
+        parsed["references"],
+        key=lambda r: (int(r["telegram_message_id"]), int(r["telegram_input_id"])),
+    ):
+        unique_id = str(item["telegram_file_unique_id"])
+        if unique_id in seen_unique:
+            rejected.append({
+                "telegram_input_id": int(item["telegram_input_id"]),
+                "duplicate_of_input_id": seen_unique[unique_id],
+                "reason": "TELEGRAM_FILE_UNIQUE_ID",
+            })
+            continue
+        seen_unique[unique_id] = int(item["telegram_input_id"])
         remote = api_call(
             token,
             "getFile",
@@ -258,6 +277,15 @@ def materialize_telegram_owner_references(
                     "OWNER_REFERENCE_SIZE_MISMATCH"
                 )
         digest = hashlib.sha256(destination.read_bytes()).hexdigest()
+        if digest in seen_sha:
+            destination.unlink()
+            rejected.append({
+                "telegram_input_id": int(item["telegram_input_id"]),
+                "duplicate_of_input_id": seen_sha[digest],
+                "reason": "SHA256_EXACT",
+            })
+            continue
+        seen_sha[digest] = int(item["telegram_input_id"])
         try:
             destination.chmod(0o600)
         except OSError:
@@ -280,8 +308,10 @@ def materialize_telegram_owner_references(
                 "telegram_file_unique_id": item["telegram_file_unique_id"],
             }
         )
+        hydrated[-1]["_order"] = order[id(item)]
         public_rows.append(
             {
+                "_order": order[id(item)],
                 "telegram_input_id": int(item["telegram_input_id"]),
                 "private_audio_ref": private_ref,
                 "sha256": digest,
@@ -293,7 +323,10 @@ def materialize_telegram_owner_references(
             }
         )
 
+    hydrated.sort(key=lambda r: r.pop("_order"))
+    public_rows.sort(key=lambda r: r.pop("_order"))
     return {
+        "duplicate_references_rejected": sorted(rejected, key=lambda r: r["telegram_input_id"]),
         "schema": "OwnerVoicePrivateMaterialization/v1",
         "voice_identity_id": OWNER_VOICE_IDENTITY_ID,
         "index_sha256": parsed["index_sha256"],
@@ -304,6 +337,7 @@ def materialize_telegram_owner_references(
             "voice_identity_id": OWNER_VOICE_IDENTITY_ID,
             "index_sha256": parsed["index_sha256"],
             "materialized_reference_count": len(public_rows),
+            "duplicate_rejected_count": len(rejected),
             "references": public_rows,
             "raw_audio_public": False,
             "media_bytes_on_a15": False,

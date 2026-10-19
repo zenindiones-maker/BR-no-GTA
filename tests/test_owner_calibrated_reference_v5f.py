@@ -48,7 +48,8 @@ def test_script_uses_exact_qwen_reference_embedding_for_segments():
     assert "qwen_reference_embedding=_embedding(classifier,qwen_reference16)" in SRC
     assert "canonical_embedding=qwen_reference_embedding," in SRC
     assert "OWNER_QWEN_REFERENCE_EMBEDDING_SOURCE=EXACT_QWEN_REF_AUDIO" in SRC
-    assert "window_similarities_to_reference=reference_window_sims" in SRC
+    # Dedup guard: same reference windows, grouped by source clip (never looser).
+    assert "reference_similarities_by_clip=reference_window_sims_by_clip" in SRC
     # owner windows from the canonical clip itself are excluded (window was cut from it)
     assert "if rid not in reference_clip_ids" in SRC
 

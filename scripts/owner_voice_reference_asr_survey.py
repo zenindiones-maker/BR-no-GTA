@@ -26,11 +26,12 @@ from app.services.owner_voice_reference_asr_survey_service import (
     rank_distinct_references,
     readonly_telegram_api_call,
 )
-from app.services.owner_voice_speaker_identity_service import (
-    calibrate_owner_identity_profile,
-    calibrate_owner_window_consistency,
-    evaluate_reference_window_consistency,
+from app.services.owner_voice_identity_calibration_guard import (
+    calibrate_guarded_identity_profile,
+    calibrate_guarded_window_consistency,
+    multiplicity_from_materialization,
 )
+from app.services.owner_voice_speaker_identity_service import evaluate_reference_window_consistency
 from app.services.telegram_brand_asset_materializer import _telegram_api_call
 
 _CLONE = Path(__file__).resolve().with_name("owner_voice_single_human_clone.py")
@@ -69,11 +70,14 @@ def main() -> int:
         metrics[rid] = pcm16_quality_metrics(wavs[rid])
         embeddings[rid] = h._embedding(classifier, wavs[rid])
         rows_by_id[rid] = row
-    profile = calibrate_owner_identity_profile(embeddings)
+    # Dedup guard (A+C): unique sha256 only, >=12 clips, floors never looser (pending owner).
+    sha_by_id = {str(int(r["telegram_input_id"])): str(r["sha256"]) for r in refs}
+    profile = calibrate_guarded_identity_profile(
+        embeddings, sha_by_id=sha_by_id, multiplicity_by_id=multiplicity_from_materialization(materialized))
     inliers = sorted(str(x) for x in profile["inlier_ids"])
     print(f"OWNER_CANONICAL_INLIER_COUNT={len(inliers)}", flush=True)
     window_scores = {rid: h._window_identity_scores(classifier, wavs[rid], embeddings[rid]) for rid in inliers}
-    window_cal = calibrate_owner_window_consistency(window_scores)
+    window_cal = calibrate_guarded_window_consistency(window_scores, sha_by_id=sha_by_id)
 
     stt = h._load_stt(cache_root)
     rows = []

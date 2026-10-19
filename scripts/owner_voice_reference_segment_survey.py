@@ -37,11 +37,12 @@ from app.services.owner_voice_reference_segment_service import (
     term_occurrences,
     unique_by_sha,
 )
-from app.services.owner_voice_speaker_identity_service import (
-    calibrate_owner_identity_profile,
-    calibrate_owner_window_consistency,
-    evaluate_reference_window_consistency,
+from app.services.owner_voice_identity_calibration_guard import (
+    calibrate_guarded_identity_profile,
+    calibrate_guarded_window_consistency,
+    multiplicity_from_materialization,
 )
+from app.services.owner_voice_speaker_identity_service import evaluate_reference_window_consistency
 from app.services.telegram_brand_asset_materializer import _telegram_api_call
 
 _CLONE = Path(__file__).resolve().with_name("owner_voice_single_human_clone.py")
@@ -111,12 +112,15 @@ def main() -> int:
         metrics[rid] = pcm16_quality_metrics(wavs[rid])
         embeddings[rid] = h._embedding(classifier, wavs[rid])
         by_id[rid] = row
-    # Same identity profile and window calibration as the existing survey (unchanged).
-    profile = calibrate_owner_identity_profile(embeddings)
+    # Dedup guard (A+C): unique sha256 only, >=12 clips, floors never looser (pending owner).
+    sha_by_id = {str(int(r["telegram_input_id"])): str(r["sha256"]) for r in refs}
+    profile = calibrate_guarded_identity_profile(
+        embeddings, sha_by_id=sha_by_id, multiplicity_by_id=multiplicity_from_materialization(materialized))
     inliers = sorted(str(x) for x in profile["inlier_ids"])
     print(f"OWNER_CANONICAL_INLIER_COUNT={len(inliers)}", flush=True)
-    window_cal = calibrate_owner_window_consistency(
-        {rid: h._window_identity_scores(classifier, wavs[rid], embeddings[rid]) for rid in inliers})
+    window_cal = calibrate_guarded_window_consistency(
+        {rid: h._window_identity_scores(classifier, wavs[rid], embeddings[rid]) for rid in inliers},
+        sha_by_id=sha_by_id)
     centroid = list(profile["centroid"])
 
     unique, exact_dups = unique_by_sha([
@@ -164,6 +168,8 @@ def main() -> int:
     report = build_segment_public_report(kept, duplicates=seg_dups, source_summary={
         "inlier_count": len(inliers), "unique_clips": len(unique),
         "exact_duplicates": dict(sorted(exact_dups.items())), "long_clips_segmented": long_ids,
+        "duplicates_rejected_at_load": len(materialized.get("duplicate_references_rejected") or ()),
+        "identity_calibration_guard": dict(profile.get("identity_calibration_guard") or {}),
         "per_clip": cut_stats,
     }, run_meta={
         "stt_model": os.environ.get("BR_OWNER_STT_MODEL", "large-v3-turbo"), "vad_filter": True,

@@ -36,15 +36,18 @@ from app.services.owner_voice_private_materialization_service import (
 from app.services.owner_voice_telegram_pending_recovery_service import (
     recover_pending_owner_voice_references,
 )
+from app.services.owner_voice_identity_calibration_guard import (
+    calibrate_guarded_identity_profile,
+    calibrate_guarded_segment_identity_threshold,
+    calibrate_guarded_window_consistency,
+    multiplicity_from_materialization,
+)
 from app.services.owner_voice_speaker_identity_service import (
     PROFILE_SCHEMA,
     SPEAKER_MODEL_ID,
     SPEAKER_MODEL_REVISION,
-    calibrate_owner_identity_profile,
     IDENTITY_PROMPT_MAX_REFERENCES,
     IDENTITY_PROMPT_MIN_SIMILARITY,
-    calibrate_owner_window_consistency,
-    calibrate_segment_identity_threshold,
     cosine_similarity,
     evaluate_clone_identity_gate,
     evaluate_language_matched_segment_identity_gate,
@@ -684,14 +687,23 @@ def main()->int:
         embeddings[rid]=_embedding(classifier,wav)
 
     print(f"OWNER_PERF_STAGE_DONE=reference_embeddings elapsed_seconds={time.monotonic()-reference_embedding_t0:.3f}",flush=True)
-    profile=calibrate_owner_identity_profile(embeddings)
+    # Dedup guard (A+C): one sample per unique sha256, >=12 unique clips,
+    # effective floors = max(recorded, with-duplicates, dedup); pending owner approval.
+    reference_sha_by_id={str(int(row["telegram_input_id"])):str(row["sha256"]) for row in refs}
+    profile=calibrate_guarded_identity_profile(
+        embeddings,sha_by_id=reference_sha_by_id,
+        multiplicity_by_id=multiplicity_from_materialization(materialized),
+    )
+    print("OWNER_IDENTITY_CALIBRATION_GUARD="+json.dumps(
+        profile["identity_calibration_guard"],sort_keys=True,separators=(",",":")))
     centroid_floor=float(profile["clone_centroid_min_similarity"])
     inlier_ids=set(str(x) for x in profile["inlier_ids"])
     window_scores_by_id={
         rid:_window_identity_scores(classifier,normalized[rid],embeddings[rid])
         for rid in sorted(inlier_ids)
     }
-    window_calibration=calibrate_owner_window_consistency(window_scores_by_id)
+    window_calibration=calibrate_guarded_window_consistency(
+        window_scores_by_id,sha_by_id=reference_sha_by_id)
     pronunciation_source_rows=[]
     for row in refs:
         rid=str(int(row["telegram_input_id"]))
@@ -1465,20 +1477,21 @@ def main()->int:
     # (5-7 s) windows vs centroid. Reference floor and whole-audio gate unchanged.
     segment_seconds=[float(len(w))/float(sample_rate) for w in wavs]
     window_seconds=min(7.0,max(5.0,float(np.median(segment_seconds))))
-    window_sims=[]
+    # Windows grouped by source clip: one clip never counts as many samples.
+    window_sims_by_clip={}
     for rid in sorted(inlier_ids):
-        window_sims.extend(_segment_window_centroid_similarities(
+        window_sims_by_clip[rid]=list(_segment_window_centroid_similarities(
             classifier,normalized[rid],profile["centroid"],window_seconds))
-    reference_window_sims=[]
+    reference_window_sims_by_clip={}
     for rid in sorted(inlier_ids):
         if rid not in reference_clip_ids:
-            reference_window_sims.extend(_segment_window_centroid_similarities(
+            reference_window_sims_by_clip[rid]=list(_segment_window_centroid_similarities(
                 classifier,normalized[rid],qwen_reference_embedding,window_seconds))
     binding_segment_identity={"passed":False,"segments":[]}
     try:
-        segment_calibration=calibrate_segment_identity_threshold(
-            window_sims,window_seconds=window_seconds,
-            window_similarities_to_reference=reference_window_sims)
+        segment_calibration=calibrate_guarded_segment_identity_threshold(
+            window_sims_by_clip,window_seconds=window_seconds,
+            reference_similarities_by_clip=reference_window_sims_by_clip)
         shadow=evaluate_language_matched_segment_identity_gate(
             profile,segments=segment_identity_rows,segment_calibration=segment_calibration)
         print("OWNER_SEGMENT_DURATION_CALIBRATION="+json.dumps(
@@ -1686,6 +1699,7 @@ def main()->int:
         "content_audio_prescreen":content_audio_prescreen,
         "audition_delivery_eligible":audition_delivery_eligible,
         "ptbr_narration_gate":ptbr_gate["report"],
+        "identity_calibration_guard":profile["identity_calibration_guard"],
         "pronunciation_scope":(
             targeted_scope if is_critical_audition else "LEGACY"
         ),

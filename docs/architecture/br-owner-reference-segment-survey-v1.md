@@ -13,8 +13,10 @@ recordings for now.
 
 ## Pipeline (scripts/owner_voice_reference_segment_survey.py)
 1. Same materialization as the ASR survey: Telegram `getFile` only (wrapper
-   rejects every other method), ffmpeg to 16 kHz mono, pinned ECAPA, the
-   existing `calibrate_owner_identity_profile` and window calibration (unchanged).
+   rejects every other method; duplicate sha256 / Telegram file rejected at
+   load), ffmpeg to 16 kHz mono, pinned ECAPA, then the dedup-guarded identity
+   and window calibration (`owner_voice_identity_calibration_guard`, see
+   `br-owner-identity-calibration-dedup-v1.md`; floors never looser, pending owner).
 2. Exact sha256 dedupe of inliers, then select unique clips longer than 30 s (9 in run 39200354064).
 3. faster-whisper `large-v3-turbo`, CPU int8, `vad_filter=True`,
    `word_timestamps=True`, beam 5, on each long clip.
@@ -30,7 +32,7 @@ recordings for now.
 7. Dedupe (sha256; embedding ≥ 0.97 AND transcript Jaccard ≥ 0.80), MMR ranking.
 8. Term index: canonical GTA term -> Luiz's occurrences (segment id + word
    time span, segment-relative) in quality-passed segments.
-   `COVERED_MIN2` (≥2), `COVERED_MIN1_WEAKER` (1; flagged `weaker_single_occurrence`),
+   `COVERED_MIN2` (≥2), `COVERED_MIN1_REQUIRES_OWNER_EAR_GE4` (1; flagged `weaker_single_occurrence`),
    `NOT_COVERED_BY_QUALIFIED_SEGMENT`. `min_occurrences_decision` is
    `PENDING_OWNER_DECISION`; nothing is applied to the PT-BR pro gate.
 
@@ -46,7 +48,7 @@ download + ECAPA (57 clips + windows) about 3–4 min, ASR of about 380 s of lon
 word timestamps plus about 380 s of segment re-transcription at about 1.4× realtime is about 9–10 min.
 Total about 16–22 min; timeout 45 min.
 
-## Assessment (no change applied): 40/54 calibration inliers are exact duplicates
+## Assessment: 40/54 calibration inliers are exact duplicates (remediation A+C implemented, pending owner approval)
 Run 39200354064: 54 inliers -> 14 unique sha256. Clips 45–53 are each present
 5×; 101 is 3×; 120 and 121 are 2×.
 - `clone_centroid_min_similarity` (p10 of inlier-to-centroid similarities; the
@@ -64,7 +66,8 @@ Net effect: thresholds are not weakened, but they are biased toward one
 recording session ("Luiz in clips 45–53" rather than "Luiz"), and the effective
 sample size is 14, not 54.
 
-Proposed remediation (owner decides; not applied):
+Proposed remediation (A and C are now implemented fail-closed; the recalculated
+values remain PENDING_OWNER_APPROVAL; B still needs Luiz's decision):
 A. Fail-closed dedupe now: dedupe by sha256 before `calibrate_owner_identity_profile`,
    recompute, and use `max(recorded, recomputed)` for every floor until Luiz approves.
 B. After a contract-only calibration audit run reports both values, Luiz approves

@@ -177,7 +177,7 @@ def evaluate_clone_identity_gate(
     to_reference=cosine_similarity(clone_embedding,canonical_embedding)
     centroid_min=float(profile["clone_centroid_min_similarity"])
     reference_min=float(profile["clone_reference_min_similarity"])
-    return {
+    out={
         "passed":to_centroid>=centroid_min and to_reference>=reference_min,
         "similarity_to_centroid":round(to_centroid,6),
         "similarity_to_reference":round(to_reference,6),
@@ -185,6 +185,22 @@ def evaluate_clone_identity_gate(
         "reference_min_similarity":reference_min,
         "calibration":"OWNER_INTRA_SPEAKER_P10",
     }
+    legacy=profile.get("guard_legacy_centroid")
+    if legacy is not None:
+        # Dedup guard (owner_voice_identity_calibration_guard): the clone must ALSO
+        # pass the duplicate-weighted legacy centroid at its floor (never looser).
+        if not isinstance(legacy,list):
+            raise ValueError("OWNER_SPEAKER_LEGACY_CENTROID_INVALID")
+        to_legacy=cosine_similarity(clone_embedding,legacy)
+        legacy_min=float(profile["guard_legacy_centroid_min_similarity"])
+        reasons=[]
+        if to_legacy<legacy_min:
+            reasons.append("LEGACY_CENTROID")
+        out["similarity_to_legacy_centroid"]=round(to_legacy,6)
+        out["legacy_centroid_min_similarity"]=legacy_min
+        out["guard_fail_reasons"]=reasons
+        out["passed"]=bool(out["passed"]) and not reasons
+    return out
 
 
 SEGMENT_WINDOW_MIN_SECONDS=5.0
@@ -405,5 +421,5 @@ def select_canonical_reference(
 def sanitized_profile(profile: Mapping[str,Any]) -> dict[str,Any]:
     return {
         key:value for key,value in dict(profile).items()
-        if key not in {"centroid","reference_similarity_to_centroid"}
+        if key not in {"centroid","reference_similarity_to_centroid","guard_legacy_centroid"}
     }

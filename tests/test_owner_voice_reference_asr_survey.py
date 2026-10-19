@@ -173,8 +173,8 @@ def test_script_end_to_end_with_fake_runtime(tmp_path, monkeypatch):
         return {"references": refs}
     monkeypatch.setattr(mod, "materialize_telegram_owner_references", fake_materialize)
     monkeypatch.setattr(mod, "pcm16_quality_metrics", lambda p: {"duration_seconds": 7.0, "snr_db": 25.0, "clipping_ratio": 0.0})
-    monkeypatch.setattr(mod, "calibrate_owner_identity_profile", lambda e: {"inlier_ids": list(e), "reference_similarity_to_centroid": {k: 0.9 + int(k) / 100 for k in e}})
-    monkeypatch.setattr(mod, "calibrate_owner_window_consistency", lambda s: {"min_similarity": 0.8})
+    monkeypatch.setattr(mod, "calibrate_guarded_identity_profile", lambda e, **kw: {"identity_calibration_guard": {"status": "RECALCULATED_DEDUP_PENDING_OWNER_APPROVAL", "owner_approved": False}, "inlier_ids": list(e), "reference_similarity_to_centroid": {k: 0.9 + int(k) / 100 for k in e}})
+    monkeypatch.setattr(mod, "calibrate_guarded_window_consistency", lambda s, **kw: {"min_similarity": 0.8})
     monkeypatch.setattr(mod, "evaluate_reference_window_consistency", lambda s, c: {"passed": True, "reference_p10": 0.9})
     report_path = tmp_path / "out/report.json"
     monkeypatch.setenv("BR_OWNER_ASR_SURVEY_WORKSPACE", str(tmp_path / "w"))
