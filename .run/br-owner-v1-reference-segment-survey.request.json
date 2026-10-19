@@ -1,0 +1,15 @@
+{
+  "schema_version": "OwnerVoiceReferenceSegmentSurveyRequest/v1",
+  "voice_identity_id": "BR_OWNER_V1",
+  "request_id": "owner-reference-segment-survey-long-clips-20261019-v1",
+  "owner_decision": "OWNER_20261019_0733_SEGMENT_LONG_CLIPS_INSTEAD_OF_NEW_RECORDINGS",
+  "asr_only": true,
+  "synthesis": false,
+  "telegram_send": false,
+  "telegram_methods": ["getFile"],
+  "one_run_only": true,
+  "segment_seconds": [6, 25],
+  "selection_authority": "NONE_HUMAN_OWNER_REVIEW_REQUIRED",
+  "public_artifact": "SCALAR_METRICS_AND_TERM_TIME_SPANS_ONLY_NO_AUDIO_NO_EMBEDDINGS_NO_TRANSCRIPTS",
+  "thresholds_changed": false
+}
