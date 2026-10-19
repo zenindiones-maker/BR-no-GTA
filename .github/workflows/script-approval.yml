@@ -1,0 +1,112 @@
+name: Aprovar roteiro (Luiz)
+
+# Luiz aprova ou rejeita pelo celular (Actions > Aprovar roteiro > Run workflow).
+# Só o dono do repositório consegue rodar. O roteiro vem do artifact do run
+# editorial, tem o sha256 conferido e a decisão é gravada em content/roteiros/
+# com um commit nesta branch. Nada é renderizado, narrado ou publicado aqui.
+on:
+  workflow_dispatch:
+    inputs:
+      editorial_run_id:
+        description: "ID do run do roteiro (Real Multi-Agent Synergy Proof)"
+        required: true
+        type: string
+      script_id:
+        description: "ID do roteiro (ex.: ep-0001)"
+        required: true
+        type: string
+      script_sha256:
+        description: "sha256 do roteiro que você leu"
+        required: true
+        type: string
+      decisao:
+        description: "Decisão"
+        required: true
+        default: aprovar
+        type: choice
+        options:
+          - aprovar
+          - rejeitar
+      motivo:
+        description: "Motivo (obrigatório para rejeitar)"
+        required: false
+        default: ""
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: script-approval
+  cancel-in-progress: false
+
+jobs:
+  decidir:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    env:
+      PYTHONPATH: .
+      RUN_ID: ${{ inputs.editorial_run_id }}
+      SCRIPT_ID: ${{ inputs.script_id }}
+      SCRIPT_SHA256: ${{ inputs.script_sha256 }}
+      DECISAO: ${{ inputs.decisao }}
+      MOTIVO: ${{ inputs.motivo }}
+      ACTOR: ${{ github.actor }}
+    steps:
+      - name: Validar entradas
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "RUN_ID inválido"; exit 2; }
+          [[ "$SCRIPT_ID" =~ ^ep-[0-9a-z-]+$ ]] || { echo "SCRIPT_ID inválido"; exit 2; }
+          [[ "$SCRIPT_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "SHA256 inválido"; exit 2; }
+          if [ "$DECISAO" = "rejeitar" ] && [ -z "${MOTIVO// }" ]; then echo "Informe o motivo"; exit 2; fi
+
+      - name: Checkout da branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Baixar o roteiro do run editorial
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: real-multi-agent-synergy-${{ inputs.editorial_run_id }}
+          path: runtime/script-approval/artifact
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.editorial_run_id }}
+
+      - name: Trazer o roteiro para content/roteiros
+        run: |
+          set -euo pipefail
+          SRC="runtime/script-approval/artifact/content/roteiros/$SCRIPT_ID"
+          DST="content/roteiros/$SCRIPT_ID"
+          test -f "$SRC/roteiro.json" && test -f "$SRC/roteiro.md" || { echo "ROTEIRO_AUSENTE_NO_ARTIFACT"; exit 2; }
+          if [ -d "$DST" ]; then
+            cmp -s "$SRC/roteiro.md" "$DST/roteiro.md" || { echo "ROTEIRO_DIFERENTE_DO_JA_GRAVADO"; exit 2; }
+          else
+            mkdir -p "$DST" && cp "$SRC/roteiro.json" "$SRC/roteiro.md" "$DST/"
+          fi
+
+      - name: Registrar a decisão do Luiz
+        run: |
+          set -euo pipefail
+          CMD=approve; [ "$DECISAO" = "rejeitar" ] && CMD=reject
+          python scripts/script_first_gate.py "$CMD" --script-id "$SCRIPT_ID" \
+            --script-sha256 "$SCRIPT_SHA256" --approver Luiz --github-actor "$ACTOR" --reason "$MOTIVO"
+
+      - name: Commit na branch
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "content/roteiros/$SCRIPT_ID"
+          git commit -m "roteiro($SCRIPT_ID): $DECISAO por Luiz (sha256 ${SCRIPT_SHA256:0:12})"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

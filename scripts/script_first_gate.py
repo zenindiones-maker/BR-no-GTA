@@ -286,6 +286,34 @@ def write_editorial_script(result: dict[str, Any], *, goal_id: str | None = None
     return rec
 
 
+def human_decision(*, script_id: str, script_sha256: str, approver: str, approve: bool,
+                   reason: str = "", github_actor: str = "", root: Path | str | None = None) -> dict[str, Any]:
+    """Decisão do Luiz sobre um roteiro editorial_ok, presa ao sha256 do texto."""
+    from datetime import datetime, timezone
+    r = _root(root)
+    rec, text = _load(r, script_id)
+    digest = globals()["script_sha256"](text)
+    if script_sha256 != digest or rec.get("sha256") != digest:
+        raise ScriptGateError("SCRIPT_SHA_MISMATCH")
+    if approver not in HUMAN_APPROVERS:
+        raise ScriptGateError("HUMAN_APPROVAL_REQUIRED")
+    if approve:
+        validate_scenes(rec, text)
+        if not any(_is_official(s.get("url", "")) for s in rec.get("sources") or []):
+            raise ScriptGateError("OFFICIAL_SOURCES_REQUIRED")
+        originality(r, script_id, text, digest)
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        rec = transition(rec, "aprovado_humano", actor=approver, approved_at=now)
+        if github_actor:
+            rec["approval"]["github_actor"] = github_actor
+    else:
+        rec = transition(rec, "rejeitado")
+        rec["rejection"] = {"rejected_by": approver, "reason": reason, "rejected_sha256": digest,
+                            "github_actor": github_actor or None}
+    _save(r, script_id, rec)
+    return rec
+
+
 def checkpoint_matches(checkpoint: dict[str, Any], script_id: str, script_sha256: str) -> None:
     if (checkpoint or {}).get("script_id") != script_id or (checkpoint or {}).get("script_sha256") != script_sha256:
         raise ScriptGateError("CHECKPOINT_SCRIPT_MISMATCH")
@@ -301,6 +329,11 @@ def main(argv: list[str] | None = None) -> int:
     st = sub.add_parser("start"); st.add_argument("--script-id", required=True); st.add_argument("--script-sha256", required=True)
     dv = sub.add_parser("deliver"); dv.add_argument("--script-id", required=True); dv.add_argument("--script-sha256", required=True)
     dv.add_argument("--delivery-json", default="")
+    for name in ("approve", "reject"):
+        hd = sub.add_parser(name); hd.add_argument("--script-id", required=True)
+        hd.add_argument("--script-sha256", required=True); hd.add_argument("--approver", required=True)
+        hd.add_argument("--reason", default=""); hd.add_argument("--github-actor", default="")
+        hd.add_argument("--root")
     a = p.parse_args(argv)
     try:
         if a.cmd == "check":
@@ -314,6 +347,12 @@ def main(argv: list[str] | None = None) -> int:
         elif a.cmd == "start":
             rec = start_production(script_id=a.script_id, script_sha256=a.script_sha256)
             print(json.dumps({"SCRIPT_STATE": rec["status"], "script_id": a.script_id}))
+        elif a.cmd in {"approve", "reject"}:
+            rec = human_decision(script_id=a.script_id, script_sha256=a.script_sha256, approver=a.approver,
+                                 approve=a.cmd == "approve", reason=a.reason, github_actor=a.github_actor,
+                                 root=a.root)
+            print(json.dumps({"SCRIPT_STATE": rec["status"], "script_id": a.script_id,
+                              "script_sha256": a.script_sha256}, ensure_ascii=False))
         elif a.cmd == "deliver":
             d = json.loads(Path(a.delivery_json).read_text(encoding="utf-8")) if a.delivery_json and Path(a.delivery_json).is_file() else {}
             rec = deliver(script_id=a.script_id, script_sha256=a.script_sha256, delivery=d)

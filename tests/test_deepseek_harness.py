@@ -87,7 +87,10 @@ def test_editorial_provider_boundary_selects_primary_zero_cost_provider(
     )
     assert provider_authorization.lineage["selected_provider"] == "nvidia_nim"
     assert provider_authorization.lineage["selected_model"] == routing.selected_model
-    assert ai_provider.__class__.__name__ == "NvidiaNimProviderAdapter"
+    # Luiz 11/10/2026: a rota real embrulha o provider escolhido pelo Harness
+    # com retry/checkpoint/reserva governada; o primário continua o NVIDIA.
+    assert ai_provider.__class__.__name__ == "ResilientEditorialProvider"
+    assert ai_provider.primary.__class__.__name__ == "NvidiaNimProviderAdapter"
     assert ai_provider.model == routing.selected_model
 
 
