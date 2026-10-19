@@ -287,3 +287,72 @@ def build_pack_review_markup() -> dict[str, Any]:
             ],
         ]
     }
+
+
+# Ficha de avaliação do dono (OWNER_RULE_20261019_PTBR_ULTRA_PROFESSIONAL_NARRATION).
+# Métricas objetivas só bloqueiam; quem aprova é o ouvido do Luiz.
+OWNER_SCORING_CRITERIA: tuple[dict[str, str], ...] = (
+    {"id": "naturalidade", "label": "Naturalidade", "question": "Soa como você falando de verdade, sem cara de máquina?"},
+    {"id": "sotaque_br", "label": "Sotaque BR", "question": "Português do Brasil autêntico (nada de PT-PT, gringo ou neutro artificial)?"},
+    {"id": "pronuncia_nomes_gta", "label": "Pronúncia dos nomes do GTA", "question": "Vice City, Lucia, Jason, Leonida etc. do jeito que você fala?"},
+    {"id": "ritmo", "label": "Ritmo", "question": "Velocidade e pausas de narrador profissional, sem atropelar nem arrastar?"},
+    {"id": "emocao", "label": "Emoção", "question": "Energia e entonação certas para o canal, sem monotonia?"},
+    {"id": "artefatos", "label": "Artefatos", "question": "Sem chiado, metálico, robótico, cortes, repetições ou respiração estranha? (5 = limpo)"},
+)
+OWNER_SCORE_MIN_FOR_CERTIFICATION = 4
+
+
+def build_owner_scoring_sheet(
+    *, pack_id: str, labels: Iterable[str], gate_reports: Mapping[str, Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
+    reports = dict(gate_reports or {})
+    return {
+        "schema": "OwnerVoiceAuditionScoringSheet/v1",
+        "pack_id": str(pack_id),
+        "final_authority": "BR_OWNER_V1_LUIZ",
+        "scale": {"min": 1, "max": 5},
+        "criteria": [dict(c) for c in OWNER_SCORING_CRITERIA],
+        "certification_rule": (
+            "Aprovado só com decisão APPROVE do Luiz, todas as notas >= 4 e gate objetivo PT-BR PASS."
+        ),
+        "candidates": {
+            str(label): {
+                "objective_gate_passed": bool((reports.get(str(label)) or {}).get("passed") is True),
+                "scores": {c["id"]: None for c in OWNER_SCORING_CRITERIA},
+                "owner_notes": "",
+            }
+            for label in labels
+        },
+    }
+
+
+def build_owner_scoring_sheet_message(sheet: Mapping[str, Any]) -> str:
+    lines = ["Ficha de avaliação (notas de 1 a 5; você decide):"]
+    for c in sheet.get("criteria") or OWNER_SCORING_CRITERIA:
+        lines.append(f"• {c['label']}: {c['question']}")
+    lines.append("Responda, por candidato, ex.: A naturalidade=5 sotaque_br=5 pronuncia_nomes_gta=4 ritmo=5 emocao=4 artefatos=5")
+    lines.append("Qualquer nota abaixo de 4 reprova. Só a sua aprovação certifica a voz.")
+    return "\n".join(lines)
+
+
+def evaluate_owner_scoring(
+    scores: Mapping[str, Any], *, owner_decision: str, objective_gate_passed: bool,
+) -> dict[str, Any]:
+    reasons: list[str] = []
+    clean: dict[str, int] = {}
+    for c in OWNER_SCORING_CRITERIA:
+        raw = scores.get(c["id"])
+        if raw is None:
+            reasons.append(f"SCORE_MISSING:{c['id']}")
+            continue
+        value = int(raw)
+        if not 1 <= value <= 5:
+            raise ValueError(f"SCORE_OUT_OF_RANGE:{c['id']}")
+        clean[c["id"]] = value
+        if value < OWNER_SCORE_MIN_FOR_CERTIFICATION:
+            reasons.append(f"SCORE_BELOW_4:{c['id']}")
+    if str(owner_decision or "").upper() != "APPROVE":
+        reasons.append("OWNER_DID_NOT_APPROVE")
+    if objective_gate_passed is not True:
+        reasons.append("OBJECTIVE_PTBR_GATE_NOT_PASSED")
+    return {"certified": not reasons, "reasons": reasons, "scores": clean, "final_authority": "BR_OWNER_V1_LUIZ"}

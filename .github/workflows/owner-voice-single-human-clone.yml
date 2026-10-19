@@ -1,21 +1,31 @@
 name: BR_OWNER_V1 Single Human Clone
 
 on:
+  pull_request:
+    paths:
+      - .github/workflows/owner-voice-single-human-clone.yml
+      - tests/test_owner_voice_mission_outcome_contract.py
+      - app/services/gta6_owner_audio_dictionary_service.py
+      - tests/test_owner_voice_critical_audio_dictionary_execution.py
   workflow_dispatch:
   push:
     branches:
       - work/br-owner-voice-serial-audition-v11
       - work/br-owner-voice-coherent-qa-recovery-v1
+      - work/br-owner-voice-mission-state-failclosed-v1
     paths:
       - .run/br-owner-v1-single-human-clone.request.json
       - .github/workflows/owner-voice-single-human-clone.yml
       - scripts/owner_voice_single_human_clone.py
       - scripts/owner_voice_single_clone_delivery.py
       - tests/test_owner_voice_single_clone_workflow_v1.py
+      - tests/test_owner_voice_mission_outcome_contract.py
+      - app/services/gta6_owner_audio_dictionary_service.py
+      - tests/test_owner_voice_critical_audio_dictionary_execution.py
       - config/pronunciation_lexicon.json
 
 concurrency:
-  group: br-owner-v1-single-human-clone-ledger
+  group: br-owner-v1-single-human-clone-${{ github.event_name }}
   cancel-in-progress: false
 
 permissions:
@@ -32,11 +42,12 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+          fetch-depth: 2
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
       - name: Install focused test dependencies
-        run: python -m pip install --disable-pip-version-check -q pytest packaging "python-dotenv==1.2.3"
+        run: python -m pip install --disable-pip-version-check -q pytest packaging "python-dotenv==1.2.3" "numpy==2.3.3"
       - name: Prove current fail-closed owner clone and critical-dictionary contracts
         run: |
           set -euo pipefail
@@ -54,7 +65,17 @@ jobs:
             tests/test_owner_voice_critical_audio_dictionary_execution.py \
             tests/test_owner_voice_critical_audio_telegram_delivery.py \
             tests/test_owner_voice_single_clone_workflow_v1.py \
-            tests/test_owner_voice_prompt_consistency_service.py
+            tests/test_owner_voice_prompt_consistency_service.py \
+            tests/test_owner_voice_mission_outcome_contract.py \
+            tests/test_owner_canonical_selection_fidelity.py \
+            tests/test_owner_segment_duration_calibrated_gate.py \
+            tests/test_owner_voice_serial_generation_v11.py \
+            tests/test_owner_reference_window_v5d.py \
+            tests/test_owner_candidate_b_binding_gate_v5e.py \
+            tests/test_owner_calibrated_reference_v5f.py \
+            tests/test_owner_composite_reference_v5g.py \
+            tests/test_owner_composite_dedup_v5h.py \
+            tests/test_owner_expanded_pool_v5i.py
           echo 'TARGETED_OWNER_VOICE_CONTRACT=PASS'
           echo 'LEGACY_POPULATED_LEXICON_CONTRACT=NOT_CLAIMED'
       - name: Detect explicit single-clone request
@@ -66,14 +87,13 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             REQUEST_CHANGED=true
           elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            if python - <<'PY'
-          import json,os,sys
-          event=json.load(open(os.environ["GITHUB_EVENT_PATH"]))
-          target=".run/br-owner-v1-single-human-clone.request.json"
-          commits=event.get("commits",[])
-          sys.exit(0 if any(target in commit.get(k,[]) for commit in commits for k in ("added","modified")) else 1)
-          PY
-            then REQUEST_CHANGED=true; fi
+            set -euo pipefail
+            test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+            git rev-parse --verify 'HEAD^' >/dev/null
+            REQUEST_PATH=".run/br-owner-v1-single-human-clone.request.json"
+            if git diff --name-only HEAD^ HEAD -- "$REQUEST_PATH" | grep -Fxq "$REQUEST_PATH"; then
+              REQUEST_CHANGED=true
+            fi
           fi
           if [ "$REQUEST_CHANGED" = true ] && [ -f .run/br-owner-v1-single-human-clone.request.json ]; then
             python - <<'PY'
@@ -170,6 +190,18 @@ jobs:
             "qwen-tts==0.1.1" \
             "faster-whisper==1.2.0" "av==18.0.0" "speechbrain==1.1.1" \
             soundfile requests huggingface_hub
+          # PT-BR professional narration gate (OWNER_RULE_20261019): open-source, CPU, pinned.
+          "$PY" -m pip install --disable-pip-version-check --prefer-binary --progress-bar off \
+            --constraint "$CONSTRAINTS" \
+            "utmosv2 @ git+https://github.com/sarulab-speech/UTMOSv2.git@cc2700db57bb83ee13dc31ebe1b868c254e15d09"
+          DNSMOS="$BR_OWNER_PUBLIC_MODEL_CACHE/dnsmos/sig_bak_ovr.onnx"
+          mkdir -p "$(dirname "$DNSMOS")"
+          if [ ! -f "$DNSMOS" ]; then
+            curl -fsSL -o "$DNSMOS" https://github.com/microsoft/DNS-Challenge/raw/591184a9fcb2cbdec02520fed81a32bbbf9d73ff/DNSMOS/DNSMOS/sig_bak_ovr.onnx
+          fi
+          echo "269fbebdb513aa23cddfbb593542ecc540284a91849ac50516870e1ac78f6edd  $DNSMOS" | sha256sum -c -
+          echo "BR_OWNER_DNSMOS_ONNX=$DNSMOS" >> "$GITHUB_ENV"
+          "$PY" -c "import onnxruntime, utmosv2; print('PTBR_NARRATION_GATE_RUNTIME=PINNED')"
           "$PY" -m pip check
           "$PY" - <<'PY'
           from importlib.metadata import version
@@ -183,13 +215,16 @@ jobs:
 
       - name: Build one human-bound clone and prove identity
         id: generate
+        timeout-minutes: 70
         env:
           PYTHONPATH: ${{ github.workspace }}
+          PYTHONUNBUFFERED: "1"
         run: |
           set -euo pipefail
           /tmp/br-owner-single-clone-venv/bin/python scripts/owner_voice_single_human_clone.py
 
       - name: Deliver reference clone and control
+        id: reference_delivery
         if: ${{ steps.generate.outputs.send_eligible == 'true' && steps.generate.outputs.critical_scope == 'false' }}
         env:
           PYTHONPATH: ${{ github.workspace }}
@@ -200,6 +235,7 @@ jobs:
           /tmp/br-owner-single-clone-venv/bin/python scripts/owner_voice_single_clone_delivery.py
 
       - name: Deliver one protected critical-name audio only
+        id: critical_delivery
         if: ${{ steps.generate.outputs.send_eligible == 'true' && steps.generate.outputs.critical_scope == 'true' }}
         env:
           PYTHONPATH: ${{ github.workspace }}
@@ -208,6 +244,40 @@ jobs:
         run: |
           set -euo pipefail
           /tmp/br-owner-single-clone-venv/bin/python scripts/owner_voice_critical_audio_telegram_delivery.py
+
+      - name: Enforce audition delivery outcome
+        if: ${{ always() }}
+        env:
+          SEND_ELIGIBLE: ${{ steps.generate.outputs.send_eligible }}
+          GENERATION_RESULT: ${{ steps.generate.outcome }}
+          CRITICAL_SCOPE: ${{ steps.generate.outputs.critical_scope }}
+          REFERENCE_DELIVERY_RESULT: ${{ steps.reference_delivery.outcome }}
+          CRITICAL_DELIVERY_RESULT: ${{ steps.critical_delivery.outcome }}
+        run: |
+          if [ "$GENERATION_RESULT" != success ]; then
+            echo "MISSION_FAILED_GENERATION"
+            exit 1
+          fi
+          if [ "$SEND_ELIGIBLE" != true ]; then
+            echo "MISSION_FAILED_QUALITY_GATES"
+            exit 1
+          fi
+          if [ "$CRITICAL_SCOPE" = true ]; then
+            if [ "$CRITICAL_DELIVERY_RESULT" != success ]; then
+              echo "MISSION_FAILED_CRITICAL_DELIVERY"
+              exit 1
+            fi
+          elif [ "$CRITICAL_SCOPE" = false ]; then
+            if [ "$REFERENCE_DELIVERY_RESULT" != success ]; then
+              echo "MISSION_FAILED_REFERENCE_DELIVERY"
+              exit 1
+            fi
+          else
+            exit 1
+          fi
+          echo "AUDITION_DELIVERY_STEP=PASS"
+          echo "MISSION_COMPLETE=FALSE"
+          echo "HUMAN_APPROVAL=PENDING"
 
       - name: Remove ephemeral owner biometric and clone material
         if: ${{ always() }}

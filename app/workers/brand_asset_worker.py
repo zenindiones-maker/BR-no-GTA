@@ -11,7 +11,7 @@ import subprocess
 import time
 from typing import Any
 
-from app.services.channel_spoken_branding_service import validate_job_spoken_branding
+from app.services.channel_spoken_branding_service import brand_cache_policy_ok, validate_job_spoken_branding
 from app.services.render_learning_profile_service import resolve_bound_render_options
 from app.services.visual_branding_policy import WATERMARK_OPACITY, WATERMARK_WIDTH_FRACTION
 from app.services.telegram_brand_asset_materializer import (
@@ -578,7 +578,7 @@ def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
         "closing_text_canonical": sequence
         and sequence[-1].get("phase") == "spoken_channel_closing"
         and sequence[-1].get("text") == "E BR não dorme em Vice City",
-        "brand_audio_cache_policy": bool(spoken_branding["cache_policy"]["closing_fixed_reusable"]),
+        "brand_audio_cache_policy": brand_cache_policy_ok(spoken_branding),
     }
     if not all(branding_checks.values()):
         raise BrandAssetWorkerError(f"spoken/visual branding QA failed: {branding_checks}")
