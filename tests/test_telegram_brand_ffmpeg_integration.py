@@ -90,9 +90,12 @@ def test_real_ffmpeg_applies_intro_and_watermark_and_preserves_audiovisual_qa(tm
             {"asset_id": 2, "asset_type": "watermark"},
         ],
         "spoken_branding": build_spoken_branding_contract(theme="teste de branding"),
+        # 7e622674: watermark entra no encode principal; o brand stage só
+        # prepende a intro (sem segundo encode do conteúdo).
+        "visual_branding": {"watermark_embedded_in_base_render": True},
         "narration": {
-            "voice": "pt-BR-ThalitaMultilingualNeural",
-            "human_quality_baseline": "Voice B",
+            "voice": "BR_OWNER_V1",
+            "voice_identity_id": "BR_OWNER_V1",
         },
         "script_sections": [{"section_id": "A01", "role": "hook"}],
         "edit_plan": {
@@ -154,6 +157,7 @@ def test_real_ffmpeg_applies_intro_and_watermark_and_preserves_audiovisual_qa(tm
         encoding="utf-8",
     )
 
+    content_pixel_before = _sample_rgb(base, 0.5, x=264, y=124)
     result = apply(job, runtime_root, output_root)
 
     assert result == base
@@ -171,7 +175,7 @@ def test_real_ffmpeg_applies_intro_and_watermark_and_preserves_audiovisual_qa(tm
     assert manifest["qa_status"] == "PASS"
     assert manifest["brand_asset_ids"] == [1, 2]
     assert manifest["brand_asset_types"] == ["intro", "watermark"]
-    assert manifest["brand_composition"] == "telegram-cloud-ffmpeg-complete-intro-concat"
+    assert manifest["brand_composition"] == "single-content-encode-plus-intro-stream-copy/v1"
     assert manifest["content_duration_semantics"] == "estimated_duration_is_content_base"
     assert manifest["OFFICIAL_INTRO_FIRST"] == "PASS"
     assert manifest["SPOKEN_OPENING_AFTER_INTRO"] == "PASS"
@@ -201,7 +205,9 @@ def test_real_ffmpeg_applies_intro_and_watermark_and_preserves_audiovisual_qa(tm
     intro_pixel = _sample_rgb(base, 0.5, x=264, y=124)
     content_pixel = _sample_rgb(base, 1.5, x=264, y=124)
     assert intro_pixel[0] > 180 and intro_pixel[1] < 80 and intro_pixel[2] < 80
-    assert all(channel > 160 for channel in content_pixel)
+    # Watermark já vem do encode principal (7e622674); o brand stage copia o
+    # conteúdo sem re-encode, então o pixel do conteúdo fica idêntico.
+    assert content_pixel == pytest.approx(content_pixel_before, abs=6)
     assert probe["brand_assets"] == [
         {"asset_id": 1, "asset_type": "intro", "telegram_file_unique_id": "proof-intro", "sha256": "a" * 64},
         {"asset_id": 2, "asset_type": "watermark", "telegram_file_unique_id": "proof-watermark", "sha256": "b" * 64},

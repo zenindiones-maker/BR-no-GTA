@@ -16,7 +16,7 @@ from typing import Any
 
 from app.main import initialize_application
 from app.services.edit_plan_service import EditAudio, EditClip, EditPlan, EditQA, EditText, EditTrack
-from app.services.channel_spoken_branding_service import validate_job_spoken_branding
+from app.services.channel_spoken_branding_service import brand_cache_policy_ok, validate_job_spoken_branding
 from app.services.current_audio_contract_service import current_audio_contract
 from app.services.brand_audio_service import prepare_brand_audio, compose_content_voice_master
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
@@ -965,7 +965,7 @@ def _build_edit_plan(
         "owner_voice_used": brand_contract["official_voice_profile"] == "BR_OWNER_V1",
         "opening_text_canonical": plan.metadata["timeline_sequence"][1]["text"] == brand_contract["opening_text"],
         "closing_text_canonical": plan.metadata["timeline_sequence"][-1]["text"] == "E BR não dorme em Vice City",
-        "brand_audio_cache_policy": bool(brand_contract["cache_policy"]["closing_fixed_reusable"]),
+        "brand_audio_cache_policy": brand_cache_policy_ok(brand_contract),
         "editorial_hook_preserved": job["script_sections"][0]["role"] == "hook" and plan.metadata["timeline_sequence"][2]["phase"] == "editorial_hook",
         "source_audio_not_authoritative": plan.metadata["source_audio_policy"] == "MUTED_VISUAL_SOURCE_AUDIO_A1_ONLY",
         "no_reused_or_overlapping_source_windows": source_window_validation["status"] == "PASS",

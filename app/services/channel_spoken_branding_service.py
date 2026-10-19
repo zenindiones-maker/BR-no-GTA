@@ -152,6 +152,24 @@ def get_spoken_branding_standard() -> dict[str, Any]:
     }
 
 
+def brand_cache_policy_ok(contract: dict[str, Any]) -> bool:
+    """Política de cache da voz do dono (78548177): fechamento NÃO é reutilizável
+    e todo áudio de marca invalida ao trocar identidade/versão do provedor.
+
+    Antes do owner-only, o check era bool(closing_fixed_reusable) (Voice B fixa);
+    após 28/09 esse valor é sempre False e o check virou falha permanente.
+    """
+    policy = (contract or {}).get("cache_policy") or {}
+    fingerprint = set(policy.get("fingerprint_components") or ())
+    return (
+        policy.get("closing_fixed_reusable") is False
+        and "voice_identity_id" in (policy.get("opening_invalidates_on") or ())
+        and "voice_identity_id" in (policy.get("closing_invalidates_on") or ())
+        and "provider_version" in (policy.get("closing_invalidates_on") or ())
+        and {"voice_identity_id", "provider_version", "lexicon_version", "text"} <= fingerprint
+    )
+
+
 def validate_spoken_branding_contract(contract: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(contract, dict):
         raise SpokenBrandingContractError("spoken branding contract is required")
