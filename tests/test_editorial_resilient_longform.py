@@ -21,9 +21,14 @@ def test_synergy_dispatch_inputs():
     inputs = on["workflow_dispatch"]["inputs"]
     assert {"theme", "source_urls", "target_duration_seconds"} <= set(inputs)
     assert str(inputs["target_duration_seconds"]["default"]) == "1500"
-    urls = inputs["source_urls"]["default"]
-    for host in ("rockstargames.com", "take2games.com", "playstation.com", "xbox.com"):
-        assert host in urls, host
+    urls = inputs["source_urls"]["default"].split()
+    # Primária sempre a Rockstar; secundárias só páginas oficiais do próprio
+    # GTA VI (a home genérica da Xbox Store não era confirmada pelo worker).
+    assert urls[0] == "https://www.rockstargames.com/VI"
+    assert "https://www.playstation.com/pt-br/games/grand-theft-auto-vi/" in urls
+    assert "https://www.xbox.com/pt-BR/games/grand-theft-auto-vi" in urls
+    assert not any(u.rstrip("/").endswith(("/games/store", "store.playstation.com/pt-br")) for u in urls)
+    assert all(u.startswith("https://") for u in urls)
 
 
 def test_synergy_least_privilege_and_roteiro_artifact():
