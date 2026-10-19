@@ -190,6 +190,18 @@ jobs:
             "qwen-tts==0.1.1" \
             "faster-whisper==1.2.0" "av==18.0.0" "speechbrain==1.1.1" \
             soundfile requests huggingface_hub
+          # PT-BR professional narration gate (OWNER_RULE_20261019): open-source, CPU, pinned.
+          "$PY" -m pip install --disable-pip-version-check --prefer-binary --progress-bar off \
+            --constraint "$CONSTRAINTS" \
+            "utmosv2 @ git+https://github.com/sarulab-speech/UTMOSv2.git@cc2700db57bb83ee13dc31ebe1b868c254e15d09"
+          DNSMOS="$BR_OWNER_PUBLIC_MODEL_CACHE/dnsmos/sig_bak_ovr.onnx"
+          mkdir -p "$(dirname "$DNSMOS")"
+          if [ ! -f "$DNSMOS" ]; then
+            curl -fsSL -o "$DNSMOS" https://github.com/microsoft/DNS-Challenge/raw/591184a9fcb2cbdec02520fed81a32bbbf9d73ff/DNSMOS/DNSMOS/sig_bak_ovr.onnx
+          fi
+          echo "269fbebdb513aa23cddfbb593542ecc540284a91849ac50516870e1ac78f6edd  $DNSMOS" | sha256sum -c -
+          echo "BR_OWNER_DNSMOS_ONNX=$DNSMOS" >> "$GITHUB_ENV"
+          "$PY" -c "import onnxruntime, utmosv2; print('PTBR_NARRATION_GATE_RUNTIME=PINNED')"
           "$PY" -m pip check
           "$PY" - <<'PY'
           from importlib.metadata import version

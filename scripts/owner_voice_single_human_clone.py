@@ -20,6 +20,9 @@ from app.services.gta6_pronunciation_lexicon_service import (
     gta6_target_evidence_score,
 )
 from app.services.owner_voice_audio_quality_service import pcm16_quality_metrics
+from app.services.owner_voice_ptbr_narration_features import LazyNeuralScorers
+from app.services.owner_voice_ptbr_narration_gate_service import combine_with_existing_delivery_gate
+from app.services.owner_voice_ptbr_narration_runner import run_ptbr_narration_gate
 from app.services.owner_voice_human_audition_pack_service import (
     evaluate_segment_transcript_qa,
     evaluate_short_candidate,
@@ -1611,6 +1614,32 @@ def main()->int:
         bool(review_decision["audition_delivery_eligible"])
         and targeted_delivery_allowed
     )
+    # OWNER_RULE_20261019_PTBR_ULTRA_PROFESSIONAL_NARRATION (docs/policy/owner_authorizations.md):
+    # gate ADITIVO e fail-closed; calibrado nas gravações reais do Luiz; não
+    # altera nenhum limiar de identidade. O ouvido do Luiz segue como autoridade final.
+    ref_sha_by_id={str(int(row["telegram_input_id"])):str(row["sha256"]) for row in refs}
+    ptbr_owner_clips={
+        rid:(normalized[rid],ref_sha_by_id[rid])
+        for rid in sorted(inlier_ids)
+        if float(metrics[rid].get("snr_db") or 0.0)>=15.0
+        and float(metrics[rid].get("clipping_ratio") or 0.0)<=0.01
+    }
+    ptbr_gate=run_ptbr_narration_gate(
+        owner_clips=ptbr_owner_clips,
+        candidate_wav16=clone16,
+        candidate_sha256=clone_sha,
+        segment_qas=segment_language_qas,
+        dnsmos_model_path=Path(str(os.environ.get("BR_OWNER_DNSMOS_ONNX") or "missing-dnsmos.onnx")),
+        scorers=LazyNeuralScorers(cache_root/"ptbr-narration-gate"),
+        workspace=workspace,
+    )
+    print("PTBR_NARRATION_GATE="+("PASS" if ptbr_gate["result"]["passed"] else "FAIL"))
+    if ptbr_gate["result"]["fail_reasons"]:
+        print("PTBR_NARRATION_GATE_FAIL_REASONS="+",".join(ptbr_gate["result"]["fail_reasons"])[:2000])
+    audition_delivery_eligible=combine_with_existing_delivery_gate(
+        audition_delivery_eligible,
+        ptbr_gate["result"],
+    )
     print("AUDITION_DELIVERY_ELIGIBLE="+(
         "PASS" if audition_delivery_eligible else "BLOCKED_QUALITY_GATES"
     ))
@@ -1656,6 +1685,7 @@ def main()->int:
         "clone_identity_gate":identity_gate,
         "content_audio_prescreen":content_audio_prescreen,
         "audition_delivery_eligible":audition_delivery_eligible,
+        "ptbr_narration_gate":ptbr_gate["report"],
         "pronunciation_scope":(
             targeted_scope if is_critical_audition else "LEGACY"
         ),
