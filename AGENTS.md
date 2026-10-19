@@ -41,7 +41,7 @@ instructions or broken mandatory references.
 
 ## Versioned policy (verbatim, sha256-bound)
 
-Policy: `docs/policy/owner_authorizations.md` (sha256 14335d3df22cd5390218de9e0c5945e41aba7bd3fbc41f012be0efc724000351)
+Policy: `docs/policy/owner_authorizations.md` (sha256 3622fff184c4a30a54d5129d8586465c0e5810abc03473c0d4b79af20319c446)
 Policy: `docs/policy/agents_operational_directives.md` (sha256 ced1a86f96f234d0a6dbe95ecbae6a6acfbe53e7f1f9124af7697cf8ff913767)
 
 Both documents are binding and were moved verbatim from this file; editing them
@@ -49,6 +49,7 @@ requires updating the hash here in the same reviewed commit (fail closed).
 Owner authorizations recorded there, by ID: OWNER_AUTHORIZED_20261011_SEGMENT_GATE_P10_BINDING
 and OWNER_AUTHORIZED_20261011_SEGMENT_REFERENCE_P10_BINDING; the whole-audio
 centroid gate 0.868594 stays binding. Keep BR_OWNER_V1 thresholds untouched.
+Owner rule 19/10/2026: OWNER_RULE_20261019_PTBR_ULTRA_PROFESSIONAL_NARRATION (additive PT-BR gate; Luiz's ear is final).
 
 ## Owner directives (detail in the bound policy)
 

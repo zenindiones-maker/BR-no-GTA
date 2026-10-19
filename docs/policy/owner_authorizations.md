@@ -48,3 +48,16 @@ names remain unchanged with controlled spoken "vaicy siti". No recovery push
 may trigger owner fine-tuning. Production begins only after a new, delivered
 human-approved audition, actual 20–25min fully decoded original render,
 rights/factual review and explicit PRIVATE HD owner approval. No auto-publish.
+
+## OWNER_RULE_20261019_PTBR_ULTRA_PROFESSIONAL_NARRATION
+
+On 19/10/2026 00:43 (America/Sao_Paulo) the owner (Luiz) stated, verbatim:
+"Se a voz não estiver com qualidade Português BR ultra profissional não será aprovada. Confere isso com exclusividade e excelência máxima."
+
+Binding effect: an additional fail-closed PT-BR professional narration gate
+(`app/services/owner_voice_ptbr_narration_gate_service.py`, design in
+`docs/architecture/br-owner-ptbr-narration-gate-v1.md`) is ADDITIVE ONLY: it can
+only block, never lowers or replaces the BR_OWNER_V1 identity gates (0.868594
+and the 11/10/2026 p10 bindings). Its thresholds come from the owner's own real
+recordings and/or documented references, never from a candidate. The owner's
+ear (scoring sheet) remains the final authority; no auto-approval.
