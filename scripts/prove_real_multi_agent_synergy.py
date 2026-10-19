@@ -249,6 +249,39 @@ def _claim_context(intelligence: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+SEMANTIC_CLAIMS_BUDGET_CHARS = 14_000
+
+
+def _semantic_claims(
+    claims: list[dict[str, Any]],
+    *,
+    budget: int = SEMANTIC_CLAIMS_BUDGET_CHARS,
+) -> list[dict[str, Any]]:
+    """Visão compacta dos claims para contexto semântico (limite 24000 do specialist).
+
+    VERIFIED primeiro; cada linha mantém claim_id, statement e URL oficial.
+    """
+    ordered = sorted(
+        claims,
+        key=lambda item: 0 if item.get("verification_status") == "VERIFIED" else 1,
+    )
+    rows: list[dict[str, Any]] = []
+    size = 2
+    for item in ordered:
+        row = {
+            "claim_id": item.get("claim_id"),
+            "statement": str(item.get("statement") or "")[:360],
+            "verification_status": item.get("verification_status"),
+            "source_urls": list(item.get("source_urls") or ())[:2],
+        }
+        cost = len(json.dumps(row, ensure_ascii=False, sort_keys=True, default=str)) + 2
+        if size + cost > budget:
+            break
+        rows.append(row)
+        size += cost
+    return rows
+
+
 def prove(fresh: dict[str, Any]) -> dict[str, Any]:
     if fresh.get("status") != "PASS":
         raise RuntimeError("fresh research must be PASS")
@@ -360,7 +393,7 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
         "source_url": source_url,
         "source_hierarchy": submitted.get("source_hierarchy"),
         "source_excerpt": source_excerpt,
-        "verified_claims": claims,
+        "verified_claims": _semantic_claims(claims),
         "gta6_brain_decision": brain["brain_decision"],
         "fact_check_policy": "Only VERIFIED/SUPPORTED claims may be treated as facts.",
     }
