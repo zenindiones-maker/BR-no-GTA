@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from pathlib import Path
 import re
 
@@ -8,6 +9,13 @@ import re
 _REF_RE = re.compile(
     r"(?:Required:|Mandatory:|Canonical:|See:|Policy:|Registry:)\s*\x60?([A-Za-z0-9_./-]+\.(?:md|py|html|json|yml|yaml))\x60?",
     re.I,
+)
+
+# Content binding: "Policy: `docs/policy/x.md` (sha256 <hex>)" pins the exact
+# bytes of a policy document moved out of AGENTS.md (owner authorizations stay
+# verbatim and cannot be edited silently).
+_BINDING_RE = re.compile(
+    r"Policy:\s*\x60?([A-Za-z0-9_./-]+\.md)\x60?\s*\(sha256\s+([0-9a-f]{64})\)",
 )
 
 _CONFLICT_PATTERNS = (
@@ -27,6 +35,7 @@ class AgentsPolicyValidation:
     stale_mandatory_references: tuple[str, ...]
     authority_conflicts: tuple[str, ...]
     missing_mandatory_references: tuple[str, ...] = ()
+    content_binding_mismatches: tuple[str, ...] = ()
     schema: str = "AgentsPolicyValidation/v1"
 
     @property
@@ -87,6 +96,17 @@ def validate_agents_policy(
             continue
         conflicts.extend(_authority_conflicts(referenced, source=ref))
 
+    mismatched: list[str] = []
+    for match in _BINDING_RE.finditer(text):
+        ref, expected = match.group(1), match.group(2)
+        target = root / ref
+        try:
+            actual = hashlib.sha256(target.read_bytes()).hexdigest()
+        except OSError:
+            actual = ""
+        if actual != expected:
+            mismatched.append(ref)
+
     lines = len(text.splitlines())
     status = (
         "PASS"
@@ -95,6 +115,7 @@ def validate_agents_policy(
         and not missing_mandatory
         and not stale
         and not conflicts
+        and not mismatched
         else "FAIL"
     )
     return AgentsPolicyValidation(
@@ -104,4 +125,5 @@ def validate_agents_policy(
         stale_mandatory_references=stale,
         authority_conflicts=tuple(dict.fromkeys(conflicts)),
         missing_mandatory_references=missing_mandatory,
+        content_binding_mismatches=tuple(dict.fromkeys(mismatched)),
     )
