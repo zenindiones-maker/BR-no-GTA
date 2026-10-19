@@ -23,12 +23,13 @@ def test_current_audio_contract_is_owner_only_and_fail_closed_until_private_refe
     assert c["OWNER_REFERENCE_READY"] is False
     assert c["DEFAULT_NARRATION_LOCALE"] == "pt-BR"
     assert c["ONLY_FORCED_EN_US_TERM"] is None
-    assert c["GTA_6_SYNTHESIS"] == "Gê Tê A seis"
+    # Léxico ativo vazio até evidência acústica (0e3d4389): sem síntese governada.
+    assert c["GTA_6_SYNTHESIS"] is None
     assert c["OFFICIAL_VOICE"] == "BR_OWNER_V1"
-    assert c["VICE_CITY_LOCALE"] == "pt-BR"
+    assert c["VICE_CITY_LOCALE"] is None
     assert c["VICE_CITY_TARGET_IPA"] is None
-    assert c["VICE_CITY_SYNTHESIS"] == "vaicy siti"
-    assert c["LUCIA_SYNTHESIS_ALIAS"] == "Lucia"
+    assert c["VICE_CITY_SYNTHESIS"] is None
+    assert c["LUCIA_SYNTHESIS_ALIAS"] is None
     assert len(c["CURRENT_AUDIO_CONTRACT_FINGERPRINT"]) == 64
 
 

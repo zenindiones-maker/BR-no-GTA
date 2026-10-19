@@ -12,12 +12,14 @@ def _entry(filename):
 
 
 def test_owner_spoken_vice_city_is_same_in_runtime_editorial_and_evidence():
-    runtime,_=_entry("pronunciation_lexicon.json")
+    # Léxico de narração ativo vazio (0e3d4389); "vaicy siti" vive no dicionário
+    # crítico da audição, no candidato e no registro de evidência.
+    runtime_lexicon=json.loads(Path("config","pronunciation_lexicon.json").read_text(encoding="utf-8"))
+    assert not any(x.get("term")=="Vice City" for x in runtime_lexicon["entries"])
     candidate,_=_entry("pronunciation_ptbr_candidate.json")
     evidence,_=_entry("pronunciation_evidence_registry.json")
     actual=build_gta6_pronunciation_segments("Vice City")
     assert actual[0]["spoken_text"]=="vaicy siti"
-    assert runtime["synthesis_text"]=="vaicy siti"
     assert candidate["synthesis_text"]=="vaicy siti"
     assert evidence["synthesis"]=="vaicy siti"
     assert candidate["validation_status"]=="PENDING_HUMAN_REVIEW"
@@ -25,7 +27,7 @@ def test_owner_spoken_vice_city_is_same_in_runtime_editorial_and_evidence():
     assert "Váis Síti" in evidence["source_ref"]
     assert "Váis Síti" in candidate["source"]
     assert _entry("pronunciation_ptbr_candidate.json")[1]["policy"]["automatic_promotion"] is False
-    assert _entry("pronunciation_lexicon.json")[1]["policy"]["same_owner_voice_required"] is True
+    assert runtime_lexicon["policy"]["same_owner_voice_required"] is True
 
 
 def test_canonical_vice_city_is_not_wrongly_replaced_in_script():
