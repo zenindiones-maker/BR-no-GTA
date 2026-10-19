@@ -4,7 +4,7 @@ from hashlib import sha256
 import math
 import re
 import unicodedata
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, Sequence
 
 VOICE_IDENTITY_ID = "BR_OWNER_V1"
 _BLIND_LABELS = ("A", "B", "C")
@@ -337,6 +337,7 @@ def build_owner_scoring_sheet_message(sheet: Mapping[str, Any]) -> str:
 
 def evaluate_owner_scoring(
     scores: Mapping[str, Any], *, owner_decision: str, objective_gate_passed: bool,
+    pending_owner_ear_terms: Sequence[str] = (),
 ) -> dict[str, Any]:
     reasons: list[str] = []
     clean: dict[str, int] = {}
@@ -351,6 +352,12 @@ def evaluate_owner_scoring(
         clean[c["id"]] = value
         if value < OWNER_SCORE_MIN_FOR_CERTIFICATION:
             reasons.append(f"SCORE_BELOW_4:{c['id']}")
+    # Termos do GTA com 1 ocorrência do Luiz (regra proposta): exigem a nota de
+    # ouvido dele >= 4 em pronúncia de nomes do GTA.
+    ear = clean.get("pronuncia_nomes_gta")
+    for term in pending_owner_ear_terms or ():
+        if ear is None or ear < 4:
+            reasons.append(f"TERM_SINGLE_OCCURRENCE_EAR_BELOW_4:{term}")
     if str(owner_decision or "").upper() != "APPROVE":
         reasons.append("OWNER_DID_NOT_APPROVE")
     if objective_gate_passed is not True:

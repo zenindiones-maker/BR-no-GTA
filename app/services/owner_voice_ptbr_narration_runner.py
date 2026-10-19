@@ -65,6 +65,7 @@ def run_ptbr_narration_gate(
     scorers: Any,
     workspace: Path,
     term_phoneme_evidence: Mapping[str, Mapping[str, float]] | None = None,
+    term_owner_occurrences: Mapping[str, int] | None = None,
 ) -> dict[str, Any]:
     profile: dict[str, Any] = {"owner_clip_sha256s": [], "floors": {}, "bands": {}, "uppers": {}}
     try:
@@ -101,6 +102,9 @@ def run_ptbr_narration_gate(
                 "asr_recognized": _fold(term) in folded_observed,
                 "phoneme_error_rate": (evidence.get(term) or {}).get("phoneme_error_rate"),
                 "owner_reference_bound": (evidence.get(term) or {}).get("owner_reference_bound"),
+                # Ocorrências reais do Luiz (índice do segment survey); ausente = regra antiga.
+                **({"owner_occurrences": int(term_owner_occurrences.get(term, 0))}
+                   if term_owner_occurrences is not None else {}),
             }
             for term in narration_terms(expected)
         ]

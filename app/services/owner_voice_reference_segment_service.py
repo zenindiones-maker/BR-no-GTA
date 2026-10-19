@@ -17,6 +17,7 @@ import re
 import unicodedata
 from typing import Any, Mapping, Sequence
 
+from app.services.owner_voice_ptbr_narration_gate_service import TERM_RULE_ID
 from app.services.owner_voice_reference_asr_survey_service import (
     SURVEY_TERMS,
     canonical_term_hits,
@@ -176,13 +177,16 @@ def build_term_reference_index(segments: Sequence[Mapping[str, Any]]) -> dict[st
                 row["unqualified_occurrences"] += 1
     for row in terms.values():
         q = row["qualified_occurrences"]
-        row["coverage"] = "COVERED_MIN2" if q >= 2 else "COVERED_MIN1_WEAKER" if q == 1 else "NOT_COVERED_BY_QUALIFIED_SEGMENT"
+        row["coverage"] = ("COVERED_MIN2" if q >= 2 else "COVERED_MIN1_REQUIRES_OWNER_EAR_GE4" if q == 1
+                           else "NOT_COVERED_BY_QUALIFIED_SEGMENT")
         row["weaker_single_occurrence"] = q == 1
     return {
         "owner_assertion": OWNER_ASSERTION,
         "terms": dict(sorted(terms.items())),
         "canonical_terms_without_owner_occurrence": sorted(set(SURVEY_TERMS) - set(terms)),
         "min_occurrences_options": [1, 2],
+        "proposed_rule": TERM_RULE_ID,
+        "proposed_rule_text": "2 = covered; 1 = covered only with owner ear rating >= 4 (pronuncia_nomes_gta); 0 = uncovered",
         "min_occurrences_decision": "PENDING_OWNER_DECISION",
         "min_occurrences_applied": None,
     }

@@ -108,9 +108,10 @@ def test_term_index_flags_single_occurrence_as_weaker_and_leaves_decision_to_own
     idx = build_term_reference_index(segments)
     assert idx["min_occurrences_decision"] == "PENDING_OWNER_DECISION"
     assert idx["min_occurrences_applied"] is None
+    assert idx["proposed_rule"] == "PROPOSED_TERM_RULE_20261019_MIN2_OR_1_WITH_OWNER_EAR_GE4"
     t = idx["terms"]
     assert t["Jason"]["qualified_occurrences"] == 2 and t["Jason"]["coverage"] == "COVERED_MIN2"
-    assert t["Rockstar Games"]["coverage"] == "COVERED_MIN1_WEAKER"
+    assert t["Rockstar Games"]["coverage"] == "COVERED_MIN1_REQUIRES_OWNER_EAR_GE4"
     assert t["Rockstar Games"]["weaker_single_occurrence"] is True
     assert t["Vice City"]["coverage"] == "NOT_COVERED_BY_QUALIFIED_SEGMENT"
     assert t["Vice City"]["unqualified_occurrences"] == 1
@@ -141,7 +142,7 @@ def test_public_report_has_no_audio_embeddings_transcripts_or_paths():
     assert rep["ranked"][0]["segment_id"] == "53s00" and rep["ranked"][0]["words_per_second"] > 0
     assert rep["biometric_material_included"] is False and rep["synthesis_performed"] is False
     assert rep["telegram_messages_sent"] == 0 and rep["transcripts_included"] is False
-    assert rep["term_reference_index"]["terms"]["GTA"]["coverage"] == "COVERED_MIN1_WEAKER"
+    assert rep["term_reference_index"]["terms"]["GTA"]["coverage"] == "COVERED_MIN1_REQUIRES_OWNER_EAR_GE4"
 
 
 def test_workflow_is_asr_only_getfile_only_and_request_gated():

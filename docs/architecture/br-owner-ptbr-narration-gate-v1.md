@@ -61,3 +61,15 @@ candidate × (UTMOSv2 + accent + DNSMOS + prosody) ≈ 6–12 min on 4 vCPU.
 Owner term references (Luiz saying each GTA name, ≥ 2 occurrences) are
 required for the phoneme check; until they exist every audition that contains
 GTA names fails `OWNER_TERM_REFERENCE_MISSING` by design.
+
+## GTA term coverage rule (PROPOSED 19/10/2026, pending owner confirmation)
+`PROPOSED_TERM_RULE_20261019_MIN2_OR_1_WITH_OWNER_EAR_GE4` (constants in the gate
+service; occurrences come from the segment survey `term_reference_index`):
+- ≥ 2 owner occurrences: covered, and the phoneme bound (p90 owner distance) applies.
+- 1 occurrence: covered only with Luiz's ear rating ≥ 4 on `pronuncia_nomes_gta`
+  (the term goes to `pending_owner_ear_terms`, and `evaluate_owner_scoring`
+  enforces the rating).
+- 0 occurrences: `OWNER_TERM_UNCOVERED`.
+
+Until `TERM_RULE_OWNER_CONFIRMED` is set from a verbatim owner record, a single
+occurrence fails closed. Nothing becomes looser than before.
