@@ -6,9 +6,12 @@ from pathlib import Path
 
 from app.services.owner_voice_audio_quality_service import pcm16_quality_metrics
 from app.services.owner_voice_private_materialization_service import materialize_telegram_owner_references
+from app.services.owner_voice_identity_calibration_guard import (
+    calibrate_guarded_identity_profile,
+    calibrate_guarded_window_consistency,
+    multiplicity_from_materialization,
+)
 from app.services.owner_voice_speaker_identity_service import (
-    calibrate_owner_identity_profile,
-    calibrate_owner_window_consistency,
     evaluate_reference_window_consistency,
     select_canonical_reference,
 )
@@ -60,13 +63,15 @@ def main()->int:
         embeddings[rid]=_embedding(verifier,wav)
         metrics[rid]=pcm16_quality_metrics(wav)
 
-    profile=calibrate_owner_identity_profile(embeddings)
+    sha_by_id={str(int(row["telegram_input_id"])):str(row["sha256"]) for row in refs}
+    profile=calibrate_guarded_identity_profile(
+        embeddings,sha_by_id=sha_by_id,multiplicity_by_id=multiplicity_from_materialization(materialized))
     inliers=set(str(x) for x in profile["inlier_ids"])
     window_scores={
         rid:_window_identity_scores(verifier,normalized[rid],embeddings[rid])
         for rid in sorted(inliers)
     }
-    calibration=calibrate_owner_window_consistency(window_scores)
+    calibration=calibrate_guarded_window_consistency(window_scores,sha_by_id=sha_by_id)
     stt=_load_stt(cache)
 
     evaluated=[]

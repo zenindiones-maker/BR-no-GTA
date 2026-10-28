@@ -22,7 +22,7 @@ class CommitRefsRegression(unittest.TestCase):
                 ssh_private_key_path=key,
             )
             old, new = "1" * 40, "2" * 40
-            remote = iter([old, old, old])
+            remote = iter([old, old, old, old])
             pushes = []
 
             def rejected(*args, **kwargs):
@@ -36,12 +36,16 @@ class CommitRefsRegression(unittest.TestCase):
             with (
                 patch.object(store, "_remote_oid", side_effect=lambda: next(remote)),
                 patch("app.services.owner_voice_audition_ledger_store.subprocess.run", side_effect=rejected),
+                patch("app.services.owner_voice_audition_ledger_store.time.sleep") as slept,
             ):
-                with self.assertRaisesRegex(RuntimeError, "LEDGER_TRANSIENT_COMMIT_REFS_EXHAUSTED"):
+                # c6702f2a: 3 tentativas limitadas do mesmo candidato, depois fail-closed.
+                with self.assertRaisesRegex(RuntimeError, "LEDGER_GITHUB_COMMIT_REFS_BACKEND_UNAVAILABLE"):
                     store._push_candidate_bounded(expected_head_sha=old, candidate=new)
 
-            self.assertEqual(2, len(pushes))
+            self.assertEqual(3, len(pushes))
             self.assertEqual(pushes[0], pushes[1])
+            self.assertEqual(pushes[1], pushes[2])
+            self.assertEqual(2, slept.call_count)
             self.assertFalse(any("--force" in str(x) for x in pushes))
 
 

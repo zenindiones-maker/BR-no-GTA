@@ -51,7 +51,7 @@ def test_single_clone_runtime_has_real_identity_profile_and_no_placeholder_simil
     assert "x_vector_only_mode=False" in source
     assert "segment_languages=segment_languages" in source
     assert "TRANSCRIPT_CONDITIONED_ICL" in source
-    assert 'identity_gate="PASS" if segmented_identity["passed"] is True else "FAIL"' in source
+    assert 'identity_gate="PASS" if (binding_segment_identity["passed"] is True and global_identity["passed"] is True) else "FAIL"' in source  # owner-authorized 20261011
     assert 'print("CLONE_IDENTITY_GATE="+identity_gate)' in source
     assert 'print("QWEN3_TTS_IDENTITY_MATCH="+identity_gate)' in source
     assert "Chatterbox" not in source
@@ -95,8 +95,11 @@ def test_single_clone_audio_decode_does_not_depend_on_torchcodec():
 
 def test_qwen_reference_preserves_original_telegram_bandwidth_before_24k_clone_prompt():
     source=ORCHESTRATOR.read_text(encoding="utf-8")
-    assert "original_sources[cid]" in source
-    assert "ORIGINAL_TELEGRAM_TO_24K_DIRECT" in source
+    # Identity prompt clips are loudness-normalized from the ORIGINAL Telegram
+    # source straight to 24 kHz (never upsampled from the 16 kHz ECAPA copy).
+    assert 'original_sources[rid]' in source  # v5g composite parts cut from original bandwidth
+    assert "OWNER_TOP_CENTROID_COMPOSITE_LOUDNORM_24K" in source
+    assert "loudnorm=I=-20" in source
     assert '_ffmpeg(canonical16,workspace/"canonical-owner-reference-24k.wav",24000)' not in source
 
 
@@ -555,7 +558,7 @@ def test_multilingual_identity_gate_is_language_matched_not_whole_clone_cross_li
     assert "LANGUAGE_MATCHED_OWNER_REFERENCE_P10" in Path(
         "app/services/owner_voice_speaker_identity_service.py"
     ).read_text(encoding="utf-8")
-    assert 'identity_gate="PASS" if segmented_identity["passed"] is True else "FAIL"' in source
+    assert 'identity_gate="PASS" if (binding_segment_identity["passed"] is True and global_identity["passed"] is True) else "FAIL"' in source  # owner-authorized 20261011
     assert "OWNER_CLONE_GLOBAL_IDENTITY_DIAGNOSTIC=" in source
     assert "OWNER_CLONE_SEGMENT_IDENTITY=" in source
 
@@ -672,7 +675,8 @@ def test_source_only_changes_cannot_request_new_owner_clone():
     workflow=WORKFLOW.read_text(encoding="utf-8")
     assert 'REQUEST_CHANGED=false' in workflow
     assert 'if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then' in workflow
-    assert 'target=".run/br-owner-v1-single-human-clone.request.json"' in workflow
+    assert 'REQUEST_PATH=".run/br-owner-v1-single-human-clone.request.json"' in workflow
+    assert 'git diff --name-only HEAD^ HEAD -- "$REQUEST_PATH"' in workflow
     assert 'if [ "$REQUEST_CHANGED" = true ]' in workflow
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import app.workers.professional_audiovisual_worker as professional
+from app.services.channel_spoken_branding_service import build_spoken_branding_contract
 from app.services.source_window_validation_service import validate_source_window_usage
 
 
@@ -11,7 +12,8 @@ def _brand_contract():
         "opening_text": "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de teste!",
         "closing_line": "E BR não dorme em Vice City",
         "official_voice_profile": "BR_OWNER_V1",
-        "cache_policy": {"closing_fixed_reusable": True},
+        # Política real do dono (fechamento não reutilizável; ver brand_cache_policy_ok).
+        "cache_policy": build_spoken_branding_contract(theme="teste")["cache_policy"],
     }
 
 

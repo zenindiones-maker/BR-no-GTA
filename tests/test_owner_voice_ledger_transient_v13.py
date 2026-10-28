@@ -40,19 +40,26 @@ def test_exact_transient_commit_refs_52_one_retry_same_candidate(tmp_path,monkey
 
 
 def test_transient_twice_blocks_without_infinite_retry(tmp_path,monkeypatch):
+    # c6702f2a (09/10): até 3 pushes do MESMO candidato com backoff limitado
+    # (1 s, 3 s) e readback CAS a cada tentativa; depois falha fechada.
     store=_store(tmp_path)
     old="1"*40
     new="2"*40
-    points=iter([old,old,old])
+    points=iter([old,old,old,old])
     monkeypatch.setattr(store,"_remote_oid",lambda:next(points))
+    sleeps=[]
+    monkeypatch.setattr("app.services.owner_voice_audition_ledger_store.time.sleep",sleeps.append)
     calls=[]
     def reject(command,**kwargs):
         calls.append(command)
         return SimpleNamespace(returncode=52,stderr="fatal error in commit_refs")
     monkeypatch.setattr("app.services.owner_voice_audition_ledger_store.subprocess.run",reject)
-    with pytest.raises(RuntimeError,match="TRANSIENT_COMMIT_REFS_EXHAUSTED"):
+    with pytest.raises(RuntimeError,match="LEDGER_GITHUB_COMMIT_REFS_BACKEND_UNAVAILABLE"):
         store._push_candidate_bounded(expected_head_sha=old,candidate=new)
-    assert len(calls)==2
+    assert len(calls)==3
+    assert calls[0]==calls[1]==calls[2]
+    assert "--force" not in " ".join(calls[0])
+    assert sleeps==[1.0,3.0]
 
 
 def test_remote_moved_is_cas_conflict_never_replayed(tmp_path,monkeypatch):
@@ -83,7 +90,7 @@ def test_unrelated_push_failure_does_not_trigger_retry(tmp_path,monkeypatch):
         count["value"]+=1
         return SimpleNamespace(returncode=1,stderr="protected branch rejected")
     monkeypatch.setattr("app.services.owner_voice_audition_ledger_store.subprocess.run",reject)
-    with pytest.raises(RuntimeError,match="FAST_FORWARD_PUSH_REJECTED"):
+    with pytest.raises(RuntimeError,match="LEDGER_PUSH_NONTRANSIENT_ERROR"):
         store._push_candidate_bounded(expected_head_sha=old,candidate=new)
     assert count["value"]==1
 

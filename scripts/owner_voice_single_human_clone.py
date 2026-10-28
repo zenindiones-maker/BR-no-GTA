@@ -20,6 +20,9 @@ from app.services.gta6_pronunciation_lexicon_service import (
     gta6_target_evidence_score,
 )
 from app.services.owner_voice_audio_quality_service import pcm16_quality_metrics
+from app.services.owner_voice_ptbr_narration_features import LazyNeuralScorers
+from app.services.owner_voice_ptbr_narration_gate_service import combine_with_existing_delivery_gate
+from app.services.owner_voice_ptbr_narration_runner import run_ptbr_narration_gate
 from app.services.owner_voice_human_audition_pack_service import (
     evaluate_segment_transcript_qa,
     evaluate_short_candidate,
@@ -33,19 +36,28 @@ from app.services.owner_voice_private_materialization_service import (
 from app.services.owner_voice_telegram_pending_recovery_service import (
     recover_pending_owner_voice_references,
 )
+from app.services.owner_voice_identity_calibration_guard import (
+    calibrate_guarded_identity_profile,
+    calibrate_guarded_segment_identity_threshold,
+    calibrate_guarded_window_consistency,
+    multiplicity_from_materialization,
+)
 from app.services.owner_voice_speaker_identity_service import (
     PROFILE_SCHEMA,
     SPEAKER_MODEL_ID,
     SPEAKER_MODEL_REVISION,
-    calibrate_owner_identity_profile,
-    calibrate_owner_window_consistency,
+    IDENTITY_PROMPT_MAX_REFERENCES,
+    IDENTITY_PROMPT_MIN_SIMILARITY,
     cosine_similarity,
     evaluate_clone_identity_gate,
     evaluate_language_matched_segment_identity_gate,
     evaluate_reference_window_consistency,
     sanitized_profile,
+    rank_identity_anchor_candidates,
     select_canonical_reference,
+    select_identity_prompt_references,
 )
+IDENTITY_PROMPT_ASR_BUDGET=10
 from app.services.owner_voice_telegram_handoff_service import parse_reference_envelope_b64
 QWEN_GENERATION_HEARTBEAT_SECONDS=30
 VOICE_IDENTITY_ID="BR_OWNER_V1"
@@ -224,6 +236,38 @@ def _window_identity_scores(classifier,path:Path,full_embedding:list[float])->li
         emb=classifier.encode_batch(piece,normalize=True).detach().cpu().reshape(-1).tolist()
         scores.append(cosine_similarity(full_embedding,emb))
     return scores
+
+
+def _segment_window_centroid_similarities(
+    classifier,path:Path,centroid:list[float],seconds:float,max_windows:int=3,
+)->list[float]:
+    """Real owner speech cut to TTS-segment duration, scored against centroid."""
+    signal,sr=_load_pcm16_tensor(path)
+    total=int(signal.shape[-1])
+    window=int(round(seconds*sr))
+    if total<window:
+        return []
+    starts=sorted(set([0,max(0,(total-window)//2),max(0,total-window)]))[:max_windows]
+    out=[]
+    for start in starts:
+        piece=signal[:,start:start+window]
+        emb=classifier.encode_batch(piece,normalize=True).detach().cpu().reshape(-1).tolist()
+        out.append(cosine_similarity(emb,centroid))
+    return out
+
+
+def _ffmpeg_loudnorm_24k(source:Path,target:Path)->Path:
+    """EBU R128 -20 LUFS loudness normalization, then mono 24 kHz PCM16."""
+    target.parent.mkdir(parents=True,exist_ok=True)
+    subprocess.run(
+        ["ffmpeg","-y","-v","error","-i",str(source),"-vn",
+         "-af","loudnorm=I=-20:TP=-2:LRA=11","-ac","1","-ar","24000",
+         "-c:a","pcm_s16le",str(target)],
+        check=True,capture_output=True,
+    )
+    if not target.is_file() or target.stat().st_size<=0:
+        raise RuntimeError("OWNER_REFERENCE_LOUDNORM_FAILED")
+    return target
 
 
 def _load_stt(cache_root:Path):
@@ -643,14 +687,23 @@ def main()->int:
         embeddings[rid]=_embedding(classifier,wav)
 
     print(f"OWNER_PERF_STAGE_DONE=reference_embeddings elapsed_seconds={time.monotonic()-reference_embedding_t0:.3f}",flush=True)
-    profile=calibrate_owner_identity_profile(embeddings)
+    # Dedup guard (A+C): one sample per unique sha256, >=12 unique clips,
+    # effective floors = max(recorded, with-duplicates, dedup); pending owner approval.
+    reference_sha_by_id={str(int(row["telegram_input_id"])):str(row["sha256"]) for row in refs}
+    profile=calibrate_guarded_identity_profile(
+        embeddings,sha_by_id=reference_sha_by_id,
+        multiplicity_by_id=multiplicity_from_materialization(materialized),
+    )
+    print("OWNER_IDENTITY_CALIBRATION_GUARD="+json.dumps(
+        profile["identity_calibration_guard"],sort_keys=True,separators=(",",":")))
     centroid_floor=float(profile["clone_centroid_min_similarity"])
     inlier_ids=set(str(x) for x in profile["inlier_ids"])
     window_scores_by_id={
         rid:_window_identity_scores(classifier,normalized[rid],embeddings[rid])
         for rid in sorted(inlier_ids)
     }
-    window_calibration=calibrate_owner_window_consistency(window_scores_by_id)
+    window_calibration=calibrate_guarded_window_consistency(
+        window_scores_by_id,sha_by_id=reference_sha_by_id)
     pronunciation_source_rows=[]
     for row in refs:
         rid=str(int(row["telegram_input_id"]))
@@ -738,13 +791,9 @@ def main()->int:
         and float(profile["reference_similarity_to_centroid"].get(str(row["reference_id"]),-1.0))
             >=float(profile["clone_centroid_min_similarity"])
     ]
-    pre_asr.sort(key=lambda row:(
-        0 if 10.0<=row["duration_seconds"]<=20.0 else 1,
-        -float(profile["reference_similarity_to_centroid"].get(str(row["reference_id"]),-1)),
-        -row["snr_db"],
-        abs(float(row["duration_seconds"])-15.0),
-        str(row["sha256"]),
-    ))
+    # Fidelity first: rank by similarity to the owner centroid; duration is
+    # only a tiebreak (previously the 10-20 s band dominated similarity).
+    pre_asr=rank_identity_anchor_candidates(pre_asr,profile)
     print(f"OWNER_CANONICAL_INLIER_COUNT={len(inlier_ids)}")
     print(f"OWNER_WINDOW_CONSISTENCY_REFERENCE_COUNT={window_calibration['reference_count']}")
     print(f"OWNER_WINDOW_CONSISTENCY_MIN_SIMILARITY={window_calibration['min_similarity']}")
@@ -754,12 +803,21 @@ def main()->int:
     print(f"OWNER_CANONICAL_PRE_ASR_ELIGIBLE_COUNT={len(pre_asr)}")
     if not pre_asr:
         raise RuntimeError("NO_CANONICAL_OWNER_REFERENCE_PRE_ASR_ELIGIBLE")
+    from app.services.owner_voice_reference_window_service import (
+        COMPOSITE_POOL_ASR_BUDGET,plan_composite_asr_pool,
+    )
+    composite_asr_pool=plan_composite_asr_pool(
+        pre_asr,profile["reference_similarity_to_centroid"],min_similarity=IDENTITY_PROMPT_MIN_SIMILARITY)
+    print(f"OWNER_COMPOSITE_POOL_ASR_PLANNED={len(composite_asr_pool)}",flush=True)
+    if composite_asr_pool:
+        pre_asr=composite_asr_pool
 
     stt=_load_stt(cache_root)
     asr_count=0
     evaluated=[]
     canonical=None
     anchor_ref_text=""
+    identity_verified=[]
     for row in pre_asr:
         ptbr_probability,vad_speech_ratio,language,transcript=_reference_asr_metrics(
             stt,
@@ -788,10 +846,19 @@ def main()->int:
             row["speech_ratio"]=strong_vad
             row["detected_language"]=strong_language
             if float(strong_ptbr)>=0.90 and float(strong_vad)>=0.55 and strong_text:
-                canonical=select_canonical_reference([row],profile)
-                anchor_ref_text=strong_text
-                break
+                row["verified_ref_text"]=strong_text
+                identity_verified.append(row)
+                if canonical is None:
+                    canonical=select_canonical_reference([row],profile)
+                    anchor_ref_text=strong_text
+        if canonical is not None and (
+            len(evaluated)>=COMPOSITE_POOL_ASR_BUDGET
+            or float(profile["reference_similarity_to_centroid"].get(
+                str(row["reference_id"]),-1.0))<IDENTITY_PROMPT_MIN_SIMILARITY
+        ):
+            break
     print(f"OWNER_CANONICAL_REFERENCE_ASR_COUNT={asr_count}")
+    print("OWNER_COMPOSITE_POOL_PTBR_VERIFIED_DISTINCT="+str(len({str(r["sha256"]) for r in identity_verified})),flush=True)
     print(f"OWNER_CANONICAL_PTBR_COUNT={sum(1 for row in evaluated if float(row['ptbr_probability'])>=0.90)}")
     print(f"OWNER_CANONICAL_VAD_SPEECH_COUNT={sum(1 for row in evaluated if float(row['speech_ratio'])>=0.55)}")
     if canonical is None or not anchor_ref_text:
@@ -955,17 +1022,131 @@ def main()->int:
         raise RuntimeError("CANONICAL_REFERENCE_SIMILARITY_RECOMPUTE_DRIFT")
     if canonical_similarity<centroid_floor:
         raise RuntimeError("CANONICAL_REFERENCE_IDENTITY_MATCH_FAILED")
-    canonical24=_ffmpeg(
-        original_sources[cid],
-        workspace/"canonical-owner-reference-24k.wav",
-        24000,
+    # v5g: 20-30 s composite of 2-3 VAD-bounded windows from DIFFERENT owner
+    # clips (each >=0.90 vs centroid), maximizing composite embedding sim.
+    from app.services.owner_voice_reference_window_service import (
+        COMPOSITE_PART_MAX_SECONDS,COMPOSITE_PART_MIN_SECONDS,
+        candidate_reference_windows,choose_composite_windows,
+        validate_composite_total,validate_qwen_reference,
     )
+    import soundfile as _sf_ref
+    import numpy as _np_ref
+    from faster_whisper import decode_audio
+    from faster_whisper.vad import VadOptions,get_speech_timestamps
+
+    def _cut(src:Path,win,target:Path,rate:int)->Path:
+        subprocess.run(
+            ["ffmpeg","-y","-v","error","-i",str(src),"-ss",f"{win[0]:.3f}","-to",f"{win[1]:.3f}",
+             "-vn","-ac","1","-ar",str(rate),"-c:a","pcm_s16le",str(target)],
+            check=True,capture_output=True)
+        return target
+
+    clip_sims=dict(profile["reference_similarity_to_centroid"])
+    from app.services.owner_voice_reference_window_service import dedupe_reference_pool
+    distinct_rows,dedup_stats=dedupe_reference_pool(
+        identity_verified,embeddings,clip_sims,min_similarity=0.90)
+    print("OWNER_QWEN_COMPOSITE_POOL_DEDUP="+json.dumps(dedup_stats,sort_keys=True,separators=(",",":")))
+    print("OWNER_QWEN_COMPOSITE_DISTINCT_QUALIFYING_CLIPS="+str(dedup_stats["distinct_qualifying"]),flush=True)
+    composite_clip_rows=distinct_rows[:5]
+    rows_by_id={str(r["reference_id"]):r for r in composite_clip_rows}
+    window_cache={}
+    candidates_by_clip={}
+    for r in composite_clip_rows:
+        rid=str(r["reference_id"])
+        vad_audio=decode_audio(str(normalized[rid]),sampling_rate=16000)
+        spans=[(float(t["start"])/16000.0,float(t["end"])/16000.0)
+               for t in get_speech_timestamps(vad_audio,VadOptions(min_silence_duration_ms=250))]
+        wins=candidate_reference_windows(spans,len(vad_audio)/16000.0,
+            min_seconds=COMPOSITE_PART_MIN_SECONDS,max_seconds=COMPOSITE_PART_MAX_SECONDS)[:4]
+        scored=[]
+        for w in wins:
+            cut=_cut(normalized[rid],w,workspace/f"identity-part-{rid}-{w[0]:.3f}-{w[1]:.3f}-16k.wav",16000)
+            window_cache[(rid,w)]=cut
+            scored.append((w,float(cosine_similarity(_embedding(classifier,cut),profile["centroid"]))))
+        candidates_by_clip[rid]=scored
+
+    def _concat16(parts,target:Path)->Path:
+        chunks=[]
+        gap=_np_ref.zeros(int(0.20*16000),dtype="float32")
+        for i,(rid,w) in enumerate(parts):
+            audio,_r=_sf_ref.read(str(window_cache[(rid,w)]),dtype="float32")
+            if i:
+                chunks.append(gap)
+            chunks.append(audio.reshape(-1))
+        _sf_ref.write(str(target),_np_ref.concatenate(chunks),16000,subtype="PCM_16")
+        return target
+
+    def _composite_similarity(parts)->float:
+        path=_concat16(parts,workspace/"identity-composite-probe-16k.wav")
+        try:
+            return float(cosine_similarity(_embedding(classifier,path),profile["centroid"]))
+        finally:
+            path.unlink(missing_ok=True)
+
+    composite_parts,composite_similarity=choose_composite_windows(
+        candidates_by_clip,_composite_similarity,min_window_similarity=0.90,gap_seconds=0.20)
+    part_seconds=[w[1]-w[0] for _rid,w in composite_parts]
+    validate_composite_total(part_seconds,gap_seconds=0.20)
+    use_composite=True
+    multi_clip_composite=True
+    reference_clip_ids={rid for rid,_w in composite_parts}
+    part_shas=[str(rows_by_id[rid]["sha256"]) for rid,_w in composite_parts]
+    print("OWNER_QWEN_COMPOSITE_PARTS_DISTINCT_CONTENT="+str(len(set(part_shas))==len(part_shas)).upper())
+    if len(set(part_shas))!=len(part_shas):
+        raise RuntimeError("OWNER_QWEN_COMPOSITE_DUPLICATE_CONTENT")
+    print("OWNER_IDENTITY_PROMPT_MODE=MULTI_CLIP_VAD_WINDOW_COMPOSITE")
+    part_sims=dict(((rid,w),sim) for rid,c in candidates_by_clip.items() for w,sim in c)
+    print("OWNER_QWEN_COMPOSITE_PARTS="+json.dumps(
+        [{"seconds":round(w[1]-w[0],3),"window_similarity_to_centroid":round(part_sims[(rid,w)],6),
+          "clip_similarity_to_centroid":round(float(clip_sims[rid]),6)} for rid,w in composite_parts],
+        separators=(",",":")))
+    print("OWNER_QWEN_COMPOSITE_SIMILARITY_TO_CENTROID="+str(round(composite_similarity,6)))
+    identity24s=[]
+    window_transcripts=[]
+    for i,(rid,w) in enumerate(composite_parts,1):
+        raw=_cut(original_sources[rid],w,workspace/f"identity-owner-part-{i}-raw.wav",24000)
+        part24=_ffmpeg_loudnorm_24k(raw,workspace/f"identity-owner-part-{i}-24k-loudnorm.wav")
+        raw.unlink(missing_ok=True)
+        ptbr,_vad,_lang,text=_reference_asr_metrics(stt,part24,w[1]-w[0],beam_size=5)
+        if ptbr<0.90 or not text.strip():
+            raise RuntimeError("OWNER_QWEN_COMPOSITE_PART_ASR_INVALID")
+        identity24s.append(part24)
+        window_transcripts.append(text.strip())
+    for cut in window_cache.values():
+        cut.unlink(missing_ok=True)
+    canonical24=_compose_pronunciation_reference_audio(
+        identity24s,workspace/"identity-owner-reference-composite-24k.wav")
+    anchor_ref_text=" ".join(window_transcripts)
+    reference_seconds=float(_sf_ref.info(str(canonical24)).duration)
+    validate_qwen_reference(
+        duration_seconds=reference_seconds,ref_text=anchor_ref_text,
+        asr_transcript=" ".join(window_transcripts))
+    identity_prompt_rows=[dict(rows_by_id[rid],identity_similarity_to_centroid=float(clip_sims[rid]))
+                          for rid,_w in composite_parts]
+    print("OWNER_QWEN_REFERENCE_SECONDS="+str(round(reference_seconds,3)))
+    print("OWNER_QWEN_REF_TEXT_ALIGNMENT=ASR_OF_EACH_EXACT_WINDOW_CONCATENATED")
+    print("OWNER_QWEN_REF_TEXT_WORDS="+str(len(anchor_ref_text.split())))
+    # Segment-vs-reference identity uses the embedding of the exact audio
+    # handed to Qwen (trimmed window), not the full canonical clip.
+    qwen_reference16=_ffmpeg(canonical24,workspace/"identity-qwen-reference-16k.wav",16000)
+    qwen_reference_embedding=_embedding(classifier,qwen_reference16)
+    print("OWNER_QWEN_REFERENCE_EMBEDDING_SOURCE=EXACT_QWEN_REF_AUDIO")
+    print(f"OWNER_IDENTITY_PROMPT_REFERENCE_COUNT={len(identity_prompt_rows)}")
+    print("OWNER_IDENTITY_PROMPT_TOTAL_SECONDS="
+          +str(round(sum(float(r["duration_seconds"]) for r in identity_prompt_rows),3)))
+    print("OWNER_IDENTITY_PROMPT_SIMILARITIES_TO_CENTROID="
+          +",".join(str(round(float(r["identity_similarity_to_centroid"]),6)) for r in identity_prompt_rows))
+    print("OWNER_IDENTITY_PROMPT_LOUDNORM_LUFS=-20")
+    print(f"OWNER_CANONICAL_SIMILARITY_TO_CENTROID={round(canonical_similarity,6)}")
     if _sha256(canonical24)=="":
         raise RuntimeError("CANONICAL_REFERENCE_DIGEST_MISSING")
 
     pronunciation_prompt_audio=None
     human_review_reference=canonical
-    qwen_reference_audio_lineage="ORIGINAL_TELEGRAM_TO_24K_DIRECT"
+    qwen_reference_audio_lineage=("OWNER_TOP_CENTROID_COMPOSITE_LOUDNORM_24K" if use_composite
+        else "OWNER_SINGLE_CANONICAL_VAD_WINDOW_LOUDNORM_24K")
+    if multi_clip_composite:
+        qwen_reference_audio_lineage="MULTI_CLIP_VAD_WINDOW_COMPOSITE_LOUDNORM_24K"
     pronunciation24_by_input_id={}
     if pronunciation_canonical is not None:
         pronunciation24s=[]
@@ -1196,7 +1377,21 @@ def main()->int:
     # Qwen official API accepts single-item batches. Avoid one unobservable,
     # long multi-segment generation call, and keep each output as a private
     # scratch checkpoint; never reuse older rejected audition segments.
-    from app.services.owner_voice_serial_generation_v11 import generate_one_private_audition
+    from app.services.owner_voice_serial_generation_v11 import (
+        generate_one_private_audition,
+        sampling_for_candidate,
+    )
+    sampling_candidate=str(request_payload.get("sampling_candidate") or "A")
+    candidate_sampling,candidate_seed=sampling_for_candidate(sampling_candidate)
+    import random as _random
+
+    def _set_generation_seed(seed:int)->None:
+        _random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+
+    print("OWNER_QWEN_SAMPLING_CANDIDATE="+sampling_candidate+" "+json.dumps(candidate_sampling,sort_keys=True,separators=(",",":")))
+    print(f"OWNER_QWEN_BASE_SEED={candidate_seed}")
 
     print(f"OWNER_PERF_STAGE_DONE=owner_prompt_build elapsed_seconds={time.monotonic()-prompt_t0:.3f}",flush=True)
     print("OWNER_PERF_STAGE_START=qwen_segment_generation",flush=True)
@@ -1207,6 +1402,9 @@ def main()->int:
         segment_languages=segment_languages,
         segment_prompts=segment_prompts,
         workspace=workspace,
+        sampling_kwargs=candidate_sampling,
+        seed_setter=_set_generation_seed,
+        base_seed=candidate_seed,
     )
     print(f"OWNER_PERF_STAGE_DONE=qwen_segment_generation elapsed_seconds={generation_seconds:.3f}",flush=True)
     if len(wavs)!=len(segment_texts) or int(sample_rate)<=0:
@@ -1252,7 +1450,7 @@ def main()->int:
             owner_reference_for_identity_measurement,
         )
         reference_embedding,gate_language=owner_reference_for_identity_measurement(
-            canonical_embedding=canonical_embedding,
+            canonical_embedding=qwen_reference_embedding,
             pronunciation_embedding=pronunciation_reference_embedding,
             coherent_anchor_only=coherent_anchor_only,
             language=language,
@@ -1274,7 +1472,48 @@ def main()->int:
             "OWNER_CLONE_SEGMENT_IDENTITY="
             +json.dumps(row,sort_keys=True,separators=(",",":"))
         )
-    identity_gate="PASS" if segmented_identity["passed"] is True else "FAIL"
+    # OWNER_AUTHORIZED_20261011_SEGMENT_GATE_P10_BINDING (see AGENTS.md):
+    # per-segment centroid floor = p10 of the owner's real duration-matched
+    # (5-7 s) windows vs centroid. Reference floor and whole-audio gate unchanged.
+    segment_seconds=[float(len(w))/float(sample_rate) for w in wavs]
+    window_seconds=min(7.0,max(5.0,float(np.median(segment_seconds))))
+    # Windows grouped by source clip: one clip never counts as many samples.
+    window_sims_by_clip={}
+    for rid in sorted(inlier_ids):
+        window_sims_by_clip[rid]=list(_segment_window_centroid_similarities(
+            classifier,normalized[rid],profile["centroid"],window_seconds))
+    reference_window_sims_by_clip={}
+    for rid in sorted(inlier_ids):
+        if rid not in reference_clip_ids:
+            reference_window_sims_by_clip[rid]=list(_segment_window_centroid_similarities(
+                classifier,normalized[rid],qwen_reference_embedding,window_seconds))
+    binding_segment_identity={"passed":False,"segments":[]}
+    try:
+        segment_calibration=calibrate_guarded_segment_identity_threshold(
+            window_sims_by_clip,window_seconds=window_seconds,
+            reference_similarities_by_clip=reference_window_sims_by_clip)
+        shadow=evaluate_language_matched_segment_identity_gate(
+            profile,segments=segment_identity_rows,segment_calibration=segment_calibration)
+        print("OWNER_SEGMENT_DURATION_CALIBRATION="+json.dumps(
+            {k:(round(v,6) if isinstance(v,float) else v) for k,v in segment_calibration.items()},
+            sort_keys=True,separators=(",",":")))
+        binding_segment_identity=shadow
+        for r in shadow["segments"]:
+            reasons=[]
+            if r["similarity_to_centroid"]<r["centroid_min_similarity"]:
+                reasons.append("CENTROID")
+            if r["similarity_to_language_reference"]<r["reference_min_similarity"]:
+                reasons.append("REFERENCE")
+            print(f"OWNER_SEGMENT_CALIBRATED_GATE_ROW={r['position']} passed={r['passed']} fail_reasons={','.join(reasons) or 'NONE'}")
+        print("OWNER_SEGMENT_DURATION_CALIBRATED_PASS_COUNT="
+              +str(sum(1 for r in shadow["segments"] if r["passed"]))+"/"+str(len(shadow["segments"])))
+        print("OWNER_SEGMENT_DURATION_CALIBRATED_GATE="+("PASS" if shadow["passed"] else "FAIL"))
+    except ValueError as exc:
+        print("OWNER_SEGMENT_DURATION_CALIBRATION=UNAVAILABLE "+str(exc))
+    print("OWNER_SEGMENT_DURATION_CALIBRATION_MODE=BINDING_OWNER_AUTHORIZED_20261011")
+    print("OWNER_LEGACY_UNCALIBRATED_SEGMENT_GATE="+("PASS" if segmented_identity["passed"] else "FAIL")+" (diagnostic)")
+    print("OWNER_WHOLE_AUDIO_IDENTITY_GATE="+("PASS" if global_identity["passed"] else "FAIL"))
+    identity_gate="PASS" if (binding_segment_identity["passed"] is True and global_identity["passed"] is True) else "FAIL"
     print("CLONE_IDENTITY_GATE="+identity_gate)
     print("QWEN3_TTS_IDENTITY_MATCH="+identity_gate)
 
@@ -1388,6 +1627,32 @@ def main()->int:
         bool(review_decision["audition_delivery_eligible"])
         and targeted_delivery_allowed
     )
+    # OWNER_RULE_20261019_PTBR_ULTRA_PROFESSIONAL_NARRATION (docs/policy/owner_authorizations.md):
+    # gate ADITIVO e fail-closed; calibrado nas gravações reais do Luiz; não
+    # altera nenhum limiar de identidade. O ouvido do Luiz segue como autoridade final.
+    ref_sha_by_id={str(int(row["telegram_input_id"])):str(row["sha256"]) for row in refs}
+    ptbr_owner_clips={
+        rid:(normalized[rid],ref_sha_by_id[rid])
+        for rid in sorted(inlier_ids)
+        if float(metrics[rid].get("snr_db") or 0.0)>=15.0
+        and float(metrics[rid].get("clipping_ratio") or 0.0)<=0.01
+    }
+    ptbr_gate=run_ptbr_narration_gate(
+        owner_clips=ptbr_owner_clips,
+        candidate_wav16=clone16,
+        candidate_sha256=clone_sha,
+        segment_qas=segment_language_qas,
+        dnsmos_model_path=Path(str(os.environ.get("BR_OWNER_DNSMOS_ONNX") or "missing-dnsmos.onnx")),
+        scorers=LazyNeuralScorers(cache_root/"ptbr-narration-gate"),
+        workspace=workspace,
+    )
+    print("PTBR_NARRATION_GATE="+("PASS" if ptbr_gate["result"]["passed"] else "FAIL"))
+    if ptbr_gate["result"]["fail_reasons"]:
+        print("PTBR_NARRATION_GATE_FAIL_REASONS="+",".join(ptbr_gate["result"]["fail_reasons"])[:2000])
+    audition_delivery_eligible=combine_with_existing_delivery_gate(
+        audition_delivery_eligible,
+        ptbr_gate["result"],
+    )
     print("AUDITION_DELIVERY_ELIGIBLE="+(
         "PASS" if audition_delivery_eligible else "BLOCKED_QUALITY_GATES"
     ))
@@ -1433,6 +1698,8 @@ def main()->int:
         "clone_identity_gate":identity_gate,
         "content_audio_prescreen":content_audio_prescreen,
         "audition_delivery_eligible":audition_delivery_eligible,
+        "ptbr_narration_gate":ptbr_gate["report"],
+        "identity_calibration_guard":profile["identity_calibration_guard"],
         "pronunciation_scope":(
             targeted_scope if is_critical_audition else "LEGACY"
         ),

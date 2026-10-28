@@ -177,7 +177,7 @@ def evaluate_clone_identity_gate(
     to_reference=cosine_similarity(clone_embedding,canonical_embedding)
     centroid_min=float(profile["clone_centroid_min_similarity"])
     reference_min=float(profile["clone_reference_min_similarity"])
-    return {
+    out={
         "passed":to_centroid>=centroid_min and to_reference>=reference_min,
         "similarity_to_centroid":round(to_centroid,6),
         "similarity_to_reference":round(to_reference,6),
@@ -185,12 +185,129 @@ def evaluate_clone_identity_gate(
         "reference_min_similarity":reference_min,
         "calibration":"OWNER_INTRA_SPEAKER_P10",
     }
+    legacy=profile.get("guard_legacy_centroid")
+    if legacy is not None:
+        # Dedup guard (owner_voice_identity_calibration_guard): the clone must ALSO
+        # pass the duplicate-weighted legacy centroid at its floor (never looser).
+        if not isinstance(legacy,list):
+            raise ValueError("OWNER_SPEAKER_LEGACY_CENTROID_INVALID")
+        to_legacy=cosine_similarity(clone_embedding,legacy)
+        legacy_min=float(profile["guard_legacy_centroid_min_similarity"])
+        reasons=[]
+        if to_legacy<legacy_min:
+            reasons.append("LEGACY_CENTROID")
+        out["similarity_to_legacy_centroid"]=round(to_legacy,6)
+        out["legacy_centroid_min_similarity"]=legacy_min
+        out["guard_fail_reasons"]=reasons
+        out["passed"]=bool(out["passed"]) and not reasons
+    return out
+
+
+SEGMENT_WINDOW_MIN_SECONDS=5.0
+SEGMENT_WINDOW_MAX_SECONDS=7.0
+SEGMENT_WINDOW_MIN_COUNT=8
+IDENTITY_PROMPT_MIN_SIMILARITY=0.90
+IDENTITY_PROMPT_MAX_REFERENCES=3
+IDENTITY_PROMPT_MIN_TOTAL_SECONDS=20.0
+IDENTITY_PROMPT_MAX_TOTAL_SECONDS=30.0
+
+
+def calibrate_segment_identity_threshold(
+    window_similarities_to_centroid: Sequence[float],
+    *,
+    window_seconds: float,
+    window_similarities_to_reference: Sequence[float] | None = None,
+) -> dict[str,Any]:
+    """P10 of REAL owner windows (duration-matched to TTS segments) vs centroid.
+
+    ECAPA scores on 5-7 s speech are systematically lower than on full clips;
+    this measures the owner's own distribution at the segment duration instead
+    of reusing a full-clip threshold. No constant is invented or lowered.
+    """
+    seconds=float(window_seconds)
+    if not SEGMENT_WINDOW_MIN_SECONDS<=seconds<=SEGMENT_WINDOW_MAX_SECONDS:
+        raise ValueError("OWNER_SEGMENT_WINDOW_DURATION_OUT_OF_RANGE")
+    values=[float(x) for x in window_similarities_to_centroid]
+    if len(values)<SEGMENT_WINDOW_MIN_COUNT or not all(-1.0<=x<=1.0 for x in values):
+        raise ValueError("OWNER_SEGMENT_WINDOW_CALIBRATION_INSUFFICIENT")
+    out={
+        "calibration":"OWNER_DURATION_MATCHED_WINDOW_P10",
+        "window_seconds":seconds,
+        "window_count":len(values),
+        "window_similarity_median":float(median(values)),
+        "centroid_min_similarity":float(_quantile(values,0.10)),
+    }
+    if window_similarities_to_reference is not None:
+        # OWNER_AUTHORIZED_20261011_SEGMENT_REFERENCE_P10_BINDING
+        refs=[float(x) for x in window_similarities_to_reference]
+        if len(refs)<SEGMENT_WINDOW_MIN_COUNT or not all(-1.0<=x<=1.0 for x in refs):
+            raise ValueError("OWNER_SEGMENT_REFERENCE_WINDOW_CALIBRATION_INSUFFICIENT")
+        out["reference_window_count"]=len(refs)
+        out["reference_window_similarity_median"]=float(median(refs))
+        out["reference_min_similarity"]=float(_quantile(refs,0.10))
+    return out
+
+
+def rank_identity_anchor_candidates(
+    candidates: Sequence[Mapping[str,Any]],
+    profile: Mapping[str,Any],
+) -> list[dict[str,Any]]:
+    """Rank inlier references by owner fidelity first; duration only breaks ties."""
+    inliers=set(str(x) for x in profile.get("inlier_ids") or [])
+    sims=dict(profile.get("reference_similarity_to_centroid") or {})
+    floor=float(profile["clone_centroid_min_similarity"])
+    ranked=[]
+    for raw in candidates:
+        row=dict(raw)
+        rid=str(row.get("reference_id") or "")
+        sim=float(sims.get(rid,-1.0))
+        if rid not in inliers or sim<floor or float(row.get("duration_seconds") or 0.0)<=0.0:
+            continue
+        row["identity_similarity_to_centroid"]=sim
+        ranked.append(row)
+    ranked.sort(key=lambda r:(
+        -round(float(r["identity_similarity_to_centroid"]),6),
+        0 if 10.0<=float(r["duration_seconds"])<=20.0 else 1,
+        -float(r.get("snr_db") or 0.0),
+        abs(float(r["duration_seconds"])-15.0),
+        str(r.get("sha256") or ""),
+    ))
+    return ranked
+
+
+def select_identity_prompt_references(
+    ranked: Sequence[Mapping[str,Any]],
+    profile: Mapping[str,Any],
+) -> list[dict[str,Any]]:
+    """Pick up to 3 PT-BR-verified refs (sim>=0.90) totalling at most 30 s.
+
+    Stops once >=2 refs and >=20 s are reached. May return a single reference
+    when no other verified high-fidelity owner clip exists (never a fallback
+    voice: every clip is a BR_OWNER_V1 inlier).
+    """
+    sims=dict(profile.get("reference_similarity_to_centroid") or {})
+    chosen=[];total=0.0
+    for raw in ranked:
+        row=dict(raw)
+        sim=float(sims.get(str(row.get("reference_id")),-1.0))
+        dur=float(row.get("duration_seconds") or 0.0)
+        if (sim<IDENTITY_PROMPT_MIN_SIMILARITY
+            or float(row.get("ptbr_probability") or 0.0)<0.90
+            or float(row.get("speech_ratio") or 0.0)<0.55
+            or dur<=0.0 or total+dur>IDENTITY_PROMPT_MAX_TOTAL_SECONDS):
+            continue
+        chosen.append(row);total+=dur
+        if len(chosen)>=IDENTITY_PROMPT_MAX_REFERENCES or (
+            len(chosen)>=2 and total>=IDENTITY_PROMPT_MIN_TOTAL_SECONDS):
+            break
+    return chosen
 
 
 def evaluate_language_matched_segment_identity_gate(
     profile: Mapping[str,Any],
     *,
     segments: Sequence[Mapping[str,Any]],
+    segment_calibration: Mapping[str,Any] | None = None,
 ) -> dict[str,Any]:
     if profile.get("schema_version")!=PROFILE_SCHEMA:
         raise ValueError("OWNER_SPEAKER_PROFILE_INVALID")
@@ -202,6 +319,14 @@ def evaluate_language_matched_segment_identity_gate(
 
     centroid_min=float(profile["clone_centroid_min_similarity"])
     reference_min=float(profile["clone_reference_min_similarity"])
+    calibration_name="LANGUAGE_MATCHED_OWNER_REFERENCE_P10"
+    if segment_calibration is not None:
+        if segment_calibration.get("calibration")!="OWNER_DURATION_MATCHED_WINDOW_P10":
+            raise ValueError("OWNER_SEGMENT_CALIBRATION_INVALID")
+        centroid_min=float(segment_calibration["centroid_min_similarity"])
+        if "reference_min_similarity" in segment_calibration:
+            reference_min=float(segment_calibration["reference_min_similarity"])
+        calibration_name="OWNER_DURATION_MATCHED_WINDOW_P10"
     evidence=[]
     for raw in segments:
         row=dict(raw)
@@ -241,7 +366,7 @@ def evaluate_language_matched_segment_identity_gate(
         "segments":evidence,
         "centroid_min_similarity":centroid_min,
         "reference_min_similarity":reference_min,
-        "calibration":"LANGUAGE_MATCHED_OWNER_REFERENCE_P10",
+        "calibration":calibration_name,
     }
 
 
@@ -296,5 +421,5 @@ def select_canonical_reference(
 def sanitized_profile(profile: Mapping[str,Any]) -> dict[str,Any]:
     return {
         key:value for key,value in dict(profile).items()
-        if key not in {"centroid","reference_similarity_to_centroid"}
+        if key not in {"centroid","reference_similarity_to_centroid","guard_legacy_centroid"}
     }

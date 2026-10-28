@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from app.services.owner_voice_audition_ledger_store import store_from_environment
+from app.services.owner_voice_human_audition_pack_service import (
+    build_owner_scoring_sheet,
+    build_owner_scoring_sheet_message,
+)
 from app.services.owner_voice_clone_step_output_service import reject_critical_scope_for_standard_delivery
 from app.services.owner_voice_single_clone_delivery_service import (
     RECONCILIATION_REQUIRED,
@@ -86,6 +90,8 @@ class TelegramSingleCloneApi:
             +f"Auto identity gate: {self.identity_gate}\n"
             +f"Auto content gate: {self.content_audio_prescreen}\n"
             +"Runtime activation: BLOQUEADA até aprovação humana."
+            +"\n\n"
+            +build_owner_scoring_sheet_message(build_owner_scoring_sheet(pack_id="single-clone",labels=["CLONE"]))
         )
 
     def copy_reference(self,*,chat_id:int,source_message_id:int,protect_content:bool)->int:
